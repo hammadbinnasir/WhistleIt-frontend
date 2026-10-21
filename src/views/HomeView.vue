@@ -1,5 +1,6 @@
 <script setup>
 import { storeToRefs } from 'pinia'
+import { RouterLink } from 'vue-router'
 import { useUiStore } from '@/stores/ui'
 import { ChannelSidebar, ChannelHeader } from '@/features/channels'
 
@@ -29,6 +30,15 @@ const { selectedChannelId, sidebarOpen } = storeToRefs(ui)
         <button class="rounded border px-2 py-1 text-sm" @click="ui.toggleSidebar()">
           {{ sidebarOpen ? 'Hide' : 'Show' }} sidebar
         </button>
+        <h2 class="font-semibold">
+          {{ selectedChannelId ? `# ${selectedChannelId}` : 'Select a channel' }}
+        </h2>
+        <RouterLink
+          class="ml-auto rounded border px-3 py-1 text-sm hover:bg-slate-50"
+          to="/login"
+        >
+          Back to login
+        </RouterLink>
         <h2 class="font-semibold">Select a channel</h2>
       </header>
 
