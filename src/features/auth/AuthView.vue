@@ -1,9 +1,10 @@
 <script setup>
 import { computed, ref, watch } from 'vue'
-import { RouterLink, useRoute } from 'vue-router'
+import { RouterLink, useRoute, useRouter } from 'vue-router'
 import AuthIllustration from './AuthIllustration.vue'
 
 const route = useRoute()
+const router = useRouter()
 const isSignup = computed(() => route.path === '/signup')
 const form = ref(null)
 const fullName = ref('')
@@ -34,7 +35,7 @@ function submitForm() {
     return
   }
 
-  feedback.value = 'Your form is ready, but account services are not connected yet.'
+  router.push({ name: 'home' })
 }
 
 function showPasswordHelp() {

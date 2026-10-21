@@ -1,5 +1,6 @@
 <script setup>
 import { storeToRefs } from 'pinia'
+import { RouterLink } from 'vue-router'
 import { useUiStore } from '@/stores/ui'
 
 const ui = useUiStore()
@@ -40,6 +41,12 @@ const channels = [
         <h2 class="font-semibold">
           {{ selectedChannelId ? `# ${selectedChannelId}` : 'Select a channel' }}
         </h2>
+        <RouterLink
+          class="ml-auto rounded border px-3 py-1 text-sm hover:bg-slate-50"
+          to="/login"
+        >
+          Back to login
+        </RouterLink>
       </header>
       <section class="flex-1 p-6 text-slate-500">
         Pinia is working: this state lives in <code>src/stores/ui.js</code>.

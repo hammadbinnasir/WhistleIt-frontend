@@ -9,6 +9,7 @@ async function mountAuthView(path = '/login') {
     routes: [
       { path: '/login', component: AuthView },
       { path: '/signup', component: AuthView },
+      { path: '/app', name: 'home', component: { template: '<main>Workspace</main>' } },
     ],
   })
   await router.push(path)
@@ -39,6 +40,32 @@ describe('auth view', () => {
     expect(password.attributes('type')).toBe('password')
     await wrapper.get('button[aria-label="Show password"]').trigger('click')
     expect(password.attributes('type')).toBe('text')
+  })
+
+  it('navigates to the workspace after a valid login form submission', async () => {
+    const { router, wrapper } = await mountAuthView()
+
+    await wrapper.get('#email').setValue('sam@example.com')
+    await wrapper.get('#password').setValue('correct-password')
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+
+    expect(router.currentRoute.value.name).toBe('home')
+  })
+
+  it('navigates to the workspace after a valid account creation form submission', async () => {
+    const { router, wrapper } = await mountAuthView('/signup')
+
+    await wrapper.get('#full-name').setValue('Sam Example')
+    await wrapper.get('#company').setValue('Example Co')
+    await wrapper.get('#email').setValue('sam@example.com')
+    await wrapper.get('#password').setValue('correct-password')
+    await wrapper.get('#confirm-password').setValue('correct-password')
+    await wrapper.get('#terms').setValue(true)
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+
+    expect(router.currentRoute.value.name).toBe('home')
   })
 
   it('reports a password mismatch during sign up', async () => {
