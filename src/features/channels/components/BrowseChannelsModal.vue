@@ -41,12 +41,21 @@ async function join(channel) {
     <div class="ch-browse__tools">
       <div class="ch-browse__search">
         <ChIcon name="search" :size="16" />
-        <input v-model="query" type="search" placeholder="Search channels" aria-label="Search channels" />
+        <input
+          v-model="query"
+          type="search"
+          placeholder="Search channels"
+          aria-label="Search channels"
+        />
       </div>
-      <button class="ch-btn ch-btn--primary ch-btn--small" type="button" @click="emit('create')">New channel</button>
+      <button class="ch-btn ch-btn--primary ch-btn--small" type="button" @click="emit('create')">
+        New channel
+      </button>
     </div>
 
-    <p v-if="store.browse.loading && !store.browse.items.length" class="ch-browse__state">Loading…</p>
+    <p v-if="store.browse.loading && !store.browse.items.length" class="ch-browse__state">
+      Loading…
+    </p>
     <p v-else-if="store.browse.error" class="ch-error" role="alert">{{ store.browse.error }}</p>
     <p v-else-if="!store.browse.items.length" class="ch-browse__state">No channels found.</p>
 

@@ -216,7 +216,10 @@ function showPasswordHelp() {
     <aside class="auth-art" aria-hidden="true">
       <svg class="art-backdrop" viewBox="0 0 800 900" preserveAspectRatio="none">
         <path d="M485 0h315v900H0c170-84 222-236 290-425C362 253 390 82 485 0Z" fill="#302d57" />
-        <path d="M455 0h30c-95 82-123 253-195 475C222 664 170 816 0 900h-45c188-90 246-247 314-440C340 250 363 79 455 0Z" fill="#433e70" />
+        <path
+          d="M455 0h30c-95 82-123 253-195 475C222 664 170 816 0 900h-45c188-90 246-247 314-440C340 250 363 79 455 0Z"
+          fill="#433e70"
+        />
       </svg>
       <AuthIllustration />
     </aside>

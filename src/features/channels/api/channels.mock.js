@@ -45,7 +45,18 @@ const find = (id) => {
   return channel
 }
 
-const FIRST = ['Ahmad', 'Ali', 'Areeba', 'Hamza', 'Sara', 'Usman', 'Ayesha', 'Bilal', 'Zainab', 'Omar']
+const FIRST = [
+  'Ahmad',
+  'Ali',
+  'Areeba',
+  'Hamza',
+  'Sara',
+  'Usman',
+  'Ayesha',
+  'Bilal',
+  'Zainab',
+  'Omar',
+]
 const LAST = ['Imran', 'Khan', 'Raza', 'Malik', 'Sheikh', 'Butt', 'Qureshi', 'Ahmed']
 
 export async function listMyChannels() {
@@ -101,7 +112,8 @@ export async function leaveChannel(id) {
 export async function archiveChannel(id) {
   await delay()
   const channel = find(id)
-  if (channel.isDefault) throw new ApiError('A default channel cannot be archived.', { status: 403 })
+  if (channel.isDefault)
+    throw new ApiError('A default channel cannot be archived.', { status: 403 })
   channel.isArchived = true
 }
 

@@ -8,8 +8,8 @@ export function asObject(res) {
 // Accepts: [..] | { data: [..] } | { items: [..], total } | { data: { items, total } }
 export function asList(res) {
   const body = res?.data ?? res
-  const items = Array.isArray(body) ? body : body?.items ?? []
-  const total = Array.isArray(body) ? body.length : body?.total ?? items.length
+  const items = Array.isArray(body) ? body : (body?.items ?? [])
+  const total = Array.isArray(body) ? body.length : (body?.total ?? items.length)
   return { items, total }
 }
 

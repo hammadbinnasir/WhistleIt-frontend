@@ -12,7 +12,10 @@ const { selectedChannelId, sidebarOpen } = storeToRefs(ui)
 <template>
   <div class="flex h-screen bg-slate-50 text-slate-800">
     <!-- v-show (not v-if): the Channels dialogs live inside <ChannelSidebar />, so it must stay mounted. -->
-    <aside v-show="sidebarOpen" class="w-64 shrink-0 overflow-y-auto bg-slate-900 p-4 text-slate-100">
+    <aside
+      v-show="sidebarOpen"
+      class="w-64 shrink-0 overflow-y-auto bg-slate-900 p-4 text-slate-100"
+    >
       <h1 class="mb-4 text-xl font-bold">WhistleIt</h1>
       <ChannelSidebar />
     </aside>
@@ -33,10 +36,7 @@ const { selectedChannelId, sidebarOpen } = storeToRefs(ui)
         <h2 class="font-semibold">
           {{ selectedChannelId ? `# ${selectedChannelId}` : 'Select a channel' }}
         </h2>
-        <RouterLink
-          class="ml-auto rounded border px-3 py-1 text-sm hover:bg-slate-50"
-          to="/login"
-        >
+        <RouterLink class="ml-auto rounded border px-3 py-1 text-sm hover:bg-slate-50" to="/login">
           Back to login
         </RouterLink>
         <h2 class="font-semibold">Select a channel</h2>

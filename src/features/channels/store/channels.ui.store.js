@@ -49,7 +49,17 @@ export const useChannelsUiStore = defineStore('channelsUi', () => {
   }
 
   return {
-    form, browseOpen, confirm, toast,
-    openCreate, openEdit, closeForm, openBrowse, closeBrowse, openConfirm, closeConfirm, notify,
+    form,
+    browseOpen,
+    confirm,
+    toast,
+    openCreate,
+    openEdit,
+    closeForm,
+    openBrowse,
+    closeBrowse,
+    openConfirm,
+    closeConfirm,
+    notify,
   }
 })

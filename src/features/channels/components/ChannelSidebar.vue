@@ -41,7 +41,9 @@ function ensureSelection() {
 }
 
 onMounted(() => store.fetchChannels())
-watch(() => [store.loaded, store.channels.length, activeId.value], ensureSelection, { immediate: true })
+watch(() => [store.loaded, store.channels.length, activeId.value], ensureSelection, {
+  immediate: true,
+})
 
 function openMenu(event, channel) {
   let x = event.clientX
@@ -68,11 +70,22 @@ function onMenuSelect(key) {
 <template>
   <nav class="ch-sidebar" aria-label="Channels">
     <div class="ch-sidebar__head">
-      <button class="ch-sidebar__toggle" type="button" :aria-expanded="expanded" @click="expanded = !expanded">
+      <button
+        class="ch-sidebar__toggle"
+        type="button"
+        :aria-expanded="expanded"
+        @click="expanded = !expanded"
+      >
         <ChIcon :name="expanded ? 'chevron-up' : 'chevron-down'" :size="16" />
         <span>Channels</span>
       </button>
-      <button class="ch-sidebar__add" type="button" aria-label="Create channel" title="Create channel" @click="ui.openCreate()">
+      <button
+        class="ch-sidebar__add"
+        type="button"
+        aria-label="Create channel"
+        title="Create channel"
+        @click="ui.openCreate()"
+      >
         <ChIcon name="plus" :size="24" />
       </button>
     </div>
@@ -84,7 +97,13 @@ function onMenuSelect(key) {
 
       <div v-else-if="store.error" class="ch-sidebar__state" role="alert">
         <span>{{ store.error }}</span>
-        <button type="button" class="ch-sidebar__link" @click="store.fetchChannels({ force: true })">Retry</button>
+        <button
+          type="button"
+          class="ch-sidebar__link"
+          @click="store.fetchChannels({ force: true })"
+        >
+          Retry
+        </button>
       </div>
 
       <template v-else>
@@ -100,7 +119,9 @@ function onMenuSelect(key) {
         </ul>
         <p v-else class="ch-sidebar__state">You haven't joined any channels yet.</p>
 
-        <button type="button" class="ch-sidebar__more" @click="ui.openBrowse()">More channels</button>
+        <button type="button" class="ch-sidebar__more" @click="ui.openBrowse()">
+          More channels
+        </button>
       </template>
     </div>
 
