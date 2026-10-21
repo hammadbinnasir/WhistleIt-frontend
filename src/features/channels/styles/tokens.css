@@ -1,0 +1,94 @@
+/* All variables are prefixed --ch- so they can never clash with other modules. */
+:root {
+  --ch-sidebar-text: #c9c3e6;
+  --ch-sidebar-text-strong: #ffffff;
+  --ch-sidebar-hover: rgba(255, 255, 255, 0.09);
+  --ch-sidebar-active: rgba(255, 255, 255, 0.18);
+  --ch-accent: #5065f6;
+  --ch-accent-hover: #3f53e0;
+  --ch-surface: #ffffff;
+  --ch-text: #2d2a3e;
+  --ch-muted: #6b6880;
+  --ch-border: #e3e1ec;
+  --ch-danger: #d93a4a;
+  --ch-star: #f5b301;
+  --ch-radius: 8px;
+}
+
+/* Shared, ch-prefixed utility classes used by the Channels dialogs. */
+.ch-btn {
+  min-width: 96px;
+  padding: 12px 20px;
+  border: 0;
+  border-radius: 4px;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  cursor: pointer;
+  background: transparent;
+  color: #111;
+}
+.ch-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+.ch-btn--ghost:hover:not(:disabled) {
+  background: #f1f0f8;
+}
+.ch-btn--primary {
+  background: var(--ch-accent);
+  color: #fff;
+}
+.ch-btn--primary:hover:not(:disabled) {
+  background: var(--ch-accent-hover);
+}
+.ch-btn--danger {
+  background: var(--ch-danger);
+  color: #fff;
+}
+.ch-btn--small {
+  min-width: 0;
+  padding: 7px 14px;
+  font-size: 12px;
+}
+.ch-field {
+  margin-bottom: 20px;
+}
+.ch-field__label {
+  display: block;
+  margin-bottom: 8px;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--ch-muted);
+}
+.ch-field__label small {
+  font-weight: 400;
+}
+.ch-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 13px 14px;
+  border: 1px solid #cfcde0;
+  border-radius: 4px;
+  font: inherit;
+  font-size: 16px;
+  color: var(--ch-text);
+  background: #fff;
+}
+.ch-input:focus {
+  outline: none;
+  border: 1px solid var(--ch-accent);
+  box-shadow: 0 0 0 1px var(--ch-accent);
+}
+.ch-input--invalid,
+.ch-input--invalid:focus {
+  border-color: var(--ch-danger);
+  box-shadow: 0 0 0 1px var(--ch-danger);
+}
+.ch-error {
+  margin: 6px 0 0;
+  font-size: 13px;
+  color: var(--ch-danger);
+}
