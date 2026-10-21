@@ -64,7 +64,8 @@ async function submit() {
   <ChannelModal :title="title" :busy="saving" @close="emit('close')">
     <form id="ch-channel-form" novalidate @submit.prevent="submit">
       <p class="ch-form__intro">
-        Channels are a way to communicate with your team. Organize your channels to relevant topic - Off-Topic
+        Channels are a way to communicate with your team. Organize your channels to relevant topic -
+        Off-Topic
       </p>
 
       <div class="ch-field">
@@ -86,7 +87,9 @@ async function submit() {
       </div>
 
       <div class="ch-field">
-        <label class="ch-field__label" for="ch-description">Description <small>(optional)</small></label>
+        <label class="ch-field__label" for="ch-description"
+          >Description <small>(optional)</small></label
+        >
         <input
           id="ch-description"
           v-model="description"
@@ -102,7 +105,8 @@ async function submit() {
         <div>
           <div class="ch-switch-row__title">Make private</div>
           <div class="ch-switch-row__text">
-            Private channel is only visible to members of the channel and can be joined by invitation only.
+            Private channel is only visible to members of the channel and can be joined by
+            invitation only.
             <template v-if="isEdit"> Visibility can't be changed after creation.</template>
           </div>
         </div>
@@ -124,8 +128,15 @@ async function submit() {
     </form>
 
     <template #footer>
-      <button class="ch-btn ch-btn--ghost" type="button" :disabled="saving" @click="emit('close')">Cancel</button>
-      <button class="ch-btn ch-btn--primary" type="submit" form="ch-channel-form" :disabled="!canSubmit">
+      <button class="ch-btn ch-btn--ghost" type="button" :disabled="saving" @click="emit('close')">
+        Cancel
+      </button>
+      <button
+        class="ch-btn ch-btn--primary"
+        type="submit"
+        form="ch-channel-form"
+        :disabled="!canSubmit"
+      >
         {{ saving ? 'Saving…' : isEdit ? 'Save' : 'Create' }}
       </button>
     </template>

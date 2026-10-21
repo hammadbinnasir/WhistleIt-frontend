@@ -19,16 +19,22 @@ const title = computed(() => (isLeave.value ? 'Leave Channel' : 'Archive Channel
 <template>
   <ChannelModal :title="title" width="460px" :busy="busy" @close="emit('close')">
     <p v-if="isLeave" class="ch-confirm__text">
-      Are you sure you want to leave <strong>{{ channelName }}</strong>?
-      <template v-if="isPrivate"> This is a private channel, so you can only rejoin if someone invites you.</template>
+      Are you sure you want to leave <strong>{{ channelName }}</strong
+      >?
+      <template v-if="isPrivate">
+        This is a private channel, so you can only rejoin if someone invites you.</template
+      >
     </p>
     <p v-else class="ch-confirm__text">
-      Archive <strong>{{ channelName }}</strong>? It will be hidden from the channel list and become read-only for all members.
+      Archive <strong>{{ channelName }}</strong
+      >? It will be hidden from the channel list and become read-only for all members.
     </p>
     <p v-if="error" class="ch-error" role="alert">{{ error }}</p>
 
     <template #footer>
-      <button class="ch-btn ch-btn--ghost" type="button" :disabled="busy" @click="emit('close')">Cancel</button>
+      <button class="ch-btn ch-btn--ghost" type="button" :disabled="busy" @click="emit('close')">
+        Cancel
+      </button>
       <button class="ch-btn ch-btn--danger" type="button" :disabled="busy" @click="emit('confirm')">
         {{ busy ? 'Please wait…' : isLeave ? 'Leave' : 'Archive' }}
       </button>

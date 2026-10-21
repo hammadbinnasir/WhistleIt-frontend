@@ -20,14 +20,17 @@ const store = useChannelsStore()
 const { menuItemsFor, run } = useChannelActions()
 
 const channel = computed(() => store.getById(props.channelId))
-const memberState = computed(() => store.members[String(props.channelId)] || { items: [], total: 0 })
+const memberState = computed(
+  () => store.members[String(props.channelId)] || { items: [], total: 0 },
+)
 const menu = ref({ open: false, x: 0, y: 0 })
 const menuItems = computed(() => menuItemsFor(channel.value))
 
 watch(
   () => props.channelId,
   (id) => {
-    if (id !== null && id !== undefined && id !== '') store.fetchMembers(id, { limit: props.maxAvatars })
+    if (id !== null && id !== undefined && id !== '')
+      store.fetchMembers(id, { limit: props.maxAvatars })
   },
   { immediate: true },
 )

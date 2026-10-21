@@ -33,20 +33,35 @@ watch(
 
 <template>
   <section class="ch-view">
-    <p v-if="(store.loading && !store.loaded) || (!channelId && store.visibleChannels.length)" class="ch-view__state">
+    <p
+      v-if="(store.loading && !store.loaded) || (!channelId && store.visibleChannels.length)"
+      class="ch-view__state"
+    >
       Loading…
     </p>
 
     <div v-else-if="store.error" class="ch-view__state" role="alert">
       <p>{{ store.error }}</p>
-      <button class="ch-btn ch-btn--primary ch-btn--small" type="button" @click="store.fetchChannels({ force: true })">
+      <button
+        class="ch-btn ch-btn--primary ch-btn--small"
+        type="button"
+        @click="store.fetchChannels({ force: true })"
+      >
         Retry
       </button>
     </div>
 
     <div v-else-if="!channel" class="ch-view__state">
-      <p>{{ channelId ? "This channel doesn't exist or you're not a member." : "You haven't joined any channels yet." }}</p>
-      <button class="ch-btn ch-btn--primary ch-btn--small" type="button" @click="ui.openBrowse()">Browse channels</button>
+      <p>
+        {{
+          channelId
+            ? "This channel doesn't exist or you're not a member."
+            : "You haven't joined any channels yet."
+        }}
+      </p>
+      <button class="ch-btn ch-btn--primary ch-btn--small" type="button" @click="ui.openBrowse()">
+        Browse channels
+      </button>
     </div>
 
     <template v-else>

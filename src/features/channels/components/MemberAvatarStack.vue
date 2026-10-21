@@ -11,7 +11,9 @@ const emit = defineEmits(['click'])
 const PALETTE = ['#7b2fd0', '#5a45d8', '#3f6bd9', '#8e3fb8', '#6a3fd0', '#2f7fb8']
 
 const shown = computed(() => props.members.slice(0, props.max))
-const extra = computed(() => Math.max(0, (props.total || props.members.length) - shown.value.length))
+const extra = computed(() =>
+  Math.max(0, (props.total || props.members.length) - shown.value.length),
+)
 
 function initials(name = '') {
   const parts = name.trim().split(/\s+/).filter(Boolean)

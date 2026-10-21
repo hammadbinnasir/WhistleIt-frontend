@@ -83,7 +83,11 @@ export const useChannelsStore = defineStore('channels', () => {
       browse.value = { items, loading: false, error: null }
     } catch (err) {
       if (requestId !== browseRequestId) return
-      browse.value = { items: [], loading: false, error: err?.message || 'Failed to load channels.' }
+      browse.value = {
+        items: [],
+        loading: false,
+        error: err?.message || 'Failed to load channels.',
+      }
     }
   }
 
@@ -173,11 +177,27 @@ export const useChannelsStore = defineStore('channels', () => {
   }
 
   return {
-    channels, loading, loaded, error, members, browse,
-    visibleChannels, getById,
-    fetchChannels, fetchBrowse, fetchMembers,
-    createChannel, updateChannel, joinChannel, leaveChannel, archiveChannel,
-    toggleFavorite, toggleMute, markUnread,
-    upsertChannel, removeChannel, reset,
+    channels,
+    loading,
+    loaded,
+    error,
+    members,
+    browse,
+    visibleChannels,
+    getById,
+    fetchChannels,
+    fetchBrowse,
+    fetchMembers,
+    createChannel,
+    updateChannel,
+    joinChannel,
+    leaveChannel,
+    archiveChannel,
+    toggleFavorite,
+    toggleMute,
+    markUnread,
+    upsertChannel,
+    removeChannel,
+    reset,
   }
 })

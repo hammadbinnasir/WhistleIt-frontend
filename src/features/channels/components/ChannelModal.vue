@@ -72,7 +72,13 @@ onBeforeUnmount(() => {
         :aria-label="title"
         tabindex="-1"
       >
-        <button class="ch-modal__close" type="button" aria-label="Close" :disabled="busy" @click="requestClose">
+        <button
+          class="ch-modal__close"
+          type="button"
+          aria-label="Close"
+          :disabled="busy"
+          @click="requestClose"
+        >
           <ChIcon name="close" :size="14" />
         </button>
         <h2 class="ch-modal__title">{{ title }}</h2>

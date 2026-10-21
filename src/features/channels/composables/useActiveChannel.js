@@ -8,7 +8,9 @@ export function useActiveChannel() {
   const ui = useUiStore()
   const { selectedChannelId } = storeToRefs(ui)
 
-  const activeId = computed(() => (selectedChannelId.value ? String(selectedChannelId.value) : null))
+  const activeId = computed(() =>
+    selectedChannelId.value ? String(selectedChannelId.value) : null,
+  )
 
   function select(id) {
     ui.selectChannel(String(id))

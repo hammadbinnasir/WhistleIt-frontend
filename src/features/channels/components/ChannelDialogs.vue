@@ -16,7 +16,9 @@ const confirmBusy = ref(false)
 const confirmError = ref('')
 
 const editingChannel = computed(() => (ui.form.channelId ? store.getById(ui.form.channelId) : null))
-const showForm = computed(() => ui.form.open && (ui.form.mode === 'create' || !!editingChannel.value))
+const showForm = computed(
+  () => ui.form.open && (ui.form.mode === 'create' || !!editingChannel.value),
+)
 
 watch(
   () => ui.confirm.open,
@@ -96,7 +98,13 @@ async function runConfirm() {
   />
 
   <Teleport to="body">
-    <div v-if="ui.toast" class="ch-toast" :class="`ch-toast--${ui.toast.type}`" role="status" aria-live="polite">
+    <div
+      v-if="ui.toast"
+      class="ch-toast"
+      :class="`ch-toast--${ui.toast.type}`"
+      role="status"
+      aria-live="polite"
+    >
       {{ ui.toast.message }}
     </div>
   </Teleport>
