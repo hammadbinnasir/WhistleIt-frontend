@@ -1,0 +1,36 @@
+{
+  "name": "whistleit-frontend",
+  "version": "0.1.0",
+  "description": "WhistleIt web app frontend",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "lint": "eslint .",
+    "format": "prettier --write src",
+    "format:check": "prettier --check src"
+  },
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "pinia": "^4.1.0",
+    "vue": "^3.5.44",
+    "vue-router": "^5.4.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@tailwindcss/vite": "^4.3.3",
+    "@vitejs/plugin-vue": "^6.0.10",
+    "@vue/test-utils": "^2.5.1",
+    "eslint": "^10.13.0",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-vue": "^10.11.1",
+    "globals": "^17.13.0",
+    "jsdom": "^29.1.1",
+    "prettier": "^3.9.10",
+    "tailwindcss": "^4.3.3",
+    "vite": "^8.3.5",
+    "vitest": "^5.0.5"
+  }
+}
