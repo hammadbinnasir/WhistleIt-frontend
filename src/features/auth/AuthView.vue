@@ -1,6 +1,8 @@
 <script setup>
 import { computed, ref, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
+import { login, register } from './api'
+import { saveAuthToken } from './session'
 import AuthIllustration from './AuthIllustration.vue'
 
 const route = useRoute()
@@ -17,6 +19,7 @@ const acceptedTerms = ref(false)
 const showPassword = ref(false)
 const showConfirmPassword = ref(false)
 const feedback = ref('')
+const isSubmitting = ref(false)
 
 watch(
   () => route.path,
@@ -25,7 +28,7 @@ watch(
   },
 )
 
-function submitForm() {
+async function submitForm() {
   feedback.value = ''
 
   if (!form.value.reportValidity()) return
@@ -35,11 +38,36 @@ function submitForm() {
     return
   }
 
-  router.push({ name: 'home' })
+  isSubmitting.value = true
+  try {
+    const response = isSignup.value
+      ? await register({
+          name: fullName.value,
+          organization: company.value,
+          email: email.value,
+          password: password.value,
+          password_confirmation: confirmPassword.value,
+        })
+      : await login({ email: email.value, password: password.value })
+
+    saveAuthToken(response, !isSignup.value && rememberMe.value)
+    await router.push({ name: 'home' })
+  } catch (error) {
+    const validationErrors = error?.details?.errors
+    const firstValidationError = validationErrors
+      ? Object.values(validationErrors)
+          .flat()
+          .find((message) => typeof message === 'string')
+      : null
+    feedback.value =
+      firstValidationError || error.message || 'Unable to authenticate. Please try again.'
+  } finally {
+    isSubmitting.value = false
+  }
 }
 
 function showPasswordHelp() {
-  feedback.value = 'Password reset is not available until account services are connected.'
+  feedback.value = 'Password reset is not available yet.'
 }
 </script>
 
@@ -195,8 +223,8 @@ function showPasswordHelp() {
             {{ feedback }}
           </p>
 
-          <button class="submit-button" type="submit">
-            {{ isSignup ? 'Create Account' : 'Login' }}
+          <button class="submit-button" type="submit" :disabled="isSubmitting">
+            {{ isSubmitting ? 'Please wait...' : isSignup ? 'Create Account' : 'Login' }}
           </button>
         </form>
 
