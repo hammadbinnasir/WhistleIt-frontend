@@ -124,6 +124,6 @@ async function logout() {
       </div>
     </div>
 
-    <UserModule :user="user" @log-out="router.push('/login')" />
+    <UserModule :user="user" @log-out="logout" />
   </div>
 </template>

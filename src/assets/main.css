@@ -241,6 +241,10 @@ a {
   line-height: 1.45;
 }
 
+.form-feedback--success {
+  color: #287a4f;
+}
+
 .terms-row {
   align-items: flex-start;
   justify-content: center;

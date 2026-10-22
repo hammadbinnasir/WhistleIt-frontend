@@ -11,6 +11,12 @@ const router = createRouter({
     { path: '/', redirect: '/login' },
     { path: '/login', name: 'login', component: AuthView, meta: { guestOnly: true } },
     { path: '/signup', name: 'signup', component: AuthView, meta: { guestOnly: true } },
+    {
+      path: '/forgot-password',
+      name: 'forgot-password',
+      component: AuthView,
+      meta: { guestOnly: true },
+    },
     { path: '/app', name: 'home', component: HomeView, meta: { requiresAuth: true } },
   ],
 })
