@@ -2,6 +2,8 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useRouter } from 'vue-router'
+
+// Stores
 import { useUiStore } from '@/stores/ui'
 import { useTeamsStore } from '@/stores/teams'
 import { useRemindersStore } from '@/features/search'
@@ -17,7 +19,7 @@ import {
   SetReminderModal,
 } from '@/features/search'
 
-// Shell components
+// Shell
 import {
   TeamRail,
   TeamSwitcher,
@@ -27,102 +29,131 @@ import {
   MemberManageModal,
 } from '@/features/shell'
 
+// Channels
+import { ChannelSidebar, ChannelHeader } from '@/features/channels'
+
+// Direct Messages
+import DmList from '@/features/dms/components/DmList.vue'
+
+// Composer
+import { ComposerConversation } from '@/features/composer'
+
+// Search & Reminders
+import ChatHeaderActions from '@/features/search/ChatHeaderActions.vue'
+import ChannelSettingsModal from '@/features/search/ChannelSettingsModal.vue'
+import RemindersPanel from '@/features/search/RemindersPanel.vue'
+import SearchPage from '@/features/search/SearchPage.vue'
+import SetReminderModal from '@/features/search/SetReminderModal.vue'
+
+// Account
+import { UserModule } from '@/features/account'
+
+const router = useRouter()
 const ui = useUiStore()
 const teamsStore = useTeamsStore()
-const reminders = useRemindersStore()
-const router = useRouter()
+const membersStore = useMembersStore()
+const channelsStore = useChannelsStore()
+const remindersStore = useRemindersStore()
+const userStore = useUserStore()
 
-const user = {
-  profile: { fullName: 'Hammad Haider' },
-  status: 'online',
-}
-
-// storeToRefs keeps state reactive when destructuring; actions are taken from the store directly.
 const { selectedChannelId, sidebarOpen } = storeToRefs(ui)
 const { activeTeam } = storeToRefs(teamsStore)
 
 const isTeamSwitcherOpen = ref(false)
-
-const channels = ref([
-  {
-    id: 'general',
-    name: 'general',
-    description: 'General discussion',
-    createdBy: 'WhistleIt team',
-    muted: false,
-    favourite: false,
-  },
-  {
-    id: 'random',
-    name: 'random',
-    description: 'Off-topic conversations',
-    createdBy: 'WhistleIt team',
-    muted: false,
-    favourite: false,
-  },
-  {
-    id: 'frontend',
-    name: 'frontend-team',
-    description: 'Frontend team updates',
-    createdBy: 'WhistleIt team',
-    muted: false,
-    favourite: false,
-  },
-])
-const selectedChannel = computed(() =>
-  channels.value.find((channel) => channel.id === selectedChannelId.value),
-)
 const reminderModalOpen = ref(false)
-const reminderMessage = computed(() => ({
-  conversationId: selectedChannel.value?.id,
-  conversationName: selectedChannel.value?.name,
-  conversationType: 'channel',
-  messageId: `welcome-${selectedChannel.value?.id}`,
-  text: `Welcome to #${selectedChannel.value?.name}. Use this demo message to try reminders.`,
+
+const user = computed(() => ({
+  profile: {
+    fullName: userStore.state.profile.fullName || 'Hammad Haider',
+    ...userStore.state.profile,
+  },
+  status: userStore.state.status || 'online',
+  customStatus: userStore.state.customStatus,
 }))
 
-onMounted(() => {
-  teamsStore.fetchTeams()
-  reminders.startWatcher()
+const selectedChannel = computed(() => {
+  if (!selectedChannelId.value) return null
+  const ch = channelsStore.getById(selectedChannelId.value)
+  if (!ch) {
+    return {
+      id: String(selectedChannelId.value),
+      name: String(selectedChannelId.value),
+      description: '',
+      createdBy: 'Team Member',
+      muted: false,
+      favourite: false,
+    }
+  }
+  return {
+    id: ch.id,
+    name: ch.name,
+    description: ch.description || '',
+    createdBy: ch.createdBy || 'Team Member',
+    muted: ch.isMuted || false,
+    favourite: ch.isFavorite || false,
+  }
+})
+
+const reminderMessage = computed(() => ({
+  conversationId: selectedChannel.value?.id || 'general',
+  conversationName: selectedChannel.value?.name || 'General',
+  conversationType: 'channel',
+  messageId: `msg-${Date.now()}`,
+  text: selectedChannel.value
+    ? `Welcome to #${selectedChannel.value.name}. Use this demo message to try reminders.`
+    : 'Welcome to WhistleIt.',
+}))
+
+async function logout() {
+  clearAuthSession()
+  await router.push({ name: 'login' })
+}
+
+onMounted(async () => {
+  await teamsStore.fetchTeams()
+  if (teamsStore.activeTeamId) {
+    await membersStore.fetchMembers(teamsStore.activeTeamId)
+  }
+  remindersStore.startWatcher()
 })
 
 onBeforeUnmount(() => {
-  reminders.stopWatcher()
+  remindersStore.stopWatcher()
 })
 </script>
 
 <template>
-  <div class="flex h-screen bg-slate-50 text-slate-800 overflow-hidden">
-    <!-- 1. Left-most Rail: Teams & Workspaces Switcher + Help Button -->
+  <div class="flex h-screen w-screen overflow-hidden bg-slate-50 text-slate-800">
+    <!-- 1. Leftmost Rail: Workspace/Teams Switcher & Bottom User Profile -->
     <TeamRail />
 
-    <!-- 2. Workspace Sidebar: Team Switcher + Channels + Members -->
+    <!-- 2. Workspace Sidebar: Header Switcher + Activities + Channels + Direct Messages -->
     <aside
       v-show="sidebarOpen"
-      class="w-64 shrink-0 overflow-y-auto bg-slate-900 p-4 text-slate-100 flex flex-col justify-between"
+      class="flex w-64 shrink-0 flex-col justify-between overflow-hidden bg-[#22123b] text-slate-100"
     >
-      <div>
-        <!-- Workspace Switcher Header -->
-        <div class="relative mb-4 pb-3 border-b border-slate-800">
+      <div class="flex flex-1 flex-col overflow-y-auto">
+        <!-- Team / Workspace Header Switcher -->
+        <div class="relative border-b border-purple-900/40 p-3">
           <button
             type="button"
-            class="flex w-full items-center justify-between rounded-lg px-2 py-1.5 hover:bg-slate-800 text-left transition-colors cursor-pointer"
+            class="flex w-full cursor-pointer items-center justify-between rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-white/5"
             :aria-expanded="isTeamSwitcherOpen"
             @click="isTeamSwitcherOpen = !isTeamSwitcherOpen"
           >
-            <div class="flex items-center gap-2 min-w-0">
+            <div class="flex min-w-0 items-center gap-2">
               <div
-                class="w-6 h-6 rounded flex items-center justify-center text-xs font-bold text-white shrink-0"
+                class="flex h-6 w-6 shrink-0 items-center justify-center rounded text-xs font-bold text-white"
                 :style="{ background: activeTeam?.color || '#7C3AED' }"
               >
                 {{ activeTeam?.initials || 'WI' }}
               </div>
-              <span class="font-bold text-base text-slate-100 truncate">
+              <span class="truncate text-base font-bold text-white">
                 {{ activeTeam?.name || 'WhistleIt' }}
               </span>
             </div>
             <svg
-              class="text-slate-400 transition-transform duration-200 shrink-0"
+              class="shrink-0 text-slate-400 transition-transform duration-200"
               :class="{ 'rotate-180': isTeamSwitcherOpen }"
               width="14"
               height="14"
@@ -135,63 +166,76 @@ onBeforeUnmount(() => {
             </svg>
           </button>
 
-          <!-- Dropdown TeamSwitcher -->
           <TeamSwitcher :is-open="isTeamSwitcherOpen" @close="isTeamSwitcherOpen = false" />
         </div>
 
-        <!-- Channels list from Channels feature -->
+        <!-- Activities row -->
+        <button
+          type="button"
+          class="flex w-full items-center gap-2.5 px-4 py-2.5 text-left text-sm font-medium text-slate-300 transition-colors hover:bg-white/5 hover:text-white"
+        >
+          <svg
+            class="h-4 w-4 text-slate-400"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+          >
+            <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
+            <path d="M13.73 21a2 2 0 0 1-3.46 0" />
+          </svg>
+          <span>Activities</span>
+        </button>
+
+        <!-- Channels List -->
         <ChannelSidebar />
+
+        <!-- Direct Messages List -->
+        <div class="mt-2 border-t border-purple-900/30 pt-2">
+          <DmList />
+        </div>
       </div>
     </aside>
 
     <!-- 3. Main Chat Stage -->
-    <main class="flex min-w-0 flex-1 flex-col">
-      <ChannelHeader v-if="selectedChannelId" :channel-id="selectedChannelId">
+    <main class="flex min-w-0 flex-1 flex-col bg-white">
+      <!-- Channel or Conversation Header -->
+      <ChannelHeader
+        v-if="selectedChannelId"
+        :channel-id="selectedChannelId"
+        @members-click="ui.toggleMemberManageModal()"
+      >
         <template #actions>
+          <ChatHeaderActions :is-dm="false" />
+        </template>
+      </ChannelHeader>
+
+      <header
+        v-else
+        class="flex items-center justify-between border-b border-slate-200 bg-white px-5 py-3"
+      >
+        <div class="flex items-center gap-3">
           <button
-            class="rounded border px-2 py-1 text-sm cursor-pointer"
+            class="cursor-pointer rounded border border-slate-200 px-2 py-1 text-xs text-slate-600 hover:bg-slate-50"
             @click="ui.toggleSidebar()"
           >
             {{ sidebarOpen ? 'Hide' : 'Show' }} sidebar
           </button>
-        </template>
-      </ChannelHeader>
-
-      <header v-else class="flex items-center gap-3 border-b bg-white p-4">
-        <button class="rounded border px-2 py-1 text-sm cursor-pointer" @click="ui.toggleSidebar()">
-          {{ sidebarOpen ? 'Hide' : 'Show' }} sidebar
-        </button>
-        <h2 class="font-semibold text-sm">
-          {{ selectedChannelId ? `# ${selectedChannelId}` : 'Select a channel' }}
-        </h2>
-        <ChatHeaderActions :is-dm="!selectedChannel" />
+          <h2 class="text-sm font-semibold text-slate-700">Select a channel</h2>
+        </div>
+        <ChatHeaderActions :is-dm="true" />
       </header>
 
+      <!-- Chat area with composer & optional side panel -->
       <div class="flex min-h-0 flex-1">
-        <section class="min-w-0 flex-1 overflow-y-auto p-6 text-slate-500">
-          <template v-if="selectedChannel">
-            <article class="max-w-2xl rounded-lg border border-slate-200 bg-white p-4">
-              <p class="font-semibold text-slate-800">WhistleIt</p>
-              <p class="mt-2 text-sm text-slate-700">{{ reminderMessage.text }}</p>
-              <button
-                class="mt-3 rounded border border-indigo-200 px-3 py-1.5 text-sm text-indigo-600 hover:bg-indigo-50"
-                @click="reminderModalOpen = true"
-              >
-                Remind me
-              </button>
-            </article>
-          </template>
-          <template v-else>
-            <p>Pinia is working: this state lives in <code>src/stores/ui.js</code>.</p>
-            <p class="mt-2 text-sm">
-              Choose a channel to open its tools and try the search and reminder features.
-            </p>
-          </template>
+        <section class="flex min-w-0 flex-1 flex-col">
+          <ComposerConversation />
         </section>
 
+        <!-- Side Drawer: Reminders or Search -->
         <aside
           v-if="ui.activePanel"
-          class="min-h-0 w-full shrink-0 border-l border-slate-200 bg-white md:w-[min(65vw,720px)]"
+          class="min-h-0 w-full shrink-0 border-l border-slate-200 bg-white md:w-[min(450px,40vw)] shadow-lg"
         >
           <RemindersPanel v-if="ui.activePanel === 'reminders'" />
           <SearchPage
@@ -202,6 +246,7 @@ onBeforeUnmount(() => {
       </div>
     </main>
 
+    <!-- Channel Settings Modal -->
     <ChannelSettingsModal
       v-if="ui.channelSettingsOpen && selectedChannel"
       :channel="selectedChannel"
@@ -209,12 +254,15 @@ onBeforeUnmount(() => {
       @toggle-favourite="selectedChannel.favourite = !selectedChannel.favourite"
       @left="ui.selectChannel(null)"
     />
+
+    <!-- Set Reminder Modal -->
     <SetReminderModal
       v-if="reminderModalOpen && selectedChannel"
       :message="reminderMessage"
       @close="reminderModalOpen = false"
     />
 
+    <!-- Toast Notifications -->
     <div class="fixed bottom-4 right-4 z-[60] flex w-80 flex-col gap-2">
       <div
         v-for="toast in ui.toasts"
@@ -226,8 +274,8 @@ onBeforeUnmount(() => {
       </div>
     </div>
 
-    <!-- UserModule from Account team -->
-    <UserModule :user="user" @log-out="router.push('/login')" />
+    <!-- Account UserModule (Pinned to bottom-left of TeamRail) -->
+    <UserModule :user="user" @log-out="logout" />
 
     <!-- Shell Modals -->
     <CreateTeamModal />
