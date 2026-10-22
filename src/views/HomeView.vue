@@ -85,7 +85,7 @@ const channels = [
 
       <ChannelHeader v-if="selectedChannelId" :channel-id="selectedChannelId">
 
-        <template #actions>
+        <template #actions> 
 
           <button class="rounded border px-2 py-1 text-sm" @click="ui.toggleSidebar()">
 

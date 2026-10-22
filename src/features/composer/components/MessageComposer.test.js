@@ -647,13 +647,8 @@ describe('message composer', () => {
 
 
     await wrapper.get('button[aria-label="Video"]').trigger('click')
-
     await wrapper.get('button[aria-label="Microphone"]').trigger('click')
-
-
-
     expect(wrapper.emitted('video')).toHaveLength(1)
-
     expect(wrapper.emitted('microphone')).toHaveLength(1)
 
   })
