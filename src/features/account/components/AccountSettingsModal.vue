@@ -65,7 +65,13 @@ const onSave = () => {
     <header class="header">
       <h2 id="settings-title" class="header-title">Account Settings</h2>
       <button class="close" aria-label="Close" @click="emit('close')">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round">
+        <svg
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2.8"
+          stroke-linecap="round"
+        >
           <path d="M7 7l10 10M17 7L7 17" />
         </svg>
       </button>
@@ -85,14 +91,23 @@ const onSave = () => {
           :aria-controls="`settings-panel-${tab.id}`"
           @click="activeTab = tab.id"
         >
-          <svg class="tab-icon" viewBox="0 0 32 32" fill="none" stroke="currentColor"
-               stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+          <svg
+            class="tab-icon"
+            viewBox="0 0 32 32"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.7"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
             <!-- general: person + gear -->
             <template v-if="tab.icon === 'general'">
               <circle cx="12" cy="10" r="4.5" />
               <path d="M3 25v-2a6 6 0 0 1 6-6h4" />
               <circle cx="23" cy="22" r="2.6" />
-              <path d="M23 17.5v1.4M23 25.1v1.4M18.5 22h1.4M26.1 22h1.4M19.8 18.8l1 1M25.2 24.2l1 1M26.2 18.8l-1 1M20.8 24.2l-1 1" />
+              <path
+                d="M23 17.5v1.4M23 25.1v1.4M18.5 22h1.4M26.1 22h1.4M19.8 18.8l1 1M25.2 24.2l1 1M26.2 18.8l-1 1M20.8 24.2l-1 1"
+              />
             </template>
             <!-- security: lock + check -->
             <template v-else-if="tab.icon === 'security'">
@@ -112,7 +127,9 @@ const onSave = () => {
             <template v-else-if="tab.icon === 'prefs'">
               <circle cx="12" cy="10" r="4.5" />
               <path d="M3 25v-2a6 6 0 0 1 6-6h4" />
-              <path d="M27 17.5a4 4 0 0 1-5.2 4.9l-5.3 5.3a1.6 1.6 0 0 1-2.3-2.3l5.3-5.3a4 4 0 0 1 4.9-5.2l-2.4 2.4.4 2 2 .4z" />
+              <path
+                d="M27 17.5a4 4 0 0 1-5.2 4.9l-5.3 5.3a1.6 1.6 0 0 1-2.3-2.3l5.3-5.3a4 4 0 0 1 4.9-5.2l-2.4 2.4.4 2 2 .4z"
+              />
             </template>
           </svg>
           <span class="tab-label">{{ tab.label }}</span>
@@ -181,7 +198,11 @@ const onSave = () => {
   background: #fff;
   border-radius: 6px;
   box-shadow: 0 6px 24px rgba(0, 0, 0, 0.18);
-  font-family: 'Roboto', -apple-system, 'Segoe UI', sans-serif;
+  font-family:
+    'Roboto',
+    -apple-system,
+    'Segoe UI',
+    sans-serif;
   color: #1f1f2e;
   overflow: hidden;
 }
@@ -220,8 +241,13 @@ const onSave = () => {
   align-items: center;
   justify-content: center;
 }
-.close:hover { background: #dcdcee; }
-.close svg { width: 100%; height: 100%; }
+.close:hover {
+  background: #dcdcee;
+}
+.close svg {
+  width: 100%;
+  height: 100%;
+}
 
 /* Body */
 .body {
@@ -254,7 +280,9 @@ const onSave = () => {
   color: #1f1f2e;
   font-family: inherit;
 }
-.tab:hover { background: #f4f4f7; }
+.tab:hover {
+  background: #f4f4f7;
+}
 
 .tab.active {
   background: #e6e6fb;
@@ -268,7 +296,9 @@ const onSave = () => {
   flex-shrink: 0;
   color: #676879;
 }
-.tab.active .tab-icon { color: #5559f4; }
+.tab.active .tab-icon {
+  color: #5559f4;
+}
 
 .tab-label {
   font-size: 17px;
@@ -323,7 +353,9 @@ const onSave = () => {
   color: #1f1f2e;
   padding: 14px 20px;
 }
-.cancel:hover { color: #5559f4; }
+.cancel:hover {
+  color: #5559f4;
+}
 
 .save {
   background: #5559f4;
@@ -331,7 +363,9 @@ const onSave = () => {
   width: 165px;
   height: 45px;
 }
-.save:hover:not(:disabled) { background: #4448d9; }
+.save:hover:not(:disabled) {
+  background: #4448d9;
+}
 .save:disabled {
   background: #a5a7fa;
   cursor: wait;

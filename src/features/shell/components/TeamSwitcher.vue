@@ -50,7 +50,15 @@ function openManageMembers() {
   <div v-if="isOpen" class="switcher-overlay" @click.self="$emit('close')">
     <div class="switcher-popover" role="menu">
       <div class="search-container">
-        <svg class="search-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <svg
+          class="search-icon"
+          width="14"
+          height="14"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+        >
           <circle cx="11" cy="11" r="8" />
           <line x1="21" y1="21" x2="16.65" y2="16.65" />
         </svg>
@@ -64,9 +72,7 @@ function openManageMembers() {
       </div>
 
       <div class="workspace-list">
-        <div v-if="filteredTeams.length === 0" class="empty-hint">
-          No workspaces found
-        </div>
+        <div v-if="filteredTeams.length === 0" class="empty-hint">No workspaces found</div>
         <button
           v-for="team in filteredTeams"
           :key="team.id"
@@ -75,10 +81,7 @@ function openManageMembers() {
           :class="{ 'workspace-item--active': activeTeamId === team.id }"
           @click="handleSelect(team.id)"
         >
-          <div
-            class="team-badge"
-            :style="{ background: team.color || '#7C3AED' }"
-          >
+          <div class="team-badge" :style="{ background: team.color || '#7C3AED' }">
             {{ team.initials || team.name.slice(0, 2).toUpperCase() }}
           </div>
           <span class="team-name">{{ team.name }}</span>
@@ -99,21 +102,42 @@ function openManageMembers() {
 
       <div class="action-footer">
         <button type="button" class="action-btn" @click="openCreate">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <svg
+            width="14"
+            height="14"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+          >
             <line x1="12" y1="5" x2="12" y2="19" />
             <line x1="5" y1="12" x2="19" y2="12" />
           </svg>
           Create Workspace
         </button>
         <button type="button" class="action-btn" @click="openJoin">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <svg
+            width="14"
+            height="14"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+          >
             <circle cx="11" cy="11" r="8" />
             <line x1="21" y1="21" x2="16.65" y2="16.65" />
           </svg>
           Search & Join Team
         </button>
         <button type="button" class="action-btn" @click="openManageMembers">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <svg
+            width="14"
+            height="14"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+          >
             <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
             <circle cx="9" cy="7" r="4" />
             <path d="M23 21v-2a4 4 0 0 0-3-3.87" />

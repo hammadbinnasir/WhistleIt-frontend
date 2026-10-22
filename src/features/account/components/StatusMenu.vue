@@ -18,8 +18,15 @@ const select = (value) => emit('update:modelValue', value)
 <template>
   <div class="status-menu" role="menu">
     <button class="item custom" role="menuitem" @click="emit('update-custom-status')">
-      <svg class="smile" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-           stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+      <svg
+        class="smile"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="1.8"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+      >
         <circle cx="12" cy="12" r="9" />
         <path d="M8 14.5c1 1.3 2.3 2 4 2s3-.7 4-2" />
         <line x1="9" y1="9.5" x2="9" y2="10.5" />
@@ -41,18 +48,38 @@ const select = (value) => emit('update:modelValue', value)
     >
       <span class="dot" :class="opt.value">
         <!-- online: check -->
-        <svg v-if="opt.value === 'online'" viewBox="0 0 24 24" fill="none" stroke="#fff"
-             stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round">
+        <svg
+          v-if="opt.value === 'online'"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="#fff"
+          stroke-width="3.5"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
           <path d="M6 12.5l4 4 8-9" />
         </svg>
         <!-- away: clock hands -->
-        <svg v-else-if="opt.value === 'away'" viewBox="0 0 24 24" fill="none" stroke="#fff"
-             stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+        <svg
+          v-else-if="opt.value === 'away'"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="#fff"
+          stroke-width="3"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
           <path d="M12 6v6h5" />
         </svg>
         <!-- dnd: minus -->
-        <svg v-else-if="opt.value === 'dnd'" viewBox="0 0 24 24" fill="none" stroke="#fff"
-             stroke-width="3.5" stroke-linecap="round">
+        <svg
+          v-else-if="opt.value === 'dnd'"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="#fff"
+          stroke-width="3.5"
+          stroke-linecap="round"
+        >
           <path d="M6 12h12" />
         </svg>
       </span>
@@ -72,7 +99,11 @@ const select = (value) => emit('update:modelValue', value)
   border: 1px solid #e5e5e8;
   border-radius: 4px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
-  font-family: 'Roboto', -apple-system, 'Segoe UI', sans-serif;
+  font-family:
+    'Roboto',
+    -apple-system,
+    'Segoe UI',
+    sans-serif;
   overflow: hidden;
 }
 
@@ -136,10 +167,19 @@ const select = (value) => emit('update:modelValue', value)
   height: 14px;
 }
 
-.dot.online { background: #00c875; }
-.dot.away { background: #f5c332; }
-.dot.offline { background: #fff; border: 1.5px solid #c5c7d0; }
-.dot.dnd { background: #fb275d; }
+.dot.online {
+  background: #00c875;
+}
+.dot.away {
+  background: #f5c332;
+}
+.dot.offline {
+  background: #fff;
+  border: 1.5px solid #c5c7d0;
+}
+.dot.dnd {
+  background: #fb275d;
+}
 
 .text {
   display: flex;

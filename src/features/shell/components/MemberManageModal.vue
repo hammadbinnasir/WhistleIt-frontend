@@ -38,9 +38,7 @@ const filteredMembers = computed(() => {
   if (!searchMemberQuery.value.trim()) return members.value
   const q = searchMemberQuery.value.toLowerCase().trim()
   return members.value.filter(
-    (m) =>
-      m.name.toLowerCase().includes(q) ||
-      (m.email && m.email.toLowerCase().includes(q)),
+    (m) => m.name.toLowerCase().includes(q) || (m.email && m.email.toLowerCase().includes(q)),
   )
 })
 
@@ -58,9 +56,7 @@ async function onAddInputChange() {
     try {
       const results = await searchUsers(q)
       // filter out existing members
-      searchSuggestions.value = results.filter(
-        (u) => !members.value.some((m) => m.id === u.id),
-      )
+      searchSuggestions.value = results.filter((u) => !members.value.some((m) => m.id === u.id))
     } catch {
       searchSuggestions.value = []
     } finally {
@@ -84,7 +80,10 @@ async function handleAddUser(userId = null) {
   successNotice.value = ''
 
   try {
-    const added = await membersStore.addMember(activeTeamId.value, userId || newMemberInput.value.trim())
+    const added = await membersStore.addMember(
+      activeTeamId.value,
+      userId || newMemberInput.value.trim(),
+    )
     successNotice.value = `Added ${added.name} to ${activeTeam.value?.name || 'workspace'}.`
     newMemberInput.value = ''
     searchSuggestions.value = []
@@ -145,20 +144,20 @@ function getInitials(name) {
     <div class="modal-card">
       <div class="modal-header">
         <div>
-          <h3 id="member-manage-title" class="modal-title">
-            Manage Workspace Members
-          </h3>
+          <h3 id="member-manage-title" class="modal-title">Manage Workspace Members</h3>
           <span class="modal-subtitle">
             {{ activeTeam ? activeTeam.name : 'Workspace' }} ({{ members.length }} members)
           </span>
         </div>
-        <button
-          type="button"
-          class="close-btn"
-          aria-label="Close dialog"
-          @click="handleClose"
-        >
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <button type="button" class="close-btn" aria-label="Close dialog" @click="handleClose">
+          <svg
+            width="18"
+            height="18"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+          >
             <line x1="18" y1="6" x2="6" y2="18" />
             <line x1="6" y1="6" x2="18" y2="18" />
           </svg>
@@ -222,7 +221,14 @@ function getInitials(name) {
           <div class="list-header">
             <label class="section-label">Current Members</label>
             <div class="filter-box">
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <svg
+                width="12"
+                height="12"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+              >
                 <circle cx="11" cy="11" r="8" />
                 <line x1="21" y1="21" x2="16.65" y2="16.65" />
               </svg>
@@ -236,24 +242,20 @@ function getInitials(name) {
           </div>
 
           <div class="members-table-container">
-            <div v-if="membersLoading" class="loading-state">
-              Loading members...
-            </div>
-            <div v-else-if="filteredMembers.length === 0" class="empty-state">
-              No members found
-            </div>
+            <div v-if="membersLoading" class="loading-state">Loading members...</div>
+            <div v-else-if="filteredMembers.length === 0" class="empty-state">No members found</div>
             <ul v-else class="members-table">
-              <li
-                v-for="member in filteredMembers"
-                :key="member.id"
-                class="member-row"
-              >
+              <li v-for="member in filteredMembers" :key="member.id" class="member-row">
                 <div class="member-user-info">
                   <div class="member-avatar">
                     {{ getInitials(member.name) }}
                     <span
                       class="status-indicator"
-                      :class="member.status === 'online' ? 'status-indicator--online' : 'status-indicator--offline'"
+                      :class="
+                        member.status === 'online'
+                          ? 'status-indicator--online'
+                          : 'status-indicator--offline'
+                      "
                     />
                   </div>
                   <div class="member-details">
@@ -277,9 +279,19 @@ function getInitials(name) {
                     @click="handleRemove(member)"
                   >
                     <span v-if="removingMemberId === member.id">...</span>
-                    <svg v-else width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <svg
+                      v-else
+                      width="14"
+                      height="14"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="2"
+                    >
                       <polyline points="3 6 5 6 21 6" />
-                      <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                      <path
+                        d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"
+                      />
                     </svg>
                   </button>
                 </div>
@@ -290,9 +302,7 @@ function getInitials(name) {
       </div>
 
       <div class="modal-footer">
-        <button type="button" class="btn-done" @click="handleClose">
-          Done
-        </button>
+        <button type="button" class="btn-done" @click="handleClose">Done</button>
       </div>
     </div>
   </div>

@@ -49,7 +49,11 @@ const emit = defineEmits(['confirm', 'cancel'])
   background: #fff;
   border-radius: 6px;
   box-shadow: 0 6px 24px rgba(0, 0, 0, 0.18);
-  font-family: 'Roboto', -apple-system, 'Segoe UI', sans-serif;
+  font-family:
+    'Roboto',
+    -apple-system,
+    'Segoe UI',
+    sans-serif;
   color: #1f1f2e;
 }
 
@@ -107,15 +111,22 @@ const emit = defineEmits(['confirm', 'cancel'])
   color: #3b3b4f;
   border: 1px solid #c9cbd9;
 }
-.cancel:hover { background: #f4f4f7; }
-.cancel:focus-visible { outline: 2px solid #5559f4; outline-offset: 2px; }
+.cancel:hover {
+  background: #f4f4f7;
+}
+.cancel:focus-visible {
+  outline: 2px solid #5559f4;
+  outline-offset: 2px;
+}
 
 .danger {
   background: #fe3856;
   color: #fff;
   border: 1px solid #fe3856;
 }
-.danger:hover:not(:disabled) { background: #ec2745; }
+.danger:hover:not(:disabled) {
+  background: #ec2745;
+}
 .danger:disabled {
   opacity: 0.6;
   cursor: wait;

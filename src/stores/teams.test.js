@@ -40,7 +40,9 @@ describe('teams store', () => {
     await store.fetchTeams()
 
     store.searchQuery = 'Programmers'
-    expect(store.filteredTeams.every((t) => t.name.toLowerCase().includes('programmers'))).toBe(true)
+    expect(store.filteredTeams.every((t) => t.name.toLowerCase().includes('programmers'))).toBe(
+      true,
+    )
 
     store.searchQuery = 'NonExistentXYZ'
     expect(store.filteredTeams).toEqual([])

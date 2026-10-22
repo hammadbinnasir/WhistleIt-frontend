@@ -25,9 +25,7 @@ export const useTeamsStore = defineStore('teams', () => {
   const searchLoading = ref(false)
 
   // ── getters ────────────────────────────────────────────
-  const activeTeam = computed(() =>
-    teams.value.find((t) => t.id === activeTeamId.value) ?? null,
-  )
+  const activeTeam = computed(() => teams.value.find((t) => t.id === activeTeamId.value) ?? null)
 
   const filteredTeams = computed(() => {
     if (!searchQuery.value) return teams.value
