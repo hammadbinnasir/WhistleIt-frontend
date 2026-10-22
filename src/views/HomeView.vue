@@ -6,11 +6,18 @@ import { useRouter } from 'vue-router'
 // Stores
 import { useUiStore } from '@/stores/ui'
 import { useTeamsStore } from '@/stores/teams'
-import { useMembersStore } from '@/stores/members'
-import { useChannelsStore } from '@/features/channels'
-import { useRemindersStore } from '@/features/search/reminders'
-import { useUserStore } from '@/features/account'
-import { clearAuthSession } from '@/features/auth/session'
+import { useRemindersStore } from '@/features/search'
+import { ChannelSidebar, ChannelHeader } from '@/features/channels'
+import { UserModule } from '@/features/account'
+
+// Search & Reminder components
+import {
+  ChatHeaderActions,
+  ChannelSettingsModal,
+  RemindersPanel,
+  SearchPage,
+  SetReminderModal,
+} from '@/features/search'
 
 // Shell
 import {
