@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useTeamsStore } from '@/stores/teams'
 import { useMembersStore } from '@/stores/members'
@@ -22,6 +22,17 @@ const successNotice = ref('')
 
 const searchSuggestions = ref([])
 const isSearchingSuggestions = ref(false)
+
+// Fetch members whenever modal opens
+watch(
+  () => ui.memberManageModalOpen,
+  (isOpen) => {
+    if (isOpen && activeTeamId.value) {
+      membersStore.fetchMembers(activeTeamId.value)
+    }
+  },
+  { immediate: true },
+)
 
 const filteredMembers = computed(() => {
   if (!searchMemberQuery.value.trim()) return members.value

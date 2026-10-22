@@ -1,10 +1,9 @@
 <script setup>
-import { onMounted, watch, ref } from 'vue'
+import { onMounted, ref } from 'vue'
 import { storeToRefs } from 'pinia'
 import { RouterLink, useRouter } from 'vue-router'
 import { useUiStore } from '@/stores/ui'
 import { useTeamsStore } from '@/stores/teams'
-import { useMembersStore } from '@/stores/members'
 import { ChannelSidebar, ChannelHeader } from '@/features/channels'
 import { UserModule } from '@/features/account'
 
@@ -12,7 +11,6 @@ import { UserModule } from '@/features/account'
 import {
   TeamRail,
   TeamSwitcher,
-  MemberList,
   CreateTeamModal,
   JoinTeamModal,
   HelpModal,
@@ -21,7 +19,6 @@ import {
 
 const ui = useUiStore()
 const teamsStore = useTeamsStore()
-const membersStore = useMembersStore()
 const router = useRouter()
 
 const user = {
@@ -31,27 +28,13 @@ const user = {
 
 // storeToRefs keeps state reactive when destructuring; actions are taken from the store directly.
 const { selectedChannelId, sidebarOpen } = storeToRefs(ui)
-const { activeTeam, activeTeamId } = storeToRefs(teamsStore)
-const { members, loading: membersLoading } = storeToRefs(membersStore)
+const { activeTeam } = storeToRefs(teamsStore)
 
 const isTeamSwitcherOpen = ref(false)
 
 onMounted(() => {
   teamsStore.fetchTeams()
 })
-
-// Sync team members when active team changes
-watch(
-  activeTeamId,
-  (newId) => {
-    if (newId) {
-      membersStore.fetchMembers(newId)
-    } else {
-      membersStore.clearMembers()
-    }
-  },
-  { immediate: true },
-)
 </script>
 
 <template>
@@ -107,24 +90,6 @@ watch(
 
         <!-- Channels list from Channels feature -->
         <ChannelSidebar />
-
-        <!-- Members & User Management Section -->
-        <div class="pt-4 mt-4 border-t border-slate-800">
-          <div class="flex items-center justify-between mb-2 px-1">
-            <span class="text-xs font-semibold uppercase tracking-wider text-slate-400">
-              Members ({{ members.length }})
-            </span>
-            <button
-              type="button"
-              class="text-xs font-medium text-purple-400 hover:text-purple-300 flex items-center gap-1 cursor-pointer transition-colors"
-              title="Manage team members"
-              @click="ui.toggleMemberManageModal()"
-            >
-              + Manage
-            </button>
-          </div>
-          <MemberList :members="members" :loading="membersLoading" />
-        </div>
       </div>
     </aside>
 
