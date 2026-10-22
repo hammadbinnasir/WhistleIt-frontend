@@ -11,14 +11,7 @@ const selectedColor = ref('#7C3AED')
 const isSubmitting = ref(false)
 const errorMessage = ref('')
 
-const presetColors = [
-  '#7C3AED',
-  '#2DD4BF',
-  '#F97316',
-  '#EC4899',
-  '#3B82F6',
-  '#10B981',
-]
+const presetColors = ['#7C3AED', '#2DD4BF', '#F97316', '#EC4899', '#3B82F6', '#10B981']
 
 async function handleSubmit() {
   if (!teamName.value.trim()) {
@@ -60,13 +53,15 @@ function handleClose() {
     <div class="modal-card">
       <div class="modal-header">
         <h3 id="create-team-title" class="modal-title">Create a new Workspace</h3>
-        <button
-          type="button"
-          class="close-btn"
-          aria-label="Close dialog"
-          @click="handleClose"
-        >
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <button type="button" class="close-btn" aria-label="Close dialog" @click="handleClose">
+          <svg
+            width="18"
+            height="18"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+          >
             <line x1="18" y1="6" x2="6" y2="18" />
             <line x1="6" y1="6" x2="18" y2="18" />
           </svg>
@@ -113,19 +108,10 @@ function handleClose() {
         </div>
 
         <div class="modal-footer">
-          <button
-            type="button"
-            class="btn-secondary"
-            :disabled="isSubmitting"
-            @click="handleClose"
-          >
+          <button type="button" class="btn-secondary" :disabled="isSubmitting" @click="handleClose">
             Cancel
           </button>
-          <button
-            type="submit"
-            class="btn-primary"
-            :disabled="isSubmitting"
-          >
+          <button type="submit" class="btn-primary" :disabled="isSubmitting">
             <span v-if="isSubmitting">Creating...</span>
             <span v-else>Create Workspace</span>
           </button>
@@ -253,7 +239,9 @@ function handleClose() {
   border-radius: 50%;
   border: 2px solid transparent;
   cursor: pointer;
-  transition: transform 0.15s ease, border-color 0.15s ease;
+  transition:
+    transform 0.15s ease,
+    border-color 0.15s ease;
 }
 .color-swatch:hover {
   transform: scale(1.15);
@@ -295,7 +283,9 @@ function handleClose() {
   font-size: 13px;
   font-weight: 600;
   cursor: pointer;
-  transition: background 0.15s ease, opacity 0.15s ease;
+  transition:
+    background 0.15s ease,
+    opacity 0.15s ease;
 }
 .btn-primary:hover:not(:disabled) {
   background: #6d28d9;

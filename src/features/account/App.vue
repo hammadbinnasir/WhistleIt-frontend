@@ -19,7 +19,9 @@ const log = (name, detail = '') => {
     <main>
       <h1>User module demo</h1>
       <p>Click the avatar at the bottom-left to open the menu.</p>
-      <p class="event">Last event: <b>{{ lastEvent }}</b></p>
+      <p class="event">
+        Last event: <b>{{ lastEvent }}</b>
+      </p>
     </main>
 
     <UserModule
@@ -37,7 +39,11 @@ const log = (name, detail = '') => {
 <style>
 body {
   margin: 0;
-  font-family: 'Roboto', -apple-system, 'Segoe UI', sans-serif;
+  font-family:
+    'Roboto',
+    -apple-system,
+    'Segoe UI',
+    sans-serif;
   background: #f5f6f8;
   color: #1f1f2e;
 }

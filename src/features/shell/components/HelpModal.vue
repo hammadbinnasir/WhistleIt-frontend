@@ -29,7 +29,14 @@ function handleClose() {
       <div class="modal-header">
         <div class="header-content">
           <div class="icon-circle">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <svg
+              width="18"
+              height="18"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+            >
               <circle cx="12" cy="12" r="10" />
               <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" />
               <line x1="12" y1="17" x2="12.01" y2="17" />
@@ -40,13 +47,15 @@ function handleClose() {
             <span class="modal-subtitle">WhistleIt Workspace Guide</span>
           </div>
         </div>
-        <button
-          type="button"
-          class="close-btn"
-          aria-label="Close dialog"
-          @click="handleClose"
-        >
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <button type="button" class="close-btn" aria-label="Close dialog" @click="handleClose">
+          <svg
+            width="18"
+            height="18"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+          >
             <line x1="18" y1="6" x2="6" y2="18" />
             <line x1="6" y1="6" x2="18" y2="18" />
           </svg>
@@ -72,17 +81,20 @@ function handleClose() {
           <h4 class="section-title">Quick Tips</h4>
           <ul class="tips-list">
             <li>Use the left rail to jump between different teams and workspaces instantly.</li>
-            <li>Click <strong>+</strong> on the team rail to create a new workspace or discover team workspaces.</li>
-            <li>Use <strong>Manage</strong> in the Members section to invite or remove team members.</li>
+            <li>
+              Click <strong>+</strong> on the team rail to create a new workspace or discover team
+              workspaces.
+            </li>
+            <li>
+              Use <strong>Manage</strong> in the Members section to invite or remove team members.
+            </li>
           </ul>
         </div>
       </div>
 
       <div class="modal-footer">
         <span class="version-tag">WhistleIt v0.1.0 • Built with Vue 3 & Vite</span>
-        <button type="button" class="btn-primary" @click="handleClose">
-          Got it
-        </button>
+        <button type="button" class="btn-primary" @click="handleClose">Got it</button>
       </div>
     </div>
   </div>

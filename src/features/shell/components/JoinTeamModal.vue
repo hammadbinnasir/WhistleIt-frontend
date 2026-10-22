@@ -70,13 +70,15 @@ function handleClose() {
     <div class="modal-card">
       <div class="modal-header">
         <h3 id="join-team-title" class="modal-title">Join a Workspace</h3>
-        <button
-          type="button"
-          class="close-btn"
-          aria-label="Close dialog"
-          @click="handleClose"
-        >
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <button type="button" class="close-btn" aria-label="Close dialog" @click="handleClose">
+          <svg
+            width="18"
+            height="18"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+          >
             <line x1="18" y1="6" x2="6" y2="18" />
             <line x1="6" y1="6" x2="18" y2="18" />
           </svg>
@@ -96,7 +98,15 @@ function handleClose() {
         </div>
 
         <div class="search-box">
-          <svg class="search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <svg
+            class="search-icon"
+            width="16"
+            height="16"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+          >
             <circle cx="11" cy="11" r="8" />
             <line x1="21" y1="21" x2="16.65" y2="16.65" />
           </svg>
@@ -126,10 +136,7 @@ function handleClose() {
           <ul v-else class="team-results-list">
             <li v-for="team in searchResults" :key="team.id" class="team-result-row">
               <div class="team-info">
-                <div
-                  class="team-avatar"
-                  :style="{ background: team.color || '#7C3AED' }"
-                >
+                <div class="team-avatar" :style="{ background: team.color || '#7C3AED' }">
                   {{ team.initials || team.name.slice(0, 2).toUpperCase() }}
                 </div>
                 <div class="team-meta">
@@ -139,9 +146,7 @@ function handleClose() {
               </div>
 
               <div class="team-action">
-                <span v-if="isAlreadyMember(team.id)" class="joined-badge">
-                  Joined
-                </span>
+                <span v-if="isAlreadyMember(team.id)" class="joined-badge"> Joined </span>
                 <button
                   v-else
                   type="button"
@@ -307,7 +312,9 @@ function handleClose() {
   animation: spin 0.7s linear infinite;
 }
 @keyframes spin {
-  to { transform: rotate(360deg); }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .team-results-list {

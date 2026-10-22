@@ -1,11 +1,19 @@
 <script setup>
-import { onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { storeToRefs } from 'pinia'
-import { RouterLink, useRouter } from 'vue-router'
+import { useRouter } from 'vue-router'
 import { useUiStore } from '@/stores/ui'
 import { useTeamsStore } from '@/stores/teams'
+import { useRemindersStore } from '@/features/search/reminders'
 import { ChannelSidebar, ChannelHeader } from '@/features/channels'
 import { UserModule } from '@/features/account'
+
+// Search & Reminder components
+import ChatHeaderActions from '@/features/search/ChatHeaderActions.vue'
+import ChannelSettingsModal from '@/features/search/ChannelSettingsModal.vue'
+import RemindersPanel from '@/features/search/RemindersPanel.vue'
+import SearchPage from '@/features/search/SearchPage.vue'
+import SetReminderModal from '@/features/search/SetReminderModal.vue'
 
 // Shell components
 import {
@@ -19,6 +27,7 @@ import {
 
 const ui = useUiStore()
 const teamsStore = useTeamsStore()
+const reminders = useRemindersStore()
 const router = useRouter()
 
 const user = {
@@ -32,8 +41,51 @@ const { activeTeam } = storeToRefs(teamsStore)
 
 const isTeamSwitcherOpen = ref(false)
 
+const channels = ref([
+  {
+    id: 'general',
+    name: 'general',
+    description: 'General discussion',
+    createdBy: 'WhistleIt team',
+    muted: false,
+    favourite: false,
+  },
+  {
+    id: 'random',
+    name: 'random',
+    description: 'Off-topic conversations',
+    createdBy: 'WhistleIt team',
+    muted: false,
+    favourite: false,
+  },
+  {
+    id: 'frontend',
+    name: 'frontend-team',
+    description: 'Frontend team updates',
+    createdBy: 'WhistleIt team',
+    muted: false,
+    favourite: false,
+  },
+])
+const selectedChannel = computed(() =>
+  channels.value.find((channel) => channel.id === selectedChannelId.value),
+)
+const reminderModalOpen = ref(false)
+const reminderMessage = computed(() => ({
+  conversationId: selectedChannel.value?.id,
+  conversationName: selectedChannel.value?.name,
+  conversationType: 'channel',
+  messageId: `welcome-${selectedChannel.value?.id}`,
+  text: `Welcome to #${selectedChannel.value?.name}. Use this demo message to try reminders.`,
+}))
+
 onMounted(() => {
   teamsStore.fetchTeams()
+  reminders.startWatcher()
+})
+
+onBeforeUnmount(() => {
+  reminders.stopWatcher()
 })
 </script>
 
@@ -82,10 +134,7 @@ onMounted(() => {
           </button>
 
           <!-- Dropdown TeamSwitcher -->
-          <TeamSwitcher
-            :is-open="isTeamSwitcherOpen"
-            @close="isTeamSwitcherOpen = false"
-          />
+          <TeamSwitcher :is-open="isTeamSwitcherOpen" @close="isTeamSwitcherOpen = false" />
         </div>
 
         <!-- Channels list from Channels feature -->
@@ -97,7 +146,10 @@ onMounted(() => {
     <main class="flex min-w-0 flex-1 flex-col">
       <ChannelHeader v-if="selectedChannelId" :channel-id="selectedChannelId">
         <template #actions>
-          <button class="rounded border px-2 py-1 text-sm cursor-pointer" @click="ui.toggleSidebar()">
+          <button
+            class="rounded border px-2 py-1 text-sm cursor-pointer"
+            @click="ui.toggleSidebar()"
+          >
             {{ sidebarOpen ? 'Hide' : 'Show' }} sidebar
           </button>
         </template>
@@ -129,13 +181,21 @@ onMounted(() => {
           </template>
           <template v-else>
             <p>Pinia is working: this state lives in <code>src/stores/ui.js</code>.</p>
-            <p class="mt-2 text-sm">Choose a channel to open its tools and try the search and reminder features.</p>
+            <p class="mt-2 text-sm">
+              Choose a channel to open its tools and try the search and reminder features.
+            </p>
           </template>
         </section>
 
-        <aside v-if="ui.activePanel" class="min-h-0 w-full shrink-0 border-l border-slate-200 bg-white md:w-[min(65vw,720px)]">
+        <aside
+          v-if="ui.activePanel"
+          class="min-h-0 w-full shrink-0 border-l border-slate-200 bg-white md:w-[min(65vw,720px)]"
+        >
           <RemindersPanel v-if="ui.activePanel === 'reminders'" />
-          <SearchPage v-else-if="ui.activePanel === 'search'" :channel-id="selectedChannelId || ''" />
+          <SearchPage
+            v-else-if="ui.activePanel === 'search'"
+            :channel-id="selectedChannelId || ''"
+          />
         </aside>
       </div>
     </main>
@@ -154,20 +214,15 @@ onMounted(() => {
     />
 
     <div class="fixed bottom-4 right-4 z-[60] flex w-80 flex-col gap-2">
-      <div v-for="toast in ui.toasts" :key="toast.id" class="rounded-lg bg-slate-900 p-4 text-white shadow-lg">
+      <div
+        v-for="toast in ui.toasts"
+        :key="toast.id"
+        class="rounded-lg bg-slate-900 p-4 text-white shadow-lg"
+      >
         <p class="font-semibold">{{ toast.title }}</p>
         <p class="mt-1 text-sm text-slate-200">{{ toast.body }}</p>
       </div>
     </div>
-        <RouterLink class="ml-auto rounded border px-3 py-1 text-sm hover:bg-slate-50" to="/login">
-          Back to login
-        </RouterLink>
-      </header>
-
-      <section class="flex-1 p-6 text-slate-500">
-        <!-- Messages module mounts here. -->
-      </section>
-    </main>
 
     <!-- UserModule from Account team -->
     <UserModule :user="user" @log-out="router.push('/login')" />

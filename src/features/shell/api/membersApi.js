@@ -12,18 +12,14 @@ async function withMock(mockFn, apiFn) {
 
 export function getMembers(teamId) {
   return withMock(
-    () =>
-      import('./__mocks__/members.mock').then((m) => m.mockGetMembers(teamId)),
+    () => import('./__mocks__/members.mock').then((m) => m.mockGetMembers(teamId)),
     () => apiRequest(`/teams/${teamId}/members`),
   )
 }
 
 export function addMember(teamId, userId) {
   return withMock(
-    () =>
-      import('./__mocks__/members.mock').then((m) =>
-        m.mockAddMember(teamId, userId),
-      ),
+    () => import('./__mocks__/members.mock').then((m) => m.mockAddMember(teamId, userId)),
     () =>
       apiRequest(`/teams/${teamId}/members`, {
         method: 'POST',
@@ -34,22 +30,14 @@ export function addMember(teamId, userId) {
 
 export function removeMember(teamId, userId) {
   return withMock(
-    () =>
-      import('./__mocks__/members.mock').then((m) =>
-        m.mockRemoveMember(teamId, userId),
-      ),
-    () =>
-      apiRequest(`/teams/${teamId}/members/${userId}`, { method: 'DELETE' }),
+    () => import('./__mocks__/members.mock').then((m) => m.mockRemoveMember(teamId, userId)),
+    () => apiRequest(`/teams/${teamId}/members/${userId}`, { method: 'DELETE' }),
   )
 }
 
 export function searchUsers(query) {
   return withMock(
-    () =>
-      import('./__mocks__/members.mock').then((m) =>
-        m.mockSearchUsers(query),
-      ),
+    () => import('./__mocks__/members.mock').then((m) => m.mockSearchUsers(query)),
     () => apiRequest(`/users/search?q=${encodeURIComponent(query)}`),
   )
 }
-

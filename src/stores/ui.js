@@ -46,6 +46,10 @@ export const useUiStore = defineStore('ui', () => {
   return {
     selectedChannelId,
     sidebarOpen,
+    activePanel,
+    channelSettingsOpen,
+    channelSettingsTab,
+    toasts,
     hasSelection,
     selectChannel,
     toggleSidebar,

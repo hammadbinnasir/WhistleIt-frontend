@@ -27,11 +27,7 @@ function getInitials(name) {
 </script>
 
 <template>
-  <aside
-    class="team-rail"
-    role="navigation"
-    aria-label="Team switcher"
-  >
+  <aside class="team-rail" role="navigation" aria-label="Team switcher">
     <!-- Team avatars -->
     <div class="team-rail__list">
       <!-- Loading skeletons -->
@@ -67,8 +63,19 @@ function getInitials(name) {
         aria-label="Create or Join Team"
         @click="ui.toggleTeamCreateModal()"
       >
-        <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
-          <path d="M10 4V16M4 10H16" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+        <svg
+          width="20"
+          height="20"
+          viewBox="0 0 20 20"
+          fill="none"
+          xmlns="http://www.w3.org/2000/svg"
+        >
+          <path
+            d="M10 4V16M4 10H16"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+          />
         </svg>
       </button>
 
@@ -79,10 +86,21 @@ function getInitials(name) {
         aria-label="Help and Keyboard Shortcuts"
         @click="ui.toggleHelpModal()"
       >
-        <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
-          <circle cx="10" cy="10" r="7.5" stroke="currentColor" stroke-width="1.5"/>
-          <path d="M7.5 7.5C7.5 6.12 8.62 5 10 5C11.38 5 12.5 6.12 12.5 7.5C12.5 8.88 11.38 10 10 10V11.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
-          <circle cx="10" cy="14" r="0.75" fill="currentColor"/>
+        <svg
+          width="20"
+          height="20"
+          viewBox="0 0 20 20"
+          fill="none"
+          xmlns="http://www.w3.org/2000/svg"
+        >
+          <circle cx="10" cy="10" r="7.5" stroke="currentColor" stroke-width="1.5" />
+          <path
+            d="M7.5 7.5C7.5 6.12 8.62 5 10 5C11.38 5 12.5 6.12 12.5 7.5C12.5 8.88 11.38 10 10 10V11.5"
+            stroke="currentColor"
+            stroke-width="1.5"
+            stroke-linecap="round"
+          />
+          <circle cx="10" cy="14" r="0.75" fill="currentColor" />
         </svg>
       </button>
     </div>
@@ -134,8 +152,12 @@ function getInitials(name) {
   animation: skeleton-shimmer 1.5s ease-in-out infinite;
 }
 @keyframes skeleton-shimmer {
-  0% { background-position: 200% 0; }
-  100% { background-position: -200% 0; }
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
 }
 
 /* ── Team avatar button ────────────────────────────────── */
@@ -144,13 +166,16 @@ function getInitials(name) {
   width: 44px;
   height: 44px;
   border-radius: 14px;
-  background: var(--team-color, #7C3AED);
+  background: var(--team-color, #7c3aed);
   border: none;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: border-radius 0.2s ease, transform 0.15s ease, box-shadow 0.2s ease;
+  transition:
+    border-radius 0.2s ease,
+    transform 0.15s ease,
+    box-shadow 0.2s ease;
   flex-shrink: 0;
 }
 .team-rail__avatar:hover {
@@ -214,7 +239,10 @@ function getInitials(name) {
   align-items: center;
   justify-content: center;
   color: rgba(255, 255, 255, 0.5);
-  transition: background 0.2s ease, color 0.2s ease, border-radius 0.2s ease;
+  transition:
+    background 0.2s ease,
+    color 0.2s ease,
+    border-radius 0.2s ease;
 }
 .team-rail__action-btn:hover {
   background: rgba(255, 255, 255, 0.12);

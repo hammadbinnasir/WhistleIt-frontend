@@ -18,9 +18,7 @@ const passwordFields = [
   { key: 'confirm', placeholder: 'Confirm New Password', autocomplete: 'new-password' },
 ]
 
-const changingPassword = computed(
-  () => !!(passwords.old || passwords.next || passwords.confirm)
-)
+const changingPassword = computed(() => !!(passwords.old || passwords.next || passwords.confirm))
 
 const errors = computed(() => {
   const errs = {}
@@ -104,8 +102,14 @@ defineExpose({ validate, getValues })
           :aria-label="showPw[pf.key] ? 'Hide password' : 'Show password'"
           @click="showPw[pf.key] = !showPw[pf.key]"
         >
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
-               stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
             <path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z" />
             <circle cx="12" cy="12" r="3" />
             <path v-if="!showPw[pf.key]" d="M4 4l16 16" />
@@ -159,8 +163,13 @@ defineExpose({ validate, getValues })
   cursor: pointer;
   transition: background 0.2s;
 }
-.toggle.on { background: #5559f4; }
-.toggle:focus-visible { box-shadow: 0 0 0 3px rgba(85, 89, 244, 0.3); outline: none; }
+.toggle.on {
+  background: #5559f4;
+}
+.toggle:focus-visible {
+  box-shadow: 0 0 0 3px rgba(85, 89, 244, 0.3);
+  outline: none;
+}
 
 .knob {
   position: absolute;
@@ -173,7 +182,9 @@ defineExpose({ validate, getValues })
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
   transition: transform 0.2s;
 }
-.toggle.on .knob { transform: translateX(28px); }
+.toggle.on .knob {
+  transform: translateX(28px);
+}
 
 .password-heading {
   margin-top: 40px;
@@ -195,7 +206,9 @@ defineExpose({ validate, getValues })
   border: 1px solid #a5a6b0;
   border-radius: 4px;
 }
-.pw-control:focus-within { border-color: #5559f4; }
+.pw-control:focus-within {
+  border-color: #5559f4;
+}
 .pw-control.invalid {
   border: 2px solid #fb275d;
   padding: 0 13px;
@@ -212,9 +225,13 @@ defineExpose({ validate, getValues })
   font-size: 18px;
   color: #1f1f2e;
 }
-.pw-input::placeholder { color: #a8a9b2; }
+.pw-input::placeholder {
+  color: #a8a9b2;
+}
 .pw-control.invalid .pw-input,
-.pw-control.invalid .pw-input::placeholder { color: #fb275d; }
+.pw-control.invalid .pw-input::placeholder {
+  color: #fb275d;
+}
 
 .eye {
   flex-shrink: 0;
@@ -226,9 +243,16 @@ defineExpose({ validate, getValues })
   color: #8a8b96;
   cursor: pointer;
 }
-.eye svg { width: 100%; height: 100%; }
-.eye:hover { color: #5559f4; }
-.pw-control.invalid .eye { color: #fb275d; }
+.eye svg {
+  width: 100%;
+  height: 100%;
+}
+.eye:hover {
+  color: #5559f4;
+}
+.pw-control.invalid .eye {
+  color: #fb275d;
+}
 
 .pw-error {
   position: absolute;

@@ -13,7 +13,7 @@ const defaults = {
 }
 
 const form = reactive(
-  Object.fromEntries(Object.keys(defaults).map((k) => [k, props.preferences[k] ?? defaults[k]]))
+  Object.fromEntries(Object.keys(defaults).map((k) => [k, props.preferences[k] ?? defaults[k]])),
 )
 
 const sections = [
@@ -163,9 +163,15 @@ defineExpose({ getValues })
   transition: transform 0.15s;
 }
 
-.radio-input:checked + .radio-mark { border-color: #5559f4; }
-.radio-input:checked + .radio-mark::after { transform: scale(1); }
-.radio-input:focus-visible + .radio-mark { box-shadow: 0 0 0 3px rgba(85, 89, 244, 0.3); }
+.radio-input:checked + .radio-mark {
+  border-color: #5559f4;
+}
+.radio-input:checked + .radio-mark::after {
+  transform: scale(1);
+}
+.radio-input:focus-visible + .radio-mark {
+  box-shadow: 0 0 0 3px rgba(85, 89, 244, 0.3);
+}
 
 .radio-label {
   font-size: 16px;

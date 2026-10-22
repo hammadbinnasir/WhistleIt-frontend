@@ -18,13 +18,9 @@ export const useMembersStore = defineStore('members', () => {
   const error = ref(null)
 
   // ── getters ────────────────────────────────────────────
-  const onlineMembers = computed(() =>
-    members.value.filter((m) => m.status === 'online'),
-  )
+  const onlineMembers = computed(() => members.value.filter((m) => m.status === 'online'))
 
-  const offlineMembers = computed(() =>
-    members.value.filter((m) => m.status !== 'online'),
-  )
+  const offlineMembers = computed(() => members.value.filter((m) => m.status !== 'online'))
 
   const memberCount = computed(() => members.value.length)
 

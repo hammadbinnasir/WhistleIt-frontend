@@ -27,7 +27,7 @@ const onKeydown = (e) => {
   if (e.key !== 'Tab' || !panel.value) return
 
   const items = [...panel.value.querySelectorAll(FOCUSABLE)].filter(
-    (el) => !el.hidden && el.getClientRects().length > 0
+    (el) => !el.hidden && el.getClientRects().length > 0,
   )
   if (!items.length) {
     e.preventDefault()

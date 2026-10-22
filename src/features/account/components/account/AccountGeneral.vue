@@ -14,7 +14,7 @@ const defaults = {
 }
 
 const general = reactive(
-  Object.fromEntries(Object.keys(defaults).map((k) => [k, props.profile[k] ?? defaults[k]]))
+  Object.fromEntries(Object.keys(defaults).map((k) => [k, props.profile[k] ?? defaults[k]])),
 )
 
 const fields = [
@@ -44,7 +44,7 @@ const initials = computed(() =>
     .filter(Boolean)
     .slice(0, 2)
     .map((w) => w[0].toUpperCase())
-    .join('')
+    .join(''),
 )
 
 /* ---------- photo ---------- */
@@ -86,7 +86,7 @@ onBeforeUnmount(revokePreview)
 const submitted = ref(false)
 
 const errors = computed(() =>
-  submitted.value && !general.fullName.trim() ? { fullName: 'Required.' } : {}
+  submitted.value && !general.fullName.trim() ? { fullName: 'Required.' } : {},
 )
 
 const validate = () => {
@@ -221,7 +221,9 @@ defineExpose({ validate, getValues })
   letter-spacing: 1px;
   cursor: pointer;
 }
-.upload-btn:hover { background: #4448d9; }
+.upload-btn:hover {
+  background: #4448d9;
+}
 
 .photo-error {
   margin: 10px 0 0 !important;
@@ -252,8 +254,12 @@ defineExpose({ validate, getValues })
   border-radius: 4px;
   outline: none;
 }
-.control::placeholder { color: #8a8b96; }
-.control:focus { border-color: #5559f4; }
+.control::placeholder {
+  color: #8a8b96;
+}
+.control:focus {
+  border-color: #5559f4;
+}
 
 .field.invalid .control {
   border: 2px solid #fb275d;
@@ -305,6 +311,10 @@ defineExpose({ validate, getValues })
 .float-label.always {
   opacity: 1;
 }
-.control:focus + .float-label { color: #5559f4; }
-.field.invalid .float-label { color: #fb275d; }
+.control:focus + .float-label {
+  color: #5559f4;
+}
+.field.invalid .float-label {
+  color: #fb275d;
+}
 </style>
