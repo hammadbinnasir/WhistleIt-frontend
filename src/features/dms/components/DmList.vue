@@ -28,7 +28,13 @@ const panelOpen = ref(false)
         Direct Messages
       </button>
 
-      <button class="text-3xl leading-none hover:text-indigo-300" title="New message" @click="panelOpen = true">+</button>
+      <button
+        class="text-3xl leading-none hover:text-indigo-300"
+        title="New message"
+        @click="panelOpen = true"
+      >
+        +
+      </button>
     </header>
 
     <NewDmPanel v-if="panelOpen" @close="panelOpen = false" />
