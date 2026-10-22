@@ -24,23 +24,22 @@ describe('ui store', () => {
     expect(ui.sidebarOpen).toBe(false)
   })
 
-  it('toggles feature panels and closes them', () => {
+  it('toggles modals properly', () => {
     const ui = useUiStore()
-    ui.openPanel('search')
-    expect(ui.activePanel).toBe('search')
-    ui.openPanel('search')
-    expect(ui.activePanel).toBeNull()
-    ui.openPanel('reminders')
-    ui.closePanel()
-    expect(ui.activePanel).toBeNull()
-  })
+    expect(ui.helpModalOpen).toBe(false)
+    ui.toggleHelpModal()
+    expect(ui.helpModalOpen).toBe(true)
 
-  it('opens channel settings on the requested tab', () => {
-    const ui = useUiStore()
-    ui.openChannelSettings('members')
-    expect(ui.channelSettingsOpen).toBe(true)
-    expect(ui.channelSettingsTab).toBe('members')
-    ui.closeChannelSettings()
-    expect(ui.channelSettingsOpen).toBe(false)
+    expect(ui.teamCreateModalOpen).toBe(false)
+    ui.toggleTeamCreateModal()
+    expect(ui.teamCreateModalOpen).toBe(true)
+
+    expect(ui.teamJoinModalOpen).toBe(false)
+    ui.toggleTeamJoinModal()
+    expect(ui.teamJoinModalOpen).toBe(true)
+
+    expect(ui.memberManageModalOpen).toBe(false)
+    ui.toggleMemberManageModal()
+    expect(ui.memberManageModalOpen).toBe(true)
   })
 })

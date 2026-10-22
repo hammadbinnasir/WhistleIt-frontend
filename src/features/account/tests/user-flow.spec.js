@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
-import { UserModule } from '../src/modules/user'
-import { useUserStore, resetUserStore } from '../src/modules/user/composables/useUserStore'
+import { UserModule } from '../index'
+import { useUserStore, resetUserStore } from '../composables/useUserStore'
 
 let wrapper
 const store = useUserStore()
@@ -302,7 +302,9 @@ describe('custom status modal', () => {
     const trigger = $('.select-field .trigger')
 
     const key = async (k) => {
-      trigger.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true }))
+      trigger.dispatchEvent(
+        new KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true }),
+      )
       await flushPromises()
     }
 
@@ -343,7 +345,10 @@ describe('custom status modal', () => {
   })
 
   it('prefills the saved status, its duration, and can clear it', async () => {
-    await store.setCustomStatus('In a meeting', { duration: '4h', expiresAt: Date.now() + 4 * 3600e3 })
+    await store.setCustomStatus('In a meeting', {
+      duration: '4h',
+      expiresAt: Date.now() + 4 * 3600e3,
+    })
     await openStatusModal()
     expect($('.input').value).toBe('In a meeting')
     expect($('.select-field .value').textContent).toBe('4 hours')
@@ -358,7 +363,10 @@ describe('custom status modal', () => {
   it('removes the status automatically once it expires', async () => {
     vi.useFakeTimers()
     try {
-      await store.setCustomStatus('Lunch', { duration: '30m', expiresAt: Date.now() + 30 * 60 * 1000 })
+      await store.setCustomStatus('Lunch', {
+        duration: '30m',
+        expiresAt: Date.now() + 30 * 60 * 1000,
+      })
       expect(store.state.customStatus).toBe('Lunch')
       vi.advanceTimersByTime(30 * 60 * 1000 + 50)
       expect(store.state.customStatus).toBe('')
@@ -414,7 +422,7 @@ describe('account settings modal', () => {
     await openSettings()
     const inputs = $$('#settings-panel-general input[type=text]').map((i) => i.placeholder)
     expect(inputs.indexOf('Enter Job Responsibilities')).toBe(
-      inputs.indexOf('Enter Designation') + 1
+      inputs.indexOf('Enter Designation') + 1,
     )
   })
 
@@ -422,7 +430,7 @@ describe('account settings modal', () => {
     await openSettings()
     await click(tab('User Preferences'))
     const titles = $$('#settings-panel-preferences .section-title').map((t) =>
-      t.textContent.replace(/\s+/g, ' ').trim()
+      t.textContent.replace(/\s+/g, ' ').trim(),
     )
     expect(titles).toEqual([
       'When writing a message, press Enter to…',

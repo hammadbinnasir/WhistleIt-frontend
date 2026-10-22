@@ -30,7 +30,11 @@ const store = useUserStore()
 const { state } = store
 
 if (props.user) store.hydrate(props.user)
-watch(() => props.user, (u) => u && store.hydrate(u), { deep: true })
+watch(
+  () => props.user,
+  (u) => u && store.hydrate(u),
+  { deep: true },
+)
 
 /* ---------- UI state ---------- */
 /** Only ONE popover is ever visible: null | 'menu' (UserMenu) | 'status' (StatusMenu) */
@@ -58,7 +62,7 @@ const avatarLabel = computed(() => {
 })
 
 const avatarTitle = computed(() =>
-  state.customStatus ? `${avatarLabel.value} – ${state.customStatus}` : avatarLabel.value
+  state.customStatus ? `${avatarLabel.value} – ${state.customStatus}` : avatarLabel.value,
 )
 
 const refocusAvatar = () => nextTick(() => avatarBtn.value?.focus())
@@ -268,7 +272,11 @@ const logOut = () => {
 .user-module {
   position: relative;
   display: inline-block;
-  font-family: 'Roboto', -apple-system, 'Segoe UI', sans-serif;
+  font-family:
+    'Roboto',
+    -apple-system,
+    'Segoe UI',
+    sans-serif;
 }
 
 .user-module.fixed {

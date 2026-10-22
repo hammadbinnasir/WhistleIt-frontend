@@ -33,13 +33,20 @@ export const useRemindersStore = defineStore('reminders', {
     },
     update(id, patch) {
       const r = this.items.find((i) => i.id === id)
-      if (r) { Object.assign(r, patch, { fired: false }); this.persist() }
+      if (r) {
+        Object.assign(r, patch, { fired: false })
+        this.persist()
+      }
     },
-    remove(id) { this.items = this.items.filter((i) => i.id !== id); this.persist() },
+    remove(id) {
+      this.items = this.items.filter((i) => i.id !== id)
+      this.persist()
+    },
     // Call once from the app shell (App.vue onMounted)
     startWatcher() {
       if (this.timer) return
-      if ('Notification' in window && Notification.permission === 'default') Notification.requestPermission()
+      if ('Notification' in window && Notification.permission === 'default')
+        Notification.requestPermission()
       const tick = () => {
         const ui = useUiStore()
         const now = Date.now()
@@ -57,6 +64,9 @@ export const useRemindersStore = defineStore('reminders', {
       tick()
       this.timer = setInterval(tick, 15000)
     },
-    stopWatcher() { clearInterval(this.timer); this.timer = null },
+    stopWatcher() {
+      clearInterval(this.timer)
+      this.timer = null
+    },
   },
 })
