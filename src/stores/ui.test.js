@@ -23,4 +23,24 @@ describe('ui store', () => {
     ui.toggleSidebar()
     expect(ui.sidebarOpen).toBe(false)
   })
+
+  it('toggles feature panels and closes them', () => {
+    const ui = useUiStore()
+    ui.openPanel('search')
+    expect(ui.activePanel).toBe('search')
+    ui.openPanel('search')
+    expect(ui.activePanel).toBeNull()
+    ui.openPanel('reminders')
+    ui.closePanel()
+    expect(ui.activePanel).toBeNull()
+  })
+
+  it('opens channel settings on the requested tab', () => {
+    const ui = useUiStore()
+    ui.openChannelSettings('members')
+    expect(ui.channelSettingsOpen).toBe(true)
+    expect(ui.channelSettingsTab).toBe('members')
+    ui.closeChannelSettings()
+    expect(ui.channelSettingsOpen).toBe(false)
+  })
 })
