@@ -1,10 +1,16 @@
 <script setup>
 import { storeToRefs } from 'pinia'
-import { RouterLink } from 'vue-router'
+import { RouterLink, useRouter } from 'vue-router'
 import { useUiStore } from '@/stores/ui'
 import { ChannelSidebar, ChannelHeader } from '@/features/channels'
+import { UserModule } from '@/features/account'
 
 const ui = useUiStore()
+const router = useRouter()
+const user = {
+  profile: { fullName: 'Hammad Haider' },
+  status: 'online',
+}
 // storeToRefs keeps state reactive when destructuring; actions are taken from the store directly.
 const { selectedChannelId, sidebarOpen } = storeToRefs(ui)
 </script>
@@ -46,5 +52,7 @@ const { selectedChannelId, sidebarOpen } = storeToRefs(ui)
         <!-- Messages module mounts here. -->
       </section>
     </main>
+
+    <UserModule :user="user" @log-out="router.push('/login')" />
   </div>
 </template>
