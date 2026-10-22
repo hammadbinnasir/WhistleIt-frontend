@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 
-// UI state store: selected channel, sidebar visibility.
+// UI state store: selected channel, sidebar visibility, modal states.
 // Server data (messages, channels from the API) does NOT belong here.
 export const useUiStore = defineStore('ui', () => {
   // state
@@ -11,6 +11,12 @@ export const useUiStore = defineStore('ui', () => {
   const channelSettingsOpen = ref(false)
   const channelSettingsTab = ref('settings')
   const toasts = ref([])
+
+  // modal visibility flags
+  const helpModalOpen = ref(false)
+  const teamCreateModalOpen = ref(false)
+  const teamJoinModalOpen = ref(false)
+  const memberManageModalOpen = ref(false)
 
   // getters
   const hasSelection = computed(() => selectedChannelId.value !== null)
@@ -23,41 +29,33 @@ export const useUiStore = defineStore('ui', () => {
     sidebarOpen.value = !sidebarOpen.value
   }
 
-  function openPanel(name) {
-    activePanel.value = activePanel.value === name ? null : name
+  // modal toggles
+  function toggleHelpModal() {
+    helpModalOpen.value = !helpModalOpen.value
   }
-  function closePanel() {
-    activePanel.value = null
+  function toggleTeamCreateModal() {
+    teamCreateModalOpen.value = !teamCreateModalOpen.value
   }
-  function openChannelSettings(tab = 'settings') {
-    channelSettingsTab.value = tab
-    channelSettingsOpen.value = true
+  function toggleTeamJoinModal() {
+    teamJoinModalOpen.value = !teamJoinModalOpen.value
   }
-  function closeChannelSettings() {
-    channelSettingsOpen.value = false
-  }
-  function toast(title, body) {
-    const id = Date.now() + Math.random()
-    toasts.value.push({ id, title, body })
-    setTimeout(() => {
-      toasts.value = toasts.value.filter((item) => item.id !== id)
-    }, 6000)
+  function toggleMemberManageModal() {
+    memberManageModalOpen.value = !memberManageModalOpen.value
   }
 
   return {
     selectedChannelId,
     sidebarOpen,
-    activePanel,
-    channelSettingsOpen,
-    channelSettingsTab,
-    toasts,
     hasSelection,
     selectChannel,
     toggleSidebar,
-    openPanel,
-    closePanel,
-    openChannelSettings,
-    closeChannelSettings,
-    toast,
+    helpModalOpen,
+    teamCreateModalOpen,
+    teamJoinModalOpen,
+    memberManageModalOpen,
+    toggleHelpModal,
+    toggleTeamCreateModal,
+    toggleTeamJoinModal,
+    toggleMemberManageModal,
   }
 })

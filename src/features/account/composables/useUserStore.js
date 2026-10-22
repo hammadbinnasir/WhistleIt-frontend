@@ -111,7 +111,7 @@ async function clearCustomStatus() {
  * Payload produced by AccountSettingsModal:
  * { profile, photo: File|null, preferences, security, password: {oldPassword,newPassword}|null }
  */
-async function saveSettings({ profile, photo, preferences, security, password }) {
+async function saveSettings({ profile, photo, preferences, security }) {
   // TODO(api): upload `photo`, then send profile / preferences / security
   // TODO(api): if (password) await api.changePassword(password)
   if (profile) Object.assign(state.profile, profile)

@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
-import { UserModule } from '../src/modules/user'
-import { useUserStore, resetUserStore } from '../src/modules/user/composables/useUserStore'
+import { UserModule } from '../index'
+import { useUserStore, resetUserStore } from '../composables/useUserStore'
 
 let wrapper
 const store = useUserStore()
