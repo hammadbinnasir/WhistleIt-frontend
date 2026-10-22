@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useRouter } from 'vue-router'
 import { useUiStore } from '@/stores/ui'
+import { UserModule } from '@/features/account'
 import { useRemindersStore } from '@/features/search/reminders'
 import { UserModule } from '@/features/account'
 import ChatHeaderActions from '@/features/search/ChatHeaderActions.vue'
@@ -42,6 +43,7 @@ const channels = ref([
     favourite: false,
   },
 ])
+
 const selectedChannel = computed(() =>
   channels.value.find((channel) => channel.id === selectedChannelId.value),
 )
