@@ -7,6 +7,10 @@ export const useUiStore = defineStore('ui', () => {
   // state
   const selectedChannelId = ref(null)
   const sidebarOpen = ref(true)
+  const activePanel = ref(null)
+  const channelSettingsOpen = ref(false)
+  const channelSettingsTab = ref('settings')
+  const toasts = ref([])
 
   // modal visibility flags
   const helpModalOpen = ref(false)
