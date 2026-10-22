@@ -14,8 +14,8 @@ async function mountAuthView(path = '/login') {
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [
-      { path: '/login', component: AuthView },
-      { path: '/signup', component: AuthView },
+      { path: '/login', name: 'login', component: AuthView },
+      { path: '/signup', name: 'signup', component: AuthView },
       { path: '/app', name: 'home', component: { template: '<main>Workspace</main>' } },
     ],
   })
@@ -75,7 +75,7 @@ describe('auth view', () => {
     expect(router.currentRoute.value.name).toBe('home')
   })
 
-  it('registers and navigates to the workspace after a valid account creation form submission', async () => {
+  it('registers and returns to login after a valid account creation form submission', async () => {
     const { router, wrapper } = await mountAuthView('/signup')
 
     await wrapper.get('#full-name').setValue('Sam Example')
@@ -94,7 +94,7 @@ describe('auth view', () => {
       password: 'correct-password',
       password_confirmation: 'correct-password',
     })
-    expect(router.currentRoute.value.name).toBe('home')
+    expect(router.currentRoute.value.path).toBe('/login')
   })
 
   it('shows authentication errors and stays on the form', async () => {

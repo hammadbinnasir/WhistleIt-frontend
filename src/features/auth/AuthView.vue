@@ -50,8 +50,12 @@ async function submitForm() {
         })
       : await login({ email: email.value, password: password.value })
 
-    saveAuthToken(response, !isSignup.value && rememberMe.value)
-    await router.push({ name: 'home' })
+    if (isSignup.value) {
+      await router.push({ name: 'login' })
+    } else {
+      saveAuthToken(response, rememberMe.value)
+      await router.push({ name: 'home' })
+    }
   } catch (error) {
     const validationErrors = error?.details?.errors
     const firstValidationError = validationErrors
