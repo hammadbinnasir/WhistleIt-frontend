@@ -1,8 +1,9 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { storeToRefs } from 'pinia'
-import { RouterLink, useRouter } from 'vue-router'
+import { useRouter } from 'vue-router'
 import { useUiStore } from '@/stores/ui'
+import { UserModule } from '@/features/account'
 import { useRemindersStore } from '@/features/search/reminders'
 import ChatHeaderActions from '@/features/search/ChatHeaderActions.vue'
 import ChannelSettingsModal from '@/features/search/ChannelSettingsModal.vue'
@@ -12,14 +13,39 @@ import SetReminderModal from '@/features/search/SetReminderModal.vue'
 
 const ui = useUiStore()
 const reminders = useRemindersStore()
+const router = useRouter()
 const { selectedChannelId, sidebarOpen } = storeToRefs(ui)
 
 const channels = ref([
-  { id: 'general', name: 'general', description: 'General discussion', createdBy: 'WhistleIt team', muted: false, favourite: false },
-  { id: 'random', name: 'random', description: 'Off-topic conversations', createdBy: 'WhistleIt team', muted: false, favourite: false },
-  { id: 'frontend', name: 'frontend-team', description: 'Frontend team updates', createdBy: 'WhistleIt team', muted: false, favourite: false },
+  {
+    id: 'general',
+    name: 'general',
+    description: 'General discussion',
+    createdBy: 'WhistleIt team',
+    muted: false,
+    favourite: false,
+  },
+  {
+    id: 'random',
+    name: 'random',
+    description: 'Off-topic conversations',
+    createdBy: 'WhistleIt team',
+    muted: false,
+    favourite: false,
+  },
+  {
+    id: 'frontend',
+    name: 'frontend-team',
+    description: 'Frontend team updates',
+    createdBy: 'WhistleIt team',
+    muted: false,
+    favourite: false,
+  },
 ])
-const selectedChannel = computed(() => channels.value.find((channel) => channel.id === selectedChannelId.value))
+
+const selectedChannel = computed(() =>
+  channels.value.find((channel) => channel.id === selectedChannelId.value),
+)
 const reminderModalOpen = ref(false)
 const reminderMessage = computed(() => ({
   conversationId: selectedChannel.value?.id,
@@ -28,14 +54,25 @@ const reminderMessage = computed(() => ({
   messageId: `welcome-${selectedChannel.value?.id}`,
   text: `Welcome to #${selectedChannel.value?.name}. Use this demo message to try reminders.`,
 }))
+const user = {
+  profile: { fullName: 'Hammad Haider' },
+  status: 'online',
+}
 
 onMounted(() => reminders.startWatcher())
 onBeforeUnmount(() => reminders.stopWatcher())
+
+function leaveChannel() {
+  ui.selectChannel(null)
+}
 </script>
 
 <template>
   <div class="relative flex h-screen bg-slate-50 text-slate-800">
-    <aside v-if="sidebarOpen" class="w-64 shrink-0 bg-slate-900 p-4 text-slate-100">
+    <aside
+      v-if="sidebarOpen"
+      class="w-64 shrink-0 overflow-y-auto bg-slate-900 p-4 text-slate-100"
+    >
       <h1 class="mb-4 text-xl font-bold">WhistleIt</h1>
       <p class="mb-2 text-xs uppercase tracking-wide text-slate-400">Channels</p>
       <ul class="space-y-1">
@@ -53,47 +90,13 @@ onBeforeUnmount(() => reminders.stopWatcher())
 
     <main class="flex min-w-0 flex-1 flex-col">
       <header class="flex items-center gap-3 border-b bg-white p-4">
-import { ChannelSidebar, ChannelHeader } from '@/features/channels'
-import { UserModule } from '@/features/account'
-
-const ui = useUiStore()
-const router = useRouter()
-const user = {
-  profile: { fullName: 'Hammad Haider' },
-  status: 'online',
-}
-// storeToRefs keeps state reactive when destructuring; actions are taken from the store directly.
-const { selectedChannelId, sidebarOpen } = storeToRefs(ui)
-</script>
-
-<template>
-  <div class="flex h-screen bg-slate-50 text-slate-800">
-    <!-- v-show (not v-if): the Channels dialogs live inside <ChannelSidebar />, so it must stay mounted. -->
-    <aside
-      v-show="sidebarOpen"
-      class="w-64 shrink-0 overflow-y-auto bg-slate-900 p-4 text-slate-100"
-    >
-      <h1 class="mb-4 text-xl font-bold">WhistleIt</h1>
-      <ChannelSidebar />
-    </aside>
-
-    <main class="flex min-w-0 flex-1 flex-col">
-      <ChannelHeader v-if="selectedChannelId" :channel-id="selectedChannelId">
-        <template #actions>
-          <button class="rounded border px-2 py-1 text-sm" @click="ui.toggleSidebar()">
-            {{ sidebarOpen ? 'Hide' : 'Show' }} sidebar
-          </button>
-        </template>
-      </ChannelHeader>
-
-      <header v-else class="flex items-center gap-3 border-b bg-white p-4">
         <button class="rounded border px-2 py-1 text-sm" @click="ui.toggleSidebar()">
           {{ sidebarOpen ? 'Hide' : 'Show' }} sidebar
         </button>
-        <h2 class="min-w-0 flex-1 truncate font-semibold">
-          {{ selectedChannel ? `# ${selectedChannel.name}` : 'Select a channel' }}
+        <h2 v-if="selectedChannel" class="min-w-0 flex-1 truncate font-semibold">
+          # {{ selectedChannel.name }}
         </h2>
-        <ChatHeaderActions :is-dm="!selectedChannel" />
+        <ChatHeaderActions class="ml-auto" :is-dm="!selectedChannel" />
       </header>
 
       <div class="flex min-h-0 flex-1">
@@ -111,14 +114,19 @@ const { selectedChannelId, sidebarOpen } = storeToRefs(ui)
             </article>
           </template>
           <template v-else>
-            <p>Pinia is working: this state lives in <code>src/stores/ui.js</code>.</p>
-            <p class="mt-2 text-sm">Choose a channel to open its tools and try the search and reminder features.</p>
+            <p>Choose a channel to open its tools.</p>
           </template>
         </section>
 
-        <aside v-if="ui.activePanel" class="min-h-0 w-full shrink-0 border-l border-slate-200 bg-white md:w-[min(65vw,720px)]">
+        <aside
+          v-if="ui.activePanel"
+          class="min-h-0 w-full shrink-0 border-l border-slate-200 bg-white md:w-[min(65vw,720px)]"
+        >
           <RemindersPanel v-if="ui.activePanel === 'reminders'" />
-          <SearchPage v-else-if="ui.activePanel === 'search'" :channel-id="selectedChannelId || ''" />
+          <SearchPage
+            v-else-if="ui.activePanel === 'search'"
+            :channel-id="selectedChannelId || ''"
+          />
         </aside>
       </div>
     </main>
@@ -128,7 +136,7 @@ const { selectedChannelId, sidebarOpen } = storeToRefs(ui)
       :channel="selectedChannel"
       @toggle-mute="selectedChannel.muted = !selectedChannel.muted"
       @toggle-favourite="selectedChannel.favourite = !selectedChannel.favourite"
-      @left="ui.selectChannel(null)"
+      @left="leaveChannel"
     />
     <SetReminderModal
       v-if="reminderModalOpen && selectedChannel"
@@ -137,21 +145,15 @@ const { selectedChannelId, sidebarOpen } = storeToRefs(ui)
     />
 
     <div class="fixed bottom-4 right-4 z-[60] flex w-80 flex-col gap-2">
-      <div v-for="toast in ui.toasts" :key="toast.id" class="rounded-lg bg-slate-900 p-4 text-white shadow-lg">
+      <div
+        v-for="toast in ui.toasts"
+        :key="toast.id"
+        class="rounded-lg bg-slate-900 p-4 text-white shadow-lg"
+      >
         <p class="font-semibold">{{ toast.title }}</p>
         <p class="mt-1 text-sm text-slate-200">{{ toast.body }}</p>
       </div>
     </div>
-        <RouterLink class="ml-auto rounded border px-3 py-1 text-sm hover:bg-slate-50" to="/login">
-          Back to login
-        </RouterLink>
-        <h2 class="font-semibold">Select a channel</h2>
-      </header>
-
-      <section class="flex-1 p-6 text-slate-500">
-        <!-- Messages module mounts here. -->
-      </section>
-    </main>
 
     <UserModule :user="user" @log-out="router.push('/login')" />
   </div>
