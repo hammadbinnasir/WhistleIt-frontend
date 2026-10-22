@@ -43,7 +43,7 @@ async function submitForm() {
     const response = isSignup.value
       ? await register({
           name: fullName.value,
-          organization: company.value,
+          company: company.value,
           email: email.value,
           password: password.value,
           password_confirmation: confirmPassword.value,
@@ -118,7 +118,7 @@ function showPasswordHelp() {
             <input
               id="company"
               v-model.trim="company"
-              name="organization"
+              name="company"
               type="text"
               autocomplete="organization"
               placeholder="Company Name*"

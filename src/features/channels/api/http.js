@@ -20,7 +20,10 @@ function getAuthHeaders() {
   return token ? { Authorization: `Bearer ${token}` } : {}
 }
 
-export async function http(path, { method = 'GET', body, params, signal } = {}) {
+export async function http(
+  path,
+  { method = 'GET', body, params, signal, credentials = 'omit' } = {},
+) {
   const url = new URL(`${BASE_URL}${path}`, window.location.origin)
   if (params) {
     Object.entries(params).forEach(([key, value]) => {
@@ -33,7 +36,7 @@ export async function http(path, { method = 'GET', body, params, signal } = {}) 
     response = await fetch(url.toString(), {
       method,
       signal,
-      credentials: 'include',
+      credentials,
       headers: {
         Accept: 'application/json',
         ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}),

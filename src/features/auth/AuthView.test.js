@@ -44,7 +44,7 @@ describe('auth view', () => {
     await flushPromises()
 
     expect(wrapper.get('h1').text()).toBe('Create Account')
-    expect(wrapper.find('input[name="organization"]').exists()).toBe(true)
+    expect(wrapper.find('input[name="company"]').exists()).toBe(true)
     expect(wrapper.find('input[name="terms"]').exists()).toBe(true)
   })
 
@@ -89,7 +89,7 @@ describe('auth view', () => {
 
     expect(register).toHaveBeenCalledWith({
       name: 'Sam Example',
-      organization: 'Example Co',
+      company: 'Example Co',
       email: 'sam@example.com',
       password: 'correct-password',
       password_confirmation: 'correct-password',
