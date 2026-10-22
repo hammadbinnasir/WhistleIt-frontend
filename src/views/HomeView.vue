@@ -4,16 +4,18 @@ import { storeToRefs } from 'pinia'
 import { useRouter } from 'vue-router'
 import { useUiStore } from '@/stores/ui'
 import { useTeamsStore } from '@/stores/teams'
-import { useRemindersStore } from '@/features/search/reminders'
+import { useRemindersStore } from '@/features/search'
 import { ChannelSidebar, ChannelHeader } from '@/features/channels'
 import { UserModule } from '@/features/account'
 
 // Search & Reminder components
-import ChatHeaderActions from '@/features/search/ChatHeaderActions.vue'
-import ChannelSettingsModal from '@/features/search/ChannelSettingsModal.vue'
-import RemindersPanel from '@/features/search/RemindersPanel.vue'
-import SearchPage from '@/features/search/SearchPage.vue'
-import SetReminderModal from '@/features/search/SetReminderModal.vue'
+import {
+  ChatHeaderActions,
+  ChannelSettingsModal,
+  RemindersPanel,
+  SearchPage,
+  SetReminderModal,
+} from '@/features/search'
 
 // Shell components
 import {

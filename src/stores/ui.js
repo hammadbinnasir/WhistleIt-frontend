@@ -43,6 +43,14 @@ export const useUiStore = defineStore('ui', () => {
     memberManageModalOpen.value = !memberManageModalOpen.value
   }
 
+  function toast(title, body) {
+    const id = Date.now()
+    toasts.value.push({ id, title, body })
+    setTimeout(() => {
+      toasts.value = toasts.value.filter((t) => t.id !== id)
+    }, 5000)
+  }
+
   return {
     selectedChannelId,
     sidebarOpen,
@@ -61,5 +69,6 @@ export const useUiStore = defineStore('ui', () => {
     toggleTeamCreateModal,
     toggleTeamJoinModal,
     toggleMemberManageModal,
+    toast,
   }
 })
