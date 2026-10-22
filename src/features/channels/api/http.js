@@ -1,7 +1,9 @@
 // Minimal fetch wrapper used by the Channels API.
 // If your project already has an axios/fetch instance (with auth + interceptors),
 // replace the body of `http()` to use it. Nothing else in the module needs to change.
-const BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api'
+import { clearAuthSession, getAuthToken } from '@/features/auth/session'
+
+const BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://10.0.105.90:8000/api'
 
 export class ApiError extends Error {
   constructor(message, { status = 0, details = null } = {}) {
@@ -14,10 +16,14 @@ export class ApiError extends Error {
 
 // TODO(adapt): return the auth header your app uses, e.g. { Authorization: `Bearer ${token}` }
 function getAuthHeaders() {
-  return {}
+  const token = getAuthToken()
+  return token ? { Authorization: `Bearer ${token}` } : {}
 }
 
-export async function http(path, { method = 'GET', body, params, signal } = {}) {
+export async function http(
+  path,
+  { method = 'GET', body, params, signal, credentials = 'omit' } = {},
+) {
   const url = new URL(`${BASE_URL}${path}`, window.location.origin)
   if (params) {
     Object.entries(params).forEach(([key, value]) => {
@@ -30,7 +36,7 @@ export async function http(path, { method = 'GET', body, params, signal } = {}) 
     response = await fetch(url.toString(), {
       method,
       signal,
-      credentials: 'include',
+      credentials,
       headers: {
         Accept: 'application/json',
         ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}),
@@ -53,6 +59,10 @@ export async function http(path, { method = 'GET', body, params, signal } = {}) 
   }
 
   if (!response.ok) {
+    if (response.status === 401) {
+      clearAuthSession()
+      window.dispatchEvent(new Event('auth:expired'))
+    }
     throw new ApiError(data?.message || `Request failed (${response.status})`, {
       status: response.status,
       details: data,

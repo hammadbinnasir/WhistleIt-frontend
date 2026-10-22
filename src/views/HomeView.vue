@@ -2,6 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useRouter } from 'vue-router'
+import { clearAuthSession } from '@/features/auth/session'
 import { useUiStore } from '@/stores/ui'
 import { UserModule } from '@/features/account'
 import { useRemindersStore } from '@/features/search/reminders'
@@ -13,58 +14,13 @@ import SearchPage from '@/features/search/SearchPage.vue'
 import SetReminderModal from '@/features/search/SetReminderModal.vue'
 
 const ui = useUiStore()
-const reminders = useRemindersStore()
 const router = useRouter()
+// storeToRefs keeps state reactive when destructuring; actions are taken from the store directly.
 const { selectedChannelId, sidebarOpen } = storeToRefs(ui)
 
-const channels = ref([
-  {
-    id: 'general',
-    name: 'general',
-    description: 'General discussion',
-    createdBy: 'WhistleIt team',
-    muted: false,
-    favourite: false,
-  },
-  {
-    id: 'random',
-    name: 'random',
-    description: 'Off-topic conversations',
-    createdBy: 'WhistleIt team',
-    muted: false,
-    favourite: false,
-  },
-  {
-    id: 'frontend',
-    name: 'frontend-team',
-    description: 'Frontend team updates',
-    createdBy: 'WhistleIt team',
-    muted: false,
-    favourite: false,
-  },
-])
-
-const selectedChannel = computed(() =>
-  channels.value.find((channel) => channel.id === selectedChannelId.value),
-)
-const reminderModalOpen = ref(false)
-const reminderMessage = computed(() => ({
-  conversationId: selectedChannel.value?.id,
-  conversationName: selectedChannel.value?.name,
-  conversationType: 'channel',
-  messageId: `welcome-${selectedChannel.value?.id}`,
-  text: `Welcome to #${selectedChannel.value?.name}. Use this demo message to try reminders.`,
-}))
-const user = {
-  profile: { fullName: 'Hammad Haider' },
-  status: 'online',
-}
-
-onMounted(() => reminders.startWatcher())
-onBeforeUnmount(() => reminders.stopWatcher())
-
-function leaveChannel() {
-  ui.selectChannel(null)
+async function logout() {
+  clearAuthSession()
+  await router.push({ name: 'login' })
 }
 </script>
 
@@ -90,14 +46,26 @@ function leaveChannel() {
     </aside>
 
     <main class="flex min-w-0 flex-1 flex-col">
-      <header class="flex items-center gap-3 border-b bg-white p-4">
+      <ChannelHeader v-if="selectedChannelId" :channel-id="selectedChannelId">
+        <template #actions>
+          <button class="rounded border px-2 py-1 text-sm" @click="ui.toggleSidebar()">
+            {{ sidebarOpen ? 'Hide' : 'Show' }} sidebar
+          </button>
+          <button class="rounded border px-2 py-1 text-sm" @click="logout">Log out</button>
+        </template>
+      </ChannelHeader>
+
+      <header v-else class="flex items-center gap-3 border-b bg-white p-4">
         <button class="rounded border px-2 py-1 text-sm" @click="ui.toggleSidebar()">
           {{ sidebarOpen ? 'Hide' : 'Show' }} sidebar
         </button>
         <h2 v-if="selectedChannel" class="min-w-0 flex-1 truncate font-semibold">
           # {{ selectedChannel.name }}
         </h2>
-        <ChatHeaderActions class="ml-auto" :is-dm="!selectedChannel" />
+        <button class="ml-auto rounded border px-3 py-1 text-sm hover:bg-slate-50" @click="logout">
+          Log out
+        </button>
+        <h2 class="font-semibold">Select a channel</h2>
       </header>
 
       <div class="flex min-h-0 flex-1">
