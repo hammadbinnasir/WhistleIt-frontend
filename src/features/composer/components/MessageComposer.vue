@@ -1,5 +1,6 @@
 <script setup>
 import { ref, computed, onBeforeUnmount, onMounted } from 'vue'
+import MediaToolbar from '../../media/MediaToolbar.vue'
 
 const emit = defineEmits(['send', 'schedule', 'attachment', 'video', 'microphone'])
 
@@ -879,16 +880,15 @@ function handleKeydown(event) {
         </button>
       </div>
 
-      <!-- <MediaToolbar
+      <MediaToolbar
         class="message-composer__media"
+        @mousedown.prevent="saveSelection(true)"
         @emoji="handleMediaAction('emoji')"
         @document="handleMediaAction('document')"
         @attachment="handleMediaAction('attachment')"
         @video="handleMediaAction('video')"
         @microphone="handleMediaAction('microphone')"
-      /> -->
-
-
+      />
       
       <input
         ref="fileInput"

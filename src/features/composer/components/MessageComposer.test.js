@@ -658,4 +658,34 @@ describe('message composer', () => {
 
   })
 
+
+  it('inserts an emoji and opens the file picker from media controls', async () => {
+
+    const wrapper = mount(MessageComposer, { attachTo: document.body })
+
+    const editor = setEditorText(wrapper, 'Hello')
+
+    selectEditorText(editor)
+
+    await wrapper.get('button[aria-label="Emoji"]').trigger('mousedown')
+
+    await wrapper.get('button[aria-label="Emoji"]').trigger('click')
+
+    expect(editor.element.textContent).toBe('😀')
+
+
+    const fileInput = wrapper.get('input[type="file"]')
+
+    const clickFileInput = vi.spyOn(fileInput.element, 'click')
+
+    await wrapper.get('button[aria-label="Document"]').trigger('click')
+
+    await wrapper.get('button[aria-label="Attachment"]').trigger('click')
+
+    expect(clickFileInput).toHaveBeenCalledTimes(2)
+
+    wrapper.unmount()
+
+  })
+
 })
