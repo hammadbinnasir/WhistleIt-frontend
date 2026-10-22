@@ -23,4 +23,23 @@ describe('ui store', () => {
     ui.toggleSidebar()
     expect(ui.sidebarOpen).toBe(false)
   })
+
+  it('toggles modals properly', () => {
+    const ui = useUiStore()
+    expect(ui.helpModalOpen).toBe(false)
+    ui.toggleHelpModal()
+    expect(ui.helpModalOpen).toBe(true)
+
+    expect(ui.teamCreateModalOpen).toBe(false)
+    ui.toggleTeamCreateModal()
+    expect(ui.teamCreateModalOpen).toBe(true)
+
+    expect(ui.teamJoinModalOpen).toBe(false)
+    ui.toggleTeamJoinModal()
+    expect(ui.teamJoinModalOpen).toBe(true)
+
+    expect(ui.memberManageModalOpen).toBe(false)
+    ui.toggleMemberManageModal()
+    expect(ui.memberManageModalOpen).toBe(true)
+  })
 })
