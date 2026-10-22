@@ -53,8 +53,15 @@ async function submitForm() {
     if (isSignup.value) {
       await router.push({ name: 'login' })
     } else {
-      saveAuthToken(response, rememberMe.value)
-      await router.push({ name: 'home' })
+      if (!saveAuthToken(response, rememberMe.value)) {
+        throw new Error('Login response did not include an access token.')
+      }
+      const redirect = route.query.redirect
+      const destination =
+        typeof redirect === 'string' && redirect.startsWith('/') && !redirect.startsWith('//')
+          ? redirect
+          : { name: 'home' }
+      await router.push(destination)
     }
   } catch (error) {
     const validationErrors = error?.details?.errors

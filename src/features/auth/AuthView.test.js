@@ -30,7 +30,7 @@ describe('auth view', () => {
     vi.clearAllMocks()
     localStorage.clear()
     sessionStorage.clear()
-    login.mockResolvedValue({})
+    login.mockResolvedValue({ access_token: 'test-token' })
     register.mockResolvedValue({})
   })
 
@@ -73,6 +73,19 @@ describe('auth view', () => {
     expect(getAuthToken()).toBe('test-token')
     expect(localStorage.getItem('authToken')).toBeNull()
     expect(router.currentRoute.value.name).toBe('home')
+  })
+
+  it('keeps the token across browser restarts when remember me is selected', async () => {
+    const { wrapper } = await mountAuthView()
+
+    await wrapper.get('#email').setValue('sam@example.com')
+    await wrapper.get('#password').setValue('correct-password')
+    await wrapper.get('[name="rememberMe"]').setValue(true)
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+
+    expect(localStorage.getItem('authToken')).toBe('test-token')
+    expect(sessionStorage.getItem('authToken')).toBeNull()
   })
 
   it('registers and returns to login after a valid account creation form submission', async () => {

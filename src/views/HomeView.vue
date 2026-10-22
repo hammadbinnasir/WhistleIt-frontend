@@ -1,12 +1,19 @@
 <script setup>
 import { storeToRefs } from 'pinia'
-import { RouterLink } from 'vue-router'
+import { useRouter } from 'vue-router'
+import { clearAuthSession } from '@/features/auth/session'
 import { useUiStore } from '@/stores/ui'
 import { ChannelSidebar, ChannelHeader } from '@/features/channels'
 
 const ui = useUiStore()
+const router = useRouter()
 // storeToRefs keeps state reactive when destructuring; actions are taken from the store directly.
 const { selectedChannelId, sidebarOpen } = storeToRefs(ui)
+
+async function logout() {
+  clearAuthSession()
+  await router.push({ name: 'login' })
+}
 </script>
 
 <template>
@@ -26,6 +33,7 @@ const { selectedChannelId, sidebarOpen } = storeToRefs(ui)
           <button class="rounded border px-2 py-1 text-sm" @click="ui.toggleSidebar()">
             {{ sidebarOpen ? 'Hide' : 'Show' }} sidebar
           </button>
+          <button class="rounded border px-2 py-1 text-sm" @click="logout">Log out</button>
         </template>
       </ChannelHeader>
 
@@ -36,9 +44,9 @@ const { selectedChannelId, sidebarOpen } = storeToRefs(ui)
         <h2 class="font-semibold">
           {{ selectedChannelId ? `# ${selectedChannelId}` : 'Select a channel' }}
         </h2>
-        <RouterLink class="ml-auto rounded border px-3 py-1 text-sm hover:bg-slate-50" to="/login">
-          Back to login
-        </RouterLink>
+        <button class="ml-auto rounded border px-3 py-1 text-sm hover:bg-slate-50" @click="logout">
+          Log out
+        </button>
         <h2 class="font-semibold">Select a channel</h2>
       </header>
 

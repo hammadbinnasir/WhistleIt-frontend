@@ -1,7 +1,7 @@
 // Minimal fetch wrapper used by the Channels API.
 // If your project already has an axios/fetch instance (with auth + interceptors),
 // replace the body of `http()` to use it. Nothing else in the module needs to change.
-import { getAuthToken } from '@/features/auth/session'
+import { clearAuthSession, getAuthToken } from '@/features/auth/session'
 
 const BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://10.0.105.90:8000/api'
 
@@ -59,6 +59,10 @@ export async function http(
   }
 
   if (!response.ok) {
+    if (response.status === 401) {
+      clearAuthSession()
+      window.dispatchEvent(new Event('auth:expired'))
+    }
     throw new ApiError(data?.message || `Request failed (${response.status})`, {
       status: response.status,
       details: data,
