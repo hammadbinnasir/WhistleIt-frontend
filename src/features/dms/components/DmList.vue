@@ -1,12 +1,19 @@
 <script setup>
-import { ref } from 'vue'
-import { useDmStore } from '@/stores/dms'
+import { onMounted, ref } from 'vue'
+import { useDmStore } from '@/features/dms/stores/dms'
+import { usePresenceStore } from '@/features/dms/stores/presence'
 import DmListItem from './DmListItem.vue'
 import NewDmPanel from './NewDmPanel.vue'
 
 const dms = useDmStore()
+const presence = usePresenceStore()
 const open = ref(true)
 const panelOpen = ref(false)
+
+onMounted(() => {
+  void dms.init()
+  void presence.init()
+})
 </script>
 
 <template>

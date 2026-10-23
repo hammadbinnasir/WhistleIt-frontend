@@ -9,7 +9,7 @@ import { useTeamsStore } from '@/stores/teams'
 import { useMembersStore } from '@/stores/members'
 import { useChannelsStore } from '@/features/channels'
 import { useRemindersStore } from '@/features/search/reminders'
-import { useUserStore } from '@/features/account'
+import { useUserStore, UserModule } from '@/features/account'
 import { clearAuthSession } from '@/features/auth/session'
 
 // Shell
@@ -38,9 +38,6 @@ import RemindersPanel from '@/features/search/RemindersPanel.vue'
 import SearchPage from '@/features/search/SearchPage.vue'
 import SetReminderModal from '@/features/search/SetReminderModal.vue'
 
-// Account
-import { UserModule } from '@/features/account'
-
 const router = useRouter()
 const ui = useUiStore()
 const teamsStore = useTeamsStore()
@@ -57,11 +54,11 @@ const reminderModalOpen = ref(false)
 
 const user = computed(() => ({
   profile: {
-    fullName: userStore.state.profile.fullName || 'Hammad Haider',
-    ...userStore.state.profile,
+    fullName: userStore.state?.profile?.fullName || 'Hammad Haider',
+    ...userStore.state?.profile,
   },
-  status: userStore.state.status || 'online',
-  customStatus: userStore.state.customStatus,
+  status: userStore.state?.status || 'online',
+  customStatus: userStore.state?.customStatus,
 }))
 
 const selectedChannel = computed(() => {
@@ -230,10 +227,11 @@ onBeforeUnmount(() => {
           v-if="ui.activePanel"
           class="min-h-0 w-full shrink-0 border-l border-slate-200 bg-white md:w-[min(450px,40vw)] shadow-lg"
         >
-          <RemindersPanel v-if="ui.activePanel === 'reminders'" />
+          <RemindersPanel v-if="ui.activePanel === 'reminders'" @close="ui.activePanel = null" />
           <SearchPage
             v-else-if="ui.activePanel === 'search'"
-            :channel-id="selectedChannelId || ''"
+            :channel-id="selectedChannelId"
+            @close="ui.activePanel = null"
           />
           <HelpDrawer v-else-if="ui.activePanel === 'help'" />
         </aside>
@@ -247,11 +245,12 @@ onBeforeUnmount(() => {
       @toggle-mute="selectedChannel.muted = !selectedChannel.muted"
       @toggle-favourite="selectedChannel.favourite = !selectedChannel.favourite"
       @left="ui.selectChannel(null)"
+      @close="ui.channelSettingsOpen = false"
     />
 
     <!-- Set Reminder Modal -->
     <SetReminderModal
-      v-if="reminderModalOpen && selectedChannel"
+      v-if="reminderModalOpen && reminderMessage"
       :message="reminderMessage"
       @close="reminderModalOpen = false"
     />
