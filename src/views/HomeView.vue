@@ -4,8 +4,8 @@ import { storeToRefs } from 'pinia'
 import { useRouter } from 'vue-router'
 import { useUiStore } from '@/stores/ui'
 import { UserModule } from '@/features/account'
+import { useSearchStore } from '@/features/search/search.store'
 import { useRemindersStore } from '@/features/search/reminders'
-import { UserModule } from '@/features/account'
 import ChatHeaderActions from '@/features/search/ChatHeaderActions.vue'
 import ChannelSettingsModal from '@/features/search/ChannelSettingsModal.vue'
 import RemindersPanel from '@/features/search/RemindersPanel.vue'
@@ -14,6 +14,7 @@ import SetReminderModal from '@/features/search/SetReminderModal.vue'
 
 const ui = useUiStore()
 const reminders = useRemindersStore()
+const search = useSearchStore()
 const router = useRouter()
 const { selectedChannelId, sidebarOpen } = storeToRefs(ui)
 
@@ -47,24 +48,47 @@ const channels = ref([
 const selectedChannel = computed(() =>
   channels.value.find((channel) => channel.id === selectedChannelId.value),
 )
+const sortedChannels = computed(() =>
+  [...channels.value].sort((first, second) => Number(second.favourite) - Number(first.favourite)),
+)
 const reminderModalOpen = ref(false)
-const reminderMessage = computed(() => ({
-  conversationId: selectedChannel.value?.id,
-  conversationName: selectedChannel.value?.name,
-  conversationType: 'channel',
-  messageId: `welcome-${selectedChannel.value?.id}`,
-  text: `Welcome to #${selectedChannel.value?.name}. Use this demo message to try reminders.`,
-}))
+const currentConversationId = computed(() => selectedChannel.value?.id || 'dm-hammad')
+const conversationMessages = computed(() =>
+  search.messages.filter((message) => message.conversationId === currentConversationId.value),
+)
+const reminderMessage = ref(null)
 const user = {
   profile: { fullName: 'Hammad Haider' },
   status: 'online',
 }
 
-onMounted(() => reminders.startWatcher())
+onMounted(() => {
+  reminders.startWatcher()
+  if (!selectedChannelId.value) ui.selectChannel('frontend')
+})
 onBeforeUnmount(() => reminders.stopWatcher())
 
 function leaveChannel() {
+  if (selectedChannel.value)
+    channels.value = channels.value.filter((channel) => channel.id !== selectedChannel.value.id)
   ui.selectChannel(null)
+  ui.channelSettingsOpen = false
+}
+
+function updateChannel(updates) {
+  if (!selectedChannel.value) return
+  Object.assign(selectedChannel.value, updates)
+}
+
+function openReminder(message) {
+  reminderMessage.value = {
+    ...message,
+    conversationId: currentConversationId.value,
+    conversationName: selectedChannel.value?.name || 'Hammad Bin Nasir',
+    conversationType: selectedChannel.value ? 'channel' : 'dm',
+    messageId: message.id,
+  }
+  reminderModalOpen.value = true
 }
 </script>
 
@@ -77,13 +101,25 @@ function leaveChannel() {
       <h1 class="mb-4 text-xl font-bold">WhistleIt</h1>
       <p class="mb-2 text-xs uppercase tracking-wide text-slate-400">Channels</p>
       <ul class="space-y-1">
-        <li v-for="channel in channels" :key="channel.id">
+        <li v-for="channel in sortedChannels" :key="channel.id">
           <button
-            class="w-full rounded px-2 py-1 text-left hover:bg-slate-700"
+            class="flex w-full items-center justify-between rounded px-2 py-1 text-left hover:bg-slate-700"
             :class="{ 'bg-slate-700 font-semibold': selectedChannelId === channel.id }"
             @click="ui.selectChannel(channel.id)"
           >
-            # {{ channel.name }}
+            <span class="truncate"># {{ channel.name }}</span>
+            <span v-if="channel.favourite" class="ml-2 text-amber-300" aria-label="Favourite channel">★</span>
+            <span v-else-if="channel.muted" class="ml-2 text-slate-400" title="Muted">M</span>
+          </button>
+        </li>
+        <li class="mt-5 border-t border-slate-700 pt-3">
+          <p class="mb-2 px-2 text-xs uppercase tracking-wide text-slate-400">Direct messages</p>
+          <button
+            class="w-full rounded px-2 py-1 text-left hover:bg-slate-700"
+            :class="{ 'bg-slate-700 font-semibold': !selectedChannel }"
+            @click="ui.selectChannel(null)"
+          >
+            Hammad Bin Nasir
           </button>
         </li>
       </ul>
@@ -97,36 +133,52 @@ function leaveChannel() {
         <h2 v-if="selectedChannel" class="min-w-0 flex-1 truncate font-semibold">
           # {{ selectedChannel.name }}
         </h2>
+        <h2 v-else class="min-w-0 flex-1 truncate font-semibold">Hammad Bin Nasir</h2>
         <ChatHeaderActions class="ml-auto" :is-dm="!selectedChannel" />
       </header>
 
       <div class="flex min-h-0 flex-1">
-        <section class="min-w-0 flex-1 overflow-y-auto p-6 text-slate-500">
-          <template v-if="selectedChannel">
-            <article class="max-w-2xl rounded-lg border border-slate-200 bg-white p-4">
-              <p class="font-semibold text-slate-800">WhistleIt</p>
-              <p class="mt-2 text-sm text-slate-700">{{ reminderMessage.text }}</p>
+        <section class="min-w-0 flex-1 overflow-y-auto bg-slate-50 p-6 text-slate-600">
+          <div class="mx-auto flex max-w-3xl flex-col gap-4">
+            <article
+              v-for="message in conversationMessages"
+              :key="message.id"
+              class="rounded-lg border border-slate-200 bg-white p-4 shadow-sm"
+            >
+              <div class="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+                <p class="font-semibold text-slate-800">{{ message.authorName }}</p>
+                <time class="text-xs text-slate-400">{{ new Date(message.createdAt).toLocaleString() }}</time>
+              </div>
+              <p class="mt-2 text-sm text-slate-700">{{ message.text }}</p>
+              <ul v-if="message.attachments?.length" class="mt-3 flex flex-wrap gap-2">
+                <li v-for="file in message.attachments" :key="file.id">
+                  <a class="rounded border border-slate-200 px-2 py-1 text-xs text-indigo-600" :href="file.url" target="_blank" rel="noreferrer">
+                    {{ file.name }}
+                  </a>
+                </li>
+              </ul>
               <button
                 class="mt-3 rounded border border-indigo-200 px-3 py-1.5 text-sm text-indigo-600 hover:bg-indigo-50"
-                @click="reminderModalOpen = true"
+                @click="openReminder(message)"
               >
                 Remind me
               </button>
             </article>
-          </template>
-          <template v-else>
-            <p>Choose a channel to open its tools.</p>
-          </template>
+            <article v-if="!conversationMessages.length" class="rounded-lg border border-slate-200 bg-white p-6 text-sm">
+              No messages yet. Start a conversation to see messages here.
+            </article>
+          </div>
         </section>
 
         <aside
           v-if="ui.activePanel"
           class="min-h-0 w-full shrink-0 border-l border-slate-200 bg-white md:w-[min(65vw,720px)]"
         >
-          <RemindersPanel v-if="ui.activePanel === 'reminders'" />
+          <RemindersPanel v-if="ui.activePanel === 'reminders'" @close="ui.activePanel = null" />
           <SearchPage
             v-else-if="ui.activePanel === 'search'"
-            :channel-id="selectedChannelId || ''"
+            :channel-id="currentConversationId"
+            @close="ui.activePanel = null"
           />
         </aside>
       </div>
@@ -138,9 +190,11 @@ function leaveChannel() {
       @toggle-mute="selectedChannel.muted = !selectedChannel.muted"
       @toggle-favourite="selectedChannel.favourite = !selectedChannel.favourite"
       @left="leaveChannel"
+      @close="ui.channelSettingsOpen = false"
+      @update-channel="updateChannel"
     />
     <SetReminderModal
-      v-if="reminderModalOpen && selectedChannel"
+      v-if="reminderModalOpen && reminderMessage"
       :message="reminderMessage"
       @close="reminderModalOpen = false"
     />

@@ -1,42 +1,59 @@
 <script setup>
-// Right side of the channel/DM header.
-// Channel: Reminders + Search + Settings.  DM: Reminders + Search only.
 import { useUiStore } from '@/stores/ui'
 
-defineProps({ isDm: { type: Boolean, default: false } })
+defineProps({
+  isDm: { type: Boolean, default: false },
+})
+
 const ui = useUiStore()
+
+function togglePanel(panel) {
+  ui.activePanel = ui.activePanel === panel ? null : panel
+}
 </script>
 
 <template>
-  <div class="flex items-center gap-3">
+  <div class="chat-actions" aria-label="Conversation tools">
     <button
-      class="icon-btn"
-      title="Reminders"
+      class="chat-actions__button"
+      :class="{ 'chat-actions__button--active': ui.activePanel === 'reminders' }"
+      type="button"
       aria-label="Reminders"
-      @click="ui.openPanel('reminders')"
+      title="Reminders"
+      @click="togglePanel('reminders')"
     >
-      <svg viewBox="0 0 24 24" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="2">
-        <circle cx="12" cy="13" r="8" />
-        <path d="M12 9v4l2 2M5 3 2 6M19 3l3 3" />
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <circle cx="12" cy="12" r="9" />
+        <path d="M12 7v5l3 2" />
+        <path d="M8 2 6 4M16 2l2 2" />
       </svg>
     </button>
-    <button class="icon-btn" title="Search" aria-label="Search" @click="ui.openPanel('search')">
-      <svg viewBox="0 0 24 24" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="2">
-        <circle cx="11" cy="11" r="7" />
-        <path d="m20 20-3.5-3.5" />
+    <button
+      class="chat-actions__button"
+      :class="{ 'chat-actions__button--active': ui.activePanel === 'search' }"
+      type="button"
+      aria-label="Search messages"
+      title="Search"
+      @click="togglePanel('search')"
+    >
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <circle cx="10.8" cy="10.8" r="7.2" />
+        <path d="m16 16 5 5" />
       </svg>
     </button>
     <button
       v-if="!isDm"
-      class="icon-btn"
-      title="Channel settings"
+      class="chat-actions__button"
+      :class="{ 'chat-actions__button--active': ui.channelSettingsOpen }"
+      type="button"
       aria-label="Channel settings"
-      @click="ui.openChannelSettings()"
+      title="Channel settings"
+      @click="ui.channelSettingsOpen = true"
     >
-      <svg viewBox="0 0 24 24" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="2">
+      <svg viewBox="0 0 24 24" aria-hidden="true">
         <circle cx="12" cy="12" r="3" />
         <path
-          d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z"
+          d="m19.4 15 .1.1a1.7 1.7 0 0 1-2.4 2.4l-.1-.1a1.7 1.7 0 0 0-2.9 1.2v.2a1.7 1.7 0 0 1-3.4 0v-.2a1.7 1.7 0 0 0-2.9-1.2l-.1.1a1.7 1.7 0 0 1-2.4-2.4l.1-.1a1.7 1.7 0 0 0-1.2-2.9H4a1.7 1.7 0 0 1 0-3.4h.2a1.7 1.7 0 0 0 1.2-2.9l-.1-.1a1.7 1.7 0 0 1 2.4-2.4l.1.1a1.7 1.7 0 0 0 2.9-1.2V2a1.7 1.7 0 0 1 3.4 0v.2a1.7 1.7 0 0 0 2.9 1.2l.1-.1a1.7 1.7 0 0 1 2.4 2.4l-.1.1a1.7 1.7 0 0 0 1.2 2.9h.2a1.7 1.7 0 0 1 0 3.4h-.2a1.7 1.7 0 0 0-1.2 2.9Z"
         />
       </svg>
     </button>
@@ -44,9 +61,36 @@ const ui = useUiStore()
 </template>
 
 <style scoped>
-@reference "../../assets/main.css";
-
-.icon-btn {
-  @apply flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 text-slate-600 hover:bg-indigo-50 hover:text-indigo-600;
+.chat-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+.chat-actions__button {
+  display: grid;
+  width: 40px;
+  height: 40px;
+  place-items: center;
+  border: 1px solid #e5e7eb;
+  border-radius: 50%;
+  background: #fff;
+  color: #44445a;
+  cursor: pointer;
+}
+.chat-actions__button:hover,
+.chat-actions__button--active {
+  border-color: #5b5cff;
+  color: #5b5cff;
+  background: #f5f5ff;
+}
+.chat-actions__button svg {
+  width: 22px;
+  height: 22px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 </style>
