@@ -1,13 +1,14 @@
 <script setup>
 import { computed, ref, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
-import { login, register } from './api'
+import { login, register, requestPasswordReset } from './api'
 import { saveAuthToken } from './session'
 import AuthIllustration from './AuthIllustration.vue'
 
 const route = useRoute()
 const router = useRouter()
 const isSignup = computed(() => route.path === '/signup')
+const isForgotPassword = computed(() => route.path === '/forgot-password')
 const form = ref(null)
 const fullName = ref('')
 const company = ref('')
@@ -19,17 +20,29 @@ const acceptedTerms = ref(false)
 const showPassword = ref(false)
 const showConfirmPassword = ref(false)
 const feedback = ref('')
+const feedbackIsSuccess = ref(false)
 const isSubmitting = ref(false)
 
 watch(
   () => route.path,
   () => {
+    fullName.value = ''
+    company.value = ''
+    email.value = ''
+    password.value = ''
+    confirmPassword.value = ''
+    rememberMe.value = false
+    acceptedTerms.value = false
+    showPassword.value = false
+    showConfirmPassword.value = false
     feedback.value = ''
+    feedbackIsSuccess.value = false
   },
 )
 
 async function submitForm() {
   feedback.value = ''
+  feedbackIsSuccess.value = false
 
   if (!form.value.reportValidity()) return
 
@@ -40,6 +53,14 @@ async function submitForm() {
 
   isSubmitting.value = true
   try {
+    if (isForgotPassword.value) {
+      await requestPasswordReset(email.value)
+      feedback.value =
+        'If an account exists for this email, password reset instructions will be sent.'
+      feedbackIsSuccess.value = true
+      return
+    }
+
     const response = isSignup.value
       ? await register({
           name: fullName.value,
@@ -76,10 +97,6 @@ async function submitForm() {
     isSubmitting.value = false
   }
 }
-
-function showPasswordHelp() {
-  feedback.value = 'Password reset is not available yet.'
-}
 </script>
 
 <template>
@@ -102,17 +119,26 @@ function showPasswordHelp() {
 
       <div class="auth-content">
         <header class="auth-heading">
-          <h1>{{ isSignup ? 'Create Account' : 'Log in' }}</h1>
+          <h1>
+            {{ isSignup ? 'Create Account' : isForgotPassword ? 'Forgot Password?' : 'Log in' }}
+          </h1>
           <p>
             {{
               isSignup
                 ? 'Fill the form below to create an account'
-                : 'Enter your credentials to proceed'
+                : isForgotPassword
+                  ? 'Enter your email and we will send password reset instructions.'
+                  : 'Enter your credentials to proceed'
             }}
           </p>
         </header>
 
-        <form ref="form" class="auth-form" @submit.prevent="submitForm">
+        <form
+          ref="form"
+          class="auth-form"
+          :autocomplete="isSignup ? 'off' : 'on'"
+          @submit.prevent="submitForm"
+        >
           <template v-if="isSignup">
             <label class="sr-only" for="full-name">Full Name</label>
             <input
@@ -120,7 +146,7 @@ function showPasswordHelp() {
               v-model.trim="fullName"
               name="name"
               type="text"
-              autocomplete="name"
+              autocomplete="off"
               placeholder="Full Name*"
               required
             />
@@ -131,7 +157,7 @@ function showPasswordHelp() {
               v-model.trim="company"
               name="company"
               type="text"
-              autocomplete="organization"
+              autocomplete="off"
               placeholder="Company Name*"
               required
             />
@@ -141,19 +167,19 @@ function showPasswordHelp() {
           <input
             id="email"
             v-model.trim="email"
-            name="email"
+            :name="isSignup ? 'new-account-email' : isForgotPassword ? 'reset-email' : 'username'"
             type="email"
-            autocomplete="email"
+            :autocomplete="isSignup ? 'off' : isForgotPassword ? 'email' : 'username'"
             placeholder="Email Address*"
             required
           />
 
-          <div class="password-field">
+          <div v-if="!isForgotPassword" class="password-field">
             <label class="sr-only" for="password">Password</label>
             <input
               id="password"
               v-model="password"
-              name="password"
+              :name="isSignup ? 'new-account-password' : 'password'"
               :type="showPassword ? 'text' : 'password'"
               :autocomplete="isSignup ? 'new-password' : 'current-password'"
               placeholder="Password*"
@@ -185,7 +211,7 @@ function showPasswordHelp() {
             <input
               id="confirm-password"
               v-model="confirmPassword"
-              name="confirmPassword"
+              name="new-account-password-confirm"
               :type="showConfirmPassword ? 'text' : 'password'"
               autocomplete="new-password"
               placeholder="Confirm Password*"
@@ -220,27 +246,43 @@ function showPasswordHelp() {
             </label>
           </div>
 
-          <div v-else class="login-options">
+          <div v-else-if="!isForgotPassword" class="login-options">
             <label class="remember-row">
               <input v-model="rememberMe" name="rememberMe" type="checkbox" />
               <span>Remember Me</span>
             </label>
-            <button class="text-link" type="button" @click="showPasswordHelp">
-              Forgot Password?
-            </button>
+            <RouterLink class="text-link" to="/forgot-password"> Forgot Password? </RouterLink>
           </div>
 
-          <p v-if="feedback" class="form-feedback" role="status" aria-live="polite">
+          <p
+            v-if="feedback"
+            class="form-feedback"
+            :class="{ 'form-feedback--success': feedbackIsSuccess }"
+            role="status"
+            aria-live="polite"
+          >
             {{ feedback }}
           </p>
 
           <button class="submit-button" type="submit" :disabled="isSubmitting">
-            {{ isSubmitting ? 'Please wait...' : isSignup ? 'Create Account' : 'Login' }}
+            {{
+              isSubmitting
+                ? 'Please wait...'
+                : isSignup
+                  ? 'Create Account'
+                  : isForgotPassword
+                    ? 'Send Reset Link'
+                    : 'Login'
+            }}
           </button>
         </form>
 
         <p class="auth-switch">
-          <template v-if="isSignup">
+          <template v-if="isForgotPassword">
+            Remember your password?
+            <RouterLink to="/login">Log in</RouterLink>
+          </template>
+          <template v-else-if="isSignup">
             Already have an account?
             <RouterLink to="/login">Login</RouterLink>
           </template>

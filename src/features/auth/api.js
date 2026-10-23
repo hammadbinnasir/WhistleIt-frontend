@@ -7,3 +7,7 @@ export function login(credentials) {
 export function register(account) {
   return http('/register', { method: 'POST', body: account })
 }
+
+export function requestPasswordReset(email) {
+  return http('/forgot-password', { method: 'POST', body: { email } })
+}
