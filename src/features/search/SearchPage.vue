@@ -1,7 +1,7 @@
 <script setup>
 // Search page: Text / File / Link tabs, scope (current channel | over Whistle It),
 // filter popover (user, date, webhooks) and a paginated file grid.
-import { ref, reactive, watch, computed, onMounted } from 'vue'
+import { ref, reactive, watch, computed, onMounted, onBeforeUnmount } from 'vue'
 import { useUiStore } from '@/stores/ui'
 import { searchMessages, searchFiles, searchLinks, searchUsers } from './search'
 
@@ -25,8 +25,8 @@ const searched = ref(false)
 
 // filters: "draft" is edited inside the popover, "applied" is what the search uses
 const filterOpen = ref(false)
-const draft = reactive({ userIds: [], date: '', webhooks: false })
-const applied = reactive({ userIds: [], date: '', webhooks: false })
+const draft = reactive({ userIds: [], date: '', dateEnd: '', dateMode: 'on', webhooks: false })
+const applied = reactive({ userIds: [], date: '', dateEnd: '', dateMode: 'on', webhooks: false })
 const userQuery = ref('')
 const userOptions = ref([])
 const noun = computed(() => ({ text: 'messages', file: 'files', link: 'links' })[tab.value])
@@ -50,6 +50,8 @@ async function run() {
       channelId: scope.value === 'channel' ? props.channelId : '',
       userIds: applied.userIds,
       date: applied.date,
+      dateEnd: applied.dateEnd,
+      dateMode: applied.dateMode,
       webhooks: applied.webhooks,
     }
     const fn = { text: searchMessages, file: searchFiles, link: searchLinks }[tab.value]
@@ -70,13 +72,14 @@ watch(q, () => {
   clearTimeout(timer)
   timer = setTimeout(run, 350)
 })
-watch([tab, scope], () => {
+watch([tab, scope, () => props.channelId], () => {
   page.value = 1
   items.value = []
   run()
 })
 watch(page, run)
 onMounted(run)
+onBeforeUnmount(() => clearTimeout(timer))
 
 watch(
   userQuery,
@@ -97,8 +100,8 @@ function applyFilters() {
   run()
 }
 function resetFilters() {
-  Object.assign(draft, { userIds: [], date: '', webhooks: false })
-  Object.assign(applied, { userIds: [], date: '', webhooks: false })
+  Object.assign(draft, { userIds: [], date: '', dateEnd: '', dateMode: 'on', webhooks: false })
+  Object.assign(applied, { userIds: [], date: '', dateEnd: '', dateMode: 'on', webhooks: false })
   filterOpen.value = false
   page.value = 1
   run()
@@ -160,16 +163,19 @@ const fmtDate = (iso) =>
       </button>
 
       <!-- filter popover -->
-      <div v-if="filterOpen" class="absolute right-4 top-14 z-20 w-72 rounded bg-white shadow-xl">
-        <div class="space-y-4 p-4 text-sm">
+      <div
+        v-if="filterOpen"
+        class="absolute right-4 top-14 z-20 w-[min(28rem,calc(100vw-2rem))] rounded bg-white shadow-xl"
+      >
+        <div class="space-y-5 p-5 text-sm">
           <div>
             <p class="mb-1 text-slate-600">Filter by Users</p>
             <input
               v-model="userQuery"
-              placeholder="Type here to search"
-              class="w-full rounded border border-slate-300 px-3 py-2 focus:border-indigo-500 focus:outline-none"
+              placeholder="Search"
+              class="w-full rounded border border-slate-300 px-3 py-3 focus:border-indigo-500 focus:outline-none"
             />
-            <ul class="mt-1 max-h-28 overflow-y-auto">
+            <ul class="mt-1 max-h-36 overflow-y-auto">
               <li v-for="u in userOptions" :key="u.id">
                 <label class="flex cursor-pointer items-center gap-2 px-1 py-1 hover:bg-slate-50">
                   <input
@@ -184,10 +190,28 @@ const fmtDate = (iso) =>
           </div>
           <div>
             <p class="mb-1 text-slate-600">Filter by Date</p>
+            <select
+              v-model="draft.dateMode"
+              class="mb-2 w-full rounded border border-slate-300 px-3 py-3 focus:border-indigo-500 focus:outline-none"
+              aria-label="Date filter type"
+            >
+              <option value="on">On...</option>
+              <option value="before">Before...</option>
+              <option value="after">After...</option>
+              <option value="range">Range...</option>
+            </select>
             <input
               v-model="draft.date"
               type="date"
-              class="w-full rounded border border-slate-300 px-3 py-2"
+              :aria-label="draft.dateMode === 'range' ? 'Start date' : 'Select date'"
+              class="w-full rounded border border-slate-300 px-3 py-3"
+            />
+            <input
+              v-if="draft.dateMode === 'range'"
+              v-model="draft.dateEnd"
+              type="date"
+              aria-label="End date"
+              class="mt-2 w-full rounded border border-slate-300 px-3 py-3"
             />
           </div>
           <div>

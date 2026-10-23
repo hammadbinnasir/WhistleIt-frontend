@@ -11,6 +11,7 @@ export const useUiStore = defineStore('ui', () => {
   const channelSettingsOpen = ref(false)
   const channelSettingsTab = ref('settings')
   const toasts = ref([])
+  let nextToastId = 0
 
   // modal visibility flags
   const helpModalOpen = ref(false)
@@ -24,6 +25,26 @@ export const useUiStore = defineStore('ui', () => {
   // actions
   function selectChannel(id) {
     selectedChannelId.value = id
+  }
+  function openPanel(panel) {
+    activePanel.value = panel
+  }
+  function closePanel() {
+    activePanel.value = null
+  }
+  function openChannelSettings() {
+    channelSettingsTab.value = 'settings'
+    channelSettingsOpen.value = true
+  }
+  function closeChannelSettings() {
+    channelSettingsOpen.value = false
+  }
+  function toast(title, body) {
+    const id = ++nextToastId
+    toasts.value.push({ id, title, body })
+    setTimeout(() => {
+      toasts.value = toasts.value.filter((item) => item.id !== id)
+    }, 5000)
   }
   function toggleSidebar() {
     sidebarOpen.value = !sidebarOpen.value
@@ -43,6 +64,14 @@ export const useUiStore = defineStore('ui', () => {
     memberManageModalOpen.value = !memberManageModalOpen.value
   }
 
+  function toast(title, body) {
+    const id = Date.now()
+    toasts.value.push({ id, title, body })
+    setTimeout(() => {
+      toasts.value = toasts.value.filter((t) => t.id !== id)
+    }, 5000)
+  }
+
   return {
     selectedChannelId,
     sidebarOpen,
@@ -52,6 +81,11 @@ export const useUiStore = defineStore('ui', () => {
     toasts,
     hasSelection,
     selectChannel,
+    openPanel,
+    closePanel,
+    openChannelSettings,
+    closeChannelSettings,
+    toast,
     toggleSidebar,
     helpModalOpen,
     teamCreateModalOpen,
@@ -61,5 +95,6 @@ export const useUiStore = defineStore('ui', () => {
     toggleTeamCreateModal,
     toggleTeamJoinModal,
     toggleMemberManageModal,
+    toast,
   }
 })
