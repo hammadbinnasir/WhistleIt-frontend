@@ -18,7 +18,7 @@ import {
   TeamSwitcher,
   CreateTeamModal,
   JoinTeamModal,
-  HelpModal,
+  HelpDrawer,
   MemberManageModal,
 } from '@/features/shell'
 
@@ -233,6 +233,7 @@ onBeforeUnmount(() => {
             :channel-id="selectedChannelId"
             @close="ui.activePanel = null"
           />
+          <HelpDrawer v-else-if="ui.activePanel === 'help'" />
         </aside>
       </div>
     </main>
@@ -272,7 +273,6 @@ onBeforeUnmount(() => {
     <!-- Shell Modals -->
     <CreateTeamModal />
     <JoinTeamModal />
-    <HelpModal />
     <MemberManageModal />
   </div>
 </template>

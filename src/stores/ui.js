@@ -50,9 +50,18 @@ export const useUiStore = defineStore('ui', () => {
     sidebarOpen.value = !sidebarOpen.value
   }
 
-  // modal toggles
+  // panel controls (reminders, search, help)
+  function openPanel(panel) {
+    activePanel.value = activePanel.value === panel ? null : panel
+  }
+  function closePanel() {
+    activePanel.value = null
+  }
+
+  // modal & drawer toggles
   function toggleHelpModal() {
-    helpModalOpen.value = !helpModalOpen.value
+    activePanel.value = activePanel.value === 'help' ? null : 'help'
+    helpModalOpen.value = activePanel.value === 'help'
   }
   function toggleTeamCreateModal() {
     teamCreateModalOpen.value = !teamCreateModalOpen.value
@@ -90,7 +99,8 @@ export const useUiStore = defineStore('ui', () => {
     helpModalOpen,
     teamCreateModalOpen,
     teamJoinModalOpen,
-    memberManageModalOpen,
+    openPanel,
+    closePanel,
     toggleHelpModal,
     toggleTeamCreateModal,
     toggleTeamJoinModal,
