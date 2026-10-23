@@ -1,150 +1,72 @@
 <script setup>
-import { computed, ref } from 'vue'
+// Opened from a message's action menu ("Remind me"). Saves into the reminders store.
+import { ref, computed } from 'vue'
 import { useRemindersStore } from './reminders'
 
 const props = defineProps({
+  // { conversationId, conversationName, conversationType, messageId, text }
   message: { type: Object, required: true },
 })
 const emit = defineEmits(['close'])
-const reminders = useRemindersStore()
-const defaultTime = new Date(Date.now() + 60 * 60 * 1000)
-const localDateTime = new Date(defaultTime.getTime() - defaultTime.getTimezoneOffset() * 60 * 1000)
-const remindAt = ref(localDateTime.toISOString().slice(0, 16))
-const note = ref('')
-const error = ref('')
-const messagePreview = computed(() => props.message.text || 'Message')
+const store = useRemindersStore()
 
+const presets = [
+  { label: 'In 20 minutes', mins: 20 },
+  { label: 'In 1 hour', mins: 60 },
+  { label: 'In 3 hours', mins: 180 },
+  { label: 'Tomorrow', mins: 24 * 60 },
+]
+const toLocalInput = (d) =>
+  new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16)
+const when = ref(toLocalInput(new Date(Date.now() + 20 * 60000)))
+const valid = computed(() => new Date(when.value).getTime() > Date.now())
+
+const pick = (mins) => {
+  when.value = toLocalInput(new Date(Date.now() + mins * 60000))
+}
 function save() {
-  const selectedTime = new Date(remindAt.value)
-  if (!remindAt.value || Number.isNaN(selectedTime.getTime()) || selectedTime <= new Date()) {
-    error.value = 'Choose a reminder time in the future.'
-    return
-  }
-  reminders.addReminder(props.message, selectedTime.toISOString(), note.value.trim())
+  if (!valid.value) return
+  store.add({ ...props.message, remindAt: new Date(when.value).toISOString() })
   emit('close')
 }
 </script>
 
 <template>
-  <div class="reminder-modal__backdrop" @click.self="emit('close')">
-    <section
-      class="reminder-modal"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="reminder-title"
-    >
-      <header class="reminder-modal__header">
-        <h2 id="reminder-title">Set a reminder</h2>
-        <button type="button" aria-label="Close" @click="emit('close')">×</button>
-      </header>
-      <p class="reminder-modal__conversation">
-        {{ message.conversationType === 'channel' ? '#' : '' }}{{ message.conversationName }}
+  <div
+    class="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
+    @click.self="emit('close')"
+  >
+    <div class="w-[360px] rounded-lg bg-white p-5 shadow-xl">
+      <h3 class="mb-3 text-lg font-semibold text-slate-800">Remind me about this message</h3>
+      <p class="mb-3 line-clamp-2 rounded bg-slate-50 p-2 text-sm text-slate-600">
+        {{ message.text }}
       </p>
-      <blockquote>{{ messagePreview }}</blockquote>
-      <label class="reminder-modal__label" for="reminder-time">Remind me</label>
-      <input id="reminder-time" v-model="remindAt" type="datetime-local" />
-      <label class="reminder-modal__label" for="reminder-note">Add a note (optional)</label>
-      <textarea id="reminder-note" v-model="note" rows="2" placeholder="What should you remember?" />
-      <p v-if="error" class="reminder-modal__error" role="alert">{{ error }}</p>
-      <footer>
-        <button class="reminder-modal__cancel" type="button" @click="emit('close')">Cancel</button>
-        <button class="reminder-modal__save" type="button" @click="save">Save reminder</button>
-      </footer>
-    </section>
+      <div class="mb-3 flex flex-wrap gap-2">
+        <button
+          v-for="p in presets"
+          :key="p.label"
+          class="rounded-full border border-indigo-200 px-3 py-1 text-sm text-indigo-600 hover:bg-indigo-50"
+          @click="pick(p.mins)"
+        >
+          {{ p.label }}
+        </button>
+      </div>
+      <input
+        v-model="when"
+        type="datetime-local"
+        class="w-full rounded border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none"
+      />
+      <p v-if="!valid" class="mt-1 text-xs text-red-500">Pick a time in the future.</p>
+      <div class="mt-4 flex justify-end gap-2">
+        <button class="px-3 py-2 text-sm text-slate-500" @click="emit('close')">Cancel</button>
+        <button
+          class="rounded bg-indigo-500 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
+          :disabled="!valid"
+          @click="save"
+        >
+          Set reminder
+        </button>
+      </div>
+    </div>
   </div>
 </template>
-
-<style scoped>
-.reminder-modal__backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: 80;
-  display: grid;
-  place-items: center;
-  padding: 20px;
-  background: rgb(22 23 37 / 45%);
-}
-.reminder-modal {
-  width: min(100%, 480px);
-  padding: 22px;
-  border-radius: 12px;
-  background: #fff;
-  box-shadow: 0 20px 55px rgb(18 20 40 / 24%);
-}
-.reminder-modal__header,
-.reminder-modal footer {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-.reminder-modal__header h2 {
-  margin: 0;
-  color: #33334a;
-  font-size: 21px;
-}
-.reminder-modal__header button {
-  border: 0;
-  background: transparent;
-  color: #777;
-  font-size: 26px;
-  cursor: pointer;
-}
-.reminder-modal__conversation {
-  margin: 18px 0 8px;
-  color: #5b5cff;
-  font-weight: 600;
-}
-.reminder-modal blockquote {
-  margin: 0 0 18px;
-  padding: 12px;
-  border-left: 3px solid #5b5cff;
-  background: #f7f7fb;
-  color: #555;
-}
-.reminder-modal__label {
-  display: block;
-  margin: 14px 0 6px;
-  color: #555;
-  font-size: 14px;
-  font-weight: 600;
-}
-.reminder-modal input,
-.reminder-modal textarea {
-  box-sizing: border-box;
-  width: 100%;
-  padding: 10px;
-  border: 1px solid #d4d4dc;
-  border-radius: 6px;
-  color: #28283a;
-  font: inherit;
-}
-.reminder-modal input:focus,
-.reminder-modal textarea:focus {
-  outline: 2px solid #5b5cff;
-  outline-offset: 1px;
-}
-.reminder-modal__error {
-  color: #c73546;
-  font-size: 13px;
-}
-.reminder-modal footer {
-  justify-content: flex-end;
-  margin-top: 20px;
-}
-.reminder-modal footer button {
-  padding: 9px 14px;
-  border: 0;
-  border-radius: 6px;
-  cursor: pointer;
-}
-.reminder-modal__cancel {
-  background: #f1f1f5;
-  color: #444;
-}
-.reminder-modal__save {
-  background: #5b5cff;
-  color: #fff;
-  font-weight: 600;
-}
-</style>

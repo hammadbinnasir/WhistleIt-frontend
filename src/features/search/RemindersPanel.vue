@@ -1,218 +1,92 @@
 <script setup>
+// Right-side "Reminders" drawer. Shows every reminder set on a message.
 import { ref } from 'vue'
 import { useRemindersStore } from './reminders'
+import { useUiStore } from '@/stores/ui'
 
-defineEmits(['close'])
+const store = useRemindersStore()
+const ui = useUiStore()
+const editingId = ref(null)
+const editText = ref('')
 
-const reminders = useRemindersStore()
-const showDeleted = ref(false)
-
-function formatDate(value) {
-  return new Date(value).toLocaleString([], {
+const fmt = (iso) => {
+  const d = new Date(iso)
+  const date = d.toLocaleString('en-US', {
     month: 'short',
     day: 'numeric',
     year: 'numeric',
     hour: 'numeric',
     minute: '2-digit',
   })
+  return d.toDateString() === new Date().toDateString() ? `${date} . Today` : date
+}
+const startEdit = (r) => {
+  editingId.value = r.id
+  editText.value = r.text
+}
+const saveEdit = (r) => {
+  store.update(r.id, { text: editText.value })
+  editingId.value = null
 }
 </script>
 
 <template>
-  <section class="reminders-panel" aria-label="Reminders">
-    <header class="reminders-panel__header">
-      <h2>Reminders</h2>
-      <button type="button" aria-label="Close reminders" @click="$emit('close')">×</button>
+  <aside class="flex h-full w-[360px] flex-col border-l border-slate-200 bg-white">
+    <header class="flex items-center justify-between border-b border-slate-200 px-5 py-4">
+      <h2 class="text-lg text-slate-700">Reminders</h2>
+      <button
+        class="flex h-7 w-7 items-center justify-center rounded-full bg-indigo-50 text-slate-600"
+        aria-label="Close"
+        @click="ui.closePanel()"
+      >
+        ✕
+      </button>
     </header>
-    <div class="reminders-panel__content">
-      <div class="reminders-panel__section">
-        <h3>Upcoming reminders</h3>
-        <div v-if="reminders.activeReminders.length" class="reminders-panel__list">
-          <article
-            v-for="reminder in reminders.activeReminders"
-            :key="reminder.id"
-            class="reminder-card"
-            :class="{ 'reminder-card--completed': reminder.completed }"
-          >
-            <div class="reminder-card__top">
-              <strong>
-                {{ reminder.conversationType === 'channel' ? '#' : '' }}{{ reminder.conversationName }}
-              </strong>
-              <button
-                type="button"
-                :aria-label="reminder.completed ? 'Mark as incomplete' : 'Mark as complete'"
-                :title="reminder.completed ? 'Mark as incomplete' : 'Mark as complete'"
-                @click="reminders.updateReminder(reminder.id, { completed: !reminder.completed })"
-              >
-                {{ reminder.completed ? '✓' : '○' }}
-              </button>
-            </div>
-            <p class="reminder-card__message">{{ reminder.text }}</p>
-            <p v-if="reminder.note" class="reminder-card__note">{{ reminder.note }}</p>
-            <time>{{ formatDate(reminder.remindAt) }}</time>
-            <button
-              class="reminder-card__delete"
-              type="button"
-              @click="reminders.removeReminder(reminder.id)"
-            >
-              Delete
-            </button>
-          </article>
-        </div>
-        <p v-else class="reminders-panel__empty">No reminders yet. Use the clock on a message to add one.</p>
-      </div>
 
-      <div class="reminders-panel__section">
+    <div class="flex-1 space-y-3 overflow-y-auto p-4">
+      <p v-if="!store.sorted.length" class="mt-10 text-center text-sm text-slate-500">
+        No reminders yet. Use "Remind me" on a message to add one.
+      </p>
+
+      <div
+        v-for="r in store.sorted"
+        :key="r.id"
+        class="relative border-l-4 bg-slate-50 p-3"
+        :class="r.fired ? 'border-amber-400' : 'border-blue-500'"
+      >
         <button
-          class="reminders-panel__toggle"
-          type="button"
-          :aria-expanded="showDeleted"
-          @click="showDeleted = !showDeleted"
+          class="absolute right-2 top-2 text-slate-400 hover:text-slate-600"
+          aria-label="Edit reminder"
+          @click="startEdit(r)"
         >
-          <span>Deleted Reminders ({{ reminders.deletedReminders.length }})</span>
-          <span>{{ showDeleted ? '⌃' : '⌄' }}</span>
+          ✎
         </button>
-        <div v-if="showDeleted" class="reminders-panel__list">
-          <article v-for="reminder in reminders.deletedReminders" :key="reminder.id" class="reminder-card reminder-card--deleted">
-            <strong>{{ reminder.conversationName }}</strong>
-            <p class="reminder-card__message">{{ reminder.text }}</p>
-            <time>{{ formatDate(reminder.remindAt) }}</time>
-            <button
-              class="reminder-card__restore"
-              type="button"
-              @click="reminders.restoreReminder(reminder.id)"
-            >
-              Restore
-            </button>
-          </article>
-          <p v-if="!reminders.deletedReminders.length" class="reminders-panel__empty">
-            Deleted reminders will appear here.
-          </p>
-        </div>
+        <p class="text-sm font-bold text-slate-900">
+          In {{ r.conversationType === 'dm' ? 'conversation with' : 'channel' }}
+          <span class="font-normal text-blue-500">@{{ r.conversationName }}</span>
+        </p>
+        <p class="mt-1 text-sm font-bold text-slate-900">Message:</p>
+        <template v-if="editingId === r.id">
+          <textarea
+            v-model="editText"
+            rows="2"
+            class="mt-1 w-full rounded border border-slate-300 p-2 text-sm"
+          ></textarea>
+          <div class="mt-1 flex gap-2 text-xs">
+            <button class="text-indigo-600" @click="saveEdit(r)">Save</button>
+            <button class="text-slate-500" @click="editingId = null">Cancel</button>
+          </div>
+        </template>
+        <p v-else class="mt-1 max-h-14 overflow-y-auto break-words text-sm text-slate-800">
+          {{ r.text }}
+        </p>
+        <p class="mt-3 text-xs text-slate-500">
+          {{ fmt(r.remindAt) }}<span v-if="r.fired" class="ml-2 text-amber-600">Due</span>
+        </p>
+        <button class="mt-2 text-xs text-red-600" @click="store.remove(r.id)">
+          Delete Reminder
+        </button>
       </div>
     </div>
-  </section>
+  </aside>
 </template>
-
-<style scoped>
-.reminders-panel {
-  display: flex;
-  height: 100%;
-  min-height: 0;
-  flex-direction: column;
-  background: #fff;
-  color: #303044;
-}
-.reminders-panel__header {
-  display: flex;
-  height: 64px;
-  flex: 0 0 64px;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0 20px;
-  border-bottom: 1px solid #e6e6eb;
-}
-.reminders-panel__header h2 {
-  margin: 0;
-  font-size: 21px;
-  font-weight: 500;
-}
-.reminders-panel__header button {
-  width: 30px;
-  height: 30px;
-  border: 0;
-  border-radius: 50%;
-  background: #f1f1f7;
-  color: #46465b;
-  font-size: 23px;
-  cursor: pointer;
-}
-.reminders-panel__content {
-  min-height: 0;
-  overflow-y: auto;
-  padding: 18px 20px 28px;
-}
-.reminders-panel__section + .reminders-panel__section {
-  margin-top: 20px;
-}
-.reminders-panel__section h3,
-.reminders-panel__toggle {
-  display: flex;
-  width: 100%;
-  align-items: center;
-  justify-content: space-between;
-  margin: 0;
-  padding: 12px 4px;
-  border: 0;
-  background: transparent;
-  color: #333;
-  font-size: 17px;
-  text-align: left;
-}
-.reminders-panel__toggle {
-  cursor: pointer;
-}
-.reminders-panel__list {
-  display: grid;
-  gap: 12px;
-}
-.reminder-card {
-  padding: 15px;
-  border-left: 5px solid #5b5cff;
-  background: #f7f7ff;
-}
-.reminder-card--completed {
-  opacity: 0.65;
-}
-.reminder-card--deleted {
-  border-left-color: #df525b;
-  background: #fff5f5;
-}
-.reminder-card__top {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-}
-.reminder-card__top button {
-  border: 0;
-  background: transparent;
-  color: #5b5cff;
-  font-size: 22px;
-  cursor: pointer;
-}
-.reminder-card__message {
-  margin: 8px 0;
-  color: #353545;
-  line-height: 1.5;
-}
-.reminder-card__note {
-  margin: 8px 0;
-  color: #5b5cff;
-}
-.reminder-card time {
-  color: #737381;
-  font-size: 13px;
-}
-.reminder-card__delete,
-.reminder-card__restore {
-  display: block;
-  margin-top: 10px;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  color: #5555dc;
-  font: inherit;
-  font-size: 13px;
-  cursor: pointer;
-}
-.reminder-card__delete {
-  color: #d44752;
-}
-.reminders-panel__empty {
-  margin: 0;
-  padding: 14px;
-  color: #777;
-  font-size: 14px;
-}
-</style>
