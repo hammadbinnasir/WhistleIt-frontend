@@ -1,14 +1,21 @@
 import { mount, flushPromises } from '@vue/test-utils'
 import { createMemoryHistory, createRouter } from 'vue-router'
-import { describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { login, register } from './api'
+import { getAuthToken } from './session'
 import AuthView from './AuthView.vue'
+
+vi.mock('./api', () => ({
+  login: vi.fn(),
+  register: vi.fn(),
+}))
 
 async function mountAuthView(path = '/login') {
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [
-      { path: '/login', component: AuthView },
-      { path: '/signup', component: AuthView },
+      { path: '/login', name: 'login', component: AuthView },
+      { path: '/signup', name: 'signup', component: AuthView },
       { path: '/app', name: 'home', component: { template: '<main>Workspace</main>' } },
     ],
   })
@@ -19,6 +26,14 @@ async function mountAuthView(path = '/login') {
 }
 
 describe('auth view', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    localStorage.clear()
+    sessionStorage.clear()
+    login.mockResolvedValue({ access_token: 'test-token' })
+    register.mockResolvedValue({})
+  })
+
   it('shows login and switches to account creation', async () => {
     const { router, wrapper } = await mountAuthView()
 
@@ -29,7 +44,7 @@ describe('auth view', () => {
     await flushPromises()
 
     expect(wrapper.get('h1').text()).toBe('Create Account')
-    expect(wrapper.find('input[name="organization"]').exists()).toBe(true)
+    expect(wrapper.find('input[name="company"]').exists()).toBe(true)
     expect(wrapper.find('input[name="terms"]').exists()).toBe(true)
   })
 
@@ -42,7 +57,8 @@ describe('auth view', () => {
     expect(password.attributes('type')).toBe('text')
   })
 
-  it('navigates to the workspace after a valid login form submission', async () => {
+  it('logs in and navigates to the workspace after a valid form submission', async () => {
+    login.mockResolvedValueOnce({ access_token: 'test-token' })
     const { router, wrapper } = await mountAuthView()
 
     await wrapper.get('#email').setValue('sam@example.com')
@@ -50,10 +66,29 @@ describe('auth view', () => {
     await wrapper.get('form').trigger('submit')
     await flushPromises()
 
+    expect(login).toHaveBeenCalledWith({
+      email: 'sam@example.com',
+      password: 'correct-password',
+    })
+    expect(getAuthToken()).toBe('test-token')
+    expect(localStorage.getItem('authToken')).toBeNull()
     expect(router.currentRoute.value.name).toBe('home')
   })
 
-  it('navigates to the workspace after a valid account creation form submission', async () => {
+  it('keeps the token across browser restarts when remember me is selected', async () => {
+    const { wrapper } = await mountAuthView()
+
+    await wrapper.get('#email').setValue('sam@example.com')
+    await wrapper.get('#password').setValue('correct-password')
+    await wrapper.get('[name="rememberMe"]').setValue(true)
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+
+    expect(localStorage.getItem('authToken')).toBe('test-token')
+    expect(sessionStorage.getItem('authToken')).toBeNull()
+  })
+
+  it('registers and returns to login after a valid account creation form submission', async () => {
     const { router, wrapper } = await mountAuthView('/signup')
 
     await wrapper.get('#full-name').setValue('Sam Example')
@@ -65,7 +100,27 @@ describe('auth view', () => {
     await wrapper.get('form').trigger('submit')
     await flushPromises()
 
-    expect(router.currentRoute.value.name).toBe('home')
+    expect(register).toHaveBeenCalledWith({
+      name: 'Sam Example',
+      company: 'Example Co',
+      email: 'sam@example.com',
+      password: 'correct-password',
+      password_confirmation: 'correct-password',
+    })
+    expect(router.currentRoute.value.path).toBe('/login')
+  })
+
+  it('shows authentication errors and stays on the form', async () => {
+    login.mockRejectedValueOnce(new Error('Invalid credentials'))
+    const { router, wrapper } = await mountAuthView()
+
+    await wrapper.get('#email').setValue('sam@example.com')
+    await wrapper.get('#password').setValue('wrong-password')
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+
+    expect(wrapper.get('[role="status"]').text()).toContain('Invalid credentials')
+    expect(router.currentRoute.value.path).toBe('/login')
   })
 
   it('reports a password mismatch during sign up', async () => {

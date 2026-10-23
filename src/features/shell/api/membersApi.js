@@ -1,7 +1,7 @@
 import { apiRequest } from '@/lib/api/client'
 
 // ── Mock gate ────────────────────────────────────────────
-const USE_MOCKS = import.meta.env.VITE_USE_MOCKS === 'true'
+const USE_MOCKS = import.meta.env.VITE_USE_MOCKS !== 'false'
 
 async function withMock(mockFn, apiFn) {
   if (USE_MOCKS) return mockFn()
