@@ -1,12 +1,22 @@
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 
-// UI state store: selected channel, sidebar visibility.
+// UI state store: selected channel, sidebar visibility, modal states.
 // Server data (messages, channels from the API) does NOT belong here.
 export const useUiStore = defineStore('ui', () => {
   // state
   const selectedChannelId = ref(null)
   const sidebarOpen = ref(true)
+  const activePanel = ref(null)
+  const channelSettingsOpen = ref(false)
+  const channelSettingsTab = ref('settings')
+  const toasts = ref([])
+
+  // modal visibility flags
+  const helpModalOpen = ref(false)
+  const teamCreateModalOpen = ref(false)
+  const teamJoinModalOpen = ref(false)
+  const memberManageModalOpen = ref(false)
 
   // getters
   const hasSelection = computed(() => selectedChannelId.value !== null)
@@ -19,5 +29,46 @@ export const useUiStore = defineStore('ui', () => {
     sidebarOpen.value = !sidebarOpen.value
   }
 
-  return { selectedChannelId, sidebarOpen, hasSelection, selectChannel, toggleSidebar }
+  // modal toggles
+  function toggleHelpModal() {
+    helpModalOpen.value = !helpModalOpen.value
+  }
+  function toggleTeamCreateModal() {
+    teamCreateModalOpen.value = !teamCreateModalOpen.value
+  }
+  function toggleTeamJoinModal() {
+    teamJoinModalOpen.value = !teamJoinModalOpen.value
+  }
+  function toggleMemberManageModal() {
+    memberManageModalOpen.value = !memberManageModalOpen.value
+  }
+
+  function toast(title, body) {
+    const id = Date.now()
+    toasts.value.push({ id, title, body })
+    setTimeout(() => {
+      toasts.value = toasts.value.filter((t) => t.id !== id)
+    }, 5000)
+  }
+
+  return {
+    selectedChannelId,
+    sidebarOpen,
+    activePanel,
+    channelSettingsOpen,
+    channelSettingsTab,
+    toasts,
+    hasSelection,
+    selectChannel,
+    toggleSidebar,
+    helpModalOpen,
+    teamCreateModalOpen,
+    teamJoinModalOpen,
+    memberManageModalOpen,
+    toggleHelpModal,
+    toggleTeamCreateModal,
+    toggleTeamJoinModal,
+    toggleMemberManageModal,
+    toast,
+  }
 })
