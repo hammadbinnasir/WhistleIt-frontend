@@ -39,6 +39,7 @@ function dateKey(value) {
   return `${date.getFullYear()}-${month}-${day}`
 }
 
+<<<<<<< Updated upstream
 const allResults = computed(() => {
   const current = store.messages.filter(
     (message) => scope.value === 'all' || message.conversationId === props.channelId,
@@ -60,6 +61,21 @@ const allResults = computed(() => {
     }
     return []
   })
+=======
+let timer
+watch(q, () => {
+  page.value = 1
+  clearTimeout(timer)
+  timer = setTimeout(run, 350)
+})
+watch([tab, scope, () => props.channelId], () => {
+  page.value = 1
+  items.value = []
+  run()
+})
+watch(page, run)
+onMounted(run)
+>>>>>>> Stashed changes
 
   const filtered = matches.filter(({ message }) => {
     if (appliedFilters.value.user && message.authorId !== appliedFilters.value.user) return false

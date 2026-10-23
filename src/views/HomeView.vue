@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useRouter } from 'vue-router'
 import { useUiStore } from '@/stores/ui'
+<<<<<<< Updated upstream
 import { UserModule } from '@/features/account'
 import { useSearchStore } from '@/features/search/search.store'
 import { useRemindersStore } from '@/features/search/reminders'
@@ -12,6 +13,40 @@ import RemindersPanel from '@/features/search/RemindersPanel.vue'
 import SearchPage from '@/features/search/SearchPage.vue'
 import SetReminderModal from '@/features/search/SetReminderModal.vue'
 
+=======
+import { useTeamsStore, useMembersStore } from '@/features/shell'
+import { useChannelsStore } from '@/features/channels'
+import { useUserStore, UserModule } from '@/features/account'
+import { clearAuthSession } from '@/features/auth/session'
+
+// Search & Reminder components
+import {
+  ChatHeaderActions,
+  ChannelSettingsModal,
+  RemindersPanel,
+  SearchPage,
+  SetReminderModal,
+  useRemindersStore,
+} from '@/features/search'
+
+// Shell
+import {
+  TeamRail,
+  TeamSwitcher,
+  CreateTeamModal,
+  JoinTeamModal,
+  HelpModal,
+  MemberManageModal,
+} from '@/features/shell'
+
+// Direct Messages
+import DmList from '@/features/dms/components/DmList.vue'
+
+// Composer
+import { ComposerConversation } from '@/features/composer'
+
+const router = useRouter()
+>>>>>>> Stashed changes
 const ui = useUiStore()
 const reminders = useRemindersStore()
 const search = useSearchStore()
