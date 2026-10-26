@@ -31,7 +31,7 @@ const saveEdit = (r) => {
 </script>
 
 <template>
-  <aside class="flex h-full w-[360px] flex-col border-l border-slate-200 bg-white">
+  <aside class="flex h-full w-full flex-col border-l border-slate-200 bg-white">
     <header class="flex items-center justify-between border-b border-slate-200 px-5 py-4">
       <h2 class="text-lg text-slate-700">Reminders</h2>
       <button
@@ -43,11 +43,25 @@ const saveEdit = (r) => {
       </button>
     </header>
 
-    <div class="flex-1 space-y-3 overflow-y-auto p-4">
-      <p v-if="!store.sorted.length" class="mt-10 text-center text-sm text-slate-500">
-        No reminders yet. Use "Remind me" on a message to add one.
-      </p>
-
+    <div v-if="!store.sorted.length" class="flex flex-1 flex-col items-center justify-center px-8">
+      <svg
+        viewBox="0 0 220 220"
+        class="mb-10 h-56 w-56 text-slate-200"
+        fill="none"
+        stroke="currentColor"
+        stroke-linecap="round"
+        stroke-width="10"
+        aria-hidden="true"
+      >
+        <circle cx="110" cy="120" r="75" />
+        <path d="M110 75v48l40 24M50 35 28 55M170 35l22 20" />
+      </svg>
+      <ul class="list-disc space-y-2 self-start pl-6 text-lg text-slate-500">
+        <li>There are no reminder messages yet.</li>
+        <li>Here you can find all reminder messages.</li>
+      </ul>
+    </div>
+    <div v-else class="flex-1 space-y-3 overflow-y-auto p-4">
       <div
         v-for="r in store.sorted"
         :key="r.id"

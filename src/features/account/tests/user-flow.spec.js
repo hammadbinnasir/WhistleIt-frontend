@@ -54,6 +54,7 @@ describe('avatar and user menu', () => {
     expect($('.avatar-btn')).toBeTruthy()
     expect($('.initials').textContent).toBe('HH')
     expect($('.badge.online')).toBeTruthy()
+    expect($('.avatar-btn').title).toBe('Hammad Haider')
     expect($('[role=menu]')).toBeNull()
   })
 
@@ -447,6 +448,7 @@ describe('account settings modal', () => {
     await setValue($('input[placeholder="Full name"]'), 'Sara Khan')
     await setValue($('input[placeholder="Enter Designation"]'), 'Engineer')
     await setValue($('input[placeholder="Enter Job Responsibilities"]'), 'Build things')
+    $('input[placeholder="Old Password"]').dispatchEvent(new Event('blur'))
     await click(byText('SAVE'))
 
     expect($('[role=dialog]')).toBeNull()
@@ -457,15 +459,17 @@ describe('account settings modal', () => {
     expect(wrapper.emitted('settings-saved')).toHaveLength(1)
   })
 
-  it('blocks saving when the full name is empty and returns to General', async () => {
+  it('saves preferences without validating or redirecting to unrelated tabs', async () => {
     await openSettings()
     await click(tab('User Preferences'))
     await setValue($('input[placeholder="Full name"]'), '   ')
+    $('input[placeholder="Old Password"]').dispatchEvent(new Event('blur'))
     await click(byText('SAVE'))
 
-    expect($('[role=dialog]')).toBeTruthy()
-    expect(tab('General').getAttribute('aria-selected')).toBe('true')
-    expect($('.field-error').textContent).toBe('Required.')
+    expect($('[role=dialog]')).toBeNull()
+    expect(store.state.profile.fullName).toBe('Hammad Haider')
+    expect(store.state.security.hideEmail).toBe(false)
+    expect(wrapper.emitted('settings-saved')[0][0]).toHaveProperty('preferences')
   })
 
   it('saves preferences from the User Preferences tab', async () => {
@@ -600,6 +604,26 @@ describe('account settings modal', () => {
     await click(byText('SAVE'))
     expect(store.state.profile.photoUrl).toBe('blob:mock')
     expect($('.avatar-btn img')).toBeTruthy()
+    expect(wrapper.emitted('settings-saved')[0][0].photoAction).toBe('added')
+  })
+
+  it('removes a saved profile photo and restores initials in the account icon', async () => {
+    await store.saveSettings({
+      profile: { fullName: 'Hammad Haider' },
+      photo: new File(['x'], 'me.png', { type: 'image/png' }),
+    })
+    await openSettings()
+
+    await click(byText('REMOVE PHOTO'))
+    expect($('.avatar img')).toBeNull()
+    expect($('.remove-btn')).toBeNull()
+
+    await click(byText('SAVE'))
+
+    expect(store.state.profile.photoUrl).toBe('')
+    expect($('.avatar-btn img')).toBeNull()
+    expect($('.avatar-btn .initials').textContent).toBe('HH')
+    expect(wrapper.emitted('settings-saved')[0][0].photoAction).toBe('removed')
   })
 })
 

@@ -24,6 +24,20 @@ describe('ui store', () => {
     expect(ui.sidebarOpen).toBe(false)
   })
 
+  it('opens and closes search panels and channel settings', () => {
+    const ui = useUiStore()
+
+    ui.openPanel('search')
+    expect(ui.activePanel).toBe('search')
+    ui.closePanel()
+    expect(ui.activePanel).toBeNull()
+
+    ui.openChannelSettings()
+    expect(ui.channelSettingsOpen).toBe(true)
+    ui.closeChannelSettings()
+    expect(ui.channelSettingsOpen).toBe(false)
+  })
+
   it('toggles modals properly', () => {
     const ui = useUiStore()
     expect(ui.helpModalOpen).toBe(false)

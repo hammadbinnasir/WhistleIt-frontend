@@ -82,6 +82,7 @@ function getInitials(name) {
       <!-- Help -->
       <button
         class="team-rail__action-btn"
+        :class="{ 'team-rail__action-btn--active': ui.activePanel === 'help' }"
         title="Help & Shortcuts"
         aria-label="Help and Keyboard Shortcuts"
         @click="ui.toggleHelpModal()"
@@ -244,8 +245,9 @@ function getInitials(name) {
     color 0.2s ease,
     border-radius 0.2s ease;
 }
-.team-rail__action-btn:hover {
-  background: rgba(255, 255, 255, 0.12);
+.team-rail__action-btn:hover,
+.team-rail__action-btn--active {
+  background: rgba(255, 255, 255, 0.16);
   color: #fff;
   border-radius: 10px;
 }

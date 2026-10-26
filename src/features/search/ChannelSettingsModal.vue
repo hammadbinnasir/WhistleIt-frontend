@@ -2,7 +2,7 @@
 // Channel Settings modal: Settings | Members | Integrations | About
 import { ref, computed, onMounted } from 'vue'
 import { useUiStore } from '@/stores/ui'
-import { listMembers, removeMember, addMember, getWebhookUrl, leaveChannel } from './members'
+import { listMembers, removeMember, addMember, getWebhookUrl } from './members'
 import { searchUsers } from './search'
 
 const props = defineProps({
@@ -73,9 +73,7 @@ async function copy() {
     console.error('Unable to copy webhook URL:', error)
   }
 }
-async function leave() {
-  await leaveChannel()
-  ui.closeChannelSettings()
+function leave() {
   emit('left')
 }
 

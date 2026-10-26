@@ -61,9 +61,7 @@ const avatarLabel = computed(() => {
   return `${name} – ${STATUS_LABELS[state.status]}`
 })
 
-const avatarTitle = computed(() =>
-  state.customStatus ? `${avatarLabel.value} – ${state.customStatus}` : avatarLabel.value,
-)
+const avatarTitle = computed(() => state.profile.fullName || 'Your account')
 
 const refocusAvatar = () => nextTick(() => avatarBtn.value?.focus())
 

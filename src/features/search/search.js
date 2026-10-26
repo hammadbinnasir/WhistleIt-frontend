@@ -63,13 +63,23 @@ export function addMockFile(file) {
   FILES.unshift({ id: crypto.randomUUID(), createdAt: new Date().toISOString(), ...file })
 }
 
-function applyFilters(list, { q, userIds = [], date, webhooks, channelId }, textKey) {
+function applyFilters(
+  list,
+  { q, userIds = [], date, dateEnd, dateMode = 'on', webhooks, channelId },
+  textKey,
+) {
   const needle = (q || '').toLowerCase()
   return list.filter(
     (i) =>
       (!needle || String(i[textKey]).toLowerCase().includes(needle)) &&
       (!userIds.length || userIds.includes(i.userId)) &&
-      (!date || i.createdAt.slice(0, 10) === date) &&
+      (!date ||
+        (dateMode === 'before' && i.createdAt.slice(0, 10) < date) ||
+        (dateMode === 'after' && i.createdAt.slice(0, 10) > date) ||
+        (dateMode === 'range' &&
+          i.createdAt.slice(0, 10) >= date &&
+          (!dateEnd || i.createdAt.slice(0, 10) <= dateEnd)) ||
+        (dateMode === 'on' && i.createdAt.slice(0, 10) === date)) &&
       (!webhooks || i.webhook) &&
       (!channelId || i.conversation?.id === channelId),
   )

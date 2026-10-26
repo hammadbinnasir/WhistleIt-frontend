@@ -40,23 +40,24 @@ const prefsRef = ref(null)
 const onSave = () => {
   if (props.saving) return
 
-  const generalOk = generalRef.value.validate()
-  const securityOk = securityRef.value.validate()
-
-  if (!generalOk) {
-    activeTab.value = 'general'
-    return
-  }
-  if (!securityOk) {
-    activeTab.value = 'security'
+  if (activeTab.value === 'general') {
+    if (!generalRef.value.validate()) return
+    emit('save', generalRef.value.getValues())
     return
   }
 
-  const { profile, photo } = generalRef.value.getValues()
-  const { security, password } = securityRef.value.getValues()
-  const { preferences } = prefsRef.value.getValues()
+  if (activeTab.value === 'security') {
+    if (!securityRef.value.validate()) return
+    emit('save', securityRef.value.getValues())
+    return
+  }
 
-  emit('save', { profile, photo, preferences, security, password })
+  if (activeTab.value === 'preferences') {
+    emit('save', prefsRef.value.getValues())
+    return
+  }
+
+  emit('save', {})
 }
 </script>
 
