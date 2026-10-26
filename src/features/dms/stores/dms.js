@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 import { dmApi } from '@/features/dms/dmApi'
+import { useActivityStore } from '@/stores/activity'
 
 let generatedId = 0
 
@@ -21,13 +22,11 @@ export const useDmStore = defineStore('dms', () => {
   const error = ref('')
   const usersById = computed(() => Object.fromEntries(users.value.map((user) => [user.id, user])))
   const sorted = computed(() =>
-    conversations.value
-      .slice()
-      .sort((a, b) => {
-        const aTime = a.messages.at(-1)?.createdAt ?? ''
-        const bTime = b.messages.at(-1)?.createdAt ?? ''
-        return bTime.localeCompare(aTime)
-      })
+    conversations.value.slice().sort((a, b) => {
+      const aTime = a.messages.at(-1)?.createdAt ?? ''
+      const bTime = b.messages.at(-1)?.createdAt ?? ''
+      return bTime.localeCompare(aTime)
+    }),
   )
 
   let initialization
@@ -37,16 +36,19 @@ export const useDmStore = defineStore('dms', () => {
 
     loading.value = true
     error.value = ''
-    initialization = Promise.all([dmApi.users(), dmApi.conversations()]).then(([loadedUsers, loadedConversations]) => {
-      users.value = loadedUsers
-      conversations.value = loadedConversations
-      meId.value = dmApi.meId()
-    }).catch((cause) => {
-      error.value = errorMessage(cause)
-    }).finally(() => {
-      loading.value = false
-      initialization = null
-    })
+    initialization = Promise.all([dmApi.users(), dmApi.conversations()])
+      .then(([loadedUsers, loadedConversations]) => {
+        users.value = loadedUsers
+        conversations.value = loadedConversations
+        meId.value = dmApi.meId()
+      })
+      .catch((cause) => {
+        error.value = errorMessage(cause)
+      })
+      .finally(() => {
+        loading.value = false
+        initialization = null
+      })
 
     return initialization
   }
@@ -66,7 +68,15 @@ export const useDmStore = defineStore('dms', () => {
   }
 
   function openConversation(id) {
-    if (conversations.value.some((conversation) => conversation.id === id)) activeId.value = id
+    const conversation = conversations.value.find((item) => item.id === id)
+    if (!conversation) return false
+    conversation.unreadCount = 0
+    activeId.value = id
+    return true
+  }
+
+  function deactivateConversation() {
+    activeId.value = null
   }
 
   function closeConversation(id) {
@@ -79,7 +89,7 @@ export const useDmStore = defineStore('dms', () => {
     const existing = conversations.value.find(
       (conversation) =>
         conversation.members.length === members.length &&
-        members.every((memberId) => conversation.members.includes(memberId))
+        members.every((memberId) => conversation.members.includes(memberId)),
     )
 
     if (existing) {
@@ -108,10 +118,65 @@ export const useDmStore = defineStore('dms', () => {
     return startConversation(userIds, name)
   }
 
+  function sendMessage(conversationId, payload) {
+    const conversation = conversations.value.find((item) => item.id === conversationId)
+    if (!conversation) return false
+
+    const message = {
+      id: createId(),
+      from: meId.value,
+      text: payload.content,
+      createdAt: new Date().toISOString(),
+      ...(payload.threadId ? { threadId: payload.threadId } : {}),
+      ...(payload.attachments?.length ? { attachments: [...payload.attachments] } : {}),
+      ...(payload.important ? { important: true } : {}),
+      ...(payload.scheduledAt
+        ? {
+            scheduled: true,
+            scheduledAt: payload.scheduledAt,
+            timeZone: payload.timeZone || 'local time',
+          }
+        : {}),
+    }
+    conversation.messages.push(message)
+    conversation.unreadCount = 0
+    activeId.value = conversationId
+    return message
+  }
+
+  function cancelScheduledMessage(conversationId, messageId) {
+    const conversation = conversations.value.find((item) => item.id === conversationId)
+    if (!conversation) return false
+    const message = conversation.messages.find((item) => item.id === messageId)
+    if (!message?.scheduled) return false
+    conversation.messages = conversation.messages.filter((item) => item.id !== messageId)
+    return true
+  }
+
   function receiveDemo() {
-    const conversation = sorted.value.find((item) => item.messages.length)
+    const conversation = sorted.value.find((item) => item.id !== activeId.value) || sorted.value[0]
     if (!conversation) return
-    conversation.unreadCount += 1
+
+    const senderId = partnerId(conversation)
+    const sender = usersById.value[senderId]
+    const text = 'You have a new message.'
+    const message = {
+      id: createId(),
+      from: senderId,
+      text,
+      createdAt: new Date().toISOString(),
+    }
+    conversation.messages.push(message)
+    if (conversation.id !== activeId.value) conversation.unreadCount += 1
+
+    const activity = useActivityStore()
+    activity.addActivity({
+      type: 'message',
+      conversationId: conversation.id,
+      title: sender?.name || titleOf(conversation) || 'New message',
+      body: text,
+    })
+    return message
   }
 
   return {
@@ -127,9 +192,12 @@ export const useDmStore = defineStore('dms', () => {
     partnerId,
     titleOf,
     openConversation,
+    deactivateConversation,
     closeConversation,
     startDm,
     startGroup,
+    sendMessage,
+    cancelScheduledMessage,
     receiveDemo,
   }
 })

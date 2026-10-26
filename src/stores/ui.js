@@ -39,20 +39,32 @@ export const useUiStore = defineStore('ui', () => {
   function closeChannelSettings() {
     channelSettingsOpen.value = false
   }
-  function toast(title, body) {
+  function toast(title, body, type = 'info') {
     const id = ++nextToastId
-    toasts.value.push({ id, title, body })
+    toasts.value.push({ id, title, body, type })
     setTimeout(() => {
       toasts.value = toasts.value.filter((item) => item.id !== id)
     }, 5000)
+  }
+  function dismissToast(id) {
+    toasts.value = toasts.value.filter((item) => item.id !== id)
   }
   function toggleSidebar() {
     sidebarOpen.value = !sidebarOpen.value
   }
 
-  // modal toggles
+  // panel controls (reminders, search, help)
+  function openPanel(panel) {
+    activePanel.value = activePanel.value === panel ? null : panel
+  }
+  function closePanel() {
+    activePanel.value = null
+  }
+
+  // modal & drawer toggles
   function toggleHelpModal() {
-    helpModalOpen.value = !helpModalOpen.value
+    activePanel.value = activePanel.value === 'help' ? null : 'help'
+    helpModalOpen.value = activePanel.value === 'help'
   }
   function toggleTeamCreateModal() {
     teamCreateModalOpen.value = !teamCreateModalOpen.value
@@ -62,14 +74,6 @@ export const useUiStore = defineStore('ui', () => {
   }
   function toggleMemberManageModal() {
     memberManageModalOpen.value = !memberManageModalOpen.value
-  }
-
-  function toast(title, body) {
-    const id = Date.now()
-    toasts.value.push({ id, title, body })
-    setTimeout(() => {
-      toasts.value = toasts.value.filter((t) => t.id !== id)
-    }, 5000)
   }
 
   return {
@@ -86,15 +90,16 @@ export const useUiStore = defineStore('ui', () => {
     openChannelSettings,
     closeChannelSettings,
     toast,
+    dismissToast,
     toggleSidebar,
     helpModalOpen,
     teamCreateModalOpen,
     teamJoinModalOpen,
-    memberManageModalOpen,
+    openPanel,
+    closePanel,
     toggleHelpModal,
     toggleTeamCreateModal,
     toggleTeamJoinModal,
     toggleMemberManageModal,
-    toast,
   }
 })
