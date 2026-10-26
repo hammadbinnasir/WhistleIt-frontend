@@ -67,9 +67,12 @@ const user = computed(() => ({
 }))
 
 function onAccountSettingsSaved(payload) {
-  if (payload.photoAction) {
-    ui.toast('Success!', 'Changes Saved', 'success')
+  const messages = {
+    added: 'Profile picture updated',
+    removed: 'Profile picture removed',
   }
+  const message = messages[payload.photoAction]
+  if (message) ui.toast('Success!', message, 'success')
 }
 
 const selectedChannel = computed(() => {
