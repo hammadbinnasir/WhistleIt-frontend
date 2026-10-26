@@ -82,7 +82,9 @@ describe('auth view', () => {
   it('sends a password reset request for the entered email', async () => {
     const { router, wrapper } = await mountAuthView('/forgot-password')
 
-    expect(wrapper.get('h1').text()).toBe('Forgot Password?')
+    expect(wrapper.get('h1').text()).toBe('Reset Password')
+    expect(wrapper.get('.submit-button').text()).toBe('Send Instructions')
+    expect(wrapper.get('.auth-switch a').text()).toBe('Back to Login')
     expect(wrapper.find('#password').exists()).toBe(false)
     await wrapper.get('#email').setValue('sam@example.com')
     await wrapper.get('form').trigger('submit')
@@ -216,6 +218,9 @@ describe('auth view', () => {
     await flushPromises()
 
     expect(wrapper.get('[role="status"]').text()).toContain('Invalid credentials')
+    expect(wrapper.get('form').element.lastElementChild).toBe(
+      wrapper.get('[role="status"]').element,
+    )
     expect(router.currentRoute.value.path).toBe('/login')
   })
 
