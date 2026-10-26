@@ -615,7 +615,7 @@ function handleMediaAction(action) {
 }
 
 function handleKeydown(event) {
-  if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') {
+  if (event.key === 'Enter' && !event.shiftKey) {
     event.preventDefault()
     sendMessage()
   }
