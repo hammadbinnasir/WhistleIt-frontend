@@ -51,16 +51,18 @@ function addMessage(message) {
 }
 
 function addScheduledMessage(message) {
-  if (conversation.value) {
-    dms.sendMessage(conversation.value.id, { ...message, scheduledAt: message.scheduledAt })
-  } else {
-    messages.value.push({
-      ...message,
-      scheduled: true,
-      author: dms.usersById[dms.meId]?.name || 'You',
-      mine: true,
-    })
-  }
+  messages.value.push({ ...message, scheduled: true, author: ' ABDULLAH', mine: true })
+  scrollMessagesToLatest()
+}
+
+function addGif(gif) {
+  messages.value.push({
+    content: '',
+    gif,
+    scheduledAt: null,
+    author: ' ABDULLAH',
+    mine: true,
+  })
   scrollMessagesToLatest()
 }
 
@@ -102,7 +104,13 @@ async function scrollMessagesToLatest() {
               IMPORTANT!
             </span>
 
-            <p>{{ message.content }}</p>
+            <p v-if="message.content">{{ message.content }}</p>
+            <img
+              v-if="message.gif"
+              class="composer-conversation__gif"
+              :src="message.gif.url"
+              :alt="message.gif.title"
+            />
 
             <span v-if="message.scheduled" class="composer-conversation__scheduled">
               Scheduled for {{ message.scheduledAt }} ({{ message.timeZone || 'local time' }})
@@ -128,7 +136,12 @@ async function scrollMessagesToLatest() {
       </article>
     </div>
 
-    <MessageComposer @send="addMessage" @schedule="addScheduledMessage" />
+    <MessageComposer
+      @send="addMessage"
+      @schedule="addScheduledMessage"
+      @gif="addGif"
+    />
+
   </section>
 </template>
 
@@ -226,6 +239,16 @@ async function scrollMessagesToLatest() {
 
   white-space: pre-wrap;
 }
+
+.composer-conversation__gif {
+  display: block;
+  max-width: min(100%, 320px);
+  max-height: 320px;
+  border-radius: 4px;
+  object-fit: contain;
+}
+
+
 
 .composer-conversation__sent-status {
   position: absolute;
