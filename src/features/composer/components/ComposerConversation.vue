@@ -33,11 +33,19 @@ function addMessage(message) {
 
 
 function addScheduledMessage(message) {
-
   messages.value.push({ ...message, scheduled: true, author: ' ABDULLAH', mine: true })
-
   scrollMessagesToLatest()
+}
 
+function addGif(gif) {
+  messages.value.push({
+    content: '',
+    gif,
+    scheduledAt: null,
+    author: ' ABDULLAH',
+    mine: true,
+  })
+  scrollMessagesToLatest()
 }
 
 
@@ -92,7 +100,13 @@ async function scrollMessagesToLatest() {
 
             </span>
 
-            <p>{{ message.content }}</p>
+            <p v-if="message.content">{{ message.content }}</p>
+            <img
+              v-if="message.gif"
+              class="composer-conversation__gif"
+              :src="message.gif.url"
+              :alt="message.gif.title"
+            />
 
             <span v-if="message.scheduled" class="composer-conversation__scheduled">
 
@@ -132,7 +146,11 @@ async function scrollMessagesToLatest() {
 
     </div>
 
-    <MessageComposer @send="addMessage" @schedule="addScheduledMessage" />
+    <MessageComposer
+      @send="addMessage"
+      @schedule="addScheduledMessage"
+      @gif="addGif"
+    />
 
   </section>
 
@@ -268,6 +286,14 @@ async function scrollMessagesToLatest() {
 
   white-space: pre-wrap;
 
+}
+
+.composer-conversation__gif {
+  display: block;
+  max-width: min(100%, 320px);
+  max-height: 320px;
+  border-radius: 4px;
+  object-fit: contain;
 }
 
 

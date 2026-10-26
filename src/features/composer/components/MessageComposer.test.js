@@ -2,6 +2,50 @@ import { mount } from '@vue/test-utils'
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
+vi.mock('vue3-emoji-picker', async () => {
+  const { defineComponent, h } = await import('vue')
+
+  return {
+    default: defineComponent({
+      emits: ['select'],
+      setup(_, { emit }) {
+        const categories = [
+          'Frequently used',
+          'Smileys & People',
+          'Animals & Nature',
+          'Food & Drink',
+          'Activities',
+          'Travel places',
+          'Objects',
+          'Symbols',
+          'Flags',
+        ]
+
+        return () =>
+          h('div', [
+            h(
+              'div',
+              { class: 'v3-header' },
+              h(
+                'div',
+                { class: 'v3-groups' },
+                categories.map((category) =>
+                  h('button', { class: 'v3-group', title: category, 'aria-label': category }),
+                ),
+              ),
+            ),
+            h('input', { 'aria-label': 'Search emojis' }),
+            h(
+              'button',
+              { 'aria-label': 'beaming face', onClick: () => emit('select', { i: '😁' }) },
+              '😁',
+            ),
+          ])
+      },
+    }),
+  }
+})
+
 import MessageComposer from './MessageComposer.vue'
 
 
@@ -659,7 +703,7 @@ describe('message composer', () => {
   })
 
 
-  it('inserts an emoji and opens the file picker from media controls', async () => {
+  it('opens and dismisses the emoji picker and opens the file picker', async () => {
 
     const wrapper = mount(MessageComposer, { attachTo: document.body })
 
@@ -668,10 +712,14 @@ describe('message composer', () => {
     selectEditorText(editor)
 
     await wrapper.get('button[aria-label="Emoji"]').trigger('mousedown')
-
     await wrapper.get('button[aria-label="Emoji"]').trigger('click')
+    expect(wrapper.get('.picker').exists()).toBe(true)
 
-    expect(editor.element.textContent).toBe('😀')
+    await wrapper.get('button[aria-label="Animals & Nature"]').trigger('click')
+    expect(wrapper.get('.picker').attributes('data-active-category')).toBe('animals_nature')
+
+    await wrapper.get('button[aria-label="beaming face"]').trigger('click')
+    expect(wrapper.find('.picker').exists()).toBe(false)
 
 
     const fileInput = wrapper.get('input[type="file"]')

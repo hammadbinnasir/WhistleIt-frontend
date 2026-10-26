@@ -2,10 +2,9 @@
 import { ref, computed, onBeforeUnmount, onMounted } from 'vue'
 import MediaToolbar from '../../media/MediaToolbar.vue'
 
-const emit = defineEmits(['send', 'schedule', 'attachment', 'video', 'microphone'])
+const emit = defineEmits(['send', 'schedule', 'attachment', 'video', 'microphone', 'gif'])
 
 const editor = ref(null)
-const fileInput = ref(null)
 const scheduleTrigger = ref(null)
 const scheduleMenu = ref(null)
 const content = ref('')
@@ -587,28 +586,22 @@ function scheduleAt(value) {
   scheduleMessage()
 }
 
-function chooseFiles() {
-  fileInput.value?.click()
-}
-
-function handleFilesSelected(event) {
-  const files = [...(event.target.files || [])]
+function handleFilesSelected(files) {
   if (files.length) {
     attachments.value = [...attachments.value, ...files]
     emit('attachment', files)
   }
-  event.target.value = ''
 }
 
 function removeAttachment(index) {
   attachments.value = attachments.value.filter((_, fileIndex) => fileIndex !== index)
 }
 
-function handleMediaAction(action) {
+function handleMediaAction(action, payload) {
   if (action === 'emoji') {
-    insertAtSelection('😀')
-  } else if (action === 'document' || action === 'attachment') {
-    chooseFiles()
+    insertAtSelection(payload)
+  } else if (action === 'gif') {
+    emit('gif', payload)
   } else {
     emit(action)
   }
@@ -883,20 +876,8 @@ function handleKeydown(event) {
       <MediaToolbar
         class="message-composer__media"
         @mousedown.prevent="saveSelection(true)"
-        @emoji="handleMediaAction('emoji')"
-        @document="handleMediaAction('document')"
-        @attachment="handleMediaAction('attachment')"
-        @video="handleMediaAction('video')"
-        @microphone="handleMediaAction('microphone')"
-      />
-      
-      <input
-        ref="fileInput"
-        class="sr-only"
-        type="file"
-        multiple
-        aria-label="Choose files to attach"
-        @change="handleFilesSelected"
+        @action="handleMediaAction"
+        @files-selected="handleFilesSelected"
       />
     </div>
   </form>
@@ -1063,8 +1044,7 @@ function handleKeydown(event) {
   background: #f0f0f6;
 }
 
-.message-composer__formatting,
-.message-composer__media {
+.message-composer__formatting {
   display: flex;
   align-items: center;
   gap: 4px;
