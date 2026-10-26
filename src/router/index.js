@@ -12,6 +12,8 @@ const router = createRouter({
     { path: '/', redirect: '/login' },
     { path: '/login', name: 'login', component: AuthView },
     { path: '/signup', name: 'signup', component: AuthView },
+    { path: '/forgot-password', name: 'forgot-password', component: AuthView },
+    { path: '/reset-password', name: 'reset-password', component: AuthView },
     { path: '/app', name: 'home', component: HomeView },
     ...channelRoutes,
   ],

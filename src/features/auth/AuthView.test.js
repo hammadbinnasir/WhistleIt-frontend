@@ -1,7 +1,7 @@
 import { mount, flushPromises } from '@vue/test-utils'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { login, register, requestPasswordReset } from './api'
+import { login, register, requestPasswordReset, resetPassword } from './api'
 import { getAuthToken } from './session'
 import AuthView from './AuthView.vue'
 
@@ -9,6 +9,7 @@ vi.mock('./api', () => ({
   login: vi.fn(),
   register: vi.fn(),
   requestPasswordReset: vi.fn(),
+  resetPassword: vi.fn(),
 }))
 
 async function mountAuthView(path = '/login') {
@@ -18,6 +19,7 @@ async function mountAuthView(path = '/login') {
       { path: '/login', name: 'login', component: AuthView },
       { path: '/signup', name: 'signup', component: AuthView },
       { path: '/forgot-password', name: 'forgot-password', component: AuthView },
+      { path: '/reset-password', name: 'reset-password', component: AuthView },
       { path: '/app', name: 'home', component: { template: '<main>Workspace</main>' } },
     ],
   })
@@ -35,6 +37,7 @@ describe('auth view', () => {
     login.mockResolvedValue({ access_token: 'test-token' })
     register.mockResolvedValue({})
     requestPasswordReset.mockResolvedValue({})
+    resetPassword.mockResolvedValue({})
   })
 
   it('shows login and switches to account creation', async () => {
@@ -99,6 +102,53 @@ describe('auth view', () => {
     await flushPromises()
 
     expect(wrapper.get('[role="status"]').text()).toContain('Reset endpoint unavailable')
+  })
+
+  it('resets the password using the token and email from the reset link', async () => {
+    const { router, wrapper } = await mountAuthView(
+      '/reset-password?token=reset-token&email=sam%40example.com',
+    )
+
+    expect(wrapper.get('h1').text()).toBe('Reset Password')
+    expect(wrapper.get('#email').element.value).toBe('sam@example.com')
+    expect(wrapper.get('#password').attributes('autocomplete')).toBe('new-password')
+    await wrapper.get('#password').setValue('new-password-123')
+    await wrapper.get('#confirm-password').setValue('new-password-123')
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+
+    expect(resetPassword).toHaveBeenCalledWith({
+      email: 'sam@example.com',
+      token: 'reset-token',
+      password: 'new-password-123',
+      password_confirmation: 'new-password-123',
+    })
+    expect(wrapper.get('[role="status"]').text()).toContain('Your password has been reset')
+    expect(router.currentRoute.value.path).toBe('/reset-password')
+  })
+
+  it('does not submit a reset without a token', async () => {
+    const { wrapper } = await mountAuthView('/reset-password?email=sam%40example.com')
+
+    await wrapper.get('#password').setValue('new-password-123')
+    await wrapper.get('#confirm-password').setValue('new-password-123')
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+
+    expect(resetPassword).not.toHaveBeenCalled()
+    expect(wrapper.get('[role="status"]').text()).toContain('invalid or has expired')
+  })
+
+  it('rejects mismatched passwords when resetting a password', async () => {
+    const { wrapper } = await mountAuthView('/reset-password?token=reset-token')
+
+    await wrapper.get('#email').setValue('sam@example.com')
+    await wrapper.get('#password').setValue('new-password-123')
+    await wrapper.get('#confirm-password').setValue('different-password')
+    await wrapper.get('form').trigger('submit')
+
+    expect(resetPassword).not.toHaveBeenCalled()
+    expect(wrapper.get('[role="status"]').text()).toContain('Passwords do not match')
   })
 
   it('logs in and navigates to the workspace after a valid form submission', async () => {

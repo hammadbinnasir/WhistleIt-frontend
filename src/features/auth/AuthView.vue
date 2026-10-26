@@ -1,7 +1,7 @@
 <script setup>
 import { computed, ref, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
-import { login, register, requestPasswordReset } from './api'
+import { login, register, requestPasswordReset, resetPassword } from './api'
 import { saveAuthToken } from './session'
 import AuthIllustration from './AuthIllustration.vue'
 
@@ -9,6 +9,8 @@ const route = useRoute()
 const router = useRouter()
 const isSignup = computed(() => route.path === '/signup')
 const isForgotPassword = computed(() => route.path === '/forgot-password')
+const isResetPassword = computed(() => route.path === '/reset-password')
+const resetToken = computed(() => (typeof route.query.token === 'string' ? route.query.token : ''))
 const form = ref(null)
 const fullName = ref('')
 const company = ref('')
@@ -24,11 +26,12 @@ const feedbackIsSuccess = ref(false)
 const isSubmitting = ref(false)
 
 watch(
-  () => route.path,
+  () => route.fullPath,
   () => {
     fullName.value = ''
     company.value = ''
-    email.value = ''
+    email.value =
+      isResetPassword.value && typeof route.query.email === 'string' ? route.query.email : ''
     password.value = ''
     confirmPassword.value = ''
     rememberMe.value = false
@@ -38,6 +41,7 @@ watch(
     feedback.value = ''
     feedbackIsSuccess.value = false
   },
+  { immediate: true },
 )
 
 async function submitForm() {
@@ -46,8 +50,13 @@ async function submitForm() {
 
   if (!form.value.reportValidity()) return
 
-  if (isSignup.value && password.value !== confirmPassword.value) {
+  if ((isSignup.value || isResetPassword.value) && password.value !== confirmPassword.value) {
     feedback.value = 'Passwords do not match. Please check them and try again.'
+    return
+  }
+
+  if (isResetPassword.value && !resetToken.value) {
+    feedback.value = 'This password reset link is invalid or has expired. Request a new one.'
     return
   }
 
@@ -57,6 +66,18 @@ async function submitForm() {
       await requestPasswordReset(email.value)
       feedback.value =
         'If an account exists for this email, password reset instructions will be sent.'
+      feedbackIsSuccess.value = true
+      return
+    }
+
+    if (isResetPassword.value) {
+      await resetPassword({
+        email: email.value,
+        token: resetToken.value,
+        password: password.value,
+        password_confirmation: confirmPassword.value,
+      })
+      feedback.value = 'Your password has been reset. You can now log in.'
       feedbackIsSuccess.value = true
       return
     }
@@ -120,7 +141,15 @@ async function submitForm() {
       <div class="auth-content">
         <header class="auth-heading">
           <h1>
-            {{ isSignup ? 'Create Account' : isForgotPassword ? 'Forgot Password?' : 'Log in' }}
+            {{
+              isSignup
+                ? 'Create Account'
+                : isForgotPassword
+                  ? 'Forgot Password?'
+                  : isResetPassword
+                    ? 'Reset Password'
+                    : 'Log in'
+            }}
           </h1>
           <p>
             {{
@@ -128,7 +157,9 @@ async function submitForm() {
                 ? 'Fill the form below to create an account'
                 : isForgotPassword
                   ? 'Enter your email and we will send password reset instructions.'
-                  : 'Enter your credentials to proceed'
+                  : isResetPassword
+                    ? 'Choose a new password for your account.'
+                    : 'Enter your credentials to proceed'
             }}
           </p>
         </header>
@@ -167,9 +198,19 @@ async function submitForm() {
           <input
             id="email"
             v-model.trim="email"
-            :name="isSignup ? 'new-account-email' : isForgotPassword ? 'reset-email' : 'username'"
+            :name="
+              isSignup
+                ? 'new-account-email'
+                : isForgotPassword
+                  ? 'reset-email'
+                  : isResetPassword
+                    ? 'reset-email'
+                    : 'username'
+            "
             type="email"
-            :autocomplete="isSignup ? 'off' : isForgotPassword ? 'email' : 'username'"
+            :autocomplete="
+              isSignup ? 'off' : isForgotPassword || isResetPassword ? 'email' : 'username'
+            "
             placeholder="Email Address*"
             required
           />
@@ -179,10 +220,10 @@ async function submitForm() {
             <input
               id="password"
               v-model="password"
-              :name="isSignup ? 'new-account-password' : 'password'"
+              :name="isSignup || isResetPassword ? 'new-password' : 'password'"
               :type="showPassword ? 'text' : 'password'"
-              :autocomplete="isSignup ? 'new-password' : 'current-password'"
-              placeholder="Password*"
+              :autocomplete="isSignup || isResetPassword ? 'new-password' : 'current-password'"
+              :placeholder="isResetPassword ? 'New Password*' : 'Password*'"
               minlength="8"
               required
             />
@@ -206,12 +247,12 @@ async function submitForm() {
             </button>
           </div>
 
-          <div v-if="isSignup" class="password-field">
+          <div v-if="isSignup || isResetPassword" class="password-field">
             <label class="sr-only" for="confirm-password">Confirm Password</label>
             <input
               id="confirm-password"
               v-model="confirmPassword"
-              name="new-account-password-confirm"
+              name="new-password-confirm"
               :type="showConfirmPassword ? 'text' : 'password'"
               autocomplete="new-password"
               placeholder="Confirm Password*"
@@ -246,7 +287,7 @@ async function submitForm() {
             </label>
           </div>
 
-          <div v-else-if="!isForgotPassword" class="login-options">
+          <div v-else-if="!isForgotPassword && !isResetPassword" class="login-options">
             <label class="remember-row">
               <input v-model="rememberMe" name="rememberMe" type="checkbox" />
               <span>Remember Me</span>
@@ -272,7 +313,9 @@ async function submitForm() {
                   ? 'Create Account'
                   : isForgotPassword
                     ? 'Send Reset Link'
-                    : 'Login'
+                    : isResetPassword
+                      ? 'Reset Password'
+                      : 'Login'
             }}
           </button>
         </form>
@@ -281,6 +324,10 @@ async function submitForm() {
           <template v-if="isForgotPassword">
             Remember your password?
             <RouterLink to="/login">Log in</RouterLink>
+          </template>
+          <template v-else-if="isResetPassword">
+            Need another reset link?
+            <RouterLink to="/forgot-password">Request one</RouterLink>
           </template>
           <template v-else-if="isSignup">
             Already have an account?
