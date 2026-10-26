@@ -1,5 +1,11 @@
 import { beforeEach, describe, expect, it } from 'vitest'
-import { clearAuthSession, getAuthToken, hasAuthSession, saveAuthToken } from './session'
+import {
+  clearAuthSession,
+  getAuthToken,
+  getAuthUser,
+  hasAuthSession,
+  saveAuthToken,
+} from './session'
 
 describe('auth session', () => {
   beforeEach(() => {
@@ -13,6 +19,19 @@ describe('auth session', () => {
     expect(localStorage.getItem('authToken')).toBeNull()
     expect(getAuthToken()).toBe('session-token')
     expect(hasAuthSession()).toBe(true)
+  })
+
+  it('stores the logged-in user name with the session', () => {
+    saveAuthToken({ access_token: 'session-token', user: { first_name: 'Sara', last_name: 'Khan' } })
+
+    expect(getAuthUser()).toEqual({ fullName: 'Sara Khan' })
+  })
+
+  it('reads the user name from a JWT when the login response omits user data', () => {
+    const payload = btoa(JSON.stringify({ name: 'Sara Khan' }))
+    saveAuthToken({ token: `header.${payload}.signature` })
+
+    expect(getAuthUser()).toEqual({ fullName: 'Sara Khan' })
   })
 
   it('stores a remembered token persistently and replaces any previous token', () => {
@@ -36,6 +55,7 @@ describe('auth session', () => {
     clearAuthSession()
 
     expect(getAuthToken()).toBeNull()
+    expect(getAuthUser()).toBeNull()
     expect(hasAuthSession()).toBe(false)
   })
 })

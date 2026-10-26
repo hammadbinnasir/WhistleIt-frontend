@@ -109,9 +109,9 @@ async function clearCustomStatus() {
 
 /**
  * Payload produced by AccountSettingsModal:
- * { profile, photo: File|null, preferences, security, password: {oldPassword,newPassword}|null }
+ * { profile, photo: File|null, removePhoto, preferences, security, password }
  */
-async function saveSettings({ profile, photo, preferences, security }) {
+async function saveSettings({ profile, photo, removePhoto, preferences, security }) {
   // TODO(api): upload `photo`, then send profile / preferences / security
   // TODO(api): if (password) await api.changePassword(password)
   if (profile) Object.assign(state.profile, profile)
@@ -119,6 +119,9 @@ async function saveSettings({ profile, photo, preferences, security }) {
   if (photo) {
     revokeBlob(state.profile.photoUrl)
     state.profile.photoUrl = URL.createObjectURL(photo)
+  } else if (removePhoto) {
+    revokeBlob(state.profile.photoUrl)
+    state.profile.photoUrl = ''
   }
 
   if (preferences) Object.assign(state.preferences, preferences)
