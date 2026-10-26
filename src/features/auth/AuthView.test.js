@@ -45,6 +45,7 @@ describe('auth view', () => {
 
     expect(wrapper.get('h1').text()).toBe('Log in')
     expect(wrapper.find('input[name="rememberMe"]').exists()).toBe(true)
+    expect(wrapper.get('.auth-background').attributes('src')).toContain('auth-background.svg')
 
     await wrapper.get('#email').setValue('previous@example.com')
     await wrapper.get('#password').setValue('previous-password')
@@ -206,6 +207,36 @@ describe('auth view', () => {
     expect(router.currentRoute.value.path).toBe('/login')
     expect(wrapper.get('#email').element.value).toBe('')
     expect(wrapper.get('#password').element.value).toBe('')
+  })
+
+  it('requires at least eight password characters without setting a maximum on sign up', async () => {
+    const { wrapper } = await mountAuthView('/signup')
+    const longPassword = 'a'.repeat(256)
+
+    await wrapper.get('#full-name').setValue('Sam Example')
+    await wrapper.get('#company').setValue('Example Co')
+    await wrapper.get('#email').setValue('sam@example.com')
+    await wrapper.get('#password').setValue('short7!')
+    await wrapper.get('#confirm-password').setValue('short7!')
+    await wrapper.get('#terms').setValue(true)
+    await wrapper.get('form').trigger('submit')
+
+    expect(register).not.toHaveBeenCalled()
+    expect(wrapper.get('#password').element.minLength).toBe(8)
+    expect(wrapper.get('#password').attributes('maxlength')).toBeUndefined()
+    expect(wrapper.get('#confirm-password').attributes('maxlength')).toBeUndefined()
+
+    await wrapper.get('#password').setValue(longPassword)
+    await wrapper.get('#confirm-password').setValue(longPassword)
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+
+    expect(register).toHaveBeenCalledWith(
+      expect.objectContaining({
+        password: longPassword,
+        password_confirmation: longPassword,
+      }),
+    )
   })
 
   it('shows authentication errors and stays on the form', async () => {
