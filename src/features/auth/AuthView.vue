@@ -121,7 +121,10 @@ async function submitForm() {
 </script>
 
 <template>
-  <main class="auth-page" :class="{ 'auth-page--signup': isSignup }">
+  <main
+    class="auth-page"
+    :class="{ 'auth-page--signup': isSignup, 'auth-page--forgot-password': isForgotPassword }"
+  >
     <section class="auth-panel" aria-label="Account access">
       <RouterLink class="brand" to="/login" aria-label="Whistle It. home">
         <svg class="brand-mark" viewBox="0 0 56 42" aria-hidden="true">
@@ -145,7 +148,7 @@ async function submitForm() {
               isSignup
                 ? 'Create Account'
                 : isForgotPassword
-                  ? 'Forgot Password?'
+                  ? 'Reset Password'
                   : isResetPassword
                     ? 'Reset Password'
                     : 'Log in'
@@ -156,7 +159,7 @@ async function submitForm() {
               isSignup
                 ? 'Fill the form below to create an account'
                 : isForgotPassword
-                  ? 'Enter your email and we will send password reset instructions.'
+                  ? "Enter the email associated with your account and we'll send an email with instructions to reset your password"
                   : isResetPassword
                     ? 'Choose a new password for your account.'
                     : 'Enter your credentials to proceed'
@@ -295,6 +298,20 @@ async function submitForm() {
             <RouterLink class="text-link" to="/forgot-password"> Forgot Password? </RouterLink>
           </div>
 
+          <button class="submit-button" type="submit" :disabled="isSubmitting">
+            {{
+              isSubmitting
+                ? 'Please wait...'
+                : isSignup
+                  ? 'Create Account'
+                  : isForgotPassword
+                    ? 'Send Instructions'
+                    : isResetPassword
+                      ? 'Reset Password'
+                      : 'Login'
+            }}
+          </button>
+
           <p
             v-if="feedback"
             class="form-feedback"
@@ -304,26 +321,11 @@ async function submitForm() {
           >
             {{ feedback }}
           </p>
-
-          <button class="submit-button" type="submit" :disabled="isSubmitting">
-            {{
-              isSubmitting
-                ? 'Please wait...'
-                : isSignup
-                  ? 'Create Account'
-                  : isForgotPassword
-                    ? 'Send Reset Link'
-                    : isResetPassword
-                      ? 'Reset Password'
-                      : 'Login'
-            }}
-          </button>
         </form>
 
         <p class="auth-switch">
           <template v-if="isForgotPassword">
-            Remember your password?
-            <RouterLink to="/login">Log in</RouterLink>
+            <RouterLink to="/login">Back to Login</RouterLink>
           </template>
           <template v-else-if="isResetPassword">
             Need another reset link?
