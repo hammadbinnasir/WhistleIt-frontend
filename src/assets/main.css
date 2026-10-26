@@ -383,21 +383,13 @@ a {
   overflow: hidden;
 }
 
-.art-backdrop {
+.auth-background {
   position: absolute;
   inset: 0;
   width: 100%;
   height: 100%;
-}
-
-.auth-illustration {
-  position: absolute;
-  top: 50%;
-  left: 7%;
-  width: 91%;
-  max-height: 76vh;
-  transform: translateY(-50%);
-  overflow: visible;
+  object-fit: cover;
+  object-position: center;
 }
 
 .sr-only {
@@ -434,11 +426,6 @@ a {
 
   .login-options {
     font-size: 15px;
-  }
-
-  .auth-illustration {
-    left: 1%;
-    width: 99%;
   }
 }
 
