@@ -30,4 +30,19 @@ describe('dms store', () => {
     expect(group.members).toContain(dms.meId)
     expect(dms.activeId).toBe(group.id)
   })
+
+  it('cancels a scheduled message without removing other conversation messages', async () => {
+    const dms = useDmStore()
+    await dms.init()
+    const conversation = dms.startDm('u2')
+    const originalMessageCount = conversation.messages.length
+    const scheduled = dms.sendMessage(conversation.id, {
+      content: 'Later',
+      scheduledAt: new Date(Date.now() + 60_000).toISOString(),
+    })
+
+    expect(dms.cancelScheduledMessage(conversation.id, scheduled.id)).toBe(true)
+    expect(conversation.messages).toHaveLength(originalMessageCount)
+    expect(dms.cancelScheduledMessage(conversation.id, 'missing-message')).toBe(false)
+  })
 })

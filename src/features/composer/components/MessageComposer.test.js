@@ -125,10 +125,34 @@ describe('message composer', () => {
 
 
     expect(wrapper.emitted('send')).toBeUndefined()
-
   })
 
+  it('sends the message when Enter is pressed', async () => {
+    const wrapper = mount(MessageComposer)
+    setEditorText(wrapper, 'Send with Enter')
 
+    await wrapper.get('[contenteditable="true"]').trigger('keydown', { key: 'Enter' })
+
+    expect(wrapper.emitted('send')).toEqual([
+      [{ content: 'Send with Enter', attachments: [] }],
+    ])
+  })
+
+  it('keeps Shift+Enter available for a new line', async () => {
+    const wrapper = mount(MessageComposer)
+    setEditorText(wrapper, 'Keep typing')
+
+    const event = new KeyboardEvent('keydown', {
+      key: 'Enter',
+      shiftKey: true,
+      bubbles: true,
+      cancelable: true,
+    })
+    wrapper.get('[contenteditable="true"]').element.dispatchEvent(event)
+
+    expect(event.defaultPrevented).toBe(false)
+    expect(wrapper.emitted('send')).toBeUndefined()
+  })
 
   it('keeps formatting options independently toggleable', async () => {
 

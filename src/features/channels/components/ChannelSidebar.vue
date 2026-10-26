@@ -1,5 +1,6 @@
 <script setup>
 import { computed, onMounted, ref, watch } from 'vue'
+import { useDmStore } from '@/features/dms/stores/dms'
 import { useChannelsStore } from '../store/channels.store'
 import { useChannelsUiStore } from '../store/channels.ui.store'
 import { useChannelActions } from '../composables/useChannelActions'
@@ -12,6 +13,7 @@ import ChannelDialogs from './ChannelDialogs.vue'
 import '../styles/tokens.css'
 
 const store = useChannelsStore()
+const dms = useDmStore()
 const ui = useChannelsUiStore()
 const { activeId, select, clear } = useActiveChannel()
 const { menuItemsFor, run } = useChannelActions()
@@ -34,14 +36,25 @@ const menuItems = computed(() => menuItemsFor(store.getById(menu.value.channelId
 // and recover if the selected channel no longer exists (left, archived, deleted).
 function ensureSelection() {
   if (!store.loaded) return
+
+  if (dms.activeId) {
+    if (activeId.value !== null) clear()
+    return
+  }
+
   if (activeId.value && store.getById(activeId.value)) return
   const fallback = store.visibleChannels.find((c) => c.isDefault) || store.visibleChannels[0]
   if (fallback) select(fallback.id)
   else if (activeId.value) clear()
 }
 
+function selectChannel(id) {
+  dms.deactivateConversation()
+  select(id)
+}
+
 onMounted(() => store.fetchChannels())
-watch(() => [store.loaded, store.channels.length, activeId.value], ensureSelection, {
+watch(() => [store.loaded, store.channels.length, dms.activeId, activeId.value], ensureSelection, {
   immediate: true,
 })
 
@@ -113,7 +126,7 @@ function onMenuSelect(key) {
             :key="channel.id"
             :channel="channel"
             :active="channel.id === activeId"
-            @select="select(channel.id)"
+            @select="selectChannel(channel.id)"
             @menu="openMenu($event, channel)"
           />
         </ul>
