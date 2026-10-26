@@ -10,7 +10,7 @@ import { useMembersStore } from '@/stores/members'
 import { useChannelsStore } from '@/features/channels'
 import { useRemindersStore } from '@/features/search/reminders'
 import { useUserStore, UserModule } from '@/features/account'
-import { clearAuthSession } from '@/features/auth/session'
+import { clearAuthSession, getAuthUser } from '@/features/auth/session'
 
 // Shell
 import {
@@ -45,6 +45,11 @@ const membersStore = useMembersStore()
 const channelsStore = useChannelsStore()
 const remindersStore = useRemindersStore()
 const userStore = useUserStore()
+const authenticatedUser = getAuthUser()
+
+if (!userStore.state.profile.fullName && authenticatedUser?.fullName) {
+  userStore.hydrate({ profile: { fullName: authenticatedUser.fullName } })
+}
 
 const { selectedChannelId, sidebarOpen } = storeToRefs(ui)
 const { activeTeam } = storeToRefs(teamsStore)
@@ -54,12 +59,18 @@ const reminderModalOpen = ref(false)
 
 const user = computed(() => ({
   profile: {
-    fullName: userStore.state?.profile?.fullName || 'Hammad Haider',
     ...userStore.state?.profile,
+    fullName: userStore.state?.profile?.fullName || authenticatedUser?.fullName || '',
   },
   status: userStore.state?.status || 'online',
   customStatus: userStore.state?.customStatus,
 }))
+
+function onAccountSettingsSaved(payload) {
+  if (payload.photoAction) {
+    ui.toast('Success!', 'Changes Saved', 'success')
+  }
+}
 
 const selectedChannel = computed(() => {
   if (!selectedChannelId.value) return null
@@ -260,15 +271,44 @@ onBeforeUnmount(() => {
       <div
         v-for="toast in ui.toasts"
         :key="toast.id"
-        class="rounded-lg bg-slate-900 p-4 text-white shadow-lg"
+        class="flex items-center gap-3 rounded-lg p-4 shadow-lg"
+        :class="
+          toast.type === 'success'
+            ? 'border-t-4 border-emerald-400 bg-white text-slate-700'
+            : 'bg-slate-900 text-white'
+        "
       >
-        <p class="font-semibold">{{ toast.title }}</p>
-        <p class="mt-1 text-sm text-slate-200">{{ toast.body }}</p>
+        <svg
+          v-if="toast.type === 'success'"
+          class="h-5 w-5 shrink-0 text-emerald-500"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="3"
+          aria-hidden="true"
+        >
+          <circle cx="12" cy="12" r="9" />
+          <path d="m8 12 2.5 2.5L16 9" />
+        </svg>
+        <div class="min-w-0 flex-1">
+          <p class="font-semibold">{{ toast.title }}</p>
+          <p class="mt-1 text-sm" :class="toast.type === 'success' ? 'text-slate-500' : 'text-slate-200'">
+            {{ toast.body }}
+          </p>
+        </div>
+        <button
+          type="button"
+          class="shrink-0 text-slate-400 hover:text-slate-700"
+          aria-label="Dismiss notification"
+          @click="ui.dismissToast(toast.id)"
+        >
+          ×
+        </button>
       </div>
     </div>
 
     <!-- Account UserModule (Pinned to bottom-left of TeamRail) -->
-    <UserModule :user="user" @log-out="logout" />
+    <UserModule :user="user" @log-out="logout" @settings-saved="onAccountSettingsSaved" />
 
     <!-- Shell Modals -->
     <CreateTeamModal />
