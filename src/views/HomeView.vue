@@ -11,8 +11,8 @@ import { useChannelsStore } from '@/features/channels'
 import { useDmStore } from '@/features/dms/stores/dms'
 import { useActivityStore } from '@/stores/activity'
 import { useRemindersStore } from '@/features/search/reminders'
-import { useUserStore } from '@/features/account'
-import { clearAuthSession } from '@/features/auth/session'
+import { useUserStore, UserModule } from '@/features/account'
+import { clearAuthSession, getAuthUser } from '@/features/auth/session'
 
 // Shell
 import {
@@ -20,7 +20,7 @@ import {
   TeamSwitcher,
   CreateTeamModal,
   JoinTeamModal,
-  HelpModal,
+  HelpDrawer,
   MemberManageModal,
 } from '@/features/shell'
 
@@ -41,9 +41,6 @@ import RemindersPanel from '@/features/search/RemindersPanel.vue'
 import SearchPage from '@/features/search/SearchPage.vue'
 import SetReminderModal from '@/features/search/SetReminderModal.vue'
 
-// Account
-import { UserModule } from '@/features/account'
-
 const router = useRouter()
 const ui = useUiStore()
 const teamsStore = useTeamsStore()
@@ -53,6 +50,11 @@ const dms = useDmStore()
 const activity = useActivityStore()
 const remindersStore = useRemindersStore()
 const userStore = useUserStore()
+const authenticatedUser = getAuthUser()
+
+if (!userStore.state.profile.fullName && authenticatedUser?.fullName) {
+  userStore.hydrate({ profile: { fullName: authenticatedUser.fullName } })
+}
 
 const { selectedChannelId, sidebarOpen } = storeToRefs(ui)
 const { activeId: activeDmId } = storeToRefs(dms)
@@ -66,12 +68,21 @@ const activeConversation = computed(
 
 const user = computed(() => ({
   profile: {
-    fullName: userStore.state.profile.fullName || 'Hammad Haider',
-    ...userStore.state.profile,
+    ...userStore.state?.profile,
+    fullName: userStore.state?.profile?.fullName || authenticatedUser?.fullName || '',
   },
-  status: userStore.state.status || 'online',
-  customStatus: userStore.state.customStatus,
+  status: userStore.state?.status || 'online',
+  customStatus: userStore.state?.customStatus,
 }))
+
+function onAccountSettingsSaved(payload) {
+  const messages = {
+    added: 'Profile picture updated',
+    removed: 'Profile picture removed',
+  }
+  const message = messages[payload.photoAction]
+  if (message) ui.toast('Success!', message, 'success')
+}
 
 const selectedChannel = computed(() => {
   if (!selectedChannelId.value) return null
@@ -287,11 +298,12 @@ onBeforeUnmount(() => {
       @toggle-mute="selectedChannel.muted = !selectedChannel.muted"
       @toggle-favourite="selectedChannel.favourite = !selectedChannel.favourite"
       @left="ui.selectChannel(null)"
+      @close="ui.channelSettingsOpen = false"
     />
 
     <!-- Set Reminder Modal -->
     <SetReminderModal
-      v-if="reminderModalOpen && selectedChannel"
+      v-if="reminderModalOpen && reminderMessage"
       :message="reminderMessage"
       @close="reminderModalOpen = false"
     />
@@ -301,20 +313,48 @@ onBeforeUnmount(() => {
       <div
         v-for="toast in ui.toasts"
         :key="toast.id"
-        class="rounded-lg bg-slate-900 p-4 text-white shadow-lg"
+        class="flex items-center gap-3 rounded-lg p-4 shadow-lg"
+        :class="
+          toast.type === 'success'
+            ? 'border-t-4 border-emerald-400 bg-white text-slate-700'
+            : 'bg-slate-900 text-white'
+        "
       >
-        <p class="font-semibold">{{ toast.title }}</p>
-        <p class="mt-1 text-sm text-slate-200">{{ toast.body }}</p>
+        <svg
+          v-if="toast.type === 'success'"
+          class="h-5 w-5 shrink-0 text-emerald-500"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="3"
+          aria-hidden="true"
+        >
+          <circle cx="12" cy="12" r="9" />
+          <path d="m8 12 2.5 2.5L16 9" />
+        </svg>
+        <div class="min-w-0 flex-1">
+          <p class="font-semibold">{{ toast.title }}</p>
+          <p class="mt-1 text-sm" :class="toast.type === 'success' ? 'text-slate-500' : 'text-slate-200'">
+            {{ toast.body }}
+          </p>
+        </div>
+        <button
+          type="button"
+          class="shrink-0 text-slate-400 hover:text-slate-700"
+          aria-label="Dismiss notification"
+          @click="ui.dismissToast(toast.id)"
+        >
+          ×
+        </button>
       </div>
     </div>
 
     <!-- Account UserModule (Pinned to bottom-left of TeamRail) -->
-    <UserModule :user="user" @log-out="logout" />
+    <UserModule :user="user" @log-out="logout" @settings-saved="onAccountSettingsSaved" />
 
     <!-- Shell Modals -->
     <CreateTeamModal />
     <JoinTeamModal />
-    <HelpModal />
     <MemberManageModal />
   </div>
 </template>
