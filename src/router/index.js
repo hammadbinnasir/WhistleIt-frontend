@@ -1,5 +1,5 @@
 import { createRouter, createWebHistory } from 'vue-router'
-import { installAuthGuard } from '@/features/auth/guard'
+import { getRootRedirect, installAuthGuard } from '@/features/auth/guard'
 import AuthView from '@/features/auth/AuthView.vue'
 import EmailVerificationView from '@/features/auth/EmailVerificationView.vue'
 import HomeView from '@/views/HomeView.vue'
@@ -10,7 +10,7 @@ import { channelRoutes } from '@/features/channels/routes'
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
   routes: [
-    { path: '/', redirect: '/login' },
+    { path: '/', redirect: getRootRedirect },
     { path: '/login', name: 'login', component: AuthView },
     { path: '/signup', name: 'signup', component: AuthView },
     { path: '/forgot-password', name: 'forgot-password', component: AuthView },
@@ -23,7 +23,7 @@ const router = createRouter({
         query: { token: to.params.token || to.query.token },
       }),
     },
-    { path: '/app', name: 'home', component: HomeView },
+    { path: '/app', name: 'home', component: HomeView, meta: { requiresAuth: true } },
     ...channelRoutes,
   ],
 })
