@@ -106,6 +106,7 @@ async function submitForm() {
           email: email.value,
           password: password.value,
           password_confirmation: confirmPassword.value,
+          frontend_url: typeof window !== 'undefined' ? window.location.origin : '',
         })
       : await login({ email: email.value, password: password.value })
 

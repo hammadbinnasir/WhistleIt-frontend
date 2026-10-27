@@ -20,6 +20,13 @@ export function verifyEmail(token) {
   return http(`/auth/verify/${encodeURIComponent(token)}`, { method: 'GET', auth: false })
 }
 
-export function resendVerificationEmail(email) {
-  return http('/auth/resend-verification', { method: 'POST', body: { email }, auth: false })
+export function resendVerificationEmail(
+  email,
+  frontendUrl = typeof window !== 'undefined' ? window.location.origin : '',
+) {
+  return http('/auth/resend-verification', {
+    method: 'POST',
+    body: { email, frontend_url: frontendUrl },
+    auth: false,
+  })
 }
