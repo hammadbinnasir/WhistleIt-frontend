@@ -360,12 +360,13 @@ a {
   width: min(100%, 371px);
   min-height: 49px;
   margin-top: 7px;
-  background: #9697ff;
+  background: #5962ff;
   font-size: 20px;
 }
 
 .auth-page--signup .submit-button:hover {
-  background: #7779f0;
+  transform: translateY(-1px);
+  background: #474fe5;
 }
 
 .auth-page--signup .auth-switch {
