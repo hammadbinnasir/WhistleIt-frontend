@@ -10,6 +10,7 @@ const scheduleMenu = ref(null)
 const content = ref('')
 const activeFormats = ref([])
 const activeList = ref('')
+const codeMode = ref(false)
 const important = ref(false)
 const scheduleOpen = ref(false)
 const customScheduleOpen = ref(false)
@@ -234,7 +235,7 @@ function saveSelection(preservePendingFormats = false) {
     activeList.value = list?.tagName === 'OL' ? 'numbered' : list ? 'bulleted' : ''
     activeFormats.value = formatActions
       .filter((action) => {
-        if (action.name === 'code') return Boolean(node?.closest('pre'))
+        if (action.name === 'code') return false
         return Boolean(node?.closest(formatTags[action.name]?.join(', ')))
       })
       .map((action) => action.name)
@@ -285,6 +286,11 @@ function insertAtSelection(text) {
 
 function applyFormat(action) {
   if (!editor.value) return
+  if (action.name === 'code') {
+    codeMode.value = !codeMode.value
+    return
+  }
+
   const selection = document.getSelection()
   const range = getSelectionRange()
   editor.value.focus()
@@ -294,37 +300,7 @@ function applyFormat(action) {
   }
   if (!selection) return
 
-  if (action.name === 'code') {
-    const existingBlock = range?.commonAncestorContainer.parentElement?.closest('pre')
-    if (existingBlock) {
-      const text = document.createTextNode(existingBlock.textContent)
-      existingBlock.replaceWith(text)
-      const caret = document.createRange()
-      caret.setStartAfter(text)
-      caret.collapse(true)
-      selection.removeAllRanges()
-      selection.addRange(caret)
-      activeFormats.value = activeFormats.value.filter((format) => format !== 'code')
-    } else {
-      const codeRange = range || document.createRange()
-      if (!range) {
-        codeRange.selectNodeContents(editor.value)
-        codeRange.collapse(false)
-      }
-      const codeBlock = document.createElement('pre')
-      const code = document.createElement('code')
-      if (range && !range.collapsed) code.append(codeRange.extractContents())
-      if (!code.hasChildNodes()) code.append(document.createElement('br'))
-      codeBlock.append(code)
-      codeRange.deleteContents()
-      codeRange.insertNode(codeBlock)
-      codeRange.selectNodeContents(code)
-      codeRange.collapse(false)
-      selection.removeAllRanges()
-      selection.addRange(codeRange)
-      activeFormats.value = [...new Set([...activeFormats.value, 'code'])]
-    }
-  } else if (!range || range.collapsed) {
+  if (!range || range.collapsed) {
     const isActive = activeFormats.value.includes(action.name)
     activeFormats.value = isActive
       ? activeFormats.value.filter((format) => format !== action.name)
@@ -398,40 +374,22 @@ function handleBeforeInput(event) {
   if (!selection?.rangeCount || !editor.value?.contains(selection.anchorNode)) return
 
   const range = selection.getRangeAt(0)
-  const codeMode = activeFormats.value.includes('code')
   let node = document.createTextNode(event.data)
 
-  if (codeMode) {
-    const codeBlock =
-      range.commonAncestorContainer.parentElement?.closest('pre') ||
-      range.startContainer.parentElement?.closest('pre')
-    if (codeBlock) {
-      range.deleteContents()
-      range.insertNode(node)
-    } else {
-      const block = document.createElement('pre')
-      const code = document.createElement('code')
-      code.append(node)
-      block.append(code)
-      range.deleteContents()
-      range.insertNode(block)
-    }
-  } else {
-    for (const format of [...activeFormats.value].reverse()) {
-      const tag = {
-        bold: 'strong',
-        italic: 'em',
-        strikethrough: 's',
-        underline: 'u',
-      }[format]
-      if (!tag) continue
-      const wrapper = document.createElement(tag)
-      wrapper.append(node)
-      node = wrapper
-    }
-    range.deleteContents()
-    range.insertNode(node)
+  for (const format of [...activeFormats.value].reverse()) {
+    const tag = {
+      bold: 'strong',
+      italic: 'em',
+      strikethrough: 's',
+      underline: 'u',
+    }[format]
+    if (!tag) continue
+    const wrapper = document.createElement(tag)
+    wrapper.append(node)
+    node = wrapper
   }
+  range.deleteContents()
+  range.insertNode(node)
 
   const previousNode = node.previousSibling
   if (
@@ -477,17 +435,104 @@ function mergeAdjacentContents(target, source) {
 function applyList(ordered) {
   if (!editor.value) return
   const selection = document.getSelection()
-  const range = getSelectionRange()
+  let range = getSelectionRange()
+  if (!range) {
+    range = document.createRange()
+    range.selectNodeContents(editor.value)
+    range.collapse(false)
+  }
+
   editor.value.focus()
-  if (range && selection) {
+  if (selection) {
     selection.removeAllRanges()
     selection.addRange(range)
   }
-  const currentList = range?.commonAncestorContainer.parentElement?.closest('ol, ul')
-  const sameListType = currentList?.tagName === (ordered ? 'OL' : 'UL')
-  const requestedList = ordered ? 'numbered' : 'bulleted'
-  document.execCommand(ordered ? 'insertOrderedList' : 'insertUnorderedList')
-  activeList.value = sameListType || activeList.value === requestedList ? '' : requestedList
+
+  let startNode =
+    range.startContainer.nodeType === Node.ELEMENT_NODE
+      ? range.startContainer
+      : range.startContainer.parentElement
+  if (startNode === editor.value) {
+    const childIndex = Math.min(range.startOffset, editor.value.childNodes.length) - 1
+    startNode = editor.value.childNodes[childIndex] || editor.value
+  }
+  const caretNode = startNode
+  while (
+    startNode &&
+    startNode !== editor.value &&
+    startNode.parentElement &&
+    startNode.parentElement !== editor.value
+  ) {
+    startNode = startNode.parentElement
+  }
+
+  const selectionElement =
+    caretNode?.nodeType === Node.ELEMENT_NODE ? caretNode : caretNode?.parentElement
+  const requestedTag = ordered ? 'OL' : 'UL'
+  const currentList = selectionElement?.closest('ol, ul')
+  let caretTarget
+
+  if (currentList?.tagName === requestedTag) {
+    const lines = [...currentList.children].map((item) => {
+      const line = document.createElement('div')
+      while (item.firstChild) line.append(item.firstChild)
+      if (!line.hasChildNodes()) line.append(document.createElement('br'))
+      return line
+    })
+    const currentItem = caretNode?.nodeType === Node.ELEMENT_NODE
+      ? caretNode.closest('li')
+      : caretNode?.parentElement?.closest('li')
+    const caretIndex = Math.max(
+      0,
+      [...currentList.children].indexOf(currentItem),
+    )
+    currentList.replaceWith(...lines)
+    caretTarget = lines[Math.min(caretIndex, lines.length - 1)]
+  } else if (currentList) {
+    const replacement = document.createElement(ordered ? 'ol' : 'ul')
+    while (currentList.firstChild) replacement.append(currentList.firstChild)
+    currentList.replaceWith(replacement)
+    caretTarget =
+      (caretNode?.nodeType === Node.ELEMENT_NODE
+        ? caretNode.closest('li')
+        : caretNode?.parentElement?.closest('li')) || replacement.querySelector('li')
+  } else {
+    const list = document.createElement(ordered ? 'ol' : 'ul')
+    const item = document.createElement('li')
+    const target = startNode && startNode !== editor.value ? startNode : null
+
+    if (target) {
+      target.replaceWith(list)
+      item.append(target)
+      if (!item.hasChildNodes()) item.append(document.createElement('br'))
+    } else {
+      item.append(document.createElement('br'))
+      editor.value.append(list)
+    }
+
+    if (!list.contains(item)) list.append(item)
+    caretTarget = item
+  }
+
+  if (caretTarget && selection) {
+    const caret = document.createRange()
+    caret.selectNodeContents(caretTarget)
+    caret.collapse(false)
+    selection.removeAllRanges()
+    selection.addRange(caret)
+    savedSelectionRange = caret.cloneRange()
+  }
+
+  const activeListElement = caretTarget?.closest('ol, ul')
+  activeList.value =
+    activeListElement?.tagName === 'OL'
+      ? 'numbered'
+      : activeListElement?.tagName === 'UL'
+        ? 'bulleted'
+        : ''
+  activeFormats.value = []
+  codeMode.value = false
+
   syncContent()
 }
 
@@ -544,6 +589,7 @@ function sendMessage() {
   editor.value.innerHTML = ''
   activeFormats.value = []
   activeList.value = ''
+  codeMode.value = false
   important.value = false
   savedSelectionRange = null
   attachments.value = []
@@ -567,6 +613,7 @@ function scheduleMessage() {
   editor.value.innerHTML = ''
   activeFormats.value = []
   activeList.value = ''
+  codeMode.value = false
   important.value = false
   savedSelectionRange = null
   attachments.value = []
@@ -631,6 +678,7 @@ function handleKeydown(event) {
           id="message-composer-input"
           ref="editor"
           class="message-composer__input"
+          :class="{ 'message-composer__input--code': codeMode }"
           role="textbox"
           aria-multiline="true"
           contenteditable="true"
@@ -806,8 +854,10 @@ function handleKeydown(event) {
           type="button"
           :aria-label="action.label"
           :title="action.label"
-          :class="{ 'is-active': activeFormats.includes(action.name) }"
-          :aria-pressed="activeFormats.includes(action.name)"
+          :class="{
+            'is-active': action.name === 'code' ? codeMode : activeFormats.includes(action.name),
+          }"
+          :aria-pressed="action.name === 'code' ? codeMode : activeFormats.includes(action.name)"
           @mousedown.prevent="saveSelection(true)"
           @click="applyFormat(action)"
         >
@@ -827,11 +877,15 @@ function handleKeydown(event) {
           @mousedown.prevent="saveSelection(true)"
           @click="applyList(false)"
         >
-          <svg viewBox="0 0 20 20" aria-hidden="true">
-            <circle cx="3" cy="5" r="1" />
-            <circle cx="3" cy="10" r="1" />
-            <circle cx="3" cy="15" r="1" />
-            <path d="M7 5h10M7 10h10M7 15h10" />
+          <svg
+            class="message-composer__list-icon"
+            viewBox="0 0 24 24"
+            aria-hidden="true"
+          >
+            <circle cx="3.5" cy="5" r="1.1" />
+            <circle cx="3.5" cy="12" r="1.1" />
+            <circle cx="3.5" cy="19" r="1.1" />
+            <path d="M8.5 5h13M8.5 12h13M8.5 19h13" />
           </svg>
         </button>
         <button
@@ -844,8 +898,14 @@ function handleKeydown(event) {
           @mousedown.prevent="saveSelection(true)"
           @click="applyList(true)"
         >
-          <svg viewBox="0 0 20 20" aria-hidden="true">
-            <path d="M7 5h10M7 10h10M7 15h10M2 4h2v3M2 10h2v3H2M2 15h2v2H2" />
+          <svg
+            class="message-composer__list-icon message-composer__numbered-list-icon"
+            viewBox="0 0 24 24"
+            aria-hidden="true"
+          >
+            <path
+              d="M2.5 3.5h2v3.5h-2m0 0h3m-3 3.5h3v1.5l-3 1.5h3m-3 3.5h3v3h-3m3-1.5h-2M9 5h12.5M9 12h12.5M9 19h12.5"
+            />
           </svg>
         </button>
         <button
@@ -857,7 +917,8 @@ function handleKeydown(event) {
           @click="insertAtSelection('\nPoll:\n• Option 1\n• Option 2\n')"
         >
           <svg viewBox="0 0 20 20" aria-hidden="true">
-            <path d="M3 17V9h3v8M8.5 17V4h3v13M14 17V7h3v10M2 18h16" />
+            <rect x="2.5" y="2.5" width="15" height="15" rx="1" />
+            <path d="M5.5 14.5V10h2.5v4.5M9 14.5V6.5h2.5v8M12.5 14.5V8.5H15v6" />
           </svg>
         </button>
         <button
@@ -870,11 +931,19 @@ function handleKeydown(event) {
           @mousedown.prevent="saveSelection(true)"
           @click="toggleImportant"
         >
-          <svg viewBox="0 0 20 20" aria-hidden="true">
-            <rect x="2" y="4" width="16" height="12" rx="1" />
-            <path d="m3 5 7 6 7-6" />
-            <circle cx="15.5" cy="14.5" r="3" class="message-composer__clock" />
-            <path d="M15.5 12.8v1.9l1.2.8" class="message-composer__clock-hand" />
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <rect x="2" y="3.5" width="20" height="15" rx="1.5" />
+            <path d="m3 4.5 9 7 9-7M3 17l6-4.5" />
+            <circle
+              cx="19.5"
+              cy="17.5"
+              r="4"
+              class="message-composer__important-badge"
+            />
+            <path
+              d="M19.5 15.5v2.5m0 1.25v.1"
+              class="message-composer__important-badge-mark"
+            />
           </svg>
         </button>
       </div>
@@ -926,25 +995,29 @@ function handleKeydown(event) {
 
 .message-composer__input-row {
   display: flex;
-  min-height: 48px;
+  min-height: 42px;
 }
 
 .message-composer__editor-area {
   flex: 1;
   min-width: 0;
-  padding: 4px 0;
+  padding: 4px 0 4px 4px;
 }
 
 .message-composer__input {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
   min-width: 0;
-  min-height: 32px;
+  min-height: 26px;
   max-height: 180px;
-  padding: 8px 14px;
+  padding: 4px 8px;
   overflow-y: scroll;
   scrollbar-gutter: stable;
   scrollbar-color: #8d93a8 #e6e8f0;
   scrollbar-width: auto;
   border: 0;
+  border-radius: 4px;
   outline: 0;
   background: #fff;
   color: #25263a;
@@ -970,6 +1043,29 @@ function handleKeydown(event) {
   color: #777b8e;
   content: attr(data-placeholder);
   pointer-events: none;
+}
+
+.message-composer__input :deep(ul),
+.message-composer__input :deep(ol) {
+  margin-block: 0;
+  padding-inline-start: 24px;
+}
+
+.message-composer__input :deep(ul) {
+  list-style-type: disc;
+}
+
+.message-composer__input :deep(ol) {
+  list-style-type: decimal;
+}
+
+.message-composer__input--code {
+  background: #222;
+  color: #fff;
+}
+
+.message-composer__input--code:empty::before {
+  color: #c4c4c4;
 }
 
 .message-composer__input code {
@@ -1009,7 +1105,7 @@ function handleKeydown(event) {
 
 .message-composer__primary-actions {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: 4px;
   padding: 5px 7px;
 }
@@ -1055,11 +1151,11 @@ function handleKeydown(event) {
 
 .message-composer__toolbar-row {
   display: flex;
-  min-height: 40px;
+  min-height: 38px;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  padding: 3px 8px;
+  padding: 2px 8px;
   background: #f0f0f6;
 }
 
@@ -1093,6 +1189,10 @@ function handleKeydown(event) {
   background: #d0d0d4;
 }
 
+.message-composer__format-button[aria-label='Important message'] {
+  color: #000;
+}
+
 .message-composer__format-button svg {
   width: 18px;
   height: 18px;
@@ -1103,16 +1203,27 @@ function handleKeydown(event) {
   stroke-width: 1.5;
 }
 
-.message-composer__format-button svg circle:not(.message-composer__clock) {
+.message-composer__format-button .message-composer__list-icon {
+  width: 22px;
+  height: 22px;
+}
+
+.message-composer__format-button .message-composer__numbered-list-icon {
+  stroke-width: 1.3;
+}
+
+.message-composer__format-button svg circle:not(.message-composer__important-badge) {
   fill: currentColor;
 }
 
-.message-composer__format-button .message-composer__clock {
-  fill: #f0f0f6;
+.message-composer__format-button .message-composer__important-badge {
+  fill: currentColor;
+  stroke: none;
 }
 
-.message-composer__format-button .message-composer__clock-hand {
-  stroke-width: 1;
+.message-composer__format-button .message-composer__important-badge-mark {
+  stroke: #fff;
+  stroke-width: 1.5;
 }
 
 .message-composer__format-button:focus-visible,
