@@ -67,8 +67,24 @@ describe('auth view', () => {
     const password = wrapper.get('#password')
 
     expect(password.attributes('type')).toBe('password')
+    expect(wrapper.get('.password-toggle path').attributes('d')).toContain('21 21')
     await wrapper.get('button[aria-label="Show password"]').trigger('click')
     expect(password.attributes('type')).toBe('text')
+    expect(wrapper.get('.password-toggle path').attributes('d')).not.toContain('21 21')
+    await wrapper.get('button[aria-label="Hide password"]').trigger('click')
+    expect(wrapper.get('.password-toggle path').attributes('d')).toContain('21 21')
+  })
+
+  it('removes the crossed-eye line when showing the confirmation password', async () => {
+    const { wrapper } = await mountAuthView('/signup')
+    const confirmPasswordToggle = wrapper.get('button[aria-label="Show confirm password"]')
+
+    expect(confirmPasswordToggle.get('path').attributes('d')).toContain('21 21')
+    await confirmPasswordToggle.trigger('click')
+    expect(wrapper.get('#confirm-password').attributes('type')).toBe('text')
+    expect(
+      wrapper.get('button[aria-label="Hide confirm password"] path').attributes('d'),
+    ).not.toContain('21 21')
   })
 
   it('allows the browser to suggest saved credentials on the login page', async () => {
