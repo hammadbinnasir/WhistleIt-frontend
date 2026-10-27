@@ -38,8 +38,17 @@ watch(
     acceptedTerms.value = false
     showPassword.value = false
     showConfirmPassword.value = false
-    feedback.value = ''
-    feedbackIsSuccess.value = false
+    if (route.query.verified === 'true') {
+      feedback.value = 'Your email has been verified successfully! You can now log in.'
+      feedbackIsSuccess.value = true
+    } else if (route.query.registered === 'true') {
+      feedback.value =
+        'Account created successfully! Please check your email inbox to verify your account.'
+      feedbackIsSuccess.value = true
+    } else {
+      feedback.value = ''
+      feedbackIsSuccess.value = false
+    }
   },
   { immediate: true },
 )
@@ -101,7 +110,7 @@ async function submitForm() {
       : await login({ email: email.value, password: password.value })
 
     if (isSignup.value) {
-      await router.push({ name: 'login' })
+      await router.push({ name: 'login', query: { registered: 'true' } })
     } else {
       if (!saveAuthToken(response, rememberMe.value)) {
         throw new Error('Login response did not include an access token.')
