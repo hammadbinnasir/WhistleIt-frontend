@@ -350,7 +350,12 @@ onBeforeUnmount(() => {
     </div>
 
     <!-- Account UserModule (Pinned to bottom-left of TeamRail) -->
-    <UserModule :user="user" @log-out="logout" @settings-saved="onAccountSettingsSaved" />
+    <UserModule
+      :user="user"
+      :avatar-size="32"
+      @log-out="logout"
+      @settings-saved="onAccountSettingsSaved"
+    />
 
     <!-- Shell Modals -->
     <CreateTeamModal />
