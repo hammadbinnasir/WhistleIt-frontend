@@ -90,7 +90,7 @@ const showSample = ref(false)
       class="relative max-h-[85vh] w-[560px] max-w-[95vw] overflow-hidden rounded-lg bg-white shadow-xl"
     >
       <button
-        class="absolute right-3 top-3 flex h-7 w-7 items-center justify-center rounded-full bg-indigo-50 text-slate-600"
+        class="absolute right-3 top-3 flex h-7 w-7 cursor-pointer items-center justify-center rounded-full bg-indigo-50 text-slate-600"
         aria-label="Close"
         @click="ui.closeChannelSettings()"
       >
@@ -102,7 +102,7 @@ const showSample = ref(false)
         <button
           v-for="t in ['settings', 'members', 'integrations', 'about']"
           :key="t"
-          class="flex items-center gap-2 border-b-2 pb-3 text-sm font-semibold capitalize"
+          class="flex cursor-pointer items-center gap-2 border-b-2 pb-3 text-sm font-semibold capitalize"
           :class="
             tab === t ? 'border-indigo-500 text-indigo-600' : 'border-transparent text-slate-500'
           "
@@ -172,7 +172,7 @@ const showSample = ref(false)
               Access all the history of polls of this channel with a single click
             </p>
             <button
-              class="mt-3 rounded bg-indigo-500 px-4 py-2 text-sm font-semibold text-white"
+              class="mt-3 cursor-pointer rounded bg-indigo-500 px-4 py-2 text-sm font-semibold text-white"
               @click="emit('show-polls')"
             >
               History

@@ -38,7 +38,9 @@ import { ComposerConversation } from '@/features/composer'
 import ChatHeaderActions from '@/features/search/ChatHeaderActions.vue'
 import ChannelSettingsModal from '@/features/search/ChannelSettingsModal.vue'
 import RemindersPanel from '@/features/search/RemindersPanel.vue'
+import PinnedMessagesPanel from '@/features/search/PinnedMessagesPanel.vue'
 import SearchPage from '@/features/search/SearchPage.vue'
+import PollHistoryPanel from '@/features/search/PollHistoryPanel.vue'
 import SetReminderModal from '@/features/search/SetReminderModal.vue'
 
 const router = useRouter()
@@ -116,6 +118,24 @@ const reminderMessage = computed(() => ({
     ? `Welcome to #${selectedChannel.value.name}. Use this demo message to try reminders.`
     : 'Welcome to WhistleIt.',
 }))
+
+async function toggleChannelMute() {
+  if (!selectedChannel.value) return
+  try {
+    await channelsStore.toggleMute(selectedChannel.value.id)
+  } catch (error) {
+    ui.toast('Unable to update mute setting', error?.message || 'Please try again.', 'error')
+  }
+}
+
+async function toggleChannelFavorite() {
+  if (!selectedChannel.value) return
+  try {
+    await channelsStore.toggleFavorite(selectedChannel.value.id)
+  } catch (error) {
+    ui.toast('Unable to update favorite setting', error?.message || 'Please try again.', 'error')
+  }
+}
 
 async function logout() {
   clearAuthSession()
@@ -282,6 +302,8 @@ onBeforeUnmount(() => {
             class="min-h-0 w-full shrink-0 border-l border-slate-200 bg-white md:w-[min(450px,40vw)] shadow-lg"
           >
             <RemindersPanel v-if="ui.activePanel === 'reminders'" />
+            <PinnedMessagesPanel v-else-if="ui.activePanel === 'pinned'" />
+            <PollHistoryPanel v-else-if="ui.activePanel === 'poll-history'" />
             <SearchPage
               v-else-if="ui.activePanel === 'search'"
               :channel-id="selectedChannelId || ''"
@@ -296,8 +318,9 @@ onBeforeUnmount(() => {
     <ChannelSettingsModal
       v-if="ui.channelSettingsOpen && selectedChannel"
       :channel="selectedChannel"
-      @toggle-mute="selectedChannel.muted = !selectedChannel.muted"
-      @toggle-favourite="selectedChannel.favourite = !selectedChannel.favourite"
+      @toggle-mute="toggleChannelMute"
+      @toggle-favourite="toggleChannelFavorite"
+      @show-polls="ui.openPanel('poll-history')"
       @left="ui.selectChannel(null)"
       @close="ui.channelSettingsOpen = false"
     />

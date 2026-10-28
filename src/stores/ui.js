@@ -11,6 +11,8 @@ export const useUiStore = defineStore('ui', () => {
   const channelSettingsOpen = ref(false)
   const channelSettingsTab = ref('settings')
   const toasts = ref([])
+  const pinnedMessages = ref([])
+  const polls = ref([])
   let nextToastId = 0
 
   // modal visibility flags
@@ -42,6 +44,30 @@ export const useUiStore = defineStore('ui', () => {
   }
   function dismissToast(id) {
     toasts.value = toasts.value.filter((item) => item.id !== id)
+  }
+  function addPoll(message, conversation) {
+    const content = message.content || message.text || ''
+    const titleMatch = content.match(/^Poll:\s*(.+)$/m)
+    if (!titleMatch) return
+    const existing = polls.value.some((poll) => poll.id === String(message.id))
+    if (existing) return
+    polls.value.unshift({
+      id: String(message.id || Date.now()),
+      title: titleMatch[1].trim(),
+      content,
+      conversation,
+      createdAt: message.createdAt || new Date().toISOString(),
+      status: 'Open',
+    })
+  }
+  function togglePinnedMessage(message, conversation) {
+    const id = String(message.id)
+    const existingIndex = pinnedMessages.value.findIndex((item) => String(item.id) === id)
+    if (existingIndex !== -1) {
+      pinnedMessages.value.splice(existingIndex, 1)
+      return
+    }
+    pinnedMessages.value.unshift({ ...message, conversation })
   }
   function toggleSidebar() {
     sidebarOpen.value = !sidebarOpen.value
@@ -77,6 +103,10 @@ export const useUiStore = defineStore('ui', () => {
     channelSettingsOpen,
     channelSettingsTab,
     toasts,
+    pinnedMessages,
+    polls,
+    addPoll,
+    togglePinnedMessage,
     hasSelection,
     selectChannel,
     openPanel,

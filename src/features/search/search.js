@@ -63,6 +63,18 @@ export function addMockFile(file) {
   FILES.unshift({ id: crypto.randomUUID(), createdAt: new Date().toISOString(), ...file })
 }
 
+export function addMockMessage(message) {
+  MESSAGES.unshift({
+    id: message.id || crypto.randomUUID(),
+    webhook: false,
+    createdAt: new Date().toISOString(),
+    sender: message.sender || 'You',
+    userId: message.userId || 'current-user',
+    text: message.text || message.content || '',
+    conversation: message.conversation || { id: 'general', name: 'General', kind: 'public' },
+  })
+}
+
 function applyFilters(
   list,
   { q, userIds = [], date, dateEnd, dateMode = 'on', webhooks, channelId },

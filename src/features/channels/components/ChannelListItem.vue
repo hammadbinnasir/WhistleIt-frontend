@@ -27,6 +27,13 @@ const emit = defineEmits(['select', 'menu'])
     >
       <ChIcon :name="channel.isPrivate ? 'lock' : 'globe'" :size="18" />
       <span class="ch-item__name">{{ channel.name }}</span>
+      <ChIcon
+        v-if="channel.isFavorite"
+        class="ch-item__favorite"
+        name="star"
+        :size="15"
+        filled
+      />
       <ChIcon v-if="channel.isMuted" name="bell-off" :size="14" />
       <span v-else-if="channel.unreadCount > 0" class="ch-item__badge">
         {{ channel.unreadCount > 99 ? '99+' : channel.unreadCount }}
@@ -93,6 +100,9 @@ const emit = defineEmits(['select', 'menu'])
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+.ch-item__favorite {
+  color: #fbbf24;
 }
 .ch-item__badge {
   min-width: 20px;

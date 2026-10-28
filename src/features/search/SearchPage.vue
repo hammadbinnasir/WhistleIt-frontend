@@ -3,10 +3,12 @@
 // filter popover (user, date, webhooks) and a paginated file grid.
 import { ref, reactive, watch, computed, onMounted, onBeforeUnmount } from 'vue'
 import { useUiStore } from '@/stores/ui'
+import { useChannelsStore } from '@/features/channels'
 import { searchMessages, searchFiles, searchLinks, searchUsers } from './search'
 
 const props = defineProps({ channelId: { type: String, default: '' } })
 const ui = useUiStore()
+const channelsStore = useChannelsStore()
 
 // icon = SVG path drawn inside each tab button
 const tabs = [
@@ -43,10 +45,33 @@ const applied = reactive({ userIds: [], date: '', dateEnd: '', dateMode: 'on', w
 const userQuery = ref('')
 const userOptions = ref([])
 const noun = computed(() => ({ text: 'messages', file: 'files', link: 'links' })[tab.value])
+const searchCategory = ref('Messages')
+const categories = ['Messages', 'Companies', 'Teams', 'Channels']
+const directoryItems = computed(() => [
+  { id: 'company-1', category: 'Companies', name: 'Whistle It', detail: 'Company workspace' },
+  { id: 'team-1', category: 'Teams', name: 'Frontend & Backend Team Cmi 2', detail: 'Development team' },
+  ...channelsStore.channels.map((channel) => ({
+    id: channel.id,
+    category: 'Channels',
+    name: channel.name,
+    detail: channel.description || (channel.isPrivate ? 'Private channel' : 'Public channel'),
+  })),
+])
 const hasFilters = computed(() => applied.userIds.length || applied.date || applied.webhooks)
 
 async function run() {
   error.value = ''
+  if (searchCategory.value !== 'Messages') {
+    const needle = q.value.trim().toLowerCase()
+    items.value = directoryItems.value.filter((item) => {
+      return item.category === searchCategory.value &&
+        (!needle || `${item.name} ${item.detail}`.toLowerCase().includes(needle))
+    })
+    totalPages.value = 1
+    searched.value = Boolean(needle)
+    return
+  }
+
   // files list shows everything by default (like the live app); text/link need a query or filter
   const canSearch = tab.value === 'file' || q.value.trim() || hasFilters.value
   if (!canSearch) {
@@ -85,7 +110,7 @@ watch(q, () => {
   clearTimeout(timer)
   timer = setTimeout(run, 350)
 })
-watch([tab, scope, () => props.channelId], () => {
+watch([tab, scope, searchCategory, () => props.channelId], () => {
   page.value = 1
   items.value = []
   run()
@@ -236,6 +261,14 @@ const kindIcon = { public: '🌐', private: '🔒', dm: '👤' }
 const fileIcon = { pdf: '📕', doc: '📄', audio: '🎧', image: '🖼️' }
 const fmtDate = (iso) =>
   new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+const senderInitials = (name = '') =>
+  name
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0])
+    .join('')
+    .toUpperCase()
 </script>
 
 <template>
@@ -252,11 +285,11 @@ const fmtDate = (iso) =>
     <header class="flex items-center justify-between border-b border-slate-200 px-5 py-4">
       <h2 class="text-xl text-slate-800">Search</h2>
       <button
-        class="text-3x1 text-slate-800 hover:text-indigo-600"
+        class="cursor-pointer text-3xl font-black text-slate-800 hover:text-indigo-600"
         aria-label="Close search"
         @click="ui.closePanel()"
       >
-        →
+        <i class="fa-solid fa-arrow-right-long text-lg text-slate-800" aria-hidden="true"></i>
       </button>
     </header>
 
@@ -611,6 +644,32 @@ const fmtDate = (iso) =>
       </nav>
     </div>
 
+    <nav
+      v-if="q.trim() || searched"
+      class="flex items-center gap-7 border-b border-slate-200 px-4 text-[15px] font-semibold"
+    >
+      <button
+        v-for="category in categories"
+        :key="category"
+        type="button"
+        class="relative py-3"
+        :class="searchCategory === category ? 'text-indigo-600' : 'text-slate-600 hover:text-indigo-500'"
+        @click="searchCategory = category"
+      >
+        {{ category }}
+        <span
+          v-if="category === 'Messages' && items.length && searchCategory === category"
+          class="ml-1 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-red-500 px-1 text-xs text-white"
+        >
+          {{ items.length }}
+        </span>
+        <span
+          v-if="searchCategory === category"
+          class="absolute bottom-0 left-0 h-0.5 w-full bg-indigo-500"
+        ></span>
+      </button>
+    </nav>
+
     <!-- results -->
     <div class="flex min-h-0 flex-1 flex-col overflow-y-auto p-4">
       <p v-if="error" class="text-center text-sm text-red-500">{{ error }}</p>
@@ -621,8 +680,10 @@ const fmtDate = (iso) =>
         class="flex flex-1 flex-col items-center justify-center px-4 text-center"
       >
         <template v-if="searched">
-          <h3 class="text-xl font-bold text-slate-900">No {{ noun }} found</h3>
-          <p class="mt-1 text-slate-700">Try a different word, or change the filters.</p>
+          <h3 class="text-xl font-bold text-slate-900">Nothing turned up</h3>
+          <p class="mt-1 text-slate-700">
+            Nothing found against the search. Try using different keywords and filters to get the desired results
+          </p>
         </template>
         <template v-else>
           <h3 class="text-xl font-bold text-slate-900">Search to find what's on your Whistle It</h3>
@@ -632,6 +693,14 @@ const fmtDate = (iso) =>
           </p>
         </template>
       </div>
+
+      <!-- company, team, and channel results -->
+      <ul v-else-if="searchCategory !== 'Messages'" class="divide-y divide-slate-100">
+        <li v-for="item in items" :key="item.id" class="py-4">
+          <p class="font-bold text-slate-900">{{ item.name }}</p>
+          <p class="mt-1 text-sm text-slate-500">{{ item.detail }}</p>
+        </li>
+      </ul>
 
       <!-- files grid -->
       <div v-else-if="tab === 'file'" class="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
@@ -659,11 +728,22 @@ const fmtDate = (iso) =>
 
       <!-- text + link results -->
       <ul v-else class="divide-y divide-slate-100">
-        <li v-for="m in items" :key="m.id" class="py-3 text-sm">
-          <p class="font-semibold text-slate-900">
-            {{ m.sender }}
-            <span class="ml-2 text-xs font-normal text-slate-500">{{ fmtDate(m.createdAt) }}</span>
-          </p>
+        <li v-for="m in items" :key="m.id" class="group relative flex gap-3 py-3 text-sm">
+          <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-violet-600 text-sm font-bold text-white">
+            {{ senderInitials(m.sender) }}
+          </div>
+          <div class="min-w-0 flex-1 pr-16">
+            <p class="font-bold text-slate-900">
+              {{ m.sender }}
+              <span class="ml-3 text-xs font-normal text-slate-500">{{ fmtDate(m.createdAt) }}</span>
+            </p>
+          </div>
+          <button
+            type="button"
+            class="absolute right-0 top-3 cursor-pointer rounded border border-indigo-400 px-2 py-1 text-xs font-semibold tracking-wide text-indigo-600"
+          >
+            JUMP
+          </button>
           <a
             v-if="tab === 'link'"
             :href="m.url"
@@ -672,10 +752,12 @@ const fmtDate = (iso) =>
             class="break-all text-blue-600 underline"
             >{{ m.url }}</a
           >
-          <p v-else class="text-slate-800">{{ m.text }}</p>
-          <p class="mt-1 text-xs text-slate-500">
-            {{ kindIcon[m.conversation.kind] }} {{ m.conversation.name }}
-          </p>
+          <div class="absolute left-[52px] right-0 top-[34px] min-w-0">
+            <p v-if="tab !== 'link'" class="mt-1 break-words text-slate-800">{{ m.text }}</p>
+            <p class="mt-1 text-xs text-slate-500">
+              {{ kindIcon[m.conversation.kind] }} {{ m.conversation.name }}
+            </p>
+          </div>
         </li>
       </ul>
     </div>
