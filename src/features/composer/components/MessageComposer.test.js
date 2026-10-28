@@ -111,6 +111,158 @@ describe('message composer', () => {
     ).toBe(true)
   })
 
+  it('opens the poll dialog and adds a configured poll to the message draft', async () => {
+    const wrapper = mount(MessageComposer, { attachTo: document.body })
+    setEditorText(wrapper, 'Before the poll')
+
+    await wrapper.get('button[aria-label="Insert poll"]').trigger('click')
+
+    expect(document.querySelector('[role="dialog"][aria-labelledby="message-poll-title"]')).not.toBeNull()
+    expect(document.querySelectorAll('.message-composer__poll-option')).toHaveLength(3)
+
+    const titleInput = document.querySelector('#poll-title-input')
+    titleInput.value = 'Lunch vote'
+    titleInput.dispatchEvent(new Event('input', { bubbles: true }))
+    const questionInput = document.querySelector('#poll-question-0')
+    questionInput.value = 'What should we order?'
+    questionInput.dispatchEvent(new Event('input', { bubbles: true }))
+    document.querySelector('.message-composer__poll-add-choice').click()
+    await wrapper.vm.$nextTick()
+    expect(document.querySelectorAll('.message-composer__poll-option')).toHaveLength(4)
+
+    document.querySelector('.message-composer__poll-next').click()
+    await wrapper.vm.$nextTick()
+    expect(document.querySelector('.message-composer__poll-placeholder h3').textContent).toBe(
+      'Configure your poll',
+    )
+    document.querySelector('.message-composer__poll-next').click()
+    await wrapper.vm.$nextTick()
+    document.querySelector('.message-composer__poll-footer .message-composer__poll-next').click()
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.get('[contenteditable="true"]').text()).toContain('Before the poll')
+    expect(wrapper.get('[contenteditable="true"]').text()).toContain('Poll: Lunch vote')
+    expect(wrapper.get('[contenteditable="true"]').text()).toContain('What should we order?')
+    expect(document.querySelector('[role="dialog"][aria-labelledby="message-poll-title"]')).toBeNull()
+    wrapper.unmount()
+  })
+
+  it('supports open-ended and rating questions with a selectable rating scale', async () => {
+    const wrapper = mount(MessageComposer, { attachTo: document.body })
+    await wrapper.get('button[aria-label="Insert poll"]').trigger('click')
+
+    const typeTrigger = document.querySelector('#poll-type-0')
+    typeTrigger.click()
+    await wrapper.vm.$nextTick()
+    expect([...document.querySelectorAll('[role="option"]')].map((option) => option.textContent.trim())).toEqual([
+      'Open Ended',
+      'Choice',
+      'Rating',
+    ])
+
+    document.querySelector('[role="option"][aria-selected="false"]').click()
+    await wrapper.vm.$nextTick()
+    expect(typeTrigger.textContent.trim()).toContain('Open Ended')
+    expect(document.querySelector('#poll-rating-type-0')).toBeNull()
+    expect(document.querySelector('.message-composer__poll-options')).toBeNull()
+    expect(document.querySelector('.message-composer__poll-toggles label:nth-child(2)')).toBeNull()
+
+    typeTrigger.click()
+    await wrapper.vm.$nextTick()
+    document.querySelector('[role="option"]:last-child').click()
+    await wrapper.vm.$nextTick()
+    expect(document.activeElement).toBe(typeTrigger)
+    const ratingSelect = document.querySelector('#poll-rating-type-0')
+    expect(ratingSelect.value).toBe('1-5')
+    expect([...document.querySelectorAll('.message-composer__poll-option input')].map((input) => input.value))
+      .toEqual(['1', '2', '3', '4', '5'])
+    ratingSelect.value = '1-10'
+    ratingSelect.dispatchEvent(new Event('change', { bubbles: true }))
+    ratingSelect.focus()
+    await wrapper.vm.$nextTick()
+    expect(document.activeElement).toBe(ratingSelect)
+    expect(document.querySelectorAll('.message-composer__poll-option input')).toHaveLength(10)
+
+    const titleInput = document.querySelector('#poll-title-input')
+    titleInput.focus()
+    expect(document.activeElement).toBe(titleInput)
+    titleInput.value = 'Team feedback'
+    titleInput.dispatchEvent(new Event('input', { bubbles: true }))
+    const questionInput = document.querySelector('#poll-question-0')
+    questionInput.value = 'How was the meeting?'
+    questionInput.dispatchEvent(new Event('input', { bubbles: true }))
+    await wrapper.vm.$nextTick()
+    document.querySelector('.message-composer__poll-next').click()
+    await wrapper.vm.$nextTick()
+    document.querySelector('.message-composer__poll-next').click()
+    await wrapper.vm.$nextTick()
+    document.querySelector('.message-composer__poll-footer .message-composer__poll-next').click()
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.get('[contenteditable="true"]').text()).toContain(
+      'How was the meeting? (Rating: 1-10)',
+    )
+    expect(document.querySelector('.message-composer__poll-modal')).toBeNull()
+    wrapper.unmount()
+  })
+
+  it('keeps Configure and Schedule locked until required poll fields are filled', async () => {
+    const wrapper = mount(MessageComposer, { attachTo: document.body })
+    await wrapper.get('button[aria-label="Insert poll"]').trigger('click')
+
+    expect(document.querySelector('#poll-title-input').getAttribute('aria-invalid')).toBe('false')
+    expect(document.querySelector('#poll-question-0').getAttribute('aria-invalid')).toBe('true')
+    expect(document.querySelectorAll('.message-composer__poll-validation-error')).toHaveLength(1)
+    const pollQuestion = document.querySelector('#poll-question-0')
+    expect(pollQuestion.getAttribute('placeholder')).toBe('Type your question')
+    expect(document.querySelector('.message-composer__poll-question-floating-label')).toBeNull()
+    expect(document.querySelector('.message-composer__poll-validation-error').textContent.trim()).toBe(
+      'This is a required field',
+    )
+
+    document.querySelector('[aria-label="Poll creation steps"] button:nth-child(2)').click()
+    await wrapper.vm.$nextTick()
+    expect(document.querySelector('.message-composer__poll-placeholder')).toBeNull()
+    expect(document.querySelector('#poll-title-input').getAttribute('aria-invalid')).toBe('true')
+    expect(document.querySelector('#poll-question-0').getAttribute('aria-invalid')).toBe('true')
+    expect(document.querySelector('.message-composer__poll-validation-error').textContent.trim()).toBe(
+      'This is a required field',
+    )
+
+    const titleInput = document.querySelector('#poll-title-input')
+    titleInput.value = 'Lunch vote'
+    titleInput.dispatchEvent(new Event('input', { bubbles: true }))
+    await wrapper.vm.$nextTick()
+    expect(titleInput.classList.contains('is-invalid')).toBe(true)
+    document.querySelector('[aria-label="Poll creation steps"] button:nth-child(3)').click()
+    await wrapper.vm.$nextTick()
+    expect(document.querySelector('.message-composer__poll-placeholder')).toBeNull()
+    expect(pollQuestion.getAttribute('aria-invalid')).toBe('true')
+    pollQuestion.focus()
+    await wrapper.vm.$nextTick()
+    expect(pollQuestion.getAttribute('placeholder')).toBe('Write here')
+    expect(
+      document.querySelector('.message-composer__poll-question-floating-label').textContent.trim(),
+    ).toBe('Type your question')
+    pollQuestion.value = 'What should we order?'
+    pollQuestion.dispatchEvent(new Event('input', { bubbles: true }))
+    await wrapper.vm.$nextTick()
+    expect(pollQuestion.classList.contains('is-invalid')).toBe(true)
+    expect(pollQuestion.getAttribute('aria-invalid')).toBe('true')
+    expect(pollQuestion.getAttribute('placeholder')).toBe('Write here')
+    expect(
+      document.querySelector('.message-composer__poll-question-floating-label').textContent.trim(),
+    ).toBe('Type your question')
+    pollQuestion.blur()
+    await wrapper.vm.$nextTick()
+    expect(document.querySelector('.message-composer__poll-question-floating-label')).not.toBeNull()
+    expect(
+      document.querySelector('.message-composer__poll-validation-error').textContent.trim(),
+    ).toBe('This is a required field')
+
+    wrapper.unmount()
+  })
+
   it('sends a non-empty message and clears the editor', async () => {
     const wrapper = mount(MessageComposer)
 
