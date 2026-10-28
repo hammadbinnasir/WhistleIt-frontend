@@ -32,6 +32,7 @@ export async function http(
   }
 
   let response
+  const isFormData = typeof FormData !== 'undefined' && body instanceof FormData
   try {
     response = await fetch(url.toString(), {
       method,
@@ -39,11 +40,11 @@ export async function http(
       credentials,
       headers: {
         Accept: 'application/json',
-        ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}),
+        ...(body !== undefined && !isFormData ? { 'Content-Type': 'application/json' } : {}),
         ...(auth ? getAuthHeaders() : {}),
         ...headers,
       },
-      body: body !== undefined ? JSON.stringify(body) : undefined,
+      body: body === undefined ? undefined : isFormData ? body : JSON.stringify(body),
     })
   } catch (err) {
     if (err?.name === 'AbortError') throw err

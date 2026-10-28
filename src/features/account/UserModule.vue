@@ -8,6 +8,7 @@ import AccountSettingsModal from './components/AccountSettingsModal.vue'
 import ConfirmModal from './components/ConfirmModal.vue'
 import BaseModal from './components/BaseModal.vue'
 import { useUserStore } from './composables/useUserStore'
+import { getAuthUserId } from '@/features/auth/session'
 
 const props = defineProps({
   /** Initial/server data: { profile, status, customStatus, preferences, security } */
@@ -89,6 +90,9 @@ const onDocKeydown = (e) => {
 onMounted(() => {
   document.addEventListener('mousedown', onDocMouseDown)
   document.addEventListener('keydown', onDocKeydown)
+  if (getAuthUserId()) {
+    store.loadPublicProfile().catch((err) => emit('error', err))
+  }
 })
 
 onBeforeUnmount(() => {
