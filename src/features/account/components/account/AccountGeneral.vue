@@ -178,12 +178,12 @@ defineExpose({ validate, getValues })
 
 <style scoped>
 .general {
-  padding: 0 30px;
+  padding: 0 18px;
 }
 
 .profile-heading {
-  margin: 28px 0 22px;
-  font-size: 19px;
+  margin: 16px 0 14px;
+  font-size: 17px;
   font-weight: 400;
   color: #323248;
 }
@@ -191,13 +191,13 @@ defineExpose({ validate, getValues })
 .profile-row {
   display: flex;
   align-items: center;
-  gap: 90px;
-  margin-bottom: 56px;
+  gap: 48px;
+  margin-bottom: 30px;
 }
 
 .avatar {
-  width: 125px;
-  height: 125px;
+  width: 100px;
+  height: 100px;
   flex-shrink: 0;
   border-radius: 50%;
   background: linear-gradient(135deg, #8a2fc8, #6f2bb8);
@@ -205,7 +205,7 @@ defineExpose({ validate, getValues })
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 54px;
+  font-size: 42px;
   font-weight: 300;
   overflow: hidden;
   user-select: none;
@@ -217,21 +217,21 @@ defineExpose({ validate, getValues })
 }
 
 .upload-info p {
-  margin: 0 0 14px;
-  font-size: 15px;
+  margin: 0 0 10px;
+  font-size: 14px;
   color: #1f1f2e;
 }
 
 .upload-btn {
   margin-top: 6px;
   padding: 0 17px;
-  height: 34px;
+  height: 32px;
   background: #5559f4;
   color: #fff;
   border: none;
   border-radius: 2px;
   font-family: inherit;
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 700;
   letter-spacing: 1px;
   cursor: pointer;
@@ -266,7 +266,7 @@ defineExpose({ validate, getValues })
 .fields {
   display: flex;
   flex-direction: column;
-  gap: 32px;
+  gap: 22px;
 }
 
 .field {
@@ -275,11 +275,11 @@ defineExpose({ validate, getValues })
 
 .control {
   width: 100%;
-  height: 50px;
+  height: 46px;
   box-sizing: border-box;
   padding: 0 14px;
   font-family: inherit;
-  font-size: 18px;
+  font-size: 16px;
   color: #1f1f2e;
   background: #fff;
   border: 1px solid #a5a6b0;
@@ -301,7 +301,7 @@ defineExpose({ validate, getValues })
 .field-error {
   position: absolute;
   left: 15px;
-  top: 56px;
+  top: 51px;
   font-size: 13px;
   color: #fb275d;
 }
@@ -316,7 +316,7 @@ defineExpose({ validate, getValues })
 .caret {
   position: absolute;
   right: 12px;
-  top: 25px;
+  top: 23px;
   width: 26px;
   height: 26px;
   transform: translateY(-50%);

@@ -98,13 +98,13 @@ defineExpose({ getValues })
 
 <style scoped>
 .section {
-  margin-bottom: 40px;
-  padding-left: 15px;
+  margin-bottom: 26px;
+  padding-left: 8px;
 }
 
 .section-title {
-  margin: 0 0 30px;
-  font-size: 19px;
+  margin: 0 0 18px;
+  font-size: 17px;
   font-weight: 700;
   color: #1f1f2e;
 }
@@ -122,7 +122,7 @@ defineExpose({ getValues })
   line-height: 1.25;
 }
 .kbd-lg {
-  font-size: 18px;
+  font-size: 16px;
   padding: 1px 6px;
 }
 
@@ -131,9 +131,9 @@ defineExpose({ getValues })
   position: relative;
   display: flex;
   align-items: center;
-  gap: 14px;
-  height: 40px;
-  padding-left: 13px;
+  gap: 10px;
+  height: 34px;
+  padding-left: 10px;
   cursor: pointer;
 }
 
@@ -144,8 +144,8 @@ defineExpose({ getValues })
 }
 
 .radio-mark {
-  width: 20px;
-  height: 20px;
+  width: 18px;
+  height: 18px;
   box-sizing: border-box;
   border: 2px solid #676879;
   border-radius: 50%;
@@ -174,7 +174,7 @@ defineExpose({ getValues })
 }
 
 .radio-label {
-  font-size: 16px;
+  font-size: 14px;
   color: #676879;
 }
 </style>

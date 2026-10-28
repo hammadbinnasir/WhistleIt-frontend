@@ -123,14 +123,14 @@ defineExpose({ validate, getValues })
 
 <style scoped>
 .security {
-  padding: 0 40px;
+  padding: 0 24px;
 }
 
 .email-row {
   display: flex;
   align-items: flex-start;
-  gap: 24px;
-  margin-top: 40px;
+  gap: 20px;
+  margin-top: 24px;
 }
 
 .email-text {
@@ -139,15 +139,15 @@ defineExpose({ validate, getValues })
 
 .sec-heading {
   margin: 0;
-  font-size: 19px;
+  font-size: 17px;
   font-weight: 700;
   color: #323248;
 }
 
 .email-desc {
   margin: 8px 0 0;
-  font-size: 16px;
-  line-height: 30px;
+  font-size: 14px;
+  line-height: 24px;
   color: #9a9ba5;
 }
 
@@ -187,19 +187,19 @@ defineExpose({ validate, getValues })
 }
 
 .password-heading {
-  margin-top: 40px;
-  margin-bottom: 22px;
+  margin-top: 28px;
+  margin-bottom: 16px;
 }
 
 .pw-field {
   position: relative;
-  margin-bottom: 42px;
+  margin-bottom: 24px;
 }
 
 .pw-control {
   display: flex;
   align-items: center;
-  height: 50px;
+  height: 46px;
   box-sizing: border-box;
   padding: 0 14px;
   background: #fff;
@@ -222,7 +222,7 @@ defineExpose({ validate, getValues })
   outline: none;
   background: transparent;
   font-family: inherit;
-  font-size: 18px;
+  font-size: 16px;
   color: #1f1f2e;
 }
 .pw-input::placeholder {
@@ -257,7 +257,7 @@ defineExpose({ validate, getValues })
 .pw-error {
   position: absolute;
   left: 15px;
-  top: 56px;
+  top: 51px;
   font-size: 13px;
   color: #fb275d;
 }
