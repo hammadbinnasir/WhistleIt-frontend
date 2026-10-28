@@ -45,6 +45,7 @@ describe('auth view', () => {
 
     expect(wrapper.get('h1').text()).toBe('Log in')
     expect(wrapper.find('input[name="rememberMe"]').exists()).toBe(true)
+    expect(wrapper.get('.auth-background').attributes('src')).toContain('auth-background.svg')
 
     await wrapper.get('#email').setValue('previous@example.com')
     await wrapper.get('#password').setValue('previous-password')
@@ -66,8 +67,24 @@ describe('auth view', () => {
     const password = wrapper.get('#password')
 
     expect(password.attributes('type')).toBe('password')
+    expect(wrapper.get('.password-toggle path').attributes('d')).toContain('21 21')
     await wrapper.get('button[aria-label="Show password"]').trigger('click')
     expect(password.attributes('type')).toBe('text')
+    expect(wrapper.get('.password-toggle path').attributes('d')).not.toContain('21 21')
+    await wrapper.get('button[aria-label="Hide password"]').trigger('click')
+    expect(wrapper.get('.password-toggle path').attributes('d')).toContain('21 21')
+  })
+
+  it('removes the crossed-eye line when showing the confirmation password', async () => {
+    const { wrapper } = await mountAuthView('/signup')
+    const confirmPasswordToggle = wrapper.get('button[aria-label="Show confirm password"]')
+
+    expect(confirmPasswordToggle.get('path').attributes('d')).toContain('21 21')
+    await confirmPasswordToggle.trigger('click')
+    expect(wrapper.get('#confirm-password').attributes('type')).toBe('text')
+    expect(
+      wrapper.get('button[aria-label="Hide confirm password"] path').attributes('d'),
+    ).not.toContain('21 21')
   })
 
   it('allows the browser to suggest saved credentials on the login page', async () => {
@@ -202,10 +219,41 @@ describe('auth view', () => {
       email: 'sam@example.com',
       password: 'correct-password',
       password_confirmation: 'correct-password',
+      frontend_url: window.location.origin,
     })
     expect(router.currentRoute.value.path).toBe('/login')
     expect(wrapper.get('#email').element.value).toBe('')
     expect(wrapper.get('#password').element.value).toBe('')
+  })
+
+  it('requires at least eight password characters without setting a maximum on sign up', async () => {
+    const { wrapper } = await mountAuthView('/signup')
+    const longPassword = 'a'.repeat(256)
+
+    await wrapper.get('#full-name').setValue('Sam Example')
+    await wrapper.get('#company').setValue('Example Co')
+    await wrapper.get('#email').setValue('sam@example.com')
+    await wrapper.get('#password').setValue('short7!')
+    await wrapper.get('#confirm-password').setValue('short7!')
+    await wrapper.get('#terms').setValue(true)
+    await wrapper.get('form').trigger('submit')
+
+    expect(register).not.toHaveBeenCalled()
+    expect(wrapper.get('#password').element.minLength).toBe(8)
+    expect(wrapper.get('#password').attributes('maxlength')).toBeUndefined()
+    expect(wrapper.get('#confirm-password').attributes('maxlength')).toBeUndefined()
+
+    await wrapper.get('#password').setValue(longPassword)
+    await wrapper.get('#confirm-password').setValue(longPassword)
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+
+    expect(register).toHaveBeenCalledWith(
+      expect.objectContaining({
+        password: longPassword,
+        password_confirmation: longPassword,
+      }),
+    )
   })
 
   it('shows authentication errors and stays on the form', async () => {

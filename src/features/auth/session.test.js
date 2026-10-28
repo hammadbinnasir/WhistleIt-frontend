@@ -22,7 +22,10 @@ describe('auth session', () => {
   })
 
   it('stores the logged-in user name with the session', () => {
-    saveAuthToken({ access_token: 'session-token', user: { first_name: 'Sara', last_name: 'Khan' } })
+    saveAuthToken({
+      access_token: 'session-token',
+      user: { first_name: 'Sara', last_name: 'Khan' },
+    })
 
     expect(getAuthUser()).toEqual({ fullName: 'Sara Khan' })
   })

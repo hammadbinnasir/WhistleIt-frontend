@@ -20,7 +20,7 @@ import {
   TeamSwitcher,
   CreateTeamModal,
   JoinTeamModal,
-  HelpDrawer,
+  HelpModal,
   MemberManageModal,
 } from '@/features/shell'
 
@@ -351,11 +351,17 @@ onBeforeUnmount(() => {
     </div>
 
     <!-- Account UserModule (Pinned to bottom-left of TeamRail) -->
-    <UserModule :user="user" @log-out="logout" @settings-saved="onAccountSettingsSaved" />
+    <UserModule
+      :user="user"
+      :avatar-size="32"
+      @log-out="logout"
+      @settings-saved="onAccountSettingsSaved"
+    />
 
     <!-- Shell Modals -->
     <CreateTeamModal />
     <JoinTeamModal />
+    <HelpModal />
     <MemberManageModal />
   </div>
 </template>

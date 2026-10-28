@@ -3,7 +3,7 @@ import { computed, ref, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { login, register, requestPasswordReset, resetPassword } from './api'
 import { saveAuthToken } from './session'
-import AuthIllustration from './AuthIllustration.vue'
+import authBackground from '@/assets/auth-background.svg'
 
 const route = useRoute()
 const router = useRouter()
@@ -38,8 +38,17 @@ watch(
     acceptedTerms.value = false
     showPassword.value = false
     showConfirmPassword.value = false
-    feedback.value = ''
-    feedbackIsSuccess.value = false
+    if (route.query.verified === 'true') {
+      feedback.value = 'Your email has been verified successfully! You can now log in.'
+      feedbackIsSuccess.value = true
+    } else if (route.query.registered === 'true') {
+      feedback.value =
+        'Account created successfully! Please check your email inbox to verify your account.'
+      feedbackIsSuccess.value = true
+    } else {
+      feedback.value = ''
+      feedbackIsSuccess.value = false
+    }
   },
   { immediate: true },
 )
@@ -49,6 +58,14 @@ async function submitForm() {
   feedbackIsSuccess.value = false
 
   if (!form.value.reportValidity()) return
+
+  if (
+    (isSignup.value || isResetPassword.value) &&
+    (password.value.length < 8 || confirmPassword.value.length < 8)
+  ) {
+    feedback.value = 'Passwords must be at least 8 characters long.'
+    return
+  }
 
   if ((isSignup.value || isResetPassword.value) && password.value !== confirmPassword.value) {
     feedback.value = 'Passwords do not match. Please check them and try again.'
@@ -89,11 +106,12 @@ async function submitForm() {
           email: email.value,
           password: password.value,
           password_confirmation: confirmPassword.value,
+          frontend_url: typeof window !== 'undefined' ? window.location.origin : '',
         })
       : await login({ email: email.value, password: password.value })
 
     if (isSignup.value) {
-      await router.push({ name: 'login' })
+      await router.push({ name: 'login', query: { registered: 'true' } })
     } else {
       if (!saveAuthToken(response, rememberMe.value)) {
         throw new Error('Login response did not include an access token.')
@@ -238,7 +256,26 @@ async function submitForm() {
               @click="showPassword = !showPassword"
             >
               <svg viewBox="0 0 24 24" aria-hidden="true">
+                <template v-if="showPassword">
+                  <path
+                    d="M2 12s3.3-7 10-7 10 7 10 7-3.3 7-10 7S2 12 2 12Z"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    stroke-width="1.8"
+                  />
+                  <circle
+                    cx="12"
+                    cy="12"
+                    r="3"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="1.8"
+                  />
+                </template>
                 <path
+                  v-else
                   d="M3 3 21 21M10.6 10.6a2 2 0 0 0 2.8 2.8M9.9 5.2A10.8 10.8 0 0 1 12 5c5.2 0 8.5 5.2 8.5 7s-1.2 3.2-3.1 4.5M6.2 6.2C3.7 7.7 2 10.5 2 12c0 1.8 3.3 7 10 7 1 0 1.9-.2 2.8-.5"
                   fill="none"
                   stroke="currentColor"
@@ -270,7 +307,26 @@ async function submitForm() {
               @click="showConfirmPassword = !showConfirmPassword"
             >
               <svg viewBox="0 0 24 24" aria-hidden="true">
+                <template v-if="showConfirmPassword">
+                  <path
+                    d="M2 12s3.3-7 10-7 10 7 10 7-3.3 7-10 7S2 12 2 12Z"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    stroke-width="1.8"
+                  />
+                  <circle
+                    cx="12"
+                    cy="12"
+                    r="3"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="1.8"
+                  />
+                </template>
                 <path
+                  v-else
                   d="M3 3 21 21M10.6 10.6a2 2 0 0 0 2.8 2.8M9.9 5.2A10.8 10.8 0 0 1 12 5c5.2 0 8.5 5.2 8.5 7s-1.2 3.2-3.1 4.5M6.2 6.2C3.7 7.7 2 10.5 2 12c0 1.8 3.3 7 10 7 1 0 1.9-.2 2.8-.5"
                   fill="none"
                   stroke="currentColor"
@@ -344,14 +400,7 @@ async function submitForm() {
     </section>
 
     <aside class="auth-art" aria-hidden="true">
-      <svg class="art-backdrop" viewBox="0 0 800 900" preserveAspectRatio="none">
-        <path d="M485 0h315v900H0c170-84 222-236 290-425C362 253 390 82 485 0Z" fill="#302d57" />
-        <path
-          d="M455 0h30c-95 82-123 253-195 475C222 664 170 816 0 900h-45c188-90 246-247 314-440C340 250 363 79 455 0Z"
-          fill="#433e70"
-        />
-      </svg>
-      <AuthIllustration />
+      <img class="auth-background" :src="authBackground" alt="" />
     </aside>
   </main>
 </template>

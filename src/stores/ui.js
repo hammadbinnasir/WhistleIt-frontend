@@ -26,12 +26,6 @@ export const useUiStore = defineStore('ui', () => {
   function selectChannel(id) {
     selectedChannelId.value = id
   }
-  function openPanel(panel) {
-    activePanel.value = panel
-  }
-  function closePanel() {
-    activePanel.value = null
-  }
   function openChannelSettings() {
     channelSettingsTab.value = 'settings'
     channelSettingsOpen.value = true
@@ -95,8 +89,7 @@ export const useUiStore = defineStore('ui', () => {
     helpModalOpen,
     teamCreateModalOpen,
     teamJoinModalOpen,
-    openPanel,
-    closePanel,
+    memberManageModalOpen,
     toggleHelpModal,
     toggleTeamCreateModal,
     toggleTeamJoinModal,

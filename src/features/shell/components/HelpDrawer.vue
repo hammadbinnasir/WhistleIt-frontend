@@ -38,47 +38,88 @@ function prevSlide() {
   currentSlideIndex.value = (currentSlideIndex.value - 1 + slides.length) % slides.length
 }
 
+function showLatestHelp() {
+  currentSlideIndex.value = 0
+  activeTopic.value = null
+}
+
 const topics = [
   {
     id: 'features',
     title: 'Features',
     icon: 'star',
     details: [
-      { heading: 'Channels & Collaboration', text: 'Create public or private channels to organize team conversations around projects, topics, or departments.' },
-      { heading: 'Rich Message Composer', text: 'Format text with bold, italic, code blocks, bulleted lists, and media attachments.' },
-      { heading: 'Workspace Switcher', text: 'Easily switch between different organizations or teams from the left rail.' },
-      { heading: 'Keyboard Navigation', text: 'Use Ctrl+K to jump between chats, Alt+Up/Down for channels, and Esc to dismiss panels.' }
-    ]
+      {
+        heading: 'Channels & Collaboration',
+        text: 'Create public or private channels to organize team conversations around projects, topics, or departments.',
+      },
+      {
+        heading: 'Rich Message Composer',
+        text: 'Format text with bold, italic, code blocks, bulleted lists, and media attachments.',
+      },
+      {
+        heading: 'Workspace Switcher',
+        text: 'Easily switch between different organizations or teams from the left rail.',
+      },
+      {
+        heading: 'Keyboard Navigation',
+        text: 'Use Ctrl+K to jump between chats, Alt+Up/Down for channels, and Esc to dismiss panels.',
+      },
+    ],
   },
   {
     id: 'dms',
     title: 'Understand direct messages',
     icon: 'chat',
     details: [
-      { heading: '1-on-1 Chats', text: 'Communicate privately with any teammate outside of public channels.' },
-      { heading: 'Presence & Status', text: 'See real-time status indicators (online, away, offline) for colleagues.' },
-      { heading: 'Media Sharing', text: 'Send screenshots, files, and voice notes directly in the conversation.' }
-    ]
+      {
+        heading: '1-on-1 Chats',
+        text: 'Communicate privately with any teammate outside of public channels.',
+      },
+      {
+        heading: 'Presence & Status',
+        text: 'See real-time status indicators (online, away, offline) for colleagues.',
+      },
+      {
+        heading: 'Media Sharing',
+        text: 'Send screenshots, files, and voice notes directly in the conversation.',
+      },
+    ],
   },
   {
     id: 'notifications',
     title: 'Problem with notification',
     icon: 'bell',
     details: [
-      { heading: 'Browser Permissions', text: 'Ensure notification permissions are set to "Allow" in your browser address bar.' },
-      { heading: 'Muted Channels', text: 'Check if you have muted the channel from channel settings.' },
-      { heading: 'Do Not Disturb', text: 'Verify your custom status is not set to Do Not Disturb or Offline.' }
-    ]
+      {
+        heading: 'Browser Permissions',
+        text: 'Ensure notification permissions are set to "Allow" in your browser address bar.',
+      },
+      {
+        heading: 'Muted Channels',
+        text: 'Check if you have muted the channel from channel settings.',
+      },
+      {
+        heading: 'Do Not Disturb',
+        text: 'Verify your custom status is not set to Do Not Disturb or Offline.',
+      },
+    ],
   },
   {
     id: 'mentions',
     title: 'Use mention at Whistleit',
     icon: 'at',
     details: [
-      { heading: '@username', text: 'Type @ followed by a colleague\'s name to notify them directly in a channel message.' },
-      { heading: '@channel', text: 'Notify everyone in the current active channel about an important update.' },
-      { heading: '@here', text: 'Notify members who are currently active and online right now.' }
-    ]
+      {
+        heading: '@username',
+        text: "Type @ followed by a colleague's name to notify them directly in a channel message.",
+      },
+      {
+        heading: '@channel',
+        text: 'Notify everyone in the current active channel about an important update.',
+      },
+      { heading: '@here', text: 'Notify members who are currently active and online right now.' },
+    ],
   },
 ]
 
@@ -88,6 +129,11 @@ function openTopic(topic) {
 
 function closeTopic() {
   activeTopic.value = null
+}
+
+function openSearchTopic(topic) {
+  openTopic(topic)
+  isSearchOpen.value = false
 }
 
 function handleSearch(val) {
@@ -110,7 +156,14 @@ function handleSearch(val) {
           title="Back"
           @click="closeTopic"
         >
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <svg
+            width="18"
+            height="18"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+          >
             <polyline points="15 18 9 12 15 6" />
           </svg>
         </button>
@@ -125,7 +178,14 @@ function handleSearch(val) {
           title="Shortcuts & Docs"
           @click="openTopic(topics[0])"
         >
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+          <svg
+            width="18"
+            height="18"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.8"
+          >
             <rect x="3" y="3" width="18" height="18" rx="2" />
             <path d="M3 9h18M9 21V9" />
           </svg>
@@ -136,9 +196,16 @@ function handleSearch(val) {
           type="button"
           class="flex h-8 w-8 items-center justify-center rounded-lg text-slate-600 hover:bg-slate-100 transition-colors"
           title="What's New"
-          @click="currentSlideIndex = 0; activeTopic = null"
+          @click="showLatestHelp"
         >
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+          <svg
+            width="18"
+            height="18"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.8"
+          >
             <polyline points="20 12 20 22 4 22 4 12" />
             <rect x="2" y="7" width="20" height="5" />
             <line x1="12" y1="22" x2="12" y2="7" />
@@ -155,7 +222,14 @@ function handleSearch(val) {
           aria-label="Close Help"
           @click="ui.closePanel()"
         >
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <svg
+            width="20"
+            height="20"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+          >
             <line x1="5" y1="12" x2="19" y2="12" />
             <polyline points="12 5 19 12 12 19" />
           </svg>
@@ -168,19 +242,53 @@ function handleSearch(val) {
       <!-- TOPIC DETAIL VIEW (When a topic is selected) -->
       <div v-if="activeTopic" class="space-y-4">
         <div class="flex items-center gap-3 pb-2 border-b border-slate-100">
-          <div class="flex h-9 w-9 items-center justify-center rounded-lg bg-indigo-50 text-indigo-600">
+          <div
+            class="flex h-9 w-9 items-center justify-center rounded-lg bg-indigo-50 text-indigo-600"
+          >
             <!-- Topic Icon -->
-            <svg v-if="activeTopic.icon === 'star'" width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
-              <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+            <svg
+              v-if="activeTopic.icon === 'star'"
+              width="20"
+              height="20"
+              viewBox="0 0 24 24"
+              fill="currentColor"
+            >
+              <polygon
+                points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"
+              />
             </svg>
-            <svg v-else-if="activeTopic.icon === 'chat'" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <svg
+              v-else-if="activeTopic.icon === 'chat'"
+              width="20"
+              height="20"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+            >
               <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
             </svg>
-            <svg v-else-if="activeTopic.icon === 'bell'" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <svg
+              v-else-if="activeTopic.icon === 'bell'"
+              width="20"
+              height="20"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+            >
               <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
               <path d="M13.73 21a2 2 0 0 1-3.46 0" />
             </svg>
-            <svg v-else width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <svg
+              v-else
+              width="20"
+              height="20"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+            >
               <circle cx="12" cy="12" r="4" />
               <path d="M16 8v5a3 3 0 0 0 6 0v-1a10 10 0 1 0-3.92 7.94" />
             </svg>
@@ -251,16 +359,20 @@ function handleSearch(val) {
               class="absolute left-0 right-0 top-full z-20 mt-1 max-h-48 overflow-y-auto rounded-lg border border-slate-200 bg-white py-1 shadow-lg"
             >
               <button
-                v-for="topic in topics.filter(t => t.title.toLowerCase().includes(searchQuery.toLowerCase()))"
+                v-for="topic in topics.filter((t) =>
+                  t.title.toLowerCase().includes(searchQuery.toLowerCase()),
+                )"
                 :key="topic.id"
                 type="button"
                 class="flex w-full items-center px-3.5 py-2 text-left text-xs font-medium text-slate-700 hover:bg-slate-50"
-                @click="openTopic(topic); isSearchOpen = false"
+                @click="openSearchTopic(topic)"
               >
                 {{ topic.title }}
               </button>
               <div
-                v-if="!topics.some(t => t.title.toLowerCase().includes(searchQuery.toLowerCase()))"
+                v-if="
+                  !topics.some((t) => t.title.toLowerCase().includes(searchQuery.toLowerCase()))
+                "
                 class="px-3.5 py-2 text-xs text-slate-400"
               >
                 No exact topic match. Try keywords like "Features" or "Direct messages".
@@ -271,11 +383,11 @@ function handleSearch(val) {
 
         <!-- 2. Discover More (Carousel) -->
         <div>
-          <p class="text-xs font-medium text-slate-500 mb-2">
-            Discover more
-          </p>
+          <p class="text-xs font-medium text-slate-500 mb-2">Discover more</p>
 
-          <div class="relative overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+          <div
+            class="relative overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm"
+          >
             <!-- Top Slide Text Info -->
             <div class="px-4 pt-3.5 pb-2.5">
               <h3 class="text-sm font-bold text-slate-800">
@@ -293,7 +405,13 @@ function handleSearch(val) {
                 v-if="slides[currentSlideIndex].type === 'gift'"
                 class="absolute inset-0 flex items-center justify-center bg-[#232042]"
               >
-                <svg width="220" height="130" viewBox="0 0 220 130" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <svg
+                  width="220"
+                  height="130"
+                  viewBox="0 0 220 130"
+                  fill="none"
+                  xmlns="http://www.w3.org/2000/svg"
+                >
                   <!-- Dark background shadow -->
                   <ellipse cx="110" cy="110" rx="90" ry="16" fill="black" fill-opacity="0.25" />
                   <!-- Left Large Red Box -->
@@ -331,40 +449,77 @@ function handleSearch(val) {
               >
                 <div class="relative flex w-full items-center justify-center gap-12">
                   <!-- Female Avatar in Blue Circle -->
-                  <div class="relative flex h-14 w-14 items-center justify-center rounded-full bg-[#1e88e5] text-white shadow-sm">
+                  <div
+                    class="relative flex h-14 w-14 items-center justify-center rounded-full bg-[#1e88e5] text-white shadow-sm"
+                  >
                     <svg width="34" height="34" viewBox="0 0 24 24" fill="currentColor">
-                      <path d="M12 2a5 5 0 0 0-5 5v3a5 5 0 0 0 10 0V7a5 5 0 0 0-5-5zm0 14c-4.42 0-8 2.24-8 5v1h16v-1c0-2.76-3.58-5-8-5z" />
+                      <path
+                        d="M12 2a5 5 0 0 0-5 5v3a5 5 0 0 0 10 0V7a5 5 0 0 0-5-5zm0 14c-4.42 0-8 2.24-8 5v1h16v-1c0-2.76-3.58-5-8-5z"
+                      />
                     </svg>
                     <!-- Headset -->
-                    <div class="absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-white text-blue-600 shadow-xs">
-                      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
+                    <div
+                      class="absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-white text-blue-600 shadow-xs"
+                    >
+                      <svg
+                        width="10"
+                        height="10"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="3"
+                      >
                         <path d="M3 18v-6a9 9 0 0 1 18 0v6" />
                       </svg>
                     </div>
                   </div>
 
                   <!-- Center Speech Bubble Node -->
-                  <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 flex flex-col items-center">
-                    <div class="flex h-11 w-11 items-center justify-center rounded-full bg-[#f97316] shadow-sm">
-                      <div class="flex h-6 w-8 items-center justify-center rounded-lg bg-white px-1 shadow-xs">
-                        <span class="text-xs font-extrabold text-slate-700 tracking-widest leading-none pb-1">...</span>
+                  <div
+                    class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 flex flex-col items-center"
+                  >
+                    <div
+                      class="flex h-11 w-11 items-center justify-center rounded-full bg-[#f97316] shadow-sm"
+                    >
+                      <div
+                        class="flex h-6 w-8 items-center justify-center rounded-lg bg-white px-1 shadow-xs"
+                      >
+                        <span
+                          class="text-xs font-extrabold text-slate-700 tracking-widest leading-none pb-1"
+                          >...</span
+                        >
                       </div>
                     </div>
                     <!-- Small bottom blue node -->
-                    <div class="mt-2 flex h-4 w-4 items-center justify-center rounded-full bg-[#1e88e5]">
+                    <div
+                      class="mt-2 flex h-4 w-4 items-center justify-center rounded-full bg-[#1e88e5]"
+                    >
                       <div class="h-1.5 w-1.5 rounded-full bg-white"></div>
                     </div>
                   </div>
 
                   <!-- Connecting dotted arch line -->
-                  <svg class="absolute inset-0 h-full w-full pointer-events-none" viewBox="0 0 300 120" fill="none">
-                    <path d="M90 60 Q 150 25 210 60" stroke="#cbd5e1" stroke-width="2" stroke-dasharray="4 4" />
+                  <svg
+                    class="absolute inset-0 h-full w-full pointer-events-none"
+                    viewBox="0 0 300 120"
+                    fill="none"
+                  >
+                    <path
+                      d="M90 60 Q 150 25 210 60"
+                      stroke="#cbd5e1"
+                      stroke-width="2"
+                      stroke-dasharray="4 4"
+                    />
                   </svg>
 
                   <!-- Male Avatar in Orange/Dark Circle -->
-                  <div class="relative flex h-14 w-14 items-center justify-center rounded-full bg-[#ea580c] text-white shadow-sm">
+                  <div
+                    class="relative flex h-14 w-14 items-center justify-center rounded-full bg-[#ea580c] text-white shadow-sm"
+                  >
                     <svg width="34" height="34" viewBox="0 0 24 24" fill="currentColor">
-                      <path d="M12 2a5 5 0 0 0-5 5v3a5 5 0 0 0 10 0V7a5 5 0 0 0-5-5zm0 14c-4.42 0-8 2.24-8 5v1h16v-1c0-2.76-3.58-5-8-5z" />
+                      <path
+                        d="M12 2a5 5 0 0 0-5 5v3a5 5 0 0 0 10 0V7a5 5 0 0 0-5-5zm0 14c-4.42 0-8 2.24-8 5v1h16v-1c0-2.76-3.58-5-8-5z"
+                      />
                     </svg>
                   </div>
                 </div>
@@ -376,9 +531,17 @@ function handleSearch(val) {
                 class="absolute inset-0 flex flex-col items-center justify-center bg-[#f59e0b] px-6"
               >
                 <!-- Mini Search Box Mockup -->
-                <div class="w-full max-w-[210px] rounded-lg bg-white/95 px-2.5 py-1.5 shadow-sm space-y-1">
+                <div
+                  class="w-full max-w-[210px] rounded-lg bg-white/95 px-2.5 py-1.5 shadow-sm space-y-1"
+                >
                   <div class="flex items-center gap-1.5">
-                    <svg class="h-3 w-3 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                    <svg
+                      class="h-3 w-3 text-slate-400"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="2.5"
+                    >
                       <circle cx="11" cy="11" r="7" />
                       <line x1="21" y1="21" x2="16.65" y2="16.65" />
                     </svg>
@@ -395,7 +558,9 @@ function handleSearch(val) {
                 </div>
 
                 <!-- Ctrl/Cmd + K Badge -->
-                <div class="mt-2.5 flex items-center gap-1.5 rounded-lg bg-white px-3 py-1 shadow-md">
+                <div
+                  class="mt-2.5 flex items-center gap-1.5 rounded-lg bg-white px-3 py-1 shadow-md"
+                >
                   <span class="text-xs font-bold text-slate-800">Ctrl/Cmd</span>
                   <span class="text-xs font-bold text-slate-400">+</span>
                   <span class="text-xs font-bold text-slate-800">K</span>
@@ -410,7 +575,14 @@ function handleSearch(val) {
                 aria-label="Previous slide"
                 @click="prevSlide"
               >
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                <svg
+                  width="14"
+                  height="14"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2.5"
+                >
                   <polyline points="15 18 9 12 15 6" />
                 </svg>
               </button>
@@ -422,7 +594,14 @@ function handleSearch(val) {
                 aria-label="Next slide"
                 @click="nextSlide"
               >
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                <svg
+                  width="14"
+                  height="14"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2.5"
+                >
                   <polyline points="9 18 15 12 9 6" />
                 </svg>
               </button>
@@ -432,18 +611,20 @@ function handleSearch(val) {
 
         <!-- 3. Explore Help Topics -->
         <div class="space-y-2">
-          <p class="text-xs font-medium text-slate-500 mb-2.5">
-            Explore help topics
-          </p>
+          <p class="text-xs font-medium text-slate-500 mb-2.5">Explore help topics</p>
 
           <!-- Topic 1: Features -->
           <div
             class="flex items-center gap-3.5 rounded-xl border border-slate-200/90 bg-white p-3 hover:border-indigo-300 hover:bg-indigo-50/20 hover:shadow-xs transition-all cursor-pointer"
             @click="openTopic(topics[0])"
           >
-            <div class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#1e293b] text-white">
+            <div
+              class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#1e293b] text-white"
+            >
               <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
-                <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+                <polygon
+                  points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"
+                />
               </svg>
             </div>
             <span class="text-sm font-semibold text-slate-800">Features</span>
@@ -454,8 +635,17 @@ function handleSearch(val) {
             class="flex items-center gap-3.5 rounded-xl border border-slate-200/90 bg-white p-3 hover:border-indigo-300 hover:bg-indigo-50/20 hover:shadow-xs transition-all cursor-pointer"
             @click="openTopic(topics[1])"
           >
-            <div class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#1e293b] text-white">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <div
+              class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#1e293b] text-white"
+            >
+              <svg
+                width="18"
+                height="18"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+              >
                 <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
                 <line x1="8" y1="9" x2="16" y2="9" />
                 <line x1="8" y1="13" x2="14" y2="13" />
@@ -469,8 +659,17 @@ function handleSearch(val) {
             class="flex items-center gap-3.5 rounded-xl border border-slate-200/90 bg-white p-3 hover:border-indigo-300 hover:bg-indigo-50/20 hover:shadow-xs transition-all cursor-pointer"
             @click="openTopic(topics[2])"
           >
-            <div class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#1e293b] text-white">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <div
+              class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#1e293b] text-white"
+            >
+              <svg
+                width="18"
+                height="18"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+              >
                 <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
                 <path d="M13.73 21a2 2 0 0 1-3.46 0" />
               </svg>
@@ -483,8 +682,17 @@ function handleSearch(val) {
             class="flex items-center gap-3.5 rounded-xl border border-slate-200/90 bg-white p-3 hover:border-indigo-300 hover:bg-indigo-50/20 hover:shadow-xs transition-all cursor-pointer"
             @click="openTopic(topics[3])"
           >
-            <div class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#1e293b] text-white">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <div
+              class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#1e293b] text-white"
+            >
+              <svg
+                width="18"
+                height="18"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+              >
                 <circle cx="12" cy="12" r="4" />
                 <path d="M16 8v5a3 3 0 0 0 6 0v-1a10 10 0 1 0-3.92 7.94" />
               </svg>

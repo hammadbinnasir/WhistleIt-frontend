@@ -47,6 +47,6 @@ const ui = useUiStore()
 @reference "../../assets/main.css";
 
 .icon-btn {
-  @apply flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 text-slate-600 hover:bg-indigo-50 hover:text-indigo-600;
+  @apply flex h-9 w-9 cursor-pointer items-center justify-center rounded-full border border-slate-200 text-slate-600 hover:bg-indigo-50 hover:text-indigo-600;
 }
 </style>

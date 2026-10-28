@@ -54,7 +54,8 @@ describe('avatar and user menu', () => {
     expect($('.avatar-btn')).toBeTruthy()
     expect($('.initials').textContent).toBe('HH')
     expect($('.badge.online')).toBeTruthy()
-    expect($('.avatar-btn').title).toBe('Hammad Haider')
+    expect($('.avatar-tooltip').textContent.trim()).toBe('Hammad Haider')
+    expect($('.avatar-btn').getAttribute('aria-describedby')).toBe('user-avatar-tooltip')
     expect($('[role=menu]')).toBeNull()
   })
 
@@ -252,7 +253,7 @@ describe('custom status modal', () => {
     expect(store.state.customStatusExpiresAt).toBeGreaterThanOrEqual(before + 30 * 60 * 1000)
     expect(store.state.customStatusExpiresAt).toBeLessThan(Date.now() + 30 * 60 * 1000 + 1000)
     expect(wrapper.emitted('custom-status-change')[0][0]).toBe('In a meeting')
-    expect($('.avatar-btn').title).toContain('In a meeting')
+    expect($('.avatar-btn').getAttribute('aria-label')).toContain('In a meeting')
   })
 
   it('"Today" expires at the end of the current day', async () => {
@@ -615,7 +616,7 @@ describe('account settings modal', () => {
     await openSettings()
 
     await click(byText('REMOVE PHOTO'))
-    expect($('.avatar img')).toBeNull()
+    expect($('.panel .general .avatar img')).toBeNull()
     expect($('.remove-btn')).toBeNull()
 
     await click(byText('SAVE'))

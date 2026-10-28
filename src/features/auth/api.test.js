@@ -24,6 +24,7 @@ describe('auth API', () => {
     expect(http).toHaveBeenCalledWith('/reset-password', {
       method: 'POST',
       body: credentials,
+      auth: false,
     })
   })
 })

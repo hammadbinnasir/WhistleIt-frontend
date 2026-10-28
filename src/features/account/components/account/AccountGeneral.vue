@@ -135,12 +135,7 @@ defineExpose({ validate, getValues })
           hidden
           @change="onPhotoChange"
         />
-        <button
-          v-if="photoUrl"
-          type="button"
-          class="remove-btn"
-          @click="removePhoto"
-        >
+        <button v-if="photoUrl" type="button" class="remove-btn" @click="removePhoto">
           REMOVE PHOTO
         </button>
         <p v-if="photoError" class="photo-error">{{ photoError }}</p>

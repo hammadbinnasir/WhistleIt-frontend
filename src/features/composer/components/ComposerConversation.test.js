@@ -1,8 +1,22 @@
 import { mount } from '@vue/test-utils'
 import { nextTick } from 'vue'
-import { beforeEach, describe, expect, it } from 'vitest'
+
 import { createPinia, setActivePinia } from 'pinia'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { useDmStore } from '@/features/dms/stores/dms'
+
+vi.mock('vue3-emoji-picker', async () => {
+  const { defineComponent, h } = await import('vue')
+
+  return {
+    default: defineComponent({
+      setup() {
+        return () => h('div')
+      },
+    }),
+  }
+})
+
 import ComposerConversation from './ComposerConversation.vue'
 import MessageComposer from './MessageComposer.vue'
 
@@ -78,5 +92,15 @@ describe('composer conversation', () => {
     expect(wrapper.text()).toContain('Scheduled for')
 
     expect(wrapper.text()).toContain('Asia/Karachi')
+  })
+
+  it('shows a selected GIF as a conversation message', async () => {
+    const wrapper = mount(ComposerConversation)
+    const gif = { title: 'Celebration', url: 'https://example.com/celebration.gif' }
+
+    wrapper.findComponent(MessageComposer).vm.$emit('gif', gif)
+    await nextTick()
+
+    expect(wrapper.get('img[alt="Celebration"]').attributes('src')).toBe(gif.url)
   })
 })

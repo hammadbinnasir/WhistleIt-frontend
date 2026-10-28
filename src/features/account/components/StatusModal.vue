@@ -228,7 +228,7 @@ const save = () => {
   position: relative;
   display: flex;
   flex-direction: column;
-  width: 648px;
+  width: 490px;
   max-width: 100%;
   max-height: calc(100vh - 32px);
   background: #fff;
@@ -240,16 +240,16 @@ const save = () => {
     'Segoe UI',
     sans-serif;
   color: #1f1f2e;
-  padding-top: 50px;
+  padding-top: 38px;
   box-sizing: border-box;
 }
 
 .close {
   position: absolute;
-  top: 16px;
-  right: 16px;
-  width: 26px;
-  height: 26px;
+  top: 12px;
+  right: 12px;
+  width: 24px;
+  height: 24px;
   border: none;
   border-radius: 50%;
   background: #e8e8f3;
@@ -270,9 +270,9 @@ const save = () => {
 
 .title {
   flex-shrink: 0;
-  margin: 0 0 32px;
+  margin: 0 0 22px;
   text-align: center;
-  font-size: 24px;
+  font-size: 19px;
   font-weight: 500;
   color: #323248;
 }
@@ -281,11 +281,11 @@ const save = () => {
 .body {
   flex: 1 1 auto;
   min-height: 0;
-  padding: 0 28px 47px;
+  padding: 0 24px 20px;
 }
 .body.scroll {
   overflow-y: auto;
-  padding-bottom: 24px;
+  padding-bottom: 14px;
 }
 
 .input-wrap {
@@ -294,10 +294,10 @@ const save = () => {
 
 .input {
   width: 100%;
-  height: 50px;
+  height: 38px;
   box-sizing: border-box;
   padding: 0 52px 0 14px;
-  font-size: 20px;
+  font-size: 15px;
   font-family: inherit;
   color: #1f1f2e;
   border: 1px solid #a5a6b0;
@@ -316,8 +316,8 @@ const save = () => {
   right: 14px;
   top: 50%;
   transform: translateY(-50%);
-  width: 26px;
-  height: 26px;
+  width: 22px;
+  height: 22px;
   color: #3b3b55;
   pointer-events: none;
 }
@@ -347,16 +347,16 @@ const save = () => {
 
 .field {
   position: relative;
-  margin-top: 34px;
+  margin-top: 24px;
 }
 
 .date-input {
   width: 100%;
-  height: 50px;
+  height: 36px;
   box-sizing: border-box;
   padding: 0 14px;
   font-family: inherit;
-  font-size: 20px;
+  font-size: 14px;
   color: #1f1f2e;
   background: #fff;
   border: 1px solid #a5a6b0;
@@ -380,8 +380,8 @@ const save = () => {
 }
 
 .subtitle {
-  margin: 38px 0 14px;
-  font-size: 16px;
+  margin: 34px 0 10px;
+  font-size: 14px;
   font-weight: 700;
   color: #676879;
 }
@@ -395,9 +395,9 @@ const save = () => {
 .row {
   display: flex;
   align-items: center;
-  gap: 14px;
+  gap: 10px;
   width: 100%;
-  height: 60px;
+  height: 44px;
   background: transparent;
   border: none;
   padding: 0;
@@ -409,14 +409,14 @@ const save = () => {
 }
 
 .icon {
-  width: 32px;
-  height: 32px;
+  width: 26px;
+  height: 26px;
   flex-shrink: 0;
   color: #3b3b55;
 }
 
 .label {
-  font-size: 18px;
+  font-size: 15px;
   color: #1f1f2e;
 }
 
@@ -426,14 +426,14 @@ const save = () => {
   display: flex;
   justify-content: flex-end;
   align-items: center;
-  gap: 18px;
-  padding: 26px 10px 24px;
+  gap: 12px;
+  padding: 16px 14px;
   border-top: 1px solid #e5e5e8;
 }
 
 .btn {
   font-family: inherit;
-  font-size: 18px;
+  font-size: 13px;
   font-weight: 500;
   letter-spacing: 1px;
   cursor: pointer;
@@ -444,7 +444,7 @@ const save = () => {
 .clear {
   background: transparent;
   color: #1f1f2e;
-  padding: 12px 8px;
+  padding: 10px 8px;
 }
 .clear:hover {
   color: #5559f4;
@@ -453,8 +453,8 @@ const save = () => {
 .save {
   background: #5559f4;
   color: #fff;
-  height: 45px;
-  padding: 0 16px;
+  height: 34px;
+  padding: 0 12px;
 }
 .save:hover:not(:disabled) {
   background: #4448d9;

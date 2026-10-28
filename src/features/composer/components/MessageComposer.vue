@@ -1,16 +1,16 @@
 <script setup>
-import { ref, computed, onBeforeUnmount, onMounted } from 'vue'
+import { ref, computed, nextTick, onBeforeUnmount, onMounted } from 'vue'
 import MediaToolbar from '../../media/MediaToolbar.vue'
 
-const emit = defineEmits(['send', 'schedule', 'attachment', 'video', 'microphone'])
+const emit = defineEmits(['send', 'schedule', 'attachment', 'video', 'microphone', 'gif'])
 
 const editor = ref(null)
-const fileInput = ref(null)
 const scheduleTrigger = ref(null)
 const scheduleMenu = ref(null)
 const content = ref('')
 const activeFormats = ref([])
 const activeList = ref('')
+const codeMode = ref(false)
 const important = ref(false)
 const scheduleOpen = ref(false)
 const customScheduleOpen = ref(false)
@@ -19,12 +19,43 @@ const scheduledAt = ref('')
 const customScheduleDate = ref('')
 const customScheduleTime = ref('')
 const scheduleClock = ref(new Date())
+const pollOpen = ref(false)
+const pollStep = ref(0)
+const pollTitle = ref('')
+const pollDescription = ref('')
+const pollQuestions = ref([createPollQuestion()])
+const pollQuestionFocused = ref([false])
+const openPollQuestionType = ref(null)
+const pollValidationErrors = ref({ title: false, questions: [], choices: [] })
+const pollStepNames = ['Create', 'Configure', 'Schedule']
 const attachments = ref([])
 const messageIsReady = computed(() => content.value.trim().length > 0)
 const scheduleIsReady = computed(() => messageIsReady.value || attachments.value.length > 0)
 const scheduleTimeZone = 'Asia/Karachi'
 let savedSelectionRange = null
 let scheduleErrorTimer = null
+
+function createPollQuestion() {
+  return {
+    text: '',
+    type: 'choice',
+    ratingType: '1-5',
+    required: true,
+    multiple: false,
+    options: ['option 1', 'option 2', 'option 3'],
+  }
+}
+
+const pollIsReady = computed(
+  () =>
+    Boolean(pollTitle.value.trim()) &&
+    pollQuestions.value.every(
+      (question) =>
+        (!question.required || question.text.trim()) &&
+        (!['choice', 'rating'].includes(question.type) ||
+          question.options.filter((option) => option.trim()).length >= 2),
+    ),
+)
 
 onBeforeUnmount(() => clearTimeout(scheduleErrorTimer))
 
@@ -39,17 +70,28 @@ function handleSchedulePointerDown(event) {
 }
 
 function handleScheduleKeydown(event) {
-  if (event.key === 'Escape' && scheduleOpen.value) scheduleOpen.value = false
+  if (event.key !== 'Escape') return
+  if (scheduleOpen.value) scheduleOpen.value = false
+  if (openPollQuestionType.value !== null) openPollQuestionType.value = null
+}
+
+function handlePollQuestionTypePointerDown(event) {
+  const target = event.target instanceof Element ? event.target : event.target.parentElement
+  if (openPollQuestionType.value !== null && !target?.closest('.message-composer__poll-type-select')) {
+    openPollQuestionType.value = null
+  }
 }
 
 onMounted(() => {
   document.addEventListener('pointerdown', handleSchedulePointerDown)
   document.addEventListener('keydown', handleScheduleKeydown)
+  document.addEventListener('pointerdown', handlePollQuestionTypePointerDown)
 })
 
 onBeforeUnmount(() => {
   document.removeEventListener('pointerdown', handleSchedulePointerDown)
   document.removeEventListener('keydown', handleScheduleKeydown)
+  document.removeEventListener('pointerdown', handlePollQuestionTypePointerDown)
 })
 
 function showScheduleError() {
@@ -235,7 +277,7 @@ function saveSelection(preservePendingFormats = false) {
     activeList.value = list?.tagName === 'OL' ? 'numbered' : list ? 'bulleted' : ''
     activeFormats.value = formatActions
       .filter((action) => {
-        if (action.name === 'code') return Boolean(node?.closest('pre'))
+        if (action.name === 'code') return false
         return Boolean(node?.closest(formatTags[action.name]?.join(', ')))
       })
       .map((action) => action.name)
@@ -286,6 +328,11 @@ function insertAtSelection(text) {
 
 function applyFormat(action) {
   if (!editor.value) return
+  if (action.name === 'code') {
+    codeMode.value = !codeMode.value
+    return
+  }
+
   const selection = document.getSelection()
   const range = getSelectionRange()
   editor.value.focus()
@@ -295,37 +342,7 @@ function applyFormat(action) {
   }
   if (!selection) return
 
-  if (action.name === 'code') {
-    const existingBlock = range?.commonAncestorContainer.parentElement?.closest('pre')
-    if (existingBlock) {
-      const text = document.createTextNode(existingBlock.textContent)
-      existingBlock.replaceWith(text)
-      const caret = document.createRange()
-      caret.setStartAfter(text)
-      caret.collapse(true)
-      selection.removeAllRanges()
-      selection.addRange(caret)
-      activeFormats.value = activeFormats.value.filter((format) => format !== 'code')
-    } else {
-      const codeRange = range || document.createRange()
-      if (!range) {
-        codeRange.selectNodeContents(editor.value)
-        codeRange.collapse(false)
-      }
-      const codeBlock = document.createElement('pre')
-      const code = document.createElement('code')
-      if (range && !range.collapsed) code.append(codeRange.extractContents())
-      if (!code.hasChildNodes()) code.append(document.createElement('br'))
-      codeBlock.append(code)
-      codeRange.deleteContents()
-      codeRange.insertNode(codeBlock)
-      codeRange.selectNodeContents(code)
-      codeRange.collapse(false)
-      selection.removeAllRanges()
-      selection.addRange(codeRange)
-      activeFormats.value = [...new Set([...activeFormats.value, 'code'])]
-    }
-  } else if (!range || range.collapsed) {
+  if (!range || range.collapsed) {
     const isActive = activeFormats.value.includes(action.name)
     activeFormats.value = isActive
       ? activeFormats.value.filter((format) => format !== action.name)
@@ -399,40 +416,22 @@ function handleBeforeInput(event) {
   if (!selection?.rangeCount || !editor.value?.contains(selection.anchorNode)) return
 
   const range = selection.getRangeAt(0)
-  const codeMode = activeFormats.value.includes('code')
   let node = document.createTextNode(event.data)
 
-  if (codeMode) {
-    const codeBlock =
-      range.commonAncestorContainer.parentElement?.closest('pre') ||
-      range.startContainer.parentElement?.closest('pre')
-    if (codeBlock) {
-      range.deleteContents()
-      range.insertNode(node)
-    } else {
-      const block = document.createElement('pre')
-      const code = document.createElement('code')
-      code.append(node)
-      block.append(code)
-      range.deleteContents()
-      range.insertNode(block)
-    }
-  } else {
-    for (const format of [...activeFormats.value].reverse()) {
-      const tag = {
-        bold: 'strong',
-        italic: 'em',
-        strikethrough: 's',
-        underline: 'u',
-      }[format]
-      if (!tag) continue
-      const wrapper = document.createElement(tag)
-      wrapper.append(node)
-      node = wrapper
-    }
-    range.deleteContents()
-    range.insertNode(node)
+  for (const format of [...activeFormats.value].reverse()) {
+    const tag = {
+      bold: 'strong',
+      italic: 'em',
+      strikethrough: 's',
+      underline: 'u',
+    }[format]
+    if (!tag) continue
+    const wrapper = document.createElement(tag)
+    wrapper.append(node)
+    node = wrapper
   }
+  range.deleteContents()
+  range.insertNode(node)
 
   const previousNode = node.previousSibling
   if (
@@ -478,17 +477,102 @@ function mergeAdjacentContents(target, source) {
 function applyList(ordered) {
   if (!editor.value) return
   const selection = document.getSelection()
-  const range = getSelectionRange()
+  let range = getSelectionRange()
+  if (!range) {
+    range = document.createRange()
+    range.selectNodeContents(editor.value)
+    range.collapse(false)
+  }
+
   editor.value.focus()
-  if (range && selection) {
+  if (selection) {
     selection.removeAllRanges()
     selection.addRange(range)
   }
-  const currentList = range?.commonAncestorContainer.parentElement?.closest('ol, ul')
-  const sameListType = currentList?.tagName === (ordered ? 'OL' : 'UL')
-  const requestedList = ordered ? 'numbered' : 'bulleted'
-  document.execCommand(ordered ? 'insertOrderedList' : 'insertUnorderedList')
-  activeList.value = sameListType || activeList.value === requestedList ? '' : requestedList
+
+  let startNode =
+    range.startContainer.nodeType === Node.ELEMENT_NODE
+      ? range.startContainer
+      : range.startContainer.parentElement
+  if (startNode === editor.value) {
+    const childIndex = Math.min(range.startOffset, editor.value.childNodes.length) - 1
+    startNode = editor.value.childNodes[childIndex] || editor.value
+  }
+  const caretNode = startNode
+  while (
+    startNode &&
+    startNode !== editor.value &&
+    startNode.parentElement &&
+    startNode.parentElement !== editor.value
+  ) {
+    startNode = startNode.parentElement
+  }
+
+  const selectionElement =
+    caretNode?.nodeType === Node.ELEMENT_NODE ? caretNode : caretNode?.parentElement
+  const requestedTag = ordered ? 'OL' : 'UL'
+  const currentList = selectionElement?.closest('ol, ul')
+  let caretTarget
+
+  if (currentList?.tagName === requestedTag) {
+    const lines = [...currentList.children].map((item) => {
+      const line = document.createElement('div')
+      while (item.firstChild) line.append(item.firstChild)
+      if (!line.hasChildNodes()) line.append(document.createElement('br'))
+      return line
+    })
+    const currentItem =
+      caretNode?.nodeType === Node.ELEMENT_NODE
+        ? caretNode.closest('li')
+        : caretNode?.parentElement?.closest('li')
+    const caretIndex = Math.max(0, [...currentList.children].indexOf(currentItem))
+    currentList.replaceWith(...lines)
+    caretTarget = lines[Math.min(caretIndex, lines.length - 1)]
+  } else if (currentList) {
+    const replacement = document.createElement(ordered ? 'ol' : 'ul')
+    while (currentList.firstChild) replacement.append(currentList.firstChild)
+    currentList.replaceWith(replacement)
+    caretTarget =
+      (caretNode?.nodeType === Node.ELEMENT_NODE
+        ? caretNode.closest('li')
+        : caretNode?.parentElement?.closest('li')) || replacement.querySelector('li')
+  } else {
+    const list = document.createElement(ordered ? 'ol' : 'ul')
+    const item = document.createElement('li')
+    const target = startNode && startNode !== editor.value ? startNode : null
+
+    if (target) {
+      target.replaceWith(list)
+      item.append(target)
+      if (!item.hasChildNodes()) item.append(document.createElement('br'))
+    } else {
+      item.append(document.createElement('br'))
+      editor.value.append(list)
+    }
+
+    if (!list.contains(item)) list.append(item)
+    caretTarget = item
+  }
+
+  if (caretTarget && selection) {
+    const caret = document.createRange()
+    caret.selectNodeContents(caretTarget)
+    caret.collapse(false)
+    selection.removeAllRanges()
+    selection.addRange(caret)
+    savedSelectionRange = caret.cloneRange()
+  }
+
+  const activeListElement = caretTarget?.closest('ol, ul')
+  activeList.value =
+    activeListElement?.tagName === 'OL'
+      ? 'numbered'
+      : activeListElement?.tagName === 'UL'
+        ? 'bulleted'
+        : ''
+  activeFormats.value = []
+  codeMode.value = false
+
   syncContent()
 }
 
@@ -545,6 +629,7 @@ function sendMessage() {
   editor.value.innerHTML = ''
   activeFormats.value = []
   activeList.value = ''
+  codeMode.value = false
   important.value = false
   savedSelectionRange = null
   attachments.value = []
@@ -568,6 +653,7 @@ function scheduleMessage() {
   editor.value.innerHTML = ''
   activeFormats.value = []
   activeList.value = ''
+  codeMode.value = false
   important.value = false
   savedSelectionRange = null
   attachments.value = []
@@ -587,28 +673,150 @@ function scheduleAt(value) {
   scheduleMessage()
 }
 
-function chooseFiles() {
-  fileInput.value?.click()
+function openPoll() {
+  pollTitle.value = ''
+  pollDescription.value = ''
+  pollQuestions.value = [createPollQuestion()]
+  pollQuestionFocused.value = [false]
+  openPollQuestionType.value = null
+  pollStep.value = 0
+  pollValidationErrors.value = { title: false, questions: [true], choices: [false] }
+  pollOpen.value = true
 }
 
-function handleFilesSelected(event) {
-  const files = [...(event.target.files || [])]
+function closePoll() {
+  pollOpen.value = false
+}
+
+function goToPollStep(step) {
+  if (step > pollStep.value && !pollIsReady.value) {
+    pollValidationErrors.value = {
+      title: !pollTitle.value.trim(),
+      questions: pollQuestions.value.map((question) => question.required && !question.text.trim()),
+      choices: pollQuestions.value.map(
+        (question) =>
+          ['choice', 'rating'].includes(question.type) &&
+          question.options.filter((option) => option.trim()).length < 2,
+      ),
+    }
+    return
+  }
+  if (step > pollStep.value) {
+    pollValidationErrors.value = { title: false, questions: [], choices: [] }
+  }
+  pollStep.value = step
+}
+
+function addPollQuestion() {
+  pollQuestions.value.push(createPollQuestion())
+  pollQuestionFocused.value.push(false)
+}
+
+function pollQuestionTypeLabel(type) {
+  return {
+    openEnded: 'Open Ended',
+    choice: 'Choice',
+    rating: 'Rating',
+  }[type]
+}
+
+function setPollQuestionType(question, type, questionIndex) {
+  question.type = type
+  question.options =
+    type === 'rating'
+      ? Array.from({ length: Number(question.ratingType.split('-')[1]) }, (_, index) =>
+          String(index + 1),
+        )
+      : type === 'choice'
+        ? ['option 1', 'option 2', 'option 3']
+        : []
+  question.multiple = false
+  openPollQuestionType.value = null
+  if (pollValidationErrors.value.choices[questionIndex]) {
+    pollValidationErrors.value.choices[questionIndex] =
+      (type === 'choice' || type === 'rating') && question.options.length < 2
+  }
+  nextTick(() => document.getElementById(`poll-type-${questionIndex}`)?.focus())
+}
+
+function updatePollRatingType(question, questionIndex) {
+  question.options = Array.from(
+    { length: Number(question.ratingType.split('-')[1]) },
+    (_, index) => String(index + 1),
+  )
+  if (pollValidationErrors.value.choices[questionIndex]) {
+    pollValidationErrors.value.choices[questionIndex] = question.options.length < 2
+  }
+}
+
+function addPollChoice(question) {
+  question.options.push(`option ${question.options.length + 1}`)
+}
+
+function removePollChoice(question, index) {
+  if (question.options.length > 2) question.options.splice(index, 1)
+}
+
+function createPollDraft() {
+  if (!pollIsReady.value) {
+    pollValidationErrors.value = {
+      title: !pollTitle.value.trim(),
+      questions: pollQuestions.value.map((question) => question.required && !question.text.trim()),
+      choices: pollQuestions.value.map(
+        (question) =>
+          ['choice', 'rating'].includes(question.type) &&
+          question.options.filter((option) => option.trim()).length < 2,
+      ),
+    }
+    pollStep.value = 0
+    return
+  }
+  const questionText = pollQuestions.value
+    .map((question) => {
+      const options =
+        question.type === 'choice' || question.type === 'rating'
+          ? question.options
+              .map((option) => option.trim())
+              .filter(Boolean)
+              .map((option) => `• ${option}`)
+          : []
+      const questionLabel =
+        question.type === 'rating'
+          ? `${question.text.trim()} (Rating: ${question.ratingType})`
+          : question.type === 'openEnded'
+            ? `${question.text.trim()} (Open Ended)`
+            : question.text.trim()
+      return [questionLabel, ...options].join('\n')
+    })
+    .join('\n\n')
+  const pollText = [
+    `Poll: ${pollTitle.value.trim()}`,
+    pollDescription.value.trim(),
+    questionText,
+  ]
+    .filter(Boolean)
+    .join('\n\n')
+  const prefix = content.value.trim() ? '\n\n' : ''
+  insertAtSelection(`${prefix}${pollText}`)
+  closePoll()
+}
+
+function handleFilesSelected(files) {
   if (files.length) {
     attachments.value = [...attachments.value, ...files]
     emit('attachment', files)
   }
-  event.target.value = ''
 }
 
 function removeAttachment(index) {
   attachments.value = attachments.value.filter((_, fileIndex) => fileIndex !== index)
 }
 
-function handleMediaAction(action) {
+function handleMediaAction(action, payload) {
   if (action === 'emoji') {
-    insertAtSelection('😀')
-  } else if (action === 'document' || action === 'attachment') {
-    chooseFiles()
+    insertAtSelection(payload)
+  } else if (action === 'gif') {
+    emit('gif', payload)
   } else {
     emit(action)
   }
@@ -632,6 +840,7 @@ function handleKeydown(event) {
           id="message-composer-input"
           ref="editor"
           class="message-composer__input"
+          :class="{ 'message-composer__input--code': codeMode }"
           role="textbox"
           aria-multiline="true"
           contenteditable="true"
@@ -807,8 +1016,10 @@ function handleKeydown(event) {
           type="button"
           :aria-label="action.label"
           :title="action.label"
-          :class="{ 'is-active': activeFormats.includes(action.name) }"
-          :aria-pressed="activeFormats.includes(action.name)"
+          :class="{
+            'is-active': action.name === 'code' ? codeMode : activeFormats.includes(action.name),
+          }"
+          :aria-pressed="action.name === 'code' ? codeMode : activeFormats.includes(action.name)"
           @mousedown.prevent="saveSelection(true)"
           @click="applyFormat(action)"
         >
@@ -828,11 +1039,11 @@ function handleKeydown(event) {
           @mousedown.prevent="saveSelection(true)"
           @click="applyList(false)"
         >
-          <svg viewBox="0 0 20 20" aria-hidden="true">
-            <circle cx="3" cy="5" r="1" />
-            <circle cx="3" cy="10" r="1" />
-            <circle cx="3" cy="15" r="1" />
-            <path d="M7 5h10M7 10h10M7 15h10" />
+          <svg class="message-composer__list-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <circle cx="3.5" cy="5" r="1.1" />
+            <circle cx="3.5" cy="12" r="1.1" />
+            <circle cx="3.5" cy="19" r="1.1" />
+            <path d="M8.5 5h13M8.5 12h13M8.5 19h13" />
           </svg>
         </button>
         <button
@@ -845,8 +1056,14 @@ function handleKeydown(event) {
           @mousedown.prevent="saveSelection(true)"
           @click="applyList(true)"
         >
-          <svg viewBox="0 0 20 20" aria-hidden="true">
-            <path d="M7 5h10M7 10h10M7 15h10M2 4h2v3M2 10h2v3H2M2 15h2v2H2" />
+          <svg
+            class="message-composer__list-icon message-composer__numbered-list-icon"
+            viewBox="0 0 24 24"
+            aria-hidden="true"
+          >
+            <path
+              d="M2.5 3.5h2v3.5h-2m0 0h3m-3 3.5h3v1.5l-3 1.5h3m-3 3.5h3v3h-3m3-1.5h-2M9 5h12.5M9 12h12.5M9 19h12.5"
+            />
           </svg>
         </button>
         <button
@@ -855,10 +1072,11 @@ function handleKeydown(event) {
           aria-label="Insert poll"
           title="Insert poll"
           @mousedown.prevent="saveSelection(true)"
-          @click="insertAtSelection('\nPoll:\n• Option 1\n• Option 2\n')"
+          @click="openPoll"
         >
           <svg viewBox="0 0 20 20" aria-hidden="true">
-            <path d="M3 17V9h3v8M8.5 17V4h3v13M14 17V7h3v10M2 18h16" />
+            <rect x="2.5" y="2.5" width="15" height="15" rx="1" />
+            <path d="M5.5 14.5V10h2.5v4.5M9 14.5V6.5h2.5v8M12.5 14.5V8.5H15v6" />
           </svg>
         </button>
         <button
@@ -871,11 +1089,11 @@ function handleKeydown(event) {
           @mousedown.prevent="saveSelection(true)"
           @click="toggleImportant"
         >
-          <svg viewBox="0 0 20 20" aria-hidden="true">
-            <rect x="2" y="4" width="16" height="12" rx="1" />
-            <path d="m3 5 7 6 7-6" />
-            <circle cx="15.5" cy="14.5" r="3" class="message-composer__clock" />
-            <path d="M15.5 12.8v1.9l1.2.8" class="message-composer__clock-hand" />
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <rect x="2" y="3.5" width="20" height="15" rx="1.5" />
+            <path d="m3 4.5 9 7 9-7M3 17l6-4.5" />
+            <circle cx="19.5" cy="17.5" r="4" class="message-composer__important-badge" />
+            <path d="M19.5 15.5v2.5m0 1.25v.1" class="message-composer__important-badge-mark" />
           </svg>
         </button>
       </div>
@@ -883,20 +1101,8 @@ function handleKeydown(event) {
       <MediaToolbar
         class="message-composer__media"
         @mousedown.prevent="saveSelection(true)"
-        @emoji="handleMediaAction('emoji')"
-        @document="handleMediaAction('document')"
-        @attachment="handleMediaAction('attachment')"
-        @video="handleMediaAction('video')"
-        @microphone="handleMediaAction('microphone')"
-      />
-      
-      <input
-        ref="fileInput"
-        class="sr-only"
-        type="file"
-        multiple
-        aria-label="Choose files to attach"
-        @change="handleFilesSelected"
+        @action="handleMediaAction"
+        @files-selected="handleFilesSelected"
       />
     </div>
   </form>
@@ -914,6 +1120,307 @@ function handleKeydown(event) {
       </button>
     </div>
   </Teleport>
+  <Teleport to="body">
+    <div
+      v-if="pollOpen"
+      class="message-composer__poll-backdrop"
+      @mousedown.self="closePoll"
+      @keydown.esc="closePoll"
+    >
+      <section
+        class="message-composer__poll-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="message-poll-title"
+      >
+        <header class="message-composer__poll-header">
+          <h2 id="message-poll-title">Create Poll</h2>
+          <button
+            class="message-composer__poll-close"
+            type="button"
+            aria-label="Close poll dialog"
+            @click="closePoll"
+          >
+            &times;
+          </button>
+        </header>
+        <nav class="message-composer__poll-steps" aria-label="Poll creation steps">
+          <button
+            v-for="(step, index) in pollStepNames"
+            :key="step"
+            type="button"
+            :class="{ 'is-active': pollStep === index, 'is-complete': pollStep > index }"
+            :aria-current="pollStep === index ? 'step' : undefined"
+            @click="goToPollStep(index)"
+          >
+            <span class="message-composer__poll-step-icon" aria-hidden="true">
+              <svg v-if="index === 0" viewBox="0 0 24 24">
+                <path d="M12 20H4V4h11M14 4h6v6M10 14l9-9 2 2-9 9-4 1z" />
+              </svg>
+              <svg v-else-if="index === 1" viewBox="0 0 24 24">
+                <circle cx="12" cy="12" r="8" />
+                <circle cx="12" cy="12" r="3" />
+                <path d="M12 1v3m0 16v3M1 12h3m16 0h3" />
+              </svg>
+              <svg v-else viewBox="0 0 24 24">
+                <circle cx="12" cy="12" r="9" />
+                <path d="M12 7v5l3 2" />
+              </svg>
+            </span>
+            {{ step }}
+          </button>
+        </nav>
+
+        <div class="message-composer__poll-content">
+          <template v-if="pollStep === 0">
+            <label class="message-composer__poll-field-label" for="poll-title-input">Title</label>
+            <input
+              id="poll-title-input"
+              v-model="pollTitle"
+              class="message-composer__poll-title-input"
+              :class="{ 'is-invalid': pollValidationErrors.title }"
+              :aria-invalid="pollValidationErrors.title"
+              type="text"
+              placeholder="Enter Poll Title"
+            />
+            <p
+              v-if="pollValidationErrors.title"
+              class="message-composer__poll-validation-error"
+            >
+              This is a required field
+            </p>
+            <label class="sr-only" for="poll-description-input">Description (Optional)</label>
+            <textarea
+              id="poll-description-input"
+              v-model="pollDescription"
+              class="message-composer__poll-description"
+              placeholder="Description (Optional)"
+              rows="4"
+            ></textarea>
+            <p class="message-composer__poll-hint">* What's the purpose of this Poll?</p>
+
+            <section
+              v-for="(question, questionIndex) in pollQuestions"
+              :key="questionIndex"
+              class="message-composer__poll-question"
+            >
+              <h3><span>Question {{ questionIndex + 1 }}</span></h3>
+              <div class="message-composer__poll-question-types">
+                <div class="message-composer__poll-question-type">
+                  <label :id="`poll-type-label-${questionIndex}`">Question Type</label>
+                  <div class="message-composer__poll-type-select">
+                    <button
+                      :id="`poll-type-${questionIndex}`"
+                      class="message-composer__poll-type-trigger"
+                      type="button"
+                      role="combobox"
+                      aria-haspopup="listbox"
+                      :aria-expanded="openPollQuestionType === questionIndex"
+                      :aria-labelledby="`poll-type-label-${questionIndex}`"
+                      @click="
+                        openPollQuestionType =
+                          openPollQuestionType === questionIndex ? null : questionIndex
+                      "
+                    >
+                      {{ pollQuestionTypeLabel(question.type) }}
+                      <span class="message-composer__poll-select-arrow" aria-hidden="true"></span>
+                    </button>
+                    <div
+                      v-if="openPollQuestionType === questionIndex"
+                      class="message-composer__poll-type-menu"
+                      role="listbox"
+                      :aria-labelledby="`poll-type-label-${questionIndex}`"
+                    >
+                      <button
+                        v-for="type in ['openEnded', 'choice', 'rating']"
+                        :key="type"
+                        type="button"
+                        role="option"
+                        class="message-composer__poll-type-option"
+                        :class="{ 'is-selected': question.type === type }"
+                        :aria-selected="question.type === type"
+                        @click="setPollQuestionType(question, type, questionIndex)"
+                      >
+                        {{ pollQuestionTypeLabel(type) }}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+                <div
+                  v-if="question.type === 'rating'"
+                  class="message-composer__poll-question-type"
+                >
+                  <label :for="`poll-rating-type-${questionIndex}`">Rating Type</label>
+                  <div class="message-composer__poll-rating-select">
+                    <select
+                      :id="`poll-rating-type-${questionIndex}`"
+                      v-model="question.ratingType"
+                      @change="updatePollRatingType(question, questionIndex)"
+                    >
+                    <option value="1-5">1-5</option>
+                    <option value="1-10">1-10</option>
+                    </select>
+                    <span class="message-composer__poll-select-arrow" aria-hidden="true"></span>
+                  </div>
+                </div>
+              </div>
+              <label :for="`poll-question-${questionIndex}`">Type your question here</label>
+              <div
+                class="message-composer__poll-question-field"
+                :class="{
+                  'is-invalid': pollValidationErrors.questions[questionIndex],
+                  'has-value': question.text,
+                }"
+              >
+                <label
+                  v-if="pollQuestionFocused[questionIndex] || question.text"
+                  :for="`poll-question-${questionIndex}`"
+                  class="message-composer__poll-question-floating-label"
+                  :class="{
+                    'is-invalid': pollValidationErrors.questions[questionIndex],
+                  }"
+                >
+                  Type your question
+                </label>
+                <input
+                  :id="`poll-question-${questionIndex}`"
+                  v-model="question.text"
+                  :class="{
+                    'is-invalid': pollValidationErrors.questions[questionIndex],
+                  }"
+                  :aria-invalid="Boolean(pollValidationErrors.questions[questionIndex])"
+                  type="text"
+                  :placeholder="
+                    pollQuestionFocused[questionIndex] || question.text
+                      ? 'Write here'
+                      : 'Type your question'
+                  "
+                  @focus="pollQuestionFocused[questionIndex] = true"
+                  @blur="
+                    pollQuestionFocused[questionIndex] = Boolean(question.text)
+                  "
+                />
+              </div>
+              <p
+                v-if="pollValidationErrors.questions[questionIndex]"
+                class="message-composer__poll-validation-error"
+              >
+                This is a required field
+              </p>
+              <div class="message-composer__poll-toggles">
+                <label>
+                  <input v-model="question.required" type="checkbox" />
+                  <span><strong>Required*</strong><small>Uncheck if you want this question optional</small></span>
+                </label>
+                <label v-if="question.type === 'choice'">
+                  <input v-model="question.multiple" type="checkbox" />
+                  <span>Multiple select</span>
+                </label>
+              </div>
+              <div
+                v-if="question.type === 'choice' || question.type === 'rating'"
+                class="message-composer__poll-options"
+              >
+                <div
+                  v-for="(option, optionIndex) in question.options"
+                  :key="optionIndex"
+                  class="message-composer__poll-option"
+                >
+                  <input
+                    v-model="question.options[optionIndex]"
+                    :class="{
+                      'is-invalid':
+                        pollValidationErrors.choices[questionIndex] &&
+                        !question.options[optionIndex].trim(),
+                    }"
+                    type="text"
+                    :aria-label="`Question ${questionIndex + 1} option ${optionIndex + 1}`"
+                  />
+                  <button
+                    type="button"
+                    :aria-label="`Remove option ${optionIndex + 1}`"
+                    :disabled="question.options.filter((option) => option.trim()).length <= 2"
+                    @click="removePollChoice(question, optionIndex)"
+                  >
+                    <svg viewBox="0 0 24 24" aria-hidden="true">
+                      <path d="M4 7h16M10 11v6m4-6v6M6 7l1 14h10l1-14M9 7V4h6v3" />
+                    </svg>
+                  </button>
+                </div>
+                <button
+                  v-if="question.type === 'choice'"
+                  class="message-composer__poll-add-choice"
+                  type="button"
+                  @click="addPollChoice(question)"
+                >
+                  + Add Choice
+                </button>
+                <p
+                  v-if="
+                    pollValidationErrors.choices[questionIndex]
+                  "
+                  class="message-composer__poll-validation-error"
+                >
+                  Add at least two choices
+                </p>
+              </div>
+            </section>
+            <button
+              class="message-composer__poll-add-question"
+              type="button"
+              @click="addPollQuestion"
+            >
+              Add Another Question
+            </button>
+          </template>
+          <div v-else-if="pollStep === 1" class="message-composer__poll-placeholder">
+            <h3>Configure your poll</h3>
+            <p>Review your questions and choices before creating the poll.</p>
+            <ul>
+              <li v-for="(question, index) in pollQuestions" :key="index">
+                {{
+                  question.text
+                    ? `${question.text} (${question.type === 'openEnded' ? 'Open Ended' : question.type === 'rating' ? `Rating ${question.ratingType}` : 'Choice'})`
+                    : `Question ${index + 1}`
+                }}
+              </li>
+            </ul>
+          </div>
+          <div v-else class="message-composer__poll-placeholder">
+            <h3>Schedule your poll</h3>
+            <p>Your poll will be added to the message composer as a draft.</p>
+          </div>
+        </div>
+        <footer class="message-composer__poll-footer">
+          <button
+            type="button"
+            class="message-composer__poll-previous"
+            :disabled="pollStep === 0"
+            @click="goToPollStep(Math.max(0, pollStep - 1))"
+          >
+            Previous
+          </button>
+          <button
+            v-if="pollStep < pollStepNames.length - 1"
+            type="button"
+            class="message-composer__poll-next"
+            @click="goToPollStep(pollStep + 1)"
+          >
+            Next
+          </button>
+          <button
+            v-else
+            type="button"
+            class="message-composer__poll-next"
+            :disabled="!pollIsReady"
+            @click="createPollDraft"
+          >
+            Create Poll
+          </button>
+        </footer>
+      </section>
+    </div>
+  </Teleport>
 </template>
 
 <style scoped>
@@ -926,25 +1433,29 @@ function handleKeydown(event) {
 
 .message-composer__input-row {
   display: flex;
-  min-height: 48px;
+  min-height: 42px;
 }
 
 .message-composer__editor-area {
   flex: 1;
   min-width: 0;
-  padding: 4px 0;
+  padding: 4px 0 4px 4px;
 }
 
 .message-composer__input {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
   min-width: 0;
-  min-height: 32px;
+  min-height: 26px;
   max-height: 180px;
-  padding: 8px 14px;
+  padding: 4px 8px;
   overflow-y: scroll;
   scrollbar-gutter: stable;
   scrollbar-color: #8d93a8 #e6e8f0;
   scrollbar-width: auto;
   border: 0;
+  border-radius: 4px;
   outline: 0;
   background: #fff;
   color: #25263a;
@@ -970,6 +1481,29 @@ function handleKeydown(event) {
   color: #777b8e;
   content: attr(data-placeholder);
   pointer-events: none;
+}
+
+.message-composer__input :deep(ul),
+.message-composer__input :deep(ol) {
+  margin-block: 0;
+  padding-inline-start: 24px;
+}
+
+.message-composer__input :deep(ul) {
+  list-style-type: disc;
+}
+
+.message-composer__input :deep(ol) {
+  list-style-type: decimal;
+}
+
+.message-composer__input--code {
+  background: #222;
+  color: #fff;
+}
+
+.message-composer__input--code:empty::before {
+  color: #c4c4c4;
 }
 
 .message-composer__input code {
@@ -1009,7 +1543,7 @@ function handleKeydown(event) {
 
 .message-composer__primary-actions {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: 4px;
   padding: 5px 7px;
 }
@@ -1055,16 +1589,15 @@ function handleKeydown(event) {
 
 .message-composer__toolbar-row {
   display: flex;
-  min-height: 40px;
+  min-height: 38px;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  padding: 3px 8px;
+  padding: 2px 8px;
   background: #f0f0f6;
 }
 
-.message-composer__formatting,
-.message-composer__media {
+.message-composer__formatting {
   display: flex;
   align-items: center;
   gap: 4px;
@@ -1093,6 +1626,10 @@ function handleKeydown(event) {
   background: #d0d0d4;
 }
 
+.message-composer__format-button[aria-label='Important message'] {
+  color: #000;
+}
+
 .message-composer__format-button svg {
   width: 18px;
   height: 18px;
@@ -1103,16 +1640,27 @@ function handleKeydown(event) {
   stroke-width: 1.5;
 }
 
-.message-composer__format-button svg circle:not(.message-composer__clock) {
+.message-composer__format-button .message-composer__list-icon {
+  width: 22px;
+  height: 22px;
+}
+
+.message-composer__format-button .message-composer__numbered-list-icon {
+  stroke-width: 1.3;
+}
+
+.message-composer__format-button svg circle:not(.message-composer__important-badge) {
   fill: currentColor;
 }
 
-.message-composer__format-button .message-composer__clock {
-  fill: #f0f0f6;
+.message-composer__format-button .message-composer__important-badge {
+  fill: currentColor;
+  stroke: none;
 }
 
-.message-composer__format-button .message-composer__clock-hand {
-  stroke-width: 1;
+.message-composer__format-button .message-composer__important-badge-mark {
+  stroke: #fff;
+  stroke-width: 1.5;
 }
 
 .message-composer__format-button:focus-visible,
@@ -1401,6 +1949,557 @@ function handleKeydown(event) {
   cursor: pointer;
 }
 
+.message-composer__poll-backdrop {
+  position: fixed;
+  z-index: 2100;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px;
+  background: rgb(20 16 40 / 50%);
+}
+
+.message-composer__poll-modal {
+  position: relative;
+  display: flex;
+  width: min(570px, 100%);
+  max-height: min(88vh, 620px);
+  flex-direction: column;
+  overflow: hidden;
+  border-radius: 5px;
+  background: #fff;
+  box-shadow: 0 12px 40px rgb(0 0 0 / 28%);
+  color: #292929;
+  font-family: inherit;
+}
+
+.message-composer__poll-header {
+  display: flex;
+  min-height: 64px;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 31px;
+}
+
+.message-composer__poll-header h2 {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 600;
+}
+
+.message-composer__poll-close {
+  display: grid;
+  width: 21px;
+  height: 21px;
+  padding: 0;
+  place-items: center;
+  border: 0;
+  border-radius: 50%;
+  background: #f0f0f6;
+  color: #34364b;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.message-composer__poll-steps {
+  display: grid;
+  min-height: 50px;
+  flex: 0 0 auto;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  border-bottom: 1px solid #e4e4e4;
+}
+
+.message-composer__poll-steps button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  padding: 8px 4px;
+  border: 0;
+  border-bottom: 5px solid transparent;
+  background: #fff;
+  color: #bcbec7;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+}
+
+.message-composer__poll-steps button.is-active,
+.message-composer__poll-steps button.is-complete {
+  border-bottom-color: #5962ff;
+  color: #5962ff;
+}
+
+.message-composer__poll-step-icon {
+  display: inline-flex;
+  width: 21px;
+  height: 21px;
+}
+
+.message-composer__poll-step-icon svg {
+  width: 100%;
+  height: 100%;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.8;
+}
+
+.message-composer__poll-content {
+  min-height: 0;
+  flex: 1 1 auto;
+  overflow-y: auto;
+  padding: 20px 36px 14px;
+  scrollbar-color: #8d93a8 #e6e8f0;
+}
+
+.message-composer__poll-field-label {
+  display: block;
+  position: relative;
+  z-index: 1;
+  width: fit-content;
+  margin: 0 0 -8px 10px;
+  padding: 0 4px;
+  background: #fff;
+  color: #5962ff;
+  font-size: 12px;
+}
+
+.message-composer__poll-title-input,
+.message-composer__poll-question input[type='text'],
+.message-composer__poll-question select,
+.message-composer__poll-description {
+  box-sizing: border-box;
+  width: 100%;
+  border: 1px solid #a6a6a6;
+  border-radius: 0;
+  background: #fff;
+  color: #34364b;
+  font: inherit;
+  font-size: 14px;
+}
+
+.message-composer__poll-title-input {
+  height: 41px;
+  margin-bottom: 30px;
+  padding: 8px 11px;
+  border: 2px solid #5962ff;
+}
+
+.message-composer__poll-title-input:focus {
+  border-color: #5962ff;
+  outline: none;
+}
+
+.message-composer__poll-title-input::placeholder,
+.message-composer__poll-description::placeholder,
+.message-composer__poll-question input::placeholder {
+  color: #7d7f89;
+  opacity: 1;
+}
+
+.message-composer__poll-description {
+  min-height: 126px;
+  padding: 10px;
+  resize: vertical;
+}
+
+.message-composer__poll-title-input.is-invalid {
+  border-color: #ff2e3b;
+  color: #b42318;
+}
+
+.message-composer__poll-question input.is-invalid {
+  border-color: #ff2e3b;
+}
+
+.message-composer__poll-question-field {
+  position: relative;
+  margin-bottom: 22px;
+}
+
+.message-composer__poll-question-field.is-invalid {
+  margin-bottom: 0;
+}
+
+.message-composer__poll-question-floating-label {
+  position: absolute;
+  z-index: 1;
+  top: -7px;
+  left: 10px;
+  padding: 0 4px;
+  background: #fff;
+  color: #5962ff;
+  font-size: 12px;
+  line-height: 1;
+}
+
+.message-composer__poll-question-floating-label.is-invalid {
+  color: #ff2e3b;
+}
+
+.message-composer__poll-question input.is-invalid::placeholder {
+  color: #7d7f89;
+  opacity: 1;
+}
+
+.message-composer__poll-question input.is-invalid:focus {
+  border-color: #ff2e3b;
+  outline: none;
+  box-shadow: none;
+}
+
+.message-composer__poll-question-field input {
+  height: 40px;
+  padding: 8px 11px;
+}
+
+.message-composer__poll-validation-error {
+  margin: 3px 0 0;
+  color: #ff2e3b;
+  font-size: 12px;
+}
+
+.message-composer__poll-question-field + .message-composer__poll-validation-error {
+  margin: 3px 0 8px;
+}
+
+.message-composer__poll-title-input + .message-composer__poll-validation-error {
+  margin: -25px 0 14px 6px;
+}
+
+.message-composer__poll-title-input.is-invalid {
+  margin-bottom: 27px;
+}
+
+.message-composer__poll-hint {
+  margin: 5px 0 36px;
+  color: #34364b;
+  font-size: 11px;
+}
+
+.message-composer__poll-question {
+  margin-bottom: 12px;
+}
+
+.message-composer__poll-question h3 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 18px;
+  font-size: 14px;
+  font-weight: 700;
+  text-align: center;
+}
+
+.message-composer__poll-question h3::before,
+.message-composer__poll-question h3::after {
+  height: 1px;
+  flex: 1;
+  background: #dedede;
+  content: '';
+}
+
+.message-composer__poll-question > label {
+  display: block;
+  margin: 0 0 8px;
+  color: #171717;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.message-composer__poll-question-types {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+}
+
+.message-composer__poll-question-type {
+  min-width: 0;
+}
+
+.message-composer__poll-question-type label {
+  display: block;
+  margin-bottom: 8px;
+  color: #171717;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.message-composer__poll-type-select,
+.message-composer__poll-rating-select {
+  position: relative;
+}
+
+.message-composer__poll-type-trigger,
+.message-composer__poll-rating-select select {
+  display: flex;
+  width: 100%;
+  height: 40px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 11px;
+  border: 1px solid #a6a6a6;
+  border-radius: 0;
+  background: #fff;
+  color: #34364b;
+  font: inherit;
+  font-size: 14px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.message-composer__poll-type-trigger:focus,
+.message-composer__poll-rating-select select:focus {
+  border: 2px solid #5962ff;
+  outline: none;
+}
+
+.message-composer__poll-type-trigger[aria-expanded='true'] {
+  border: 2px solid #5962ff;
+}
+
+.message-composer__poll-select-arrow {
+  width: 0;
+  height: 0;
+  flex: 0 0 auto;
+  border-top: 5px solid #5962ff;
+  border-right: 5px solid transparent;
+  border-left: 5px solid transparent;
+}
+
+.message-composer__poll-type-trigger[aria-expanded='true'] .message-composer__poll-select-arrow {
+  transform: rotate(180deg);
+}
+
+.message-composer__poll-rating-select select {
+  padding-right: 32px;
+  appearance: none;
+  cursor: pointer;
+}
+
+.message-composer__poll-rating-select .message-composer__poll-select-arrow {
+  position: absolute;
+  top: 18px;
+  right: 12px;
+  pointer-events: none;
+}
+
+.message-composer__poll-type-menu {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 1px);
+  right: 0;
+  left: 0;
+  overflow: hidden;
+  border-radius: 0 0 4px 4px;
+  background: #fff;
+  box-shadow: 0 4px 12px rgb(0 0 0 / 24%);
+}
+
+.message-composer__poll-type-option {
+  display: block;
+  width: 100%;
+  min-height: 39px;
+  padding: 9px 16px;
+  border: 0;
+  background: #fff;
+  color: #292929;
+  font: inherit;
+  font-size: 14px;
+  text-align: left;
+  text-transform: lowercase;
+  cursor: pointer;
+}
+
+.message-composer__poll-type-option:hover,
+.message-composer__poll-type-option.is-selected {
+  background: #e8e9ff;
+  color: #5962ff;
+}
+
+.message-composer__poll-type-option:focus-visible {
+  outline: 2px solid #5962ff;
+  outline-offset: -2px;
+}
+
+.message-composer__poll-question-type select {
+  margin: 0 0 22px;
+}
+
+.message-composer__poll-rating-select {
+  margin-bottom: 22px;
+}
+
+.message-composer__poll-rating-select select {
+  margin-bottom: 0;
+}
+
+.message-composer__poll-question-type > select {
+  width: 100%;
+  height: 40px;
+  margin: 0 0 22px;
+  padding: 8px 11px;
+}
+
+.message-composer__poll-toggles {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 22px;
+  margin-bottom: 16px;
+}
+
+.message-composer__poll-toggles label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #34364b;
+  font-size: 14px;
+}
+
+.message-composer__poll-toggles input {
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  accent-color: #5962ff;
+}
+
+.message-composer__poll-toggles span {
+  display: flex;
+  flex-direction: column;
+}
+
+.message-composer__poll-toggles small {
+  color: #7d7f89;
+  font-size: 11px;
+}
+
+.message-composer__poll-options {
+  padding: 20px 20px 10px;
+  border-left: 5px solid #1717ff;
+  background: #f8f8fc;
+}
+
+.message-composer__poll-option {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  margin-bottom: 18px;
+}
+
+.message-composer__poll-option input {
+  height: 33px;
+  padding: 6px 8px;
+}
+
+.message-composer__poll-option button {
+  display: grid;
+  width: 37px;
+  height: 32px;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 0;
+  background: #eeeeff;
+  color: #5962ff;
+  cursor: pointer;
+}
+
+.message-composer__poll-option button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.message-composer__poll-option button svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.7;
+}
+
+.message-composer__poll-add-choice,
+.message-composer__poll-add-question {
+  width: 100%;
+  min-height: 39px;
+  border: 0;
+  background: transparent;
+  color: #1717ff;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  cursor: pointer;
+}
+
+.message-composer__poll-add-question {
+  margin-top: 0;
+  border: 1px solid #1717ff;
+  border-radius: 4px;
+}
+
+.message-composer__poll-placeholder {
+  min-height: 220px;
+  color: #34364b;
+}
+
+.message-composer__poll-placeholder h3 {
+  margin: 0 0 12px;
+  font-size: 16px;
+}
+
+.message-composer__poll-placeholder p,
+.message-composer__poll-placeholder li {
+  font-size: 14px;
+}
+
+.message-composer__poll-footer {
+  display: flex;
+  min-height: 58px;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  padding: 0 18px;
+  border-top: 1px solid #e1e1e1;
+}
+
+.message-composer__poll-footer button {
+  min-width: 65px;
+  min-height: 36px;
+  padding: 8px 14px;
+  border: 0;
+  background: transparent;
+  color: #bcbec7;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  cursor: pointer;
+}
+
+.message-composer__poll-footer button:disabled {
+  cursor: not-allowed;
+}
+
+.message-composer__poll-footer .message-composer__poll-next {
+  background: #5962ff;
+  color: #fff;
+}
+
+.message-composer__poll-footer .message-composer__poll-next:disabled {
+  opacity: 0.6;
+}
+
 @media (max-width: 620px) {
   .message-composer__toolbar-row {
     flex-wrap: wrap;
@@ -1412,6 +2511,30 @@ function handleKeydown(event) {
 
   .message-composer__media {
     margin-left: auto;
+  }
+
+  .message-composer__poll-content {
+    padding: 20px 18px;
+  }
+
+  .message-composer__poll-modal {
+    max-height: min(92vh, 620px);
+  }
+
+  .message-composer__poll-header {
+    padding: 0 18px;
+  }
+
+  .message-composer__poll-option {
+    gap: 8px;
+  }
+
+  .message-composer__poll-options {
+    padding: 14px 10px 8px;
+  }
+
+  .message-composer__poll-question-types {
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 </style>
