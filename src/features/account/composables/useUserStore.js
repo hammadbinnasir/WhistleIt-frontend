@@ -1,4 +1,6 @@
 import { reactive, readonly } from 'vue'
+import { getAuthUserId } from '@/features/auth/session'
+import { deleteUserAvatar, getPublicProfile, uploadUserAvatar } from '../api'
 
 /**
  * Single source of truth for the user module.
@@ -40,6 +42,48 @@ const readonlyState = readonly(state)
 
 const revokeBlob = (url) => {
   if (typeof url === 'string' && url.startsWith('blob:')) URL.revokeObjectURL(url)
+}
+
+function requireUserId() {
+  const userId = getAuthUserId()
+  if (!userId) throw new Error('Your account ID is missing. Please sign in again.')
+  return userId
+}
+
+function getAvatarUrl(response) {
+  let data = response
+  while (data?.data && typeof data.data === 'object') data = data.data
+  const candidates = [
+    data,
+    data?.user,
+    data?.profile,
+    typeof data?.avatar === 'object' ? data.avatar : null,
+    data?.user?.profile,
+  ]
+  for (const candidate of candidates) {
+    const url = [
+      candidate?.photoUrl,
+      candidate?.photo_url,
+      candidate?.profilePhotoUrl,
+      candidate?.profile_photo_url,
+      candidate?.avatarUrl,
+      candidate?.avatar_url,
+      candidate?.profilePicture,
+      candidate?.profile_picture,
+      candidate?.profilePictureUrl,
+      candidate?.profile_picture_url,
+      candidate?.profileImage,
+      candidate?.profile_image,
+      candidate?.imageUrl,
+      candidate?.image_url,
+      candidate?.pictureUrl,
+      candidate?.picture_url,
+      candidate?.avatar,
+      candidate?.url,
+    ].find((value) => typeof value === 'string' && value)
+    if (url) return url
+  }
+  return ''
 }
 
 /* ---------- custom status expiry ---------- */
@@ -86,6 +130,12 @@ function hydrate(data = {}) {
   scheduleExpiry()
 }
 
+async function loadPublicProfile() {
+  const response = await getPublicProfile(requireUserId())
+  const photoUrl = getAvatarUrl(response)
+  if (photoUrl) state.profile.photoUrl = photoUrl
+}
+
 async function setStatus(status) {
   if (!VALID_STATUSES.includes(status)) return
   // TODO(api): await api.updatePresence(status)
@@ -112,14 +162,16 @@ async function clearCustomStatus() {
  * { profile, photo: File|null, removePhoto, preferences, security, password }
  */
 async function saveSettings({ profile, photo, removePhoto, preferences, security }) {
-  // TODO(api): upload `photo`, then send profile / preferences / security
-  // TODO(api): if (password) await api.changePassword(password)
   if (profile) Object.assign(state.profile, profile)
 
   if (photo) {
+    const userId = requireUserId()
+    await uploadUserAvatar(userId, photo)
+    const photoUrl = URL.createObjectURL(photo)
     revokeBlob(state.profile.photoUrl)
-    state.profile.photoUrl = URL.createObjectURL(photo)
+    state.profile.photoUrl = photoUrl
   } else if (removePhoto) {
+    await deleteUserAvatar(requireUserId())
     revokeBlob(state.profile.photoUrl)
     state.profile.photoUrl = ''
   }
@@ -136,6 +188,7 @@ export function useUserStore() {
   return {
     state: readonlyState,
     hydrate,
+    loadPublicProfile,
     setStatus,
     setCustomStatus,
     clearCustomStatus,

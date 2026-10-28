@@ -36,8 +36,21 @@ const tab = (label) => byText(label, '[role=tab]')
 
 beforeEach(() => {
   resetUserStore()
+  sessionStorage.setItem('authUser', JSON.stringify({ id: 'test-user', fullName: 'Hammad Haider' }))
   URL.createObjectURL = vi.fn(() => 'blob:mock')
   URL.revokeObjectURL = vi.fn()
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (url, options) => ({
+      ok: true,
+      status: 200,
+      statusText: 'OK',
+      json: async () =>
+        options.method === 'POST' && String(url).endsWith('/avatar')
+          ? { avatarUrl: 'https://example.test/avatar.png' }
+          : {},
+    })),
+  )
   wrapper = mount(UserModule, {
     props: { user: { profile: { fullName: 'Hammad Haider' } } },
     attachTo: document.body,
@@ -47,6 +60,8 @@ beforeEach(() => {
 afterEach(() => {
   wrapper.unmount()
   document.body.innerHTML = ''
+  vi.unstubAllGlobals()
+  sessionStorage.clear()
 })
 
 describe('avatar and user menu', () => {
@@ -605,7 +620,53 @@ describe('account settings modal', () => {
     await click(byText('SAVE'))
     expect(store.state.profile.photoUrl).toBe('blob:mock')
     expect($('.avatar-btn img')).toBeTruthy()
+    expect($('.avatar-btn img').getAttribute('src')).toBe('blob:mock')
     expect(wrapper.emitted('settings-saved')[0][0].photoAction).toBe('added')
+
+    const [url, options] = fetch.mock.calls.find(([requestUrl]) =>
+      requestUrl.endsWith('/v1/users/test-user/avatar'),
+    )
+    expect(url).toContain('/v1/users/test-user/avatar')
+    expect(options.method).toBe('POST')
+    expect(options.body.get('avatar').name).toBe('me.png')
+    expect(options.headers['Content-Type']).toBeUndefined()
+  })
+
+  it('shows the uploaded image in the profile icon when the upload response omits a URL', async () => {
+    fetch.mockImplementation(async (_url, options) => ({
+      ok: true,
+      status: 200,
+      statusText: 'OK',
+      json: async () => (options.method === 'POST' ? { message: 'Avatar uploaded' } : {}),
+    }))
+    await openSettings()
+    const fileInput = $('input[type=file]')
+    Object.defineProperty(fileInput, 'files', {
+      value: [new File(['image'], 'me.png', { type: 'image/png' })],
+      configurable: true,
+    })
+    fileInput.dispatchEvent(new Event('change', { bubbles: true }))
+    await flushPromises()
+
+    await click(byText('SAVE'))
+
+    expect(store.state.profile.photoUrl).toBe('blob:mock')
+    expect($('.avatar-btn img').getAttribute('src')).toBe('blob:mock')
+  })
+
+  it('loads the saved image URL into the profile icon', async () => {
+    fetch.mockClear()
+    fetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => ({ user: { profile_picture: 'https://example.test/saved.png' } }),
+    })
+
+    await store.loadPublicProfile()
+    await flushPromises()
+
+    expect(store.state.profile.photoUrl).toBe('https://example.test/saved.png')
+    expect($('.avatar-btn img').getAttribute('src')).toBe('https://example.test/saved.png')
   })
 
   it('removes a saved profile photo and restores initials in the account icon', async () => {
@@ -625,6 +686,49 @@ describe('account settings modal', () => {
     expect($('.avatar-btn img')).toBeNull()
     expect($('.avatar-btn .initials').textContent).toBe('HH')
     expect(wrapper.emitted('settings-saved')[0][0].photoAction).toBe('removed')
+    const [url, options] = fetch.mock.calls.find(([, request]) => request.method === 'DELETE')
+    expect(url).toContain('/v1/users/test-user/avatar')
+    expect(options.method).toBe('DELETE')
+  })
+
+  it('does not clear the stored avatar when the delete request fails', async () => {
+    store.hydrate({ profile: { photoUrl: 'https://example.test/old.png' } })
+    await openSettings()
+    await click(byText('REMOVE PHOTO'))
+    fetch.mockResolvedValueOnce({
+      ok: false,
+      status: 500,
+      json: async () => ({ message: 'Avatar delete failed' }),
+    })
+
+    await click(byText('SAVE'))
+
+    expect(store.state.profile.photoUrl).toBe('https://example.test/old.png')
+    expect($('[role=dialog]')).toBeTruthy()
+    expect(wrapper.emitted('error')[0][0].message).toContain('Avatar delete failed')
+  })
+
+  it('does not replace the stored avatar when upload fails', async () => {
+    store.hydrate({ profile: { photoUrl: 'https://example.test/old.png' } })
+    await openSettings()
+    const fileInput = $('input[type=file]')
+    Object.defineProperty(fileInput, 'files', {
+      value: [new File(['image'], 'new.png', { type: 'image/png' })],
+      configurable: true,
+    })
+    fileInput.dispatchEvent(new Event('change', { bubbles: true }))
+    await flushPromises()
+    fetch.mockResolvedValueOnce({
+      ok: false,
+      status: 500,
+      json: async () => ({ message: 'Avatar upload failed' }),
+    })
+
+    await click(byText('SAVE'))
+
+    expect(store.state.profile.photoUrl).toBe('https://example.test/old.png')
+    expect($('[role=dialog]')).toBeTruthy()
+    expect(wrapper.emitted('error')[0][0].message).toContain('Avatar upload failed')
   })
 })
 

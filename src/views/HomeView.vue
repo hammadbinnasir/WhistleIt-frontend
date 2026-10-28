@@ -84,6 +84,10 @@ function onAccountSettingsSaved(payload) {
   if (message) ui.toast('Success!', message, 'success')
 }
 
+function onAccountError(error) {
+  ui.toast('Account error', error?.message || 'The account request failed.', 'error')
+}
+
 const selectedChannel = computed(() => {
   if (!selectedChannelId.value) return null
   const ch = channelsStore.getById(selectedChannelId.value)
@@ -356,6 +360,7 @@ onBeforeUnmount(() => {
       :avatar-size="32"
       @log-out="logout"
       @settings-saved="onAccountSettingsSaved"
+      @error="onAccountError"
     />
 
     <!-- Shell Modals -->
