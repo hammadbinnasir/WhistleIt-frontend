@@ -12,9 +12,25 @@ import {
   sameDay,
 } from '@/features/messages/message-utils'
 
+// Search & Reminders
+import ChatHeaderActions from '@/features/search/ChatHeaderActions.vue'
+import ChannelSettingsModal from '@/features/search/ChannelSettingsModal.vue'
+import RemindersPanel from '@/features/search/RemindersPanel.vue'
+import SearchPage from '@/features/search/SearchPage.vue'
+import SetReminderModal from '@/features/search/SetReminderModal.vue'
+
+const router = useRouter()
 const ui = useUiStore()
 const messages = useMessagesStore()
 const { selectedChannelId, sidebarOpen } = storeToRefs(ui)
+const { activeId: activeDmId } = storeToRefs(dms)
+const { activeTeam } = storeToRefs(teamsStore)
+
+const isTeamSwitcherOpen = ref(false)
+const reminderModalOpen = ref(false)
+const activeConversation = computed(
+  () => dms.conversations.find((conversation) => conversation.id === activeDmId.value) || null,
+)
 
 const channels = [
   { id: 'general', name: 'general' },
@@ -965,5 +981,77 @@ watch(currentChannelId, () => {
         </section>
       </div>
     </main>
+
+    <!-- Channel Settings Modal -->
+    <ChannelSettingsModal
+      v-if="ui.channelSettingsOpen && selectedChannel"
+      :channel="selectedChannel"
+      @toggle-mute="selectedChannel.muted = !selectedChannel.muted"
+      @toggle-favourite="selectedChannel.favourite = !selectedChannel.favourite"
+      @left="ui.selectChannel(null)"
+      @close="ui.channelSettingsOpen = false"
+    />
+
+    <!-- Set Reminder Modal -->
+    <SetReminderModal
+      v-if="reminderModalOpen && reminderMessage"
+      :message="reminderMessage"
+      @close="reminderModalOpen = false"
+    />
+
+    <!-- Toast Notifications -->
+    <div class="fixed bottom-4 right-4 z-[60] flex w-80 flex-col gap-2">
+      <div
+        v-for="toast in ui.toasts"
+        :key="toast.id"
+        class="flex items-center gap-3 rounded-lg p-4 shadow-lg"
+        :class="
+          toast.type === 'success'
+            ? 'border-t-4 border-emerald-400 bg-white text-slate-700'
+            : 'bg-slate-900 text-white'
+        "
+      >
+        <svg
+          v-if="toast.type === 'success'"
+          class="h-5 w-5 shrink-0 text-emerald-500"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="3"
+          aria-hidden="true"
+        >
+          <circle cx="12" cy="12" r="9" />
+          <path d="m8 12 2.5 2.5L16 9" />
+        </svg>
+        <div class="min-w-0 flex-1">
+          <p class="font-semibold">{{ toast.title }}</p>
+          <p class="mt-1 text-sm" :class="toast.type === 'success' ? 'text-slate-500' : 'text-slate-200'">
+            {{ toast.body }}
+          </p>
+        </div>
+        <button
+          type="button"
+          class="shrink-0 text-slate-400 hover:text-slate-700"
+          aria-label="Dismiss notification"
+          @click="ui.dismissToast(toast.id)"
+        >
+          ×
+        </button>
+      </div>
+    </div>
+
+    <!-- Account UserModule (Pinned to bottom-left of TeamRail) -->
+    <UserModule
+      :user="user"
+      :avatar-size="32"
+      @log-out="logout"
+      @settings-saved="onAccountSettingsSaved"
+    />
+
+    <!-- Shell Modals -->
+    <CreateTeamModal />
+    <JoinTeamModal />
+    <HelpModal />
+    <MemberManageModal />
   </div>
 </template>
