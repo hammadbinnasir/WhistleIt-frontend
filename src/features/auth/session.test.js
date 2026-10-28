@@ -3,6 +3,7 @@ import {
   clearAuthSession,
   getAuthToken,
   getAuthUser,
+  getAuthUserId,
   hasAuthSession,
   saveAuthToken,
 } from './session'
@@ -30,11 +31,21 @@ describe('auth session', () => {
     expect(getAuthUser()).toEqual({ fullName: 'Sara Khan' })
   })
 
+  it('stores the user ID for user-scoped API requests', () => {
+    saveAuthToken({
+      access_token: 'session-token',
+      user: { id: 42, full_name: 'Sara Khan' },
+    })
+
+    expect(getAuthUserId()).toBe('42')
+    expect(getAuthUser()).toEqual({ id: '42', fullName: 'Sara Khan' })
+  })
+
   it('reads the user name from a JWT when the login response omits user data', () => {
-    const payload = btoa(JSON.stringify({ name: 'Sara Khan' }))
+    const payload = btoa(JSON.stringify({ sub: 'user-42', name: 'Sara Khan' }))
     saveAuthToken({ token: `header.${payload}.signature` })
 
-    expect(getAuthUser()).toEqual({ fullName: 'Sara Khan' })
+    expect(getAuthUser()).toEqual({ id: 'user-42', fullName: 'Sara Khan' })
   })
 
   it('stores a remembered token persistently and replaces any previous token', () => {

@@ -34,6 +34,23 @@ describe('http', () => {
     expect(fetchMock.mock.calls[0][1].credentials).toBe('include')
   })
 
+  it('sends multipart data without setting a JSON content type', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: vi.fn().mockResolvedValue({ ok: true }),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const body = new FormData()
+    body.append('avatar', new File(['image'], 'avatar.png', { type: 'image/png' }))
+
+    await http('/v1/users/user-1/avatar', { method: 'POST', body })
+
+    const [, options] = fetchMock.mock.calls[0]
+    expect(options.body).toBe(body)
+    expect(options.headers['Content-Type']).toBeUndefined()
+  })
+
   it('clears an expired token when the API responds with 401', async () => {
     sessionStorage.setItem('authToken', 'expired-token')
     const fetchMock = vi.fn().mockResolvedValue({
