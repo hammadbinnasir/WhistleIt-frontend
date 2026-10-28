@@ -1,6 +1,8 @@
 <script setup>
 import { computed, nextTick, ref, watch } from 'vue'
 import { useDmStore } from '@/features/dms/stores/dms'
+import { useUiStore } from '@/stores/ui'
+import { addMockMessage } from '@/features/search/search'
 import MessageComposer from './MessageComposer.vue'
 
 const props = defineProps({
@@ -9,6 +11,7 @@ const props = defineProps({
 })
 
 const dms = useDmStore()
+const ui = useUiStore()
 const messages = ref([])
 const messagesContainer = ref(null)
 
@@ -40,11 +43,27 @@ function addMessage(message) {
   if (conversation.value) {
     dms.sendMessage(conversation.value.id, message)
   } else {
-    messages.value.push({
+    const sentMessage = {
       ...message,
       scheduledAt: null,
       author: dms.usersById[dms.meId]?.name || 'You',
       mine: true,
+    }
+    messages.value.push(sentMessage)
+    ui.addPoll(sentMessage, {
+      id: String(props.conversationId || ''),
+      name: conversationLabel.value,
+      kind: props.conversationType === 'dm' ? 'dm' : 'public',
+    })
+    addMockMessage({
+      id: sentMessage.id,
+      text: sentMessage.content,
+      sender: sentMessage.author,
+      conversation: {
+        id: String(props.conversationId),
+        name: String(props.conversationId).replaceAll('-', ' '),
+        kind: props.conversationType === 'dm' ? 'dm' : 'public',
+      },
     })
   }
   scrollMessagesToLatest()
@@ -64,6 +83,19 @@ function addGif(gif) {
     mine: true,
   })
   scrollMessagesToLatest()
+}
+
+const conversationLabel = computed(() => {
+  if (conversation.value) return dms.titleOf(conversation.value)
+  return String(props.conversationId || 'Channel')
+})
+
+function togglePin(message) {
+  ui.togglePinnedMessage(message, {
+    id: String(props.conversationId || ''),
+    name: conversationLabel.value,
+    kind: props.conversationType === 'dm' ? 'dm' : 'public',
+  })
 }
 
 async function scrollMessagesToLatest() {
@@ -93,13 +125,24 @@ async function scrollMessagesToLatest() {
         </span>
 
         <div class="composer-conversation__message-content">
+          <button
+            type="button"
+            class="composer-conversation__pin"
+            :aria-label="ui.pinnedMessages.some((item) => item.id === message.id) ? 'Unpin message' : 'Pin message'"
+            @click="togglePin(message)"
+          >
+            {{ ui.pinnedMessages.some((item) => item.id === message.id) ? 'Unpin' : 'Pin' }}
+          </button>
           <header class="composer-conversation__message-heading">
             <strong>{{ message.author }}</strong>
 
             <time>just now</time>
           </header>
 
-          <div class="composer-conversation__message-bubble">
+          <div
+            class="composer-conversation__message-bubble"
+            :data-poll-title="message.content?.match(/^Poll:\s*(.+)$/m)?.[1]?.trim()"
+          >
             <span v-if="message.important" class="composer-conversation__important">
               IMPORTANT!
             </span>
@@ -192,7 +235,26 @@ async function scrollMessagesToLatest() {
 }
 
 .composer-conversation__message-content {
+  position: relative;
   min-width: 0;
+}
+
+.composer-conversation__pin {
+  position: absolute;
+  top: 0;
+  right: 0;
+  padding: 2px 8px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: #6460a8;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.composer-conversation__pin:hover {
+  background: #f1f0f8;
 }
 
 .composer-conversation__message-heading {

@@ -35,7 +35,7 @@ const saveEdit = (r) => {
     <header class="flex items-center justify-between border-b border-slate-200 px-5 py-4">
       <h2 class="text-lg text-slate-700">Reminders</h2>
       <button
-        class="flex h-7 w-7 items-center justify-center rounded-full bg-indigo-50 text-slate-600"
+        class="flex h-7 w-7 cursor-pointer items-center justify-center rounded-full bg-indigo-50 text-slate-600"
         aria-label="Close"
         @click="ui.closePanel()"
       >
