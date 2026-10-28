@@ -1,13 +1,16 @@
 <script setup>
 import { ref, watch } from 'vue'
 import { storeToRefs } from 'pinia'
+import { useRouter } from 'vue-router'
 import { useTeamsStore } from '@/stores/teams'
 import { useUiStore } from '@/stores/ui'
 
 const teamsStore = useTeamsStore()
 const ui = useUiStore()
+const router = useRouter()
 
-const { teams, searchResults, searchLoading } = storeToRefs(teamsStore)
+const { teamsOfActiveWorkspace, searchResults, searchLoading, activeWorkspaceId } =
+  storeToRefs(teamsStore)
 
 const searchInput = ref('')
 const joiningTeamId = ref(null)
@@ -28,7 +31,7 @@ watch(searchInput, (query) => {
 })
 
 function isAlreadyMember(teamId) {
-  return teams.value.some((t) => t.id === teamId)
+  return teamsOfActiveWorkspace.value.some((team) => team.id === teamId)
 }
 
 async function handleJoin(team) {
@@ -36,7 +39,13 @@ async function handleJoin(team) {
   errorMessage.value = ''
   statusMessage.value = ''
   try {
-    await teamsStore.joinTeam(team.id)
+    const joinedTeam = await teamsStore.joinTeam(team.id)
+    if (activeWorkspaceId.value) {
+      await router.push({
+        name: 'workspace-team',
+        params: { workspaceId: activeWorkspaceId.value, teamId: joinedTeam.id },
+      })
+    }
     statusMessage.value = `Joined ${team.name} successfully!`
     setTimeout(() => {
       ui.toggleTeamJoinModal()
@@ -69,7 +78,7 @@ function handleClose() {
   >
     <div class="modal-card">
       <div class="modal-header">
-        <h3 id="join-team-title" class="modal-title">Join a Workspace</h3>
+        <h3 id="join-team-title" class="modal-title">Join a Team</h3>
         <button type="button" class="close-btn" aria-label="Close dialog" @click="handleClose">
           <svg
             width="18"
@@ -86,9 +95,7 @@ function handleClose() {
       </div>
 
       <div class="modal-body">
-        <p class="modal-desc">
-          Search for existing workspaces in your organization to join conversations.
-        </p>
+        <p class="modal-desc">Search for teams you can join in this workspace.</p>
 
         <div v-if="statusMessage" class="success-banner" role="status">
           {{ statusMessage }}
@@ -122,7 +129,7 @@ function handleClose() {
         <div class="results-container">
           <div v-if="searchLoading" class="loading-state">
             <div class="spinner" />
-            <span>Searching workspaces...</span>
+            <span>Searching teams...</span>
           </div>
 
           <div v-else-if="searchInput.trim() && searchResults.length === 0" class="empty-state">
@@ -130,7 +137,7 @@ function handleClose() {
           </div>
 
           <div v-else-if="!searchInput.trim()" class="hint-state">
-            Type a team name to search available workspaces.
+            Type a team name to search available teams.
           </div>
 
           <ul v-else class="team-results-list">

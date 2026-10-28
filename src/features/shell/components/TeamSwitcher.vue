@@ -1,6 +1,7 @@
 <script setup>
 import { ref, computed } from 'vue'
 import { storeToRefs } from 'pinia'
+import { useRouter } from 'vue-router'
 import { useTeamsStore } from '@/stores/teams'
 import { useUiStore } from '@/stores/ui'
 
@@ -15,18 +16,25 @@ const emit = defineEmits(['close'])
 
 const teamsStore = useTeamsStore()
 const ui = useUiStore()
+const router = useRouter()
 
-const { teams, activeTeamId } = storeToRefs(teamsStore)
+const { teamsOfActiveWorkspace, activeTeamId, activeWorkspaceId } = storeToRefs(teamsStore)
 const searchFilter = ref('')
 
 const filteredTeams = computed(() => {
-  if (!searchFilter.value.trim()) return teams.value
+  if (!searchFilter.value.trim()) return teamsOfActiveWorkspace.value
   const query = searchFilter.value.toLowerCase().trim()
-  return teams.value.filter((t) => t.name.toLowerCase().includes(query))
+  return teamsOfActiveWorkspace.value.filter((team) => team.name.toLowerCase().includes(query))
 })
 
-function handleSelect(teamId) {
-  teamsStore.switchTeam(teamId)
+async function handleSelect(teamId) {
+  if (!teamsStore.selectTeam(teamId)) return
+  if (activeWorkspaceId.value) {
+    await router.push({
+      name: 'workspace-team',
+      params: { workspaceId: activeWorkspaceId.value, teamId },
+    })
+  }
   emit('close')
 }
 
@@ -66,22 +74,23 @@ function openManageMembers() {
           v-model="searchFilter"
           type="text"
           class="search-input"
-          placeholder="Search Workspace"
+          placeholder="Search teams"
           autofocus
         />
       </div>
 
       <div class="workspace-list">
-        <div v-if="filteredTeams.length === 0" class="empty-hint">No workspaces found</div>
+        <div v-if="filteredTeams.length === 0" class="empty-hint">No teams found</div>
         <button
           v-for="team in filteredTeams"
           :key="team.id"
           type="button"
-          class="workspace-item"
-          :class="{ 'workspace-item--active': activeTeamId === team.id }"
+          class="team-item"
+          :class="{ 'team-item--active': activeTeamId === team.id }"
+          :aria-current="activeTeamId === team.id ? 'page' : undefined"
           @click="handleSelect(team.id)"
         >
-          <div class="team-badge" :style="{ background: team.color || '#7C3AED' }">
+          <div class="team-badge" :style="{ background: team.color || 'var(--color-indigo-500)' }">
             {{ team.initials || team.name.slice(0, 2).toUpperCase() }}
           </div>
           <span class="team-name">{{ team.name }}</span>
@@ -113,7 +122,7 @@ function openManageMembers() {
             <line x1="12" y1="5" x2="12" y2="19" />
             <line x1="5" y1="12" x2="19" y2="12" />
           </svg>
-          Create Workspace
+          Create Team
         </button>
         <button type="button" class="action-btn" @click="openJoin">
           <svg
@@ -127,7 +136,7 @@ function openManageMembers() {
             <circle cx="11" cy="11" r="8" />
             <line x1="21" y1="21" x2="16.65" y2="16.65" />
           </svg>
-          Search & Join Team
+          Join a Team
         </button>
         <button type="button" class="action-btn" @click="openManageMembers">
           <svg
@@ -229,7 +238,7 @@ function openManageMembers() {
   color: #94a3b8;
 }
 
-.workspace-item {
+.team-item {
   display: flex;
   align-items: center;
   gap: 10px;
@@ -242,10 +251,10 @@ function openManageMembers() {
   transition: background 0.15s ease;
   width: 100%;
 }
-.workspace-item:hover {
+.team-item:hover {
   background: #f1f5f9;
 }
-.workspace-item--active {
+.team-item--active {
   background: #f3e8ff;
 }
 
@@ -271,7 +280,7 @@ function openManageMembers() {
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.workspace-item--active .team-name {
+.team-item--active .team-name {
   font-weight: 600;
   color: #7c3aed;
 }

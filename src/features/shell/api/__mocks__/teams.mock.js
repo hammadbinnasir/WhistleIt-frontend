@@ -12,6 +12,7 @@ const _userTeams = [
     initials: 'PF',
     color: '#7C3AED',
     memberCount: 24,
+    workspaceId: 'workspace-1',
   },
   {
     id: 'team-2',
@@ -19,6 +20,7 @@ const _userTeams = [
     initials: 'CI',
     color: '#2DD4BF',
     memberCount: 18,
+    workspaceId: 'workspace-1',
   },
   {
     id: 'team-3',
@@ -26,24 +28,27 @@ const _userTeams = [
     initials: 'TT',
     color: '#F97316',
     memberCount: 6,
+    workspaceId: 'workspace-2',
   },
-]
-
-const _allTeams = [
-  ..._userTeams,
   {
     id: 'team-4',
     name: 'Design Guild',
     initials: 'DG',
     color: '#EC4899',
     memberCount: 12,
+    workspaceId: 'workspace-2',
   },
+]
+
+const _allTeams = [
+  ..._userTeams,
   {
     id: 'team-5',
     name: 'Backend Crew',
     initials: 'BC',
     color: '#3B82F6',
     memberCount: 9,
+    workspaceId: 'workspace-2',
   },
   {
     id: 'team-6',
@@ -51,6 +56,7 @@ const _allTeams = [
     initials: 'QW',
     color: '#EAB308',
     memberCount: 7,
+    workspaceId: 'workspace-2',
   },
 ]
 
@@ -61,6 +67,19 @@ function delay(ms = 300) {
 export async function mockTeams() {
   await delay()
   return [..._userTeams]
+}
+
+export async function mockWorkspaces() {
+  await delay()
+  return [
+    { id: 'workspace-1', name: 'WhistleIt', initials: 'WI' },
+    { id: 'workspace-2', name: 'Design', initials: 'DE' },
+  ]
+}
+
+export async function mockWorkspaceTeams(workspaceId) {
+  await delay()
+  return _userTeams.filter((team) => team.workspaceId === workspaceId).map((team) => ({ ...team }))
 }
 
 export async function mockCreateTeam(payload) {
@@ -78,6 +97,7 @@ export async function mockCreateTeam(payload) {
     initials,
     color: payload.color || '#7C3AED',
     memberCount: 1,
+    workspaceId: payload.workspaceId,
   }
   _userTeams.push(team)
   _allTeams.push(team)
