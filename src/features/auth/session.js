@@ -7,10 +7,7 @@ function getFullName(user) {
     user.full_name ??
     user.fullName ??
     user.name ??
-    [
-      user.first_name ?? user.firstName,
-      user.last_name ?? user.lastName,
-    ]
+    [user.first_name ?? user.firstName, user.last_name ?? user.lastName]
       .filter((part) => typeof part === 'string')
       .join(' ')
   return typeof fullName === 'string' ? fullName.trim() : ''

@@ -13,7 +13,11 @@ const props = defineProps({
 const presence = usePresenceStore()
 
 const initials = computed(() =>
-  props.name.split(' ').slice(0, 2).map((w) => w[0]?.toUpperCase()).join('')
+  props.name
+    .split(' ')
+    .slice(0, 2)
+    .map((w) => w[0]?.toUpperCase())
+    .join(''),
 )
 const color = computed(() => {
   let hash = 0

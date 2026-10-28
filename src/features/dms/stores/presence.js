@@ -23,14 +23,18 @@ export const usePresenceStore = defineStore('presence', () => {
 
     loading.value = true
     error.value = ''
-    initialization = dmApi.presence().then((presence) => {
-      presenceById.value = presence
-    }).catch((cause) => {
-      error.value = errorMessage(cause)
-    }).finally(() => {
-      loading.value = false
-      initialization = null
-    })
+    initialization = dmApi
+      .presence()
+      .then((presence) => {
+        presenceById.value = presence
+      })
+      .catch((cause) => {
+        error.value = errorMessage(cause)
+      })
+      .finally(() => {
+        loading.value = false
+        initialization = null
+      })
 
     return initialization
   }

@@ -70,6 +70,59 @@ a {
   margin: 105px 0 48px;
 }
 
+.auth-page--forgot-password {
+  grid-template-columns: minmax(0, 58%) minmax(390px, 42%);
+}
+
+.auth-page--forgot-password .auth-panel {
+  padding: 198px 24px 40px 8.9vw;
+}
+
+.auth-page--forgot-password .brand {
+  position: absolute;
+  top: 10px;
+  left: 3vw;
+}
+
+.auth-page--forgot-password .auth-content {
+  width: min(100%, 500px);
+  margin: 0 0 48px;
+}
+
+.auth-page--forgot-password .auth-heading h1 {
+  font-size: 32px;
+  letter-spacing: -0.7px;
+}
+
+.auth-page--forgot-password .auth-heading p {
+  margin: 12px 0 32px;
+  color: #999;
+  font-size: 16px;
+  line-height: 1.4;
+}
+
+.auth-page--forgot-password .auth-form {
+  gap: 24px;
+}
+
+.auth-page--forgot-password .auth-form > input {
+  height: 40px;
+  padding: 0 10px;
+  font-size: 16px;
+}
+
+.auth-page--forgot-password .submit-button {
+  width: min(75%, 374px);
+  min-height: 48px;
+  margin-top: 40px;
+  font-size: 20px;
+}
+
+.auth-page--forgot-password .auth-switch {
+  margin-top: 16px;
+  font-size: 16px;
+}
+
 .auth-heading h1 {
   margin: 0;
   font-size: clamp(32px, 3vw, 40px);
@@ -307,12 +360,13 @@ a {
   width: min(100%, 371px);
   min-height: 49px;
   margin-top: 7px;
-  background: #9697ff;
+  background: #5962ff;
   font-size: 20px;
 }
 
 .auth-page--signup .submit-button:hover {
-  background: #7779f0;
+  transform: translateY(-1px);
+  background: #474fe5;
 }
 
 .auth-page--signup .auth-switch {
@@ -330,21 +384,13 @@ a {
   overflow: hidden;
 }
 
-.art-backdrop {
+.auth-background {
   position: absolute;
   inset: 0;
   width: 100%;
   height: 100%;
-}
-
-.auth-illustration {
-  position: absolute;
-  top: 50%;
-  left: 7%;
-  width: 91%;
-  max-height: 76vh;
-  transform: translateY(-50%);
-  overflow: visible;
+  object-fit: cover;
+  object-position: center;
 }
 
 .sr-only {
@@ -382,11 +428,6 @@ a {
   .login-options {
     font-size: 15px;
   }
-
-  .auth-illustration {
-    left: 1%;
-    width: 99%;
-  }
 }
 
 @media (max-width: 640px) {
@@ -414,6 +455,45 @@ a {
   .auth-page--signup .auth-content {
     width: min(100%, 440px);
     margin: 44px auto 32px;
+  }
+
+  .auth-page--forgot-password .auth-panel {
+    min-height: 100vh;
+    padding: 120px 24px 40px;
+  }
+
+  .auth-page--forgot-password .brand {
+    top: 24px;
+    left: 24px;
+  }
+
+  .auth-page--forgot-password .auth-content {
+    width: min(100%, 500px);
+    margin: 0 auto 32px;
+  }
+
+  .auth-page--forgot-password .auth-heading h1 {
+    font-size: 32px;
+  }
+
+  .auth-page--forgot-password .auth-heading p {
+    margin: 12px 0 30px;
+    font-size: 16px;
+  }
+
+  .auth-page--forgot-password .auth-form {
+    gap: 18px;
+  }
+
+  .auth-page--forgot-password .auth-form > input {
+    height: 49px;
+  }
+
+  .auth-page--forgot-password .submit-button {
+    width: min(75%, 374px);
+    min-height: 48px;
+    margin-top: 40px;
+    font-size: 21px;
   }
 
   .auth-heading h1,

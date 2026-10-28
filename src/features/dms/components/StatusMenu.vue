@@ -27,9 +27,20 @@ function toggle() {
     text.value = c.text
   }
 }
-function pickQuick(q) { emoji.value = q.emoji; text.value = q.text }
-function save() { presence.setMyStatus(emoji.value, text.value); open.value = false }
-function clear() { presence.clearMyStatus(); emoji.value = ''; text.value = ''; open.value = false }
+function pickQuick(q) {
+  emoji.value = q.emoji
+  text.value = q.text
+}
+function save() {
+  presence.setMyStatus(emoji.value, text.value)
+  open.value = false
+}
+function clear() {
+  presence.clearMyStatus()
+  emoji.value = ''
+  text.value = ''
+  open.value = false
+}
 </script>
 
 <template>
@@ -50,7 +61,11 @@ function clear() { presence.clearMyStatus(); emoji.value = ''; text.value = ''; 
           v-for="(label, key) in STATES"
           :key="key"
           class="flex-1 rounded px-2 py-1 text-xs"
-          :class="presence.stateOf(dms.meId) === key ? 'bg-indigo-500 text-white' : 'bg-slate-700 text-slate-300'"
+          :class="
+            presence.stateOf(dms.meId) === key
+              ? 'bg-indigo-500 text-white'
+              : 'bg-slate-700 text-slate-300'
+          "
           @click="presence.setMyState(key)"
         >
           {{ label }}
@@ -70,13 +85,27 @@ function clear() { presence.clearMyStatus(); emoji.value = ''; text.value = ''; 
       </div>
 
       <div class="flex gap-2">
-        <input v-model="emoji" maxlength="2" placeholder="😀" class="w-10 rounded bg-slate-700 px-2 py-1 text-center text-white outline-none" />
-        <input v-model="text" placeholder="Status likhein…" class="min-w-0 flex-1 rounded bg-slate-700 px-2 py-1 text-white placeholder-slate-400 outline-none" />
+        <input
+          v-model="emoji"
+          maxlength="2"
+          placeholder="😀"
+          class="w-10 rounded bg-slate-700 px-2 py-1 text-center text-white outline-none"
+        />
+        <input
+          v-model="text"
+          placeholder="Status likhein…"
+          class="min-w-0 flex-1 rounded bg-slate-700 px-2 py-1 text-white placeholder-slate-400 outline-none"
+        />
       </div>
 
       <div class="flex justify-between">
         <button class="text-xs text-slate-300 underline" @click="clear">Clear status</button>
-        <button class="rounded bg-indigo-500 px-3 py-1 text-xs font-semibold text-white" @click="save">Save</button>
+        <button
+          class="rounded bg-indigo-500 px-3 py-1 text-xs font-semibold text-white"
+          @click="save"
+        >
+          Save
+        </button>
       </div>
     </div>
   </div>

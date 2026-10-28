@@ -123,13 +123,20 @@ const showSample = ref(false)
           <div class="rounded border border-slate-300 p-3">
             <div class="flex items-start justify-between">
               <h3 class="font-bold text-slate-700">Mute</h3>
-              <input
-                type="checkbox"
-                role="switch"
-                class="h-5 w-10 cursor-pointer accent-indigo-500"
-                :checked="channel.muted"
-                @change="emit('toggle-mute')"
-              />
+              <!-- toggle switch -->
+              <label class="inline-flex cursor-pointer items-center">
+                <input
+                  type="checkbox"
+                  role="switch"
+                  class="peer sr-only"
+                  aria-label="Mute channel"
+                  :checked="channel.muted"
+                  @change="emit('toggle-mute')"
+                />
+                <span
+                  class="relative h-6 w-11 rounded-full bg-slate-300 transition-colors peer-checked:bg-indigo-500 peer-focus-visible:ring-2 peer-focus-visible:ring-indigo-300 after:absolute after:left-0.5 after:top-0.5 after:h-5 after:w-5 after:rounded-full after:bg-white after:shadow after:transition-transform peer-checked:after:translate-x-5"
+                ></span>
+              </label>
             </div>
             <p class="mt-1 text-sm text-slate-500">
               Muted channel will not receive any notifications or any message badge and will be
@@ -139,13 +146,20 @@ const showSample = ref(false)
           <div class="rounded border border-slate-300 p-3">
             <div class="flex items-start justify-between">
               <h3 class="font-bold text-slate-700">Favourite</h3>
-              <input
-                type="checkbox"
-                role="switch"
-                class="h-5 w-10 cursor-pointer accent-indigo-500"
-                :checked="channel.favourite"
-                @change="emit('toggle-favourite')"
-              />
+              <!-- toggle switch -->
+              <label class="inline-flex cursor-pointer items-center">
+                <input
+                  type="checkbox"
+                  role="switch"
+                  class="peer sr-only"
+                  aria-label="Favourite channel"
+                  :checked="channel.favourite"
+                  @change="emit('toggle-favourite')"
+                />
+                <span
+                  class="relative h-6 w-11 rounded-full bg-slate-300 transition-colors peer-checked:bg-indigo-500 peer-focus-visible:ring-2 peer-focus-visible:ring-indigo-300 after:absolute after:left-0.5 after:top-0.5 after:h-5 after:w-5 after:rounded-full after:bg-white after:shadow after:transition-transform peer-checked:after:translate-x-5"
+                ></span>
+              </label>
             </div>
             <p class="mt-1 text-sm text-slate-500">
               Favourite move your most important channels to top in the sidebar, to access them
