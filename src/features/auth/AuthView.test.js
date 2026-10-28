@@ -219,6 +219,7 @@ describe('auth view', () => {
       email: 'sam@example.com',
       password: 'correct-password',
       password_confirmation: 'correct-password',
+      frontend_url: window.location.origin,
     })
     expect(router.currentRoute.value.path).toBe('/login')
     expect(wrapper.get('#email').element.value).toBe('')

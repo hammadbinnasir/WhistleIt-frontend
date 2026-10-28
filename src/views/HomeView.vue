@@ -20,7 +20,7 @@ import {
   TeamSwitcher,
   CreateTeamModal,
   JoinTeamModal,
-  HelpDrawer,
+  HelpModal,
   MemberManageModal,
 } from '@/features/shell'
 
@@ -360,6 +360,7 @@ onBeforeUnmount(() => {
     <!-- Shell Modals -->
     <CreateTeamModal />
     <JoinTeamModal />
+    <HelpModal />
     <MemberManageModal />
   </div>
 </template>

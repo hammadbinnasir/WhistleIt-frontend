@@ -320,7 +320,10 @@ function getInitials(name) {
                     <div class="member-hover-card__avatar">
                       {{ getInitials(member.name) }}
                     </div>
-                    <span class="member-hover-card__status" :class="`member-hover-card__status--${member.status ?? 'offline'}`">
+                    <span
+                      class="member-hover-card__status"
+                      :class="`member-hover-card__status--${member.status ?? 'offline'}`"
+                    >
                       {{ member.status === 'online' ? 'Online' : 'Offline' }}
                     </span>
                   </div>
@@ -331,10 +334,16 @@ function getInitials(name) {
                   </div>
 
                   <div class="member-hover-card__actions">
-                    <button type="button" class="member-hover-card__action member-hover-card__action--primary">
+                    <button
+                      type="button"
+                      class="member-hover-card__action member-hover-card__action--primary"
+                    >
                       Message
                     </button>
-                    <button type="button" class="member-hover-card__action member-hover-card__action--secondary">
+                    <button
+                      type="button"
+                      class="member-hover-card__action member-hover-card__action--secondary"
+                    >
                       Profile
                     </button>
                   </div>

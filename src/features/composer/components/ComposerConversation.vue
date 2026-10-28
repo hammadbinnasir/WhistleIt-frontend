@@ -136,12 +136,7 @@ async function scrollMessagesToLatest() {
       </article>
     </div>
 
-    <MessageComposer
-      @send="addMessage"
-      @schedule="addScheduledMessage"
-      @gif="addGif"
-    />
-
+    <MessageComposer @send="addMessage" @schedule="addScheduledMessage" @gif="addGif" />
   </section>
 </template>
 
@@ -247,8 +242,6 @@ async function scrollMessagesToLatest() {
   border-radius: 4px;
   object-fit: contain;
 }
-
-
 
 .composer-conversation__sent-status {
   position: absolute;

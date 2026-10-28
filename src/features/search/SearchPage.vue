@@ -150,7 +150,9 @@ const fmtShort = (iso) =>
 const dateLabel = computed(() => {
   if (!draft.date) return 'Select Date'
   if (draft.dateMode === 'range') {
-    return draft.dateEnd ? `${fmtShort(draft.date)} – ${fmtShort(draft.dateEnd)}` : fmtShort(draft.date)
+    return draft.dateEnd
+      ? `${fmtShort(draft.date)} – ${fmtShort(draft.dateEnd)}`
+      : fmtShort(draft.date)
   }
   const word = { on: 'On', before: 'Before', after: 'After' }[draft.dateMode]
   return `${word} ${fmtShort(draft.date)}`
@@ -238,7 +240,7 @@ const fmtDate = (iso) =>
 
 <template>
   <section
- class="fixed inset-y-0 right-0 left-[328px] z-50 flex flex-col bg-white"
+    class="fixed inset-y-0 right-0 left-[328px] z-50 flex flex-col bg-white"
     style="
       font-family: 'Roboto', sans-serif;
       font-size: 14px;
@@ -398,7 +400,10 @@ const fmtDate = (iso) =>
                   <rect x="3" y="5" width="18" height="16" rx="2" />
                   <path d="M3 10h18M8 3v4M16 3v4" />
                 </svg>
-                <span class="flex-1 truncate" :class="draft.date ? 'text-slate-800' : 'text-slate-600'">
+                <span
+                  class="flex-1 truncate"
+                  :class="draft.date ? 'text-slate-800' : 'text-slate-600'"
+                >
                   {{ dateLabel }}
                 </span>
                 <svg
@@ -465,95 +470,108 @@ const fmtDate = (iso) =>
 
         <!-- calendar dialog (opens after choosing On / Before / After / Range) -->
         <Teleport to="body">
-        <div
-          v-if="calOpen"
-          class="flex items-center justify-center p-4"
-          style="position: fixed; inset: 0; z-index: 99999; background: rgba(0, 0, 0, 0.5); font-family: 'Roboto', sans-serif"
-          @click.self="calCancel"
-        >
           <div
-            class="w-[min(21rem,100%)] overflow-hidden rounded bg-white shadow-2xl"
-            role="dialog"
-            aria-modal="true"
-            aria-label="Select date"
+            v-if="calOpen"
+            class="flex items-center justify-center p-4"
+            style="
+              position: fixed;
+              inset: 0;
+              z-index: 99999;
+              background: rgba(0, 0, 0, 0.5);
+              font-family: 'Roboto', sans-serif;
+            "
+            @click.self="calCancel"
           >
-            <div class="bg-indigo-500 px-6 py-5 text-white">
-              <p class="text-sm font-medium text-white/70">
-                {{ calYear }}
-                <span v-if="draft.dateMode === 'range'">
-                  · {{ calStep === 'start' ? 'Start date' : 'End date' }}
-                </span>
-              </p>
-              <p class="text-4xl font-medium">{{ calHeadDate }}</p>
-            </div>
-
-            <div class="px-5 pb-2 pt-4">
-              <div class="mb-3 flex items-center justify-between">
-                <button
-                  type="button"
-                  class="rounded-full p-1 text-slate-600 hover:bg-slate-100"
-                  aria-label="Previous month"
-                  @click="shiftMonth(-1)"
-                >
-                  <svg viewBox="0 0 24 24" class="h-6 w-6" fill="currentColor">
-                    <path d="M15.4 7.4 14 6l-6 6 6 6 1.4-1.4L10.8 12z" />
-                  </svg>
-                </button>
-                <p class="font-bold text-slate-900">{{ monthTitle }}</p>
-                <button
-                  type="button"
-                  class="rounded-full p-1 text-slate-600 hover:bg-slate-100 disabled:opacity-30"
-                  aria-label="Next month"
-                  :disabled="!canGoNext"
-                  @click="shiftMonth(1)"
-                >
-                  <svg viewBox="0 0 24 24" class="h-6 w-6" fill="currentColor">
-                    <path d="M8.6 16.6 10 18l6-6-6-6-1.4 1.4 4.6 4.6z" />
-                  </svg>
-                </button>
+            <div
+              class="w-[min(21rem,100%)] overflow-hidden rounded bg-white shadow-2xl"
+              role="dialog"
+              aria-modal="true"
+              aria-label="Select date"
+            >
+              <div class="bg-indigo-500 px-6 py-5 text-white">
+                <p class="text-sm font-medium text-white/70">
+                  {{ calYear }}
+                  <span v-if="draft.dateMode === 'range'">
+                    · {{ calStep === 'start' ? 'Start date' : 'End date' }}
+                  </span>
+                </p>
+                <p class="text-4xl font-medium">{{ calHeadDate }}</p>
               </div>
 
-              <div class="mb-1 grid grid-cols-7 text-center text-xs font-bold text-slate-400">
-                <span v-for="(w, i) in ['S', 'M', 'T', 'W', 'T', 'F', 'S']" :key="i" class="py-2">{{
-                  w
-                }}</span>
-              </div>
-              <div class="grid grid-cols-7 gap-y-1 text-center text-sm">
-                <template v-for="(d, i) in calCells" :key="i">
-                  <span v-if="d === null"></span>
+              <div class="px-5 pb-2 pt-4">
+                <div class="mb-3 flex items-center justify-between">
                   <button
-                    v-else
                     type="button"
-                    class="mx-auto h-10 w-10 rounded-full"
-                    :class="
-                      cellISO(d) === calTmp
-                        ? 'bg-indigo-400 font-bold text-white'
-                        : isDisabledDay(d)
-                          ? 'cursor-default text-slate-300'
-                          : 'text-slate-900 hover:bg-slate-100'
-                    "
-                    :disabled="isDisabledDay(d)"
-                    @click="calTmp = cellISO(d)"
+                    class="rounded-full p-1 text-slate-600 hover:bg-slate-100"
+                    aria-label="Previous month"
+                    @click="shiftMonth(-1)"
                   >
-                    {{ d }}
+                    <svg viewBox="0 0 24 24" class="h-6 w-6" fill="currentColor">
+                      <path d="M15.4 7.4 14 6l-6 6 6 6 1.4-1.4L10.8 12z" />
+                    </svg>
                   </button>
-                </template>
-              </div>
-            </div>
+                  <p class="font-bold text-slate-900">{{ monthTitle }}</p>
+                  <button
+                    type="button"
+                    class="rounded-full p-1 text-slate-600 hover:bg-slate-100 disabled:opacity-30"
+                    aria-label="Next month"
+                    :disabled="!canGoNext"
+                    @click="shiftMonth(1)"
+                  >
+                    <svg viewBox="0 0 24 24" class="h-6 w-6" fill="currentColor">
+                      <path d="M8.6 16.6 10 18l6-6-6-6-1.4 1.4 4.6 4.6z" />
+                    </svg>
+                  </button>
+                </div>
 
-            <div class="flex justify-end gap-8 px-6 py-4 text-sm font-semibold tracking-widest text-indigo-500">
-              <button type="button" @click="calCancel">CANCEL</button>
-              <button type="button" @click="calOk">OK</button>
+                <div class="mb-1 grid grid-cols-7 text-center text-xs font-bold text-slate-400">
+                  <span
+                    v-for="(w, i) in ['S', 'M', 'T', 'W', 'T', 'F', 'S']"
+                    :key="i"
+                    class="py-2"
+                    >{{ w }}</span
+                  >
+                </div>
+                <div class="grid grid-cols-7 gap-y-1 text-center text-sm">
+                  <template v-for="(d, i) in calCells" :key="i">
+                    <span v-if="d === null"></span>
+                    <button
+                      v-else
+                      type="button"
+                      class="mx-auto h-10 w-10 rounded-full"
+                      :class="
+                        cellISO(d) === calTmp
+                          ? 'bg-indigo-400 font-bold text-white'
+                          : isDisabledDay(d)
+                            ? 'cursor-default text-slate-300'
+                            : 'text-slate-900 hover:bg-slate-100'
+                      "
+                      :disabled="isDisabledDay(d)"
+                      @click="calTmp = cellISO(d)"
+                    >
+                      {{ d }}
+                    </button>
+                  </template>
+                </div>
+              </div>
+
+              <div
+                class="flex justify-end gap-8 px-6 py-4 text-sm font-semibold tracking-widest text-indigo-500"
+              >
+                <button type="button" @click="calCancel">CANCEL</button>
+                <button type="button" @click="calOk">OK</button>
+              </div>
             </div>
           </div>
-        </div>
         </Teleport>
       </div>
     </div>
 
     <!-- scope + tabs: one line, compact so it also fits a narrow panel -->
     <div class="flex flex-nowrap items-stretch justify-between border-b border-slate-200 pl-4 pr-1">
-      <div class="flex min-w-0 items-center gap-3 whitespace-nowrap py-2 text-[13px] text-slate-600">
+      <div
+        class="flex min-w-0 items-center gap-3 whitespace-nowrap py-2 text-[13px] text-slate-600"
+      >
         <span class="font-bold text-slate-700">Search {{ noun }}</span>
         <label class="flex cursor-pointer items-center gap-1.5">
           <input v-model="scope" type="radio" value="channel" class="h-4 w-4 accent-indigo-500" />

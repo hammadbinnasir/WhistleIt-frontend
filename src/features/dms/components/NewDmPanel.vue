@@ -27,7 +27,7 @@ const results = computed(() => {
   const q = query.value.trim().toLowerCase()
   if (!q) return []
   return dms.users.filter(
-    (u) => u.id !== dms.meId && !selected.value.includes(u.id) && u.name.toLowerCase().includes(q)
+    (u) => u.id !== dms.meId && !selected.value.includes(u.id) && u.name.toLowerCase().includes(q),
   )
 })
 
@@ -51,8 +51,9 @@ function remove(id) {
 
 function go() {
   if (!selected.value.length) return
-  if (selected.value.length === 1) dms.startDm(selected.value[0]) // 1 user = DM
-  else dms.startGroup(selected.value, groupName.value)            // 2+ = group DM
+  if (selected.value.length === 1)
+    dms.startDm(selected.value[0]) // 1 user = DM
+  else dms.startGroup(selected.value, groupName.value) // 2+ = group DM
   emit('close')
 }
 
@@ -65,7 +66,8 @@ function onKeydown(e) {
     highlight.value = Math.max(highlight.value, 1) - 1
   } else if (e.key === 'Enter') {
     e.preventDefault()
-    if (showList.value && results.value.length && remaining.value > 0) add(results.value[highlight.value])
+    if (showList.value && results.value.length && remaining.value > 0)
+      add(results.value[highlight.value])
     else go()
   } else if (e.key === 'Backspace' && !query.value && selected.value.length) {
     remove(selected.value.at(-1))
@@ -154,13 +156,21 @@ function onKeydown(e) {
                   <span class="min-w-0 flex-1">
                     <span class="block truncate">{{ u.name }}</span>
                     <span class="block truncate text-xs text-slate-500">
-                      {{ STATES[presence.stateOf(u.id)] }}<template v-if="presence.customOf(u.id).text"> · {{ presence.customOf(u.id).emoji }} {{ presence.customOf(u.id).text }}</template>
+                      {{ STATES[presence.stateOf(u.id)]
+                      }}<template v-if="presence.customOf(u.id).text">
+                        · {{ presence.customOf(u.id).emoji }}
+                        {{ presence.customOf(u.id).text }}</template
+                      >
                     </span>
                   </span>
                 </button>
               </li>
-              <li v-if="remaining <= 0" class="px-3 py-3 text-sm text-slate-500">Maximum members reached</li>
-              <li v-else-if="!results.length" class="px-3 py-3 text-sm text-slate-500">No users found</li>
+              <li v-if="remaining <= 0" class="px-3 py-3 text-sm text-slate-500">
+                Maximum members reached
+              </li>
+              <li v-else-if="!results.length" class="px-3 py-3 text-sm text-slate-500">
+                No users found
+              </li>
             </ul>
           </div>
 
@@ -175,7 +185,12 @@ function onKeydown(e) {
         </div>
 
         <div class="flex items-center justify-end gap-3 border-t px-6 py-4">
-          <button class="px-4 py-3 text-sm font-semibold uppercase tracking-wider" @click="emit('close')">Cancel</button>
+          <button
+            class="px-4 py-3 text-sm font-semibold uppercase tracking-wider"
+            @click="emit('close')"
+          >
+            Cancel
+          </button>
           <button
             class="rounded bg-indigo-500 px-6 py-3 text-sm font-semibold uppercase tracking-wider text-white disabled:cursor-not-allowed disabled:bg-indigo-300"
             :disabled="!selected.length"

@@ -7,8 +7,20 @@ const clone = (v) => structuredClone(v)
 // Baad mein backend aaye to har function mein http('/...') call lagegi.
 export const dmApi = {
   meId: () => ME_ID,
-  async users() { await delay(); return clone(USERS) },
-  async presence() { await delay(); return clone(PRESENCE) },
-  async conversations() { await delay(); return clone(CONVERSATIONS) },
-  async notifications() { await delay(); return clone(NOTIFICATIONS) },
+  async users() {
+    await delay()
+    return clone(USERS)
+  },
+  async presence() {
+    await delay()
+    return clone(PRESENCE)
+  },
+  async conversations() {
+    await delay()
+    return clone(CONVERSATIONS)
+  },
+  async notifications() {
+    await delay()
+    return clone(NOTIFICATIONS)
+  },
 }

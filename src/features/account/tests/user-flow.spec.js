@@ -616,7 +616,7 @@ describe('account settings modal', () => {
     await openSettings()
 
     await click(byText('REMOVE PHOTO'))
-    expect($('.avatar img')).toBeNull()
+    expect($('.panel .general .avatar img')).toBeNull()
     expect($('.remove-btn')).toBeNull()
 
     await click(byText('SAVE'))

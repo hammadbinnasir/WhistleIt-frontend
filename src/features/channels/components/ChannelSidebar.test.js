@@ -12,7 +12,9 @@ describe('ChannelSidebar', () => {
 
   it('keeps the channel unselected while a direct message is open', async () => {
     const channels = useChannelsStore()
-    channels.channels = [{ id: 'channel-1', name: 'Announcements', isDefault: true, isFavorite: false }]
+    channels.channels = [
+      { id: 'channel-1', name: 'Announcements', isDefault: true, isFavorite: false },
+    ]
     channels.loaded = true
 
     const dms = useDmStore()

@@ -479,13 +479,11 @@ function applyList(ordered) {
       if (!line.hasChildNodes()) line.append(document.createElement('br'))
       return line
     })
-    const currentItem = caretNode?.nodeType === Node.ELEMENT_NODE
-      ? caretNode.closest('li')
-      : caretNode?.parentElement?.closest('li')
-    const caretIndex = Math.max(
-      0,
-      [...currentList.children].indexOf(currentItem),
-    )
+    const currentItem =
+      caretNode?.nodeType === Node.ELEMENT_NODE
+        ? caretNode.closest('li')
+        : caretNode?.parentElement?.closest('li')
+    const caretIndex = Math.max(0, [...currentList.children].indexOf(currentItem))
     currentList.replaceWith(...lines)
     caretTarget = lines[Math.min(caretIndex, lines.length - 1)]
   } else if (currentList) {
@@ -871,11 +869,7 @@ function handleKeydown(event) {
           @mousedown.prevent="saveSelection(true)"
           @click="applyList(false)"
         >
-          <svg
-            class="message-composer__list-icon"
-            viewBox="0 0 24 24"
-            aria-hidden="true"
-          >
+          <svg class="message-composer__list-icon" viewBox="0 0 24 24" aria-hidden="true">
             <circle cx="3.5" cy="5" r="1.1" />
             <circle cx="3.5" cy="12" r="1.1" />
             <circle cx="3.5" cy="19" r="1.1" />
@@ -928,16 +922,8 @@ function handleKeydown(event) {
           <svg viewBox="0 0 24 24" aria-hidden="true">
             <rect x="2" y="3.5" width="20" height="15" rx="1.5" />
             <path d="m3 4.5 9 7 9-7M3 17l6-4.5" />
-            <circle
-              cx="19.5"
-              cy="17.5"
-              r="4"
-              class="message-composer__important-badge"
-            />
-            <path
-              d="M19.5 15.5v2.5m0 1.25v.1"
-              class="message-composer__important-badge-mark"
-            />
+            <circle cx="19.5" cy="17.5" r="4" class="message-composer__important-badge" />
+            <path d="M19.5 15.5v2.5m0 1.25v.1" class="message-composer__important-badge-mark" />
           </svg>
         </button>
       </div>

@@ -58,7 +58,8 @@ const STATUS_LABELS = {
 
 const avatarLabel = computed(() => {
   const name = state.profile.fullName || 'Your account'
-  return `${name} – ${STATUS_LABELS[state.status]}`
+  const customStatus = state.customStatus ? ` – ${state.customStatus}` : ''
+  return `${name} – ${STATUS_LABELS[state.status]}${customStatus}`
 })
 
 const avatarTitle = computed(() => state.profile.fullName || 'Your account')

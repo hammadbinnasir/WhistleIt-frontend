@@ -1,12 +1,24 @@
 import { mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
-import { beforeEach, describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { useActivityStore } from '@/stores/activity'
 import { useDmStore } from '@/features/dms/stores/dms'
 import { useUiStore } from '@/stores/ui'
 import { useRemindersStore } from '@/features/search/reminders'
 import { useChannelsStore } from '@/features/channels/store/channels.store'
 import ActivityFeed from './ActivityFeed.vue'
+
+vi.mock('vue3-emoji-picker', async () => {
+  const { defineComponent, h } = await import('vue')
+
+  return {
+    default: defineComponent({
+      setup() {
+        return () => h('div')
+      },
+    }),
+  }
+})
 
 describe('ActivityFeed', () => {
   beforeEach(() => setActivePinia(createPinia()))
@@ -209,12 +221,16 @@ describe('ActivityFeed', () => {
     expect(nav.text()).toContain('All Mentions')
     expect(nav.text()).toContain('Workflows')
     expect(nav.text()).not.toContain('Recent DMs')
-    expect(wrapper.get('button[aria-label="Scroll tabs right"]').attributes('disabled')).toBeDefined()
+    expect(
+      wrapper.get('button[aria-label="Scroll tabs right"]').attributes('disabled'),
+    ).toBeDefined()
 
     await wrapper.get('button[aria-label="Scroll tabs left"]').trigger('click')
     expect(nav.text()).toContain('Recent DMs')
     expect(nav.text()).not.toContain('Workflows')
-    expect(wrapper.get('button[aria-label="Scroll tabs left"]').attributes('disabled')).toBeDefined()
+    expect(
+      wrapper.get('button[aria-label="Scroll tabs left"]').attributes('disabled'),
+    ).toBeDefined()
 
     await wrapper.get('button[aria-label="Close activities"]').trigger('click')
     expect(ui.activePanel).toBeNull()

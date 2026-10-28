@@ -1,7 +1,9 @@
 import { mount } from '@vue/test-utils'
 import { nextTick } from 'vue'
 
-import { describe, expect, it, vi } from 'vitest'
+import { createPinia, setActivePinia } from 'pinia'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { useDmStore } from '@/features/dms/stores/dms'
 
 vi.mock('vue3-emoji-picker', async () => {
   const { defineComponent, h } = await import('vue')
@@ -101,5 +103,4 @@ describe('composer conversation', () => {
 
     expect(wrapper.get('img[alt="Celebration"]').attributes('src')).toBe(gif.url)
   })
-
 })
