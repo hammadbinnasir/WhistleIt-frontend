@@ -22,6 +22,15 @@ const successNotice = ref('')
 
 const searchSuggestions = ref([])
 const isSearchingSuggestions = ref(false)
+const hoveredMember = ref(null)
+
+function showProfilePreview(member) {
+  hoveredMember.value = member
+}
+
+function hideProfilePreview() {
+  hoveredMember.value = null
+}
 
 // Fetch members whenever modal opens
 watch(
@@ -245,7 +254,13 @@ function getInitials(name) {
             <div v-if="membersLoading" class="loading-state">Loading members...</div>
             <div v-else-if="filteredMembers.length === 0" class="empty-state">No members found</div>
             <ul v-else class="members-table">
-              <li v-for="member in filteredMembers" :key="member.id" class="member-row">
+              <li
+                v-for="member in filteredMembers"
+                :key="member.id"
+                class="member-row"
+                @mouseenter="showProfilePreview(member)"
+                @mouseleave="hideProfilePreview()"
+              >
                 <div class="member-user-info">
                   <div class="member-avatar">
                     {{ getInitials(member.name) }}
@@ -294,6 +309,35 @@ function getInitials(name) {
                       />
                     </svg>
                   </button>
+                </div>
+
+                <div
+                  v-if="hoveredMember && hoveredMember.id === member.id"
+                  class="member-hover-card"
+                  aria-live="polite"
+                >
+                  <div class="member-hover-card__header">
+                    <div class="member-hover-card__avatar">
+                      {{ getInitials(member.name) }}
+                    </div>
+                    <span class="member-hover-card__status" :class="`member-hover-card__status--${member.status ?? 'offline'}`">
+                      {{ member.status === 'online' ? 'Online' : 'Offline' }}
+                    </span>
+                  </div>
+
+                  <div class="member-hover-card__body">
+                    <h4>{{ member.name }}</h4>
+                    <p>{{ member.email || 'team-member' }}</p>
+                  </div>
+
+                  <div class="member-hover-card__actions">
+                    <button type="button" class="member-hover-card__action member-hover-card__action--primary">
+                      Message
+                    </button>
+                    <button type="button" class="member-hover-card__action member-hover-card__action--secondary">
+                      Profile
+                    </button>
+                  </div>
                 </div>
               </li>
             </ul>
@@ -564,6 +608,7 @@ function getInitials(name) {
 }
 
 .member-row {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -573,6 +618,103 @@ function getInitials(name) {
 }
 .member-row:hover {
   background: rgba(255, 255, 255, 0.04);
+}
+
+.member-hover-card {
+  position: absolute;
+  left: 50%;
+  top: -18px;
+  transform: translateX(-50%);
+  width: 260px;
+  background: rgba(255, 255, 255, 0.98);
+  color: #0f172a;
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  border-radius: 16px;
+  box-shadow: 0 16px 32px rgba(15, 23, 42, 0.18);
+  padding: 14px 14px 12px;
+  z-index: 20;
+  pointer-events: none;
+}
+
+.member-hover-card__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.member-hover-card__avatar {
+  width: 82px;
+  height: 82px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, #4f46e5, #7c3aed);
+  color: #fff;
+  font-size: 22px;
+  font-weight: 700;
+  margin: 0 auto;
+}
+
+.member-hover-card__status {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.06);
+}
+.member-hover-card__status--online {
+  color: #15803d;
+  background: rgba(34, 197, 94, 0.12);
+}
+.member-hover-card__status--offline {
+  color: #475569;
+  background: rgba(148, 163, 184, 0.14);
+}
+
+.member-hover-card__body {
+  text-align: center;
+  margin-bottom: 12px;
+}
+
+.member-hover-card__body h4 {
+  margin: 0;
+  font-size: 20px;
+  line-height: 1.2;
+  font-weight: 700;
+}
+
+.member-hover-card__body p {
+  margin: 4px 0 0;
+  font-size: 13px;
+  color: #334155;
+}
+
+.member-hover-card__actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.member-hover-card__action {
+  border-radius: 10px;
+  border: 1px solid #cbd5e1;
+  background: transparent;
+  padding: 9px 10px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.member-hover-card__action--primary {
+  background: #fff;
+  color: #0f172a;
+}
+.member-hover-card__action--secondary {
+  background: #f8fafc;
+  color: #0f172a;
 }
 
 .member-user-info {
