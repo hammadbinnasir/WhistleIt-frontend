@@ -20,6 +20,20 @@ async function mountAuthView(path = '/login') {
       { path: '/signup', name: 'signup', component: AuthView },
       { path: '/forgot-password', name: 'forgot-password', component: AuthView },
       { path: '/reset-password', name: 'reset-password', component: AuthView },
+      {
+        path: '/forgetpassword/:token',
+        redirect: (to) => ({
+          path: '/reset-password',
+          query: { ...to.query, token: to.params.token },
+        }),
+      },
+      {
+        path: '/forgetpassword:token',
+        redirect: (to) => ({
+          path: '/reset-password',
+          query: { ...to.query, token: to.params.token },
+        }),
+      },
       { path: '/app', name: 'home', component: { template: '<main>Workspace</main>' } },
     ],
   })
@@ -136,15 +150,26 @@ describe('auth view', () => {
     await wrapper.get('form').trigger('submit')
     await flushPromises()
 
-    expect(resetPassword).toHaveBeenCalledWith({
+    expect(resetPassword).toHaveBeenCalledWith('reset-token', {
       email: 'sam@example.com',
-      token: 'reset-token',
       password: 'new-password-123',
       password_confirmation: 'new-password-123',
     })
     expect(wrapper.get('[role="status"]').text()).toContain('Your password has been reset')
     expect(router.currentRoute.value.path).toBe('/reset-password')
   })
+
+  it.each(['/forgetpassword/reset-token', '/forgetpasswordreset-token'])(
+    'opens the reset form from a backend reset link: %s',
+    async (path) => {
+      const { router, wrapper } = await mountAuthView(`${path}?email=sam%40example.com`)
+
+      expect(router.currentRoute.value.name).toBe('reset-password')
+      expect(router.currentRoute.value.query.token).toBe('reset-token')
+      expect(wrapper.get('#email').element.value).toBe('sam@example.com')
+      expect(wrapper.get('#password').attributes('placeholder')).toBe('New Password*')
+    },
+  )
 
   it('does not submit a reset without a token', async () => {
     const { wrapper } = await mountAuthView('/reset-password?email=sam%40example.com')
