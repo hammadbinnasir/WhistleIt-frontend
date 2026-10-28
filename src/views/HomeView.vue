@@ -146,19 +146,6 @@ onBeforeUnmount(() => {
       v-show="sidebarOpen && ui.activePanel !== 'activity'"
       class="flex w-64 shrink-0 flex-col justify-between overflow-hidden bg-[#22123b] text-slate-100"
     >
-      <h1 class="mb-4 border-b border-indigo-300/30 pb-4 text-xl font-bold text-white">
-        WhistleIt
-      </h1>
-      <ChannelSidebar />
-    </aside>
-
-    <main class="flex min-w-0 flex-1 flex-col">
-      <ChannelHeader v-if="selectedChannelId" :channel-id="selectedChannelId">
-
-        <template #actions> 
-
-          <button class="rounded border px-2 py-1 text-sm" @click="ui.toggleSidebar()">
-            {{ sidebarOpen ? 'Hide' : 'Show' }} sidebar
       <div class="flex flex-1 flex-col overflow-y-auto">
         <!-- Team / Workspace Header Switcher -->
         <div class="relative border-b border-purple-900/40 p-3">
