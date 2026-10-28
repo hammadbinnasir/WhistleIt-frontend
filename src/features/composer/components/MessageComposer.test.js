@@ -91,6 +91,41 @@ function selectEditorText(editor) {
 
 
 describe('message composer', () => {
+  it('renders compact bullet and numbered-list icons', () => {
+    const wrapper = mount(MessageComposer)
+
+    expect(wrapper.get('button[aria-label="Bulleted list"] svg').classes()).toContain(
+      'message-composer__list-icon',
+    )
+    expect(wrapper.get('button[aria-label="Bulleted list"] svg').attributes('viewBox')).toBe(
+      '0 0 24 24',
+    )
+    expect(
+      wrapper.get('button[aria-label="Bulleted list"] svg circle').attributes('cx'),
+    ).toBe('3.5')
+    expect(wrapper.get('button[aria-label="Numbered list"] svg').classes()).toContain(
+      'message-composer__numbered-list-icon',
+    )
+  })
+
+  it('shows poll and important-message icons in the toolbar', () => {
+    const wrapper = mount(MessageComposer)
+
+    expect(
+      wrapper.get('button[aria-label="Insert poll"] svg rect').attributes('x'),
+    ).toBe('2.5')
+    const badge = wrapper.get(
+      'button[aria-label="Important message"] .message-composer__important-badge',
+    )
+    expect(badge.attributes('cx')).toBe('19.5')
+    expect(badge.attributes('cy')).toBe('17.5')
+    expect(badge.attributes('r')).toBe('4')
+    expect(
+      wrapper
+        .get('button[aria-label="Important message"] .message-composer__important-badge-mark')
+        .exists(),
+    ).toBe(true)
+  })
 
   it('sends a non-empty message and clears the editor', async () => {
 
@@ -310,49 +345,119 @@ describe('message composer', () => {
 
 
 
-  it('converts rich list content to a message list', async () => {
+  it('toggles a bulleted list on and off for the current text', async () => {
+    const wrapper = mount(MessageComposer, { attachTo: document.body })
+    const input = setEditorText(wrapper, 'first')
+    input.element.focus()
+    const range = document.createRange()
+    range.selectNodeContents(input.element)
+    range.collapse(false)
+    document.getSelection().removeAllRanges()
+    document.getSelection().addRange(range)
+    const button = wrapper.get('button[aria-label="Bulleted list"]')
 
-    const wrapper = mount(MessageComposer)
+    await button.trigger('click')
 
-    const input = wrapper.get('[contenteditable="true"]')
+    expect(button.attributes('aria-pressed')).toBe('true')
+    expect(input.element.querySelector('ul > li').textContent).toBe('first')
+    expect(input.element.innerHTML).toBe('<ul><li>first</li></ul>')
 
-    input.element.innerHTML = '<ul><li>first</li></ul>'
+    await button.trigger('click')
 
-    input.element.dispatchEvent(new Event('input', { bubbles: true }))
-
-
-
-    const execCommand = vi.fn()
-
-    Object.defineProperty(document, 'execCommand', { configurable: true, value: execCommand })
-
-    await wrapper.get('button[aria-label="Bulleted list"]').trigger('click')
-
-    expect(wrapper.get('button[aria-label="Bulleted list"]').attributes('aria-pressed')).toBe(
-
-      'true',
-
-    )
-
-    await wrapper.get('button[aria-label="Bulleted list"]').trigger('click')
-
-    expect(wrapper.get('button[aria-label="Bulleted list"]').attributes('aria-pressed')).toBe(
-
-      'false',
-
-    )
-
+    expect(button.attributes('aria-pressed')).toBe('false')
+    expect(input.element.querySelector('ul')).toBeNull()
+    expect(input.element.textContent).toBe('first')
     await wrapper.get('form').trigger('submit')
-
-
-
-    expect(execCommand.mock.calls).toEqual([['insertUnorderedList'], ['insertUnorderedList']])
-
-    expect(wrapper.emitted('send')).toEqual([[{ content: '• first', attachments: [] }]])
-
+    expect(wrapper.emitted('send')).toEqual([[{ content: 'first', attachments: [] }]])
+    wrapper.unmount()
   })
 
+  it('toggles a numbered list on and off for the current text', async () => {
+    const wrapper = mount(MessageComposer, { attachTo: document.body })
+    const input = setEditorText(wrapper, 'first')
+    input.element.focus()
+    const range = document.createRange()
+    range.selectNodeContents(input.element)
+    range.collapse(false)
+    document.getSelection().removeAllRanges()
+    document.getSelection().addRange(range)
+    const button = wrapper.get('button[aria-label="Numbered list"]')
 
+    await button.trigger('click')
+
+    expect(button.attributes('aria-pressed')).toBe('true')
+    expect(input.element.innerHTML).toBe('<ol><li>first</li></ol>')
+
+    await button.trigger('click')
+
+    expect(button.attributes('aria-pressed')).toBe('false')
+    expect(input.element.querySelector('ol')).toBeNull()
+    expect(input.element.textContent).toBe('first')
+    wrapper.unmount()
+  })
+
+  it('switches between bulleted and numbered lists with only one active', async () => {
+    const wrapper = mount(MessageComposer, { attachTo: document.body })
+    const input = setEditorText(wrapper, 'first')
+    input.element.focus()
+    const range = document.createRange()
+    range.selectNodeContents(input.element)
+    range.collapse(false)
+    document.getSelection().removeAllRanges()
+    document.getSelection().addRange(range)
+
+    const bulletButton = wrapper.get('button[aria-label="Bulleted list"]')
+    const numberButton = wrapper.get('button[aria-label="Numbered list"]')
+
+    await bulletButton.trigger('click')
+    expect(input.element.innerHTML).toBe('<ul><li>first</li></ul>')
+    expect(bulletButton.attributes('aria-pressed')).toBe('true')
+
+    await numberButton.trigger('mousedown')
+    await numberButton.trigger('click')
+    expect(input.element.innerHTML).toBe('<ol><li>first</li></ol>')
+    expect(bulletButton.attributes('aria-pressed')).toBe('false')
+    expect(numberButton.attributes('aria-pressed')).toBe('true')
+
+    await bulletButton.trigger('mousedown')
+    await bulletButton.trigger('click')
+    expect(input.element.innerHTML).toBe('<ul><li>first</li></ul>')
+    expect(bulletButton.attributes('aria-pressed')).toBe('true')
+    expect(numberButton.attributes('aria-pressed')).toBe('false')
+    wrapper.unmount()
+  })
+
+  it('clears other active formatting buttons when a list button is clicked', async () => {
+    const wrapper = mount(MessageComposer, { attachTo: document.body })
+    const input = wrapper.get('[contenteditable="true"]')
+    input.element.innerHTML = '<strong><em><s>first</s></em></strong>'
+    input.element.dispatchEvent(new Event('input', { bubbles: true }))
+    const text = input.element.querySelector('s').firstChild
+    const range = document.createRange()
+    range.selectNodeContents(text)
+    document.getSelection().removeAllRanges()
+    document.getSelection().addRange(range)
+
+    const bulletButton = wrapper.get('button[aria-label="Bulleted list"]')
+    await bulletButton.trigger('mousedown')
+    expect(wrapper.get('button[aria-label="Bold"]').attributes('aria-pressed')).toBe('true')
+    expect(wrapper.get('button[aria-label="Italic"]').attributes('aria-pressed')).toBe('true')
+    expect(wrapper.get('button[aria-label="Strikethrough"]').attributes('aria-pressed')).toBe(
+      'true',
+    )
+
+    await bulletButton.trigger('click')
+
+    expect(bulletButton.attributes('aria-pressed')).toBe('true')
+    expect(wrapper.get('button[aria-label="Numbered list"]').attributes('aria-pressed')).toBe(
+      'false',
+    )
+    for (const label of ['Bold', 'Italic', 'Strikethrough', 'Underline', 'Code block']) {
+      expect(wrapper.get(`button[aria-label="${label}"]`).attributes('aria-pressed')).toBe('false')
+    }
+    expect(input.element.querySelector('ul strong em s').textContent).toBe('first')
+    wrapper.unmount()
+  })
 
   it('converts ordered list content to a numbered message list', async () => {
 
@@ -420,7 +525,7 @@ describe('message composer', () => {
 
 
 
-  it('inserts a code block and preserves its markdown in the message', async () => {
+  it('toggles code styling without changing or sending the message', async () => {
 
     const wrapper = mount(MessageComposer, { attachTo: document.body })
 
@@ -428,26 +533,24 @@ describe('message composer', () => {
 
     selectEditorText(input)
 
-    await wrapper.get('button[aria-label="Code block"]').trigger('mousedown')
+    const codeButton = wrapper.get('button[aria-label="Code block"]')
 
-    await wrapper.get('button[aria-label="Code block"]').trigger('click')
+    await codeButton.trigger('mousedown')
+    await codeButton.trigger('click')
 
+    expect(input.element.textContent).toBe('const value = 1')
+    expect(input.classes()).toContain('message-composer__input--code')
+    expect(codeButton.attributes('aria-pressed')).toBe('true')
+    expect(wrapper.emitted('send')).toBeUndefined()
 
+    await codeButton.trigger('mousedown')
+    await codeButton.trigger('click')
 
-    const code = input.element.querySelector('pre code')
-
-    expect(code.textContent).toBe('const value = 1')
-
-    await wrapper.get('form').trigger('submit')
-
-    expect(wrapper.emitted('send')).toEqual([
-
-      [{ content: '```\nconst value = 1\n```', attachments: [] }],
-
-    ])
-
+    expect(input.element.textContent).toBe('const value = 1')
+    expect(input.classes()).not.toContain('message-composer__input--code')
+    expect(codeButton.attributes('aria-pressed')).toBe('false')
+    expect(wrapper.emitted('send')).toBeUndefined()
     wrapper.unmount()
-
   })
 
 
@@ -715,13 +818,8 @@ describe('message composer', () => {
 
 
     await wrapper.get('button[aria-label="Video"]').trigger('click')
-
     await wrapper.get('button[aria-label="Microphone"]').trigger('click')
-
-
-
     expect(wrapper.emitted('video')).toHaveLength(1)
-
     expect(wrapper.emitted('microphone')).toHaveLength(1)
 
   })
