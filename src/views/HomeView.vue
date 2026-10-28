@@ -286,6 +286,7 @@ onBeforeUnmount(() => {
               v-else-if="ui.activePanel === 'search'"
               :channel-id="selectedChannelId || ''"
             />
+            <HelpDrawer v-else-if="ui.activePanel === 'help'" />
           </aside>
         </div>
       </template>
