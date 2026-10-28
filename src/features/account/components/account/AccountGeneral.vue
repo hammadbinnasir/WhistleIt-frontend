@@ -55,6 +55,7 @@ const fileInput = ref(null)
 const photoFile = ref(null)
 const photoUrl = ref(props.profile.photoUrl || '')
 const photoError = ref('')
+const photoRemoved = ref(false)
 
 const revokePreview = () => {
   if (photoFile.value && photoUrl.value) URL.revokeObjectURL(photoUrl.value)
@@ -77,7 +78,16 @@ const onPhotoChange = (e) => {
   photoError.value = ''
   revokePreview()
   photoFile.value = file
+  photoRemoved.value = false
   photoUrl.value = URL.createObjectURL(file)
+}
+
+const removePhoto = () => {
+  revokePreview()
+  photoFile.value = null
+  photoUrl.value = ''
+  photoRemoved.value = true
+  photoError.value = ''
 }
 
 onBeforeUnmount(revokePreview)
@@ -97,6 +107,8 @@ const validate = () => {
 const getValues = () => ({
   profile: { ...general, fullName: general.fullName.trim() },
   photo: photoFile.value,
+  removePhoto: photoRemoved.value,
+  photoAction: photoFile.value ? 'added' : photoRemoved.value ? 'removed' : null,
 })
 
 defineExpose({ validate, getValues })
@@ -123,6 +135,14 @@ defineExpose({ validate, getValues })
           hidden
           @change="onPhotoChange"
         />
+        <button
+          v-if="photoUrl"
+          type="button"
+          class="remove-btn"
+          @click="removePhoto"
+        >
+          REMOVE PHOTO
+        </button>
         <p v-if="photoError" class="photo-error">{{ photoError }}</p>
       </div>
     </div>
@@ -223,6 +243,23 @@ defineExpose({ validate, getValues })
 }
 .upload-btn:hover {
   background: #4448d9;
+}
+
+.remove-btn {
+  margin: 6px 0 0 24px;
+  padding: 8px 0;
+  border: 0;
+  background: transparent;
+  color: #fb275d;
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  cursor: pointer;
+}
+
+.remove-btn:hover {
+  color: #d91f4d;
 }
 
 .photo-error {

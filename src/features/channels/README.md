@@ -1,6 +1,6 @@
 # Channels module (11 list, 12 management, 13 header)
 
-Everything lives in ONE new folder: `src/modules/channels/`. No existing file is replaced.
+Everything lives in ONE new folder: `src/modules/channels/`.
 
 ## Assumptions
 

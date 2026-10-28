@@ -2,6 +2,50 @@ import { mount } from '@vue/test-utils'
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
+vi.mock('vue3-emoji-picker', async () => {
+  const { defineComponent, h } = await import('vue')
+
+  return {
+    default: defineComponent({
+      emits: ['select'],
+      setup(_, { emit }) {
+        const categories = [
+          'Frequently used',
+          'Smileys & People',
+          'Animals & Nature',
+          'Food & Drink',
+          'Activities',
+          'Travel places',
+          'Objects',
+          'Symbols',
+          'Flags',
+        ]
+
+        return () =>
+          h('div', [
+            h(
+              'div',
+              { class: 'v3-header' },
+              h(
+                'div',
+                { class: 'v3-groups' },
+                categories.map((category) =>
+                  h('button', { class: 'v3-group', title: category, 'aria-label': category }),
+                ),
+              ),
+            ),
+            h('input', { 'aria-label': 'Search emojis' }),
+            h(
+              'button',
+              { 'aria-label': 'beaming face', onClick: () => emit('select', { i: '😁' }) },
+              '😁',
+            ),
+          ])
+      },
+    }),
+  }
+})
+
 import MessageComposer from './MessageComposer.vue'
 
 
@@ -116,10 +160,34 @@ describe('message composer', () => {
 
 
     expect(wrapper.emitted('send')).toBeUndefined()
-
   })
 
+  it('sends the message when Enter is pressed', async () => {
+    const wrapper = mount(MessageComposer)
+    setEditorText(wrapper, 'Send with Enter')
 
+    await wrapper.get('[contenteditable="true"]').trigger('keydown', { key: 'Enter' })
+
+    expect(wrapper.emitted('send')).toEqual([
+      [{ content: 'Send with Enter', attachments: [] }],
+    ])
+  })
+
+  it('keeps Shift+Enter available for a new line', async () => {
+    const wrapper = mount(MessageComposer)
+    setEditorText(wrapper, 'Keep typing')
+
+    const event = new KeyboardEvent('keydown', {
+      key: 'Enter',
+      shiftKey: true,
+      bubbles: true,
+      cancelable: true,
+    })
+    wrapper.get('[contenteditable="true"]').element.dispatchEvent(event)
+
+    expect(event.defaultPrevented).toBe(false)
+    expect(wrapper.emitted('send')).toBeUndefined()
+  })
 
   it('keeps formatting options independently toggleable', async () => {
 
@@ -753,6 +821,40 @@ describe('message composer', () => {
     await wrapper.get('button[aria-label="Microphone"]').trigger('click')
     expect(wrapper.emitted('video')).toHaveLength(1)
     expect(wrapper.emitted('microphone')).toHaveLength(1)
+
+  })
+
+
+  it('opens and dismisses the emoji picker and opens the file picker', async () => {
+
+    const wrapper = mount(MessageComposer, { attachTo: document.body })
+
+    const editor = setEditorText(wrapper, 'Hello')
+
+    selectEditorText(editor)
+
+    await wrapper.get('button[aria-label="Emoji"]').trigger('mousedown')
+    await wrapper.get('button[aria-label="Emoji"]').trigger('click')
+    expect(wrapper.get('.picker').exists()).toBe(true)
+
+    await wrapper.get('button[aria-label="Animals & Nature"]').trigger('click')
+    expect(wrapper.get('.picker').attributes('data-active-category')).toBe('animals_nature')
+
+    await wrapper.get('button[aria-label="beaming face"]').trigger('click')
+    expect(wrapper.find('.picker').exists()).toBe(false)
+
+
+    const fileInput = wrapper.get('input[type="file"]')
+
+    const clickFileInput = vi.spyOn(fileInput.element, 'click')
+
+    await wrapper.get('button[aria-label="Document"]').trigger('click')
+
+    await wrapper.get('button[aria-label="Attachment"]').trigger('click')
+
+    expect(clickFileInput).toHaveBeenCalledTimes(2)
+
+    wrapper.unmount()
 
   })
 

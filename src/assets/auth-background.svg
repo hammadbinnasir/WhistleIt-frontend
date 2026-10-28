@@ -1,0 +1,649 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Generator: Adobe Illustrator 25.2.3, SVG Export Plug-In . SVG Version: 6.00 Build 0)  -->
+<svg version="1.1" id="Layer_1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" x="0px" y="0px"
+	 viewBox="0 0 881 780" style="enable-background:new 0 0 881 780;" xml:space="preserve">
+<style type="text/css">
+	.st0{clip-path:url(#SVGID_2_);}
+	.st1{display:none;fill:#EF5354;}
+	.st2{fill-rule:evenodd;clip-rule:evenodd;fill:#423D68;}
+	.st3{fill-rule:evenodd;clip-rule:evenodd;fill:#2F2C54;}
+	.st4{fill-rule:evenodd;clip-rule:evenodd;fill:#03D7A0;}
+	.st5{fill:none;stroke:#FFFFFF;stroke-width:2;}
+	.st6{fill-rule:evenodd;clip-rule:evenodd;fill:#EEEFF7;}
+	.st7{fill-rule:evenodd;clip-rule:evenodd;fill:#B4BBEC;}
+	.st8{fill-rule:evenodd;clip-rule:evenodd;fill:#3E3B64;}
+	.st9{fill-rule:evenodd;clip-rule:evenodd;fill:#E3847C;}
+	.st10{fill-rule:evenodd;clip-rule:evenodd;fill:#403F56;}
+	.st11{fill-rule:evenodd;clip-rule:evenodd;fill:#007EFF;}
+	.st12{fill-rule:evenodd;clip-rule:evenodd;fill:#293657;}
+	.st13{fill-rule:evenodd;clip-rule:evenodd;fill:#5765FB;}
+	.st14{fill-rule:evenodd;clip-rule:evenodd;fill:#FFFFFF;}
+	.st15{fill-rule:evenodd;clip-rule:evenodd;fill:#9FA7FC;}
+	.st16{fill-rule:evenodd;clip-rule:evenodd;fill:#D4D7FF;}
+	.st17{fill-rule:evenodd;clip-rule:evenodd;fill:#DEE2ED;}
+	.st18{fill-rule:evenodd;clip-rule:evenodd;fill:#FF618B;}
+	.st19{fill-rule:evenodd;clip-rule:evenodd;fill:#2CCE73;}
+	.st20{fill-rule:evenodd;clip-rule:evenodd;fill:#C9CAD3;}
+	.st21{opacity:0.8871;fill-rule:evenodd;clip-rule:evenodd;fill:#B3B7D3;enable-background:new    ;}
+	.st22{fill-rule:evenodd;clip-rule:evenodd;fill:#2CCE76;}
+	.st23{fill-rule:evenodd;clip-rule:evenodd;fill:#B3B7D3;}
+	.st24{opacity:0.8871;fill-rule:evenodd;clip-rule:evenodd;fill:#DDDEE4;enable-background:new    ;}
+	.st25{fill:#FFFFFF;}
+
+	#downchat{
+animation: downchat-anim  6s  infinite;
+transform-origin: 453px 432px;
+<!-- animation-duration:4s; -->
+<!-- transform-origin:"right bottom"; -->
+
+animation-timing-function: ease;
+  transform: scale(0);
+    
+}
+
+@keyframes downchat-anim{
+5.55%{
+		 <!-- transform: rotate3d(0, 1, 0, 0deg); -->
+		  transform: scale(1);
+	
+	}
+
+
+
+50%{
+		 transform:  scale(1);
+		
+	
+	}
+
+75%{
+		transform:  scale(1);
+		
+	
+	}
+
+85%{
+		transform:  scale(0);
+		
+	
+	}
+
+
+100%{
+		transform:  scale(0);
+		
+	
+	}
+
+}
+
+
+#icon{
+animation: downlrka-anim  6s  infinite;
+transform-origin: 111.5452px 273px;
+<!-- animation-duration:4s; -->
+<!-- transform-origin:"right bottom"; -->
+
+animation-timing-function: ease;
+transform: translate(34px,26px) rotate(0deg);
+    
+}
+
+@keyframes downlrka-anim{
+15%{
+		 <!-- transform: rotate3d(0, 1, 0, 0deg); -->
+		  transform: translate(34px,26px) ;
+	
+	}
+
+
+
+20%{
+		 transform:  translate(38px,26px) ;
+		
+	
+	}
+
+25%{
+		transform: translate(34px,26px) ;
+		
+	
+	}
+
+100%{
+		transform: translate(34px,26px) ;
+		
+	
+	}
+
+}
+
+
+
+#downl1{
+animation: downl1-anim  6s  infinite;
+transform-origin: 505px 431px ;
+<!-- animation-duration:4s; -->
+<!-- transform-origin:"right bottom"; -->
+
+animation-timing-function: linear;
+transform: scaleX(0);
+    
+}
+
+@keyframes downl1-anim{
+15%{
+		 <!-- transform: rotate3d(0, 1, 0, 0deg); -->
+		  transform: scaleX(0);
+	
+	}
+
+
+
+25%{
+		 transform: scaleX(1);
+		
+	
+	}
+
+
+
+100%{
+		 transform: scaleX(1);
+		
+	
+	}
+
+}
+
+
+
+#downl2{
+animation: downl2-anim  6s  infinite;
+transform-origin: 505px 440px ;
+<!-- animation-duration:4s; -->
+<!-- transform-origin:"right bottom"; -->
+
+animation-timing-function: linear;
+transform: scaleX(0);
+    
+}
+
+@keyframes downl2-anim{
+20%{
+		 <!-- transform: rotate3d(0, 1, 0, 0deg); -->
+		  transform: scaleX(0);
+	
+	}
+
+
+
+31%{
+		 transform: scaleX(1);
+		
+	
+	}
+
+
+
+100%{
+		 transform: scaleX(1);
+		
+	
+	}
+
+}
+
+
+#downl3{
+animation: downl3-anim  6s  infinite;
+transform-origin: 505px 449px ;
+<!-- animation-duration:4s; -->
+<!-- transform-origin:"right bottom"; -->
+
+animation-timing-function: linear;
+transform: scaleX(0);
+    
+}
+
+@keyframes downl3-anim{
+22%{
+		 <!-- transform: rotate3d(0, 1, 0, 0deg); -->
+		  transform: scaleX(0);
+	
+	}
+
+
+
+32%{
+		 transform: scaleX(1);
+		
+	
+	}
+
+
+
+100%{
+		 transform: scaleX(1);
+		
+	
+	}
+
+}
+
+
+
+#upchat{
+animation: upchat-anim  6s  infinite;
+transform-origin: 623px 218px;
+<!-- animation-duration:4s; -->
+<!-- transform-origin:"right bottom"; -->
+
+animation-timing-function: ease;
+  transform: scale(0);
+    
+}
+
+@keyframes upchat-anim{
+38.5%{
+		 <!-- transform: rotate3d(0, 1, 0, 0deg); -->
+		  transform: scale(0);
+	
+	}
+
+
+
+46%{
+		 transform:  scale(1);
+		
+	
+	}
+
+
+
+87%{
+		transform:  scale(1);
+		
+	
+	}
+
+97%{
+		transform:  scale(0);
+		
+	
+	}
+
+100%{
+		transform:  scale(0);
+		
+	
+	}
+
+}
+
+
+
+#icon1{
+animation: uplrki-anim  6s  infinite;
+transform-origin: 111.5452px 273px;
+<!-- animation-duration:4s; -->
+<!-- transform-origin:"right bottom"; -->
+
+animation-timing-function: ease;
+transform: translate(34px,26px) rotate(0deg);
+    
+}
+
+@keyframes uplrki-anim{
+48%{
+		 <!-- transform: rotate3d(0, 1, 0, 0deg); -->
+		  transform: translate(34px,26px) ;
+	
+	}
+
+
+
+52%{
+		 transform:  translate(38px,26px) ;
+		
+	
+	}
+
+57%{
+		transform: translate(34px,26px) ;
+		
+	
+	}
+
+100%{
+		transform: translate(34px,26px) ;
+		
+	
+	}
+
+}
+
+#upl1{
+animation: upl1-anim  6s  infinite;
+transform-origin: 615px 217px ;
+<!-- animation-duration:4s; -->
+<!-- transform-origin:"right bottom"; -->
+
+animation-timing-function: linear;
+transform: scaleX(0);
+    
+}
+
+@keyframes upl1-anim{
+49%{
+		 <!-- transform: rotate3d(0, 1, 0, 0deg); -->
+		  transform: scaleX(0);
+	
+	}
+
+
+
+57%{
+		 transform: scaleX(1);
+		
+	
+	}
+
+
+
+100%{
+		 transform: scaleX(1);
+		
+	
+	}
+
+}
+
+
+#upl2{
+animation: upl2-anim  6s  infinite;
+transform-origin: 615px 226px ;
+<!-- animation-duration:4s; -->
+<!-- transform-origin:"right bottom"; -->
+
+animation-timing-function: linear;
+transform: scaleX(0);
+    
+}
+
+@keyframes upl2-anim{
+52%{
+		 <!-- transform: rotate3d(0, 1, 0, 0deg); -->
+		  transform: scaleX(0);
+	
+	}
+
+
+
+61%{
+		 transform: scaleX(1);
+		
+	
+	}
+
+
+
+100%{
+		 transform: scaleX(1);
+		
+	
+	}
+
+}
+
+
+#upl3{
+animation: upl3-anim  6s  infinite;
+transform-origin: 615px 217px ;
+<!-- animation-duration:4s; -->
+<!-- transform-origin:"right bottom"; -->
+
+animation-timing-function: linear;
+transform: scaleX(0);
+    
+}
+
+@keyframes upl3-anim{
+54%{
+		 <!-- transform: rotate3d(0, 1, 0, 0deg); -->
+		  transform: scaleX(0);
+	
+	}
+
+
+
+63%{
+		 transform: scaleX(1);
+		
+	
+	}
+
+
+
+100%{
+		 transform: scaleX(1);
+		
+	
+	}
+
+}
+</style>
+<g>
+	<defs>
+		<rect id="SVGID_1_" width="881" height="780"/>
+	</defs>
+	<clipPath id="SVGID_2_">
+		<use xlink:href="#SVGID_1_"  style="overflow:visible;"/>
+	</clipPath>
+	<g id="bg" class="st0">
+		<rect x="389.7" y="177.5" class="st1" width="481" height="402.8"/>
+		<path id="Path-14" class="st2" d="M669.5,0.2c-168.7,56.7-296.1,219.7-382.1,489S-34.1,855.6-419,780.2H836V0.2H669.5z"/>
+		<path id="Path-14_1_" class="st3" d="M716.9,0.2C523,47.6,397.4,210.6,340.2,489.2C282.9,767.9,163.5,864.9-18,780.2h899V0.2
+			H716.9z"/>
+	</g>
+</g>
+<g id="upchat">
+	
+		<g id="Group-5-Copy-2" transform="translate(313.500000, 38.000000) scale(-1, 1) translate(-313.500000, -38.000000) translate(230.000000, 0.000000)">
+		<path id="Fill-40_1_" class="st4" d="M-350.7,197.3l0.8-0.1c0.6-0.1,1.1-0.6,1-1.3l-1-8.3c-0.1-0.6-0.6-1.1-1.3-1l-0.8,0.1
+			c-0.6,0.1-1.1,0.6-1,1.3l1,8.3C-351.9,196.9-351.4,197.3-350.7,197.3"/>
+		<path id="Fill-41_1_" class="st4" d="M-357.8,201l0.6-0.6c0.4-0.4,0.4-1.2,0-1.6l-5.9-5.8c-0.4-0.4-1.2-0.4-1.6,0l-0.6,0.6
+			c-0.4,0.4-0.4,1.2,0,1.6l5.9,5.9C-359,201.5-358.3,201.5-357.8,201"/>
+		<path id="Fill-102_1_" class="st5" d="M-208.4,205.7H-349c-2,0-3.6,1.6-3.6,3.6v34c0,2,1.6,3.6,3.6,3.6h115.1l19,14.8v-14.8h6.5
+			c2,0,3.6-1.6,3.6-3.6v-34C-204.8,207.3-206.4,205.7-208.4,205.7"/>
+		<path id="Fill-171_1_" class="st4" d="M-361.1,208.4l0.1-0.8c0.1-0.6-0.4-1.2-1-1.3l-8.3-1c-0.6-0.1-1.2,0.4-1.3,1l0,0.8
+			c-0.1,0.6,0.4,1.2,1,1.3l8.3,1C-361.8,209.4-361.2,209-361.1,208.4"/>
+		<g id="icon1" transform="translate(34.000000, 26.000000)">
+			<g id="Mask_1_">
+				<circle id="path-3_1_" class="st6" cx="-358.1" cy="200.1" r="13.5"/>
+			</g>
+			<g id="uplrki">
+				<g transform="translate(0.000000, 3.000000)">
+					<path id="Fill-4" class="st7" d="M-361.1,200.5c-2.1,0.1-5.9,1.9-6.6,4.1c-0.2,1.6,0.3,4.5,0.6,8.3c0.1,0.3,17.1,0,17.1,0
+						c0-2.5-0.3-5-1-7.4c-0.6-1.9-4.7-4.6-6-4.8C-357.1,200.6-359.3,200.4-361.1,200.5"/>
+					<polyline id="Fill-5" class="st8" points="-356.5,202.5 -355.2,212.9 -356.3,212.9 -361.1,200.5 -356.5,202.5 					"/>
+					<path id="Fill-6" class="st9" d="M-356.5,198.6l-0.1,3.9c-2.2,0.6-4.6-2-4.6-2l1.6-3.8L-356.5,198.6"/>
+					<polyline id="Fill-7" class="st7" points="-351.2,204.8 -346.9,212.9 -352.1,212.9 -351.2,204.8 					"/>
+					<path id="Fill-8" class="st7" d="M-365.4,202c0,0-3.6,1.8-5.2,6.7c-0.4,1.2-0.7,2.6-1.1,4l5.4,0.1l-0.5-2.7L-365.4,202"/>
+					<path id="Fill-9" class="st9" d="M-356,188.2c2.1-0.1,4.8,0.9,4.7,4.3c-0.1,2.4-0.5,6.6-2.1,6.8c-0.7,0.1-3.2-0.7-3.2-0.7
+						l-3.1-1.9C-359.6,196.8-362.9,188.4-356,188.2"/>
+					<path id="Fill-10" class="st10" d="M-359.8,187.2L-359.8,187.2c-6.5,3-7.1,19.5-11.1,25.9l5.3-0.1c5.8-5.7,7.8-17.7,7.8-17.7
+						c0.2-0.3-0.8-1.4-0.1-2.3c0.6-0.7,1.5-0.8,1.8,0.3c0,0,2.3-3.8,4-3.8C-352.8,187.1-357.7,185.9-359.8,187.2"/>
+					<polyline id="Fill-11" class="st9" points="-352,196.5 -351,196.2 -351.4,193.5 -352,196.5 					"/>
+				</g>
+			</g>
+		</g>
+	</g>
+	<g id="upl1">
+		<polygon id="Fill-103_3_" class="st11" points="694.6,219.2 615.4,219.2 615.4,215.6 694.6,215.6 		"/>
+	</g>
+	<g id="upl2">
+		<polygon id="Fill-105_3_" class="st11" points="694.6,228.2 615.4,228.2 615.4,224.6 694.6,224.6 		"/>
+	</g>
+	<g id="upl3">
+		<polygon id="Fill-106_1_" class="st11" points="668.6,237.2 615.6,237.2 615.6,233.6 668.6,233.6 		"/>
+	</g>
+</g>
+<g id="downchat">
+	<g id="Group-5-Copy" transform="translate(60.000000, 214.000000)">
+		<path id="Fill-40" class="st4" d="M392.5,197.3l0.8-0.1c0.6-0.1,1.1-0.6,1-1.3l-1-8.3c-0.1-0.6-0.6-1.1-1.3-1l-0.8,0.2
+			c-0.6,0.1-1.1,0.6-1,1.3l1,8.3C391.3,196.9,391.9,197.3,392.5,197.3"/>
+		<path id="Fill-41" class="st4" d="M385.4,201l0.6-0.6c0.4-0.4,0.4-1.2,0-1.6l-5.8-5.8c-0.4-0.4-1.2-0.4-1.6,0l-0.6,0.6
+			c-0.4,0.4-0.4,1.2,0,1.6l5.9,5.9C384.3,201.5,385,201.5,385.4,201"/>
+		<path id="Fill-102" class="st5" d="M534.9,205.7H394.3c-2,0-3.6,1.6-3.6,3.6v34c0,2,1.6,3.6,3.6,3.6h115.1l19,14.8v-14.8h6.5
+			c2,0,3.6-1.6,3.6-3.6v-34C538.5,207.3,536.9,205.7,534.9,205.7"/>
+		<path id="Fill-171" class="st4" d="M382.2,208.4l0.1-0.8c0.1-0.6-0.4-1.2-1-1.3l-8.3-1c-0.6-0.1-1.2,0.4-1.3,1l-0.1,0.8
+			c-0.1,0.6,0.4,1.2,1,1.3l8.3,1C381.5,209.4,382.1,209,382.2,208.4"/>
+		<g id="icon" transform="translate(34.000000, 26.000000)">
+			<g id="Mask">
+				<circle id="path-1_1_" class="st6" cx="385.1" cy="200.1" r="13.5"/>
+			</g>
+			<g id="downlrka_1_">
+				
+					<g transform="translate(13.000000, 17.000000) scale(-1, 1) translate(-13.000000, -17.000000) translate(-1.000000, 3.000000)">
+					<path id="Fill-12" class="st9" d="M-357.1,189.3c-2.2-0.7-5.4,0.7-6.1,3.2c-0.7,2.5-1.4,7,0.2,7.6c0.7,0.3,3.5,0.2,3.5,0.2
+						l3.7-1.1C-355.8,199.3-350,191.6-357.1,189.3"/>
+					<path id="Fill-14" class="st12" d="M-362.4,191c0,0-2.1-2.3-1.6-3c0.3-0.4,1.6,1,2,0.6c0.3-0.2-0.8-1.2-0.6-1.5
+						c1.4-1.6,8,1.7,8.1,3.3C-354.4,192-362.4,191-362.4,191"/>
+					<path id="Fill-15" class="st13" d="M-357.7,201.7c2.2,0.1,8.6,1.7,9.3,4c0.4,2.9-1.6-0.5-0.3,7.7c0.1,0.5-20.4-0.1-20.4-0.1
+						c0.2-2.3,1-4.4,2.2-6.9c0.6-2,5.1-3.8,6.6-4C-360.2,202.3-359.6,201.6-357.7,201.7"/>
+					<path id="Fill-16" class="st9" d="M-359.7,198.8l-1.1,4c2.1,1.3,5.2-0.7,5.2-0.7l-0.2-3.9L-359.7,198.8"/>
+					<path id="Fill-13" class="st12" d="M-362.4,191c0,0,2.3,0.6,2.7,1.9c0.4,1.3,0,3.8,1.3,1.7c0.7-1.1,1.5-0.7,1.9,0.2
+						c0.5,1.1-0.8,2-0.7,2.4c0.1,0.4,1.1,2,1.4,2.1c0.3,0.1,3.5-4.4,2.3-7.5C-354.5,188.8-361.2,187.5-362.4,191"/>
+					<polyline id="Fill-17" class="st13" points="-366.5,205.7 -371.6,213.3 -366.7,213.3 -366.5,205.7 					"/>
+					<path id="Fill-18" class="st13" d="M-349.6,204.3c0,0,3.6,1.9,5.2,7c0.2,0.6,0.4,1.3,0.5,2c-0.2,0.1-6.1,0.1-6.1,0.1l-0.2-1.1
+						L-349.6,204.3"/>
+					<polyline id="Fill-19" class="st9" points="-363.6,196.9 -364.6,196.4 -363.4,193.7 -363.6,196.9 					"/>
+				</g>
+			</g>
+		</g>
+	</g>
+	<g id="downl1">
+		<polygon id="Fill-103" class="st11" points="505.6,433.2 584.9,433.2 584.9,429.6 505.6,429.6 		"/>
+	</g>
+	<g id="downl2">
+		<polygon id="Fill-105" class="st11" points="505.6,442.2 584.9,442.2 584.9,438.6 505.6,438.6 		"/>
+	</g>
+	<g id="downl3">
+		<polygon id="Fill-106" class="st11" points="505.6,451.2 558.6,451.2 558.6,447.6 505.6,447.6 		"/>
+	</g>
+</g>
+<g id="Layer_1_1_">
+	<rect id="Rectangle_3_" x="632.5" y="455.5" class="st3" width="193.2" height="125"/>
+	<g id="Group-4-Copy" transform="translate(259.000000, 254.000000)">
+		<path id="Fill-32" class="st14" d="M379,189.4c-2.6,0-4.7,2.1-4.7,4.7v127.6c0,2.6,2.1,4.7,4.7,4.7h183c2.6,0,4.7-2.1,4.7-4.7V194
+			c0-2.6-2.1-4.7-4.7-4.7L379,189.4L379,189.4z M562,329H379c-4.1,0-7.4-3.3-7.4-7.4V194c0-4.1,3.3-7.4,7.4-7.4h183
+			c4.1,0,7.4,3.3,7.4,7.4v127.6C569.4,325.7,566.1,329,562,329L562,329z"/>
+		<path id="Fill-33" class="st14" d="M568,202.4H373v-8.3c0-3.3,2.7-6,6-6h183c3.3,0,6,2.7,6,6V202.4"/>
+		<path id="Fill-34" class="st13" d="M384.9,194.6c0,1.5-1.2,2.7-2.7,2.7s-2.7-1.2-2.7-2.7s1.2-2.7,2.7-2.7S384.9,193.1,384.9,194.6
+			"/>
+		<path id="Fill-35" class="st15" d="M390.4,197.3c-1.5,0-2.7-1.2-2.7-2.7s1.2-2.7,2.7-2.7s2.7,1.2,2.7,2.7
+			C393.1,196.1,391.9,197.3,390.4,197.3"/>
+		<path id="Fill-36" class="st16" d="M398.5,197.3c-1.5,0-2.7-1.2-2.7-2.7s1.2-2.7,2.7-2.7s2.7,1.2,2.7,2.7S400,197.3,398.5,197.3"
+			/>
+		<g id="Group-6" transform="translate(136.000000, 111.000000)">
+			<path id="Fill-25" class="st17" d="M382.6,188c-5.3,0-9.6,4.3-9.6,9.6c0,5.3,4.3,9.6,9.6,9.6c5.3,0,9.6-4.3,9.6-9.6
+				C392.2,192.3,387.9,188,382.6,188z M382.6,208.6c-6.1,0-11-4.9-11-11c0-6.1,4.9-11,11-11c6.1,0,11,4.9,11,11
+				C393.6,203.7,388.7,208.6,382.6,208.6L382.6,208.6z"/>
+			<g id="Group-8" transform="translate(6.000000, 7.000000)">
+				<polygon id="Fill-27" class="st18" points="371.6,193.6 379.3,193.6 379.3,186.6 371.6,186.6 				"/>
+				<polyline id="Fill-28" class="st18" points="382.1,193.2 379.3,191 379.3,189.3 382.1,187 382.1,193.2 				"/>
+			</g>
+		</g>
+		<g id="Group-7" transform="translate(164.497312, 111.000000)">
+			<path id="Fill-26" class="st17" d="M382.6,188c-5.3,0-9.6,4.3-9.6,9.6c0,5.3,4.3,9.6,9.6,9.6c5.3,0,9.6-4.3,9.6-9.6
+				C392.2,192.3,387.9,188,382.6,188z M382.6,208.6c-6.1,0-11-4.9-11-11c0-6.1,4.9-11,11-11c6.1,0,11,4.9,11,11
+				C393.6,203.7,388.7,208.6,382.6,208.6L382.6,208.6z"/>
+			<g id="Group-9" transform="translate(7.000000, 5.000000)">
+				<path id="Fill-29" class="st19" d="M377.6,192.5c0,1-0.8,1.9-1.9,1.9c-1,0-1.9-0.8-1.9-1.9v-4c0-1,0.8-1.9,1.9-1.9
+					c1,0,1.9,0.8,1.9,1.9V192.5"/>
+				<path id="Fill-30" class="st19" d="M375.7,196.6c-2.2,0-4.1-1.8-4.1-4.1h1.2c0,1.6,1.3,2.8,2.8,2.8c1.6,0,2.8-1.3,2.8-2.8h1.2
+					C379.8,194.8,377.9,196.6,375.7,196.6"/>
+				<polygon id="Fill-31" class="st19" points="375.1,199.7 376.3,199.7 376.3,196 375.1,196 				"/>
+			</g>
+		</g>
+	</g>
+	<g id="Group-10" transform="translate(279.000000, 293.000000)">
+		<path id="Rectangle" class="st20" d="M372.6,187.1h75c0.6,0,1,0.4,1,1v16.4c0,0.6-0.4,1-1,1h-75c-0.6,0-1-0.4-1-1v-16.4
+			C371.6,187.6,372.1,187.1,372.6,187.1z"/>
+		<polygon id="Fill-103_1_" class="st14" points="396.7,194.7 433.4,194.7 433.4,191.8 396.7,191.8 		"/>
+		<polygon id="Fill-105_1_" class="st14" points="396.7,200.5 443.1,200.5 443.1,197.6 396.7,197.6 		"/>
+		<circle id="Oval" class="st14" cx="383.2" cy="195.9" r="5.8"/>
+	</g>
+	
+		<g id="Group-5" transform="translate(400.500000, 328.500000) scale(-1, 1) translate(-400.500000, -328.500000) translate(363.000000, 319.000000)">
+		<g id="Group-11">
+			<path id="Rectangle-Copy" class="st21" d="M-370.6,187.1h73c0.6,0,1,0.4,1,1v16.3c0,0.6-0.4,1-1,1h-73c-0.6,0-1-0.4-1-1v-16.3
+				C-371.6,187.6-371.2,187.1-370.6,187.1z"/>
+			<polygon id="Fill-103-Copy" class="st14" points="-346.6,194.7 -311.8,194.7 -311.8,191.8 -346.6,191.8 			"/>
+			<polygon id="Fill-105-Copy" class="st14" points="-346.6,200.5 -303.4,200.5 -303.4,197.6 -346.6,197.6 			"/>
+			<circle id="Oval-Copy" class="st14" cx="-362" cy="195.9" r="5.8"/>
+		</g>
+	</g>
+	<g id="shutterstock_1695902419-2-copy" transform="translate(0.000000, 40.000000)">
+		<g id="shutterstock_1695902419">
+			<rect id="Rectangle_1_" x="373.6" y="201.6" class="st3" width="193.2" height="125"/>
+			<path id="Fill-20" class="st14" d="M379.2,189.5c-2.6,0-4.7,2.1-4.7,4.7v127.6c0,2.6,2.1,4.7,4.7,4.7h183c2.6,0,4.7-2.1,4.7-4.7
+				V194.2c0-2.6-2.1-4.7-4.7-4.7C562.2,189.5,379.2,189.5,379.2,189.5z M562.1,329.2H379.2c-4.1,0-7.4-3.3-7.4-7.4V194.2
+				c0-4.1,3.3-7.4,7.4-7.4h183c4.1,0,7.4,3.3,7.4,7.4v127.6C569.5,325.9,566.2,329.2,562.1,329.2L562.1,329.2z"/>
+			<path id="Fill-21" class="st14" d="M568.1,202.5h-195v-8.3c0-3.3,2.7-6,6-6h183c3.3,0,6,2.7,6,6V202.5"/>
+			<path id="Fill-22" class="st13" d="M385,194.7c0,1.5-1.2,2.7-2.7,2.7s-2.7-1.2-2.7-2.7s1.2-2.7,2.7-2.7S385,193.2,385,194.7"/>
+			<path id="Fill-23" class="st15" d="M390.5,197.5c-1.5,0-2.7-1.2-2.7-2.7s1.2-2.7,2.7-2.7s2.7,1.2,2.7,2.7
+				C393.2,196.2,392,197.5,390.5,197.5"/>
+			<path id="Fill-24" class="st16" d="M398.6,197.5c-1.5,0-2.7-1.2-2.7-2.7s1.2-2.7,2.7-2.7c1.5,0,2.7,1.2,2.7,2.7
+				C401.3,196.2,400.1,197.5,398.6,197.5"/>
+			<g id="Group-6_1_" transform="translate(129.000000, 112.000000)">
+				<path id="Fill-25_1_" class="st14" d="M382.6,188c-5.3,0-9.6,4.3-9.6,9.6c0,5.3,4.3,9.6,9.6,9.6c5.3,0,9.6-4.3,9.6-9.6
+					C392.2,192.3,387.9,188,382.6,188z M382.6,208.6c-6.1,0-11-4.9-11-11c0-6.1,4.9-11,11-11c6.1,0,11,4.9,11,11
+					C393.6,203.7,388.7,208.6,382.6,208.6L382.6,208.6z"/>
+				<g id="Group-8_1_" transform="translate(6.000000, 7.000000)">
+					<polygon id="Fill-27_1_" class="st18" points="371.6,193.6 379.3,193.6 379.3,186.6 371.6,186.6 					"/>
+					<polyline id="Fill-28_1_" class="st18" points="382.1,193.2 379.3,191 379.3,189.3 382.1,187 382.1,193.2 					"/>
+				</g>
+			</g>
+			<g id="Group-7_1_" transform="translate(157.497312, 112.000000)">
+				<path id="Fill-26_1_" class="st14" d="M382.6,188c-5.3,0-9.6,4.3-9.6,9.6c0,5.3,4.3,9.6,9.6,9.6c5.3,0,9.6-4.3,9.6-9.6
+					C392.2,192.3,387.9,188,382.6,188z M382.6,208.6c-6.1,0-11-4.9-11-11c0-6.1,4.9-11,11-11c6.1,0,11,4.9,11,11
+					C393.6,203.7,388.7,208.6,382.6,208.6L382.6,208.6z"/>
+				<g id="Group-9_1_" transform="translate(7.000000, 5.000000)">
+					<path id="Fill-29_1_" class="st19" d="M377.6,192.5c0,1-0.8,1.9-1.9,1.9c-1,0-1.9-0.8-1.9-1.9v-4c0-1,0.8-1.9,1.9-1.9
+						c1,0,1.9,0.8,1.9,1.9V192.5"/>
+					<path id="Fill-30_1_" class="st22" d="M375.7,196.6c-2.2,0-4.1-1.8-4.1-4.1h1.2c0,1.6,1.3,2.8,2.8,2.8c1.6,0,2.8-1.3,2.8-2.8
+						h1.2C379.8,194.8,377.9,196.6,375.7,196.6"/>
+					<polygon id="Fill-31_1_" class="st19" points="375.1,199.7 376.3,199.7 376.3,196 375.1,196 					"/>
+				</g>
+			</g>
+		</g>
+	</g>
+	<g id="Group-10_1_" transform="translate(19.000000, 79.000000)">
+		<path id="Rectangle_2_" class="st23" d="M372.6,187.1h75c0.6,0,1,0.4,1,1v16.4c0,0.6-0.4,1-1,1h-75c-0.6,0-1-0.4-1-1v-16.4
+			C371.6,187.6,372.1,187.1,372.6,187.1z"/>
+		<polygon id="Fill-103_2_" class="st14" points="396.7,194.7 433.4,194.7 433.4,191.8 396.7,191.8 		"/>
+		<polygon id="Fill-105_2_" class="st14" points="396.7,200.5 443.1,200.5 443.1,197.6 396.7,197.6 		"/>
+		<circle id="Oval_1_" class="st14" cx="383.2" cy="195.9" r="5.8"/>
+	</g>
+	
+		<g id="Group-5_1_" transform="translate(140.500000, 114.500000) scale(-1, 1) translate(-140.500000, -114.500000) translate(103.000000, 105.000000)">
+		<g id="Group-11_1_">
+			<path id="Rectangle-Copy_1_" class="st24" d="M-370.6,187.1h73c0.6,0,1,0.4,1,1v16.3c0,0.6-0.4,1-1,1h-73c-0.6,0-1-0.4-1-1v-16.3
+				C-371.6,187.6-371.2,187.1-370.6,187.1z"/>
+			<polygon id="Fill-103-Copy_1_" class="st14" points="-346.6,194.7 -311.8,194.7 -311.8,191.8 -346.6,191.8 			"/>
+			<polygon id="Fill-105-Copy_1_" class="st14" points="-346.6,200.5 -303.4,200.5 -303.4,197.6 -346.6,197.6 			"/>
+			<circle id="Oval-Copy_1_" class="st14" cx="-362" cy="195.9" r="5.8"/>
+		</g>
+	</g>
+	<g id="Group-12" transform="translate(439.000000, 242.000000)">
+		<circle id="Oval_2_" class="st4" cx="389.1" cy="204.1" r="17.5"/>
+		<g id="sent-mail-_x28_1_x29_" transform="translate(5.250000, 7.875000)">
+			<path id="Path" class="st25" d="M392,186.8c-0.1-0.1-0.2-0.1-0.3,0l-19.9,9.1c-0.1,0-0.2,0.2-0.2,0.3c0,0.1,0.1,0.2,0.2,0.3
+				l5.6,2.8c0.1,0.1,0.2,0,0.3,0l5.5-4.2l-4.3,4.4c-0.1,0.1-0.1,0.1-0.1,0.2l0.4,5.6c0,0.1,0.1,0.2,0.2,0.3h0.1c0.1,0,0.2,0,0.2-0.1
+				l3-3.5l3.7,1.8c0.1,0,0.2,0,0.3,0s0.1-0.1,0.2-0.2l5.2-16.5C392.1,187,392.1,186.8,392,186.8z"/>
+		</g>
+	</g>
+</g>
+</svg>

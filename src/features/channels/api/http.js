@@ -22,7 +22,7 @@ function getAuthHeaders() {
 
 export async function http(
   path,
-  { method = 'GET', body, params, signal, credentials = 'omit' } = {},
+  { method = 'GET', body, params, signal, credentials = 'omit', auth = true, headers = {} } = {},
 ) {
   const url = new URL(`${BASE_URL}${path}`, window.location.origin)
   if (params) {
@@ -40,7 +40,8 @@ export async function http(
       headers: {
         Accept: 'application/json',
         ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}),
-        ...getAuthHeaders(),
+        ...(auth ? getAuthHeaders() : {}),
+        ...headers,
       },
       body: body !== undefined ? JSON.stringify(body) : undefined,
     })

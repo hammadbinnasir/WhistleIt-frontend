@@ -61,9 +61,7 @@ const avatarLabel = computed(() => {
   return `${name} – ${STATUS_LABELS[state.status]}`
 })
 
-const avatarTitle = computed(() =>
-  state.customStatus ? `${avatarLabel.value} – ${state.customStatus}` : avatarLabel.value,
-)
+const avatarTitle = computed(() => state.profile.fullName || 'Your account')
 
 const refocusAvatar = () => nextTick(() => avatarBtn.value?.focus())
 
@@ -203,7 +201,7 @@ const logOut = () => {
       aria-haspopup="menu"
       :aria-expanded="panel !== null"
       :aria-label="avatarLabel"
-      :title="avatarTitle"
+      aria-describedby="user-avatar-tooltip"
       @click="toggleMenu"
     >
       <UserAvatar
@@ -212,6 +210,9 @@ const logOut = () => {
         :status="state.status"
         :size="avatarSize"
       />
+      <span id="user-avatar-tooltip" class="avatar-tooltip" role="tooltip">
+        {{ avatarTitle }}
+      </span>
     </button>
 
     <!-- Opens to the RIGHT of the avatar. UserMenu and StatusMenu take turns in the same spot. -->
@@ -289,6 +290,7 @@ const logOut = () => {
 .avatar-btn {
   /* flex (not block) removes the baseline gap under the inline avatar, so the
      menu's bottom edge lines up exactly with the avatar's bottom edge */
+  position: relative;
   display: flex;
   padding: 0;
   border: none;
@@ -299,6 +301,38 @@ const logOut = () => {
 .avatar-btn:focus-visible {
   outline: 2px solid #5559f4;
   outline-offset: 3px;
+}
+
+.avatar-tooltip {
+  position: absolute;
+  top: 50%;
+  left: calc(100% + 10px);
+  z-index: 2;
+  padding: 6px 10px;
+  border-radius: 4px;
+  background: #55545d;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 16px;
+  white-space: nowrap;
+  box-shadow: 0 2px 6px rgb(0 0 0 / 20%);
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transform: translate(4px, -50%);
+  transition:
+    opacity 0.12s ease,
+    transform 0.12s ease,
+    visibility 0s linear 0.12s;
+}
+
+.avatar-btn:hover .avatar-tooltip,
+.avatar-btn:focus-visible .avatar-tooltip {
+  opacity: 1;
+  visibility: visible;
+  transform: translate(0, -50%);
+  transition-delay: 0s;
 }
 
 /* To the right of the avatar, bottom edges aligned (the avatar sits at the bottom-left) */

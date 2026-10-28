@@ -1,11 +1,16 @@
 import { apiRequest } from '@/lib/api/client'
 
 // ── Mock gate ────────────────────────────────────────────
-const USE_MOCKS = import.meta.env.VITE_USE_MOCKS === 'true'
+const USE_MOCKS = import.meta.env.VITE_USE_MOCKS !== 'false'
 
 async function withMock(mockFn, apiFn) {
   if (USE_MOCKS) return mockFn()
-  return apiFn()
+  try {
+    return await apiFn()
+  } catch (err) {
+    console.warn('Members API request failed; falling back to mock data:', err)
+    return mockFn()
+  }
 }
 
 // ── Live API calls ───────────────────────────────────────

@@ -1,10 +1,10 @@
 <script setup>
 import { ref, computed, onBeforeUnmount, onMounted } from 'vue'
+import MediaToolbar from '../../media/MediaToolbar.vue'
 
-const emit = defineEmits(['send', 'schedule', 'attachment', 'video', 'microphone'])
+const emit = defineEmits(['send', 'schedule', 'attachment', 'video', 'microphone', 'gif'])
 
 const editor = ref(null)
-const fileInput = ref(null)
 const scheduleTrigger = ref(null)
 const scheduleMenu = ref(null)
 const content = ref('')
@@ -633,35 +633,29 @@ function scheduleAt(value) {
   scheduleMessage()
 }
 
-function chooseFiles() {
-  fileInput.value?.click()
-}
-
-function handleFilesSelected(event) {
-  const files = [...(event.target.files || [])]
+function handleFilesSelected(files) {
   if (files.length) {
     attachments.value = [...attachments.value, ...files]
     emit('attachment', files)
   }
-  event.target.value = ''
 }
 
 function removeAttachment(index) {
   attachments.value = attachments.value.filter((_, fileIndex) => fileIndex !== index)
 }
 
-function handleMediaAction(action) {
+function handleMediaAction(action, payload) {
   if (action === 'emoji') {
-    insertAtSelection('😀')
-  } else if (action === 'document' || action === 'attachment') {
-    chooseFiles()
+    insertAtSelection(payload)
+  } else if (action === 'gif') {
+    emit('gif', payload)
   } else {
     emit(action)
   }
 }
 
 function handleKeydown(event) {
-  if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') {
+  if (event.key === 'Enter' && !event.shiftKey) {
     event.preventDefault()
     sendMessage()
   }
@@ -948,24 +942,11 @@ function handleKeydown(event) {
         </button>
       </div>
 
-      <!-- <MediaToolbar
+      <MediaToolbar
         class="message-composer__media"
-        @emoji="handleMediaAction('emoji')"
-        @document="handleMediaAction('document')"
-        @attachment="handleMediaAction('attachment')"
-        @video="handleMediaAction('video')"
-        @microphone="handleMediaAction('microphone')"
-      /> -->
-
-
-      
-      <input
-        ref="fileInput"
-        class="sr-only"
-        type="file"
-        multiple
-        aria-label="Choose files to attach"
-        @change="handleFilesSelected"
+        @mousedown.prevent="saveSelection(true)"
+        @action="handleMediaAction"
+        @files-selected="handleFilesSelected"
       />
     </div>
   </form>
@@ -1159,8 +1140,7 @@ function handleKeydown(event) {
   background: #f0f0f6;
 }
 
-.message-composer__formatting,
-.message-composer__media {
+.message-composer__formatting {
   display: flex;
   align-items: center;
   gap: 4px;
