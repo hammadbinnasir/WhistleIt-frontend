@@ -1,10 +1,12 @@
 <script setup>
 import { ref } from 'vue'
+import { useRouter } from 'vue-router'
 import { useTeamsStore } from '@/stores/teams'
 import { useUiStore } from '@/stores/ui'
 
 const teamsStore = useTeamsStore()
 const ui = useUiStore()
+const router = useRouter()
 
 const teamName = ref('')
 const selectedColor = ref('#7C3AED')
@@ -15,21 +17,27 @@ const presetColors = ['#7C3AED', '#2DD4BF', '#F97316', '#EC4899', '#3B82F6', '#1
 
 async function handleSubmit() {
   if (!teamName.value.trim()) {
-    errorMessage.value = 'Please enter a workspace name.'
+    errorMessage.value = 'Please enter a team name.'
     return
   }
 
   isSubmitting.value = true
   errorMessage.value = ''
   try {
-    await teamsStore.createTeam({
+    const team = await teamsStore.createTeam({
       name: teamName.value.trim(),
       color: selectedColor.value,
     })
     teamName.value = ''
     ui.toggleTeamCreateModal()
+    if (teamsStore.activeWorkspaceId) {
+      await router.push({
+        name: 'workspace-team',
+        params: { workspaceId: teamsStore.activeWorkspaceId, teamId: team.id },
+      })
+    }
   } catch (err) {
-    errorMessage.value = err?.message || 'Failed to create workspace. Try again.'
+    errorMessage.value = err?.message || 'Failed to create team. Try again.'
   } finally {
     isSubmitting.value = false
   }
@@ -52,7 +60,7 @@ function handleClose() {
   >
     <div class="modal-card">
       <div class="modal-header">
-        <h3 id="create-team-title" class="modal-title">Create a new Workspace</h3>
+        <h3 id="create-team-title" class="modal-title">Create a new team</h3>
         <button type="button" class="close-btn" aria-label="Close dialog" @click="handleClose">
           <svg
             width="18"
@@ -70,7 +78,7 @@ function handleClose() {
 
       <form @submit.prevent="handleSubmit" class="modal-body">
         <p class="modal-desc">
-          Workspaces are shared spaces where teams communicate in channels and direct messages.
+          Teams belong to the active workspace and have their own channels and members.
         </p>
 
         <div v-if="errorMessage" class="error-banner" role="alert">
@@ -78,13 +86,13 @@ function handleClose() {
         </div>
 
         <div class="form-group">
-          <label for="team-name" class="form-label">Workspace Name</label>
+          <label for="team-name" class="form-label">Team Name</label>
           <input
             id="team-name"
             v-model="teamName"
             type="text"
             class="form-input"
-            placeholder="e.g. Acme Corp or Engineering"
+            placeholder="e.g. Frontend or Design"
             maxlength="40"
             autofocus
             required
@@ -113,7 +121,7 @@ function handleClose() {
           </button>
           <button type="submit" class="btn-primary" :disabled="isSubmitting">
             <span v-if="isSubmitting">Creating...</span>
-            <span v-else>Create Workspace</span>
+            <span v-else>Create Team</span>
           </button>
         </div>
       </form>

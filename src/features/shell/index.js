@@ -2,6 +2,7 @@
 // Other modules should import from here.
 export { default as TeamRail } from './components/TeamRail.vue'
 export { default as TeamSwitcher } from './components/TeamSwitcher.vue'
+export { default as WorkspaceSwitcher } from './components/WorkspaceSwitcher.vue'
 export { default as CreateTeamModal } from './components/CreateTeamModal.vue'
 export { default as JoinTeamModal } from './components/JoinTeamModal.vue'
 export { default as HelpModal } from './components/HelpModal.vue'
