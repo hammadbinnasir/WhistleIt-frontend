@@ -17,6 +17,20 @@ const router = createRouter({
     { path: '/signup', name: 'signup', component: AuthView },
     { path: '/forgot-password', name: 'forgot-password', component: AuthView },
     { path: '/reset-password', name: 'reset-password', component: AuthView },
+    {
+      path: '/forgetpassword/:token',
+      redirect: (to) => ({
+        path: '/reset-password',
+        query: { ...to.query, token: to.params.token },
+      }),
+    },
+    {
+      path: '/forgetpassword:token',
+      redirect: (to) => ({
+        path: '/reset-password',
+        query: { ...to.query, token: to.params.token },
+      }),
+    },
     { path: '/verify-email/:token?', name: 'verify-email', component: EmailVerificationView },
     {
       path: '/api/auth/verify/:token?',

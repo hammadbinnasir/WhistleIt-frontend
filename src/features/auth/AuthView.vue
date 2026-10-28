@@ -88,9 +88,8 @@ async function submitForm() {
     }
 
     if (isResetPassword.value) {
-      await resetPassword({
+      await resetPassword(resetToken.value, {
         email: email.value,
-        token: resetToken.value,
         password: password.value,
         password_confirmation: confirmPassword.value,
       })

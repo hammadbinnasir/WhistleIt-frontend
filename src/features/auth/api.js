@@ -9,11 +9,15 @@ export function register(account) {
 }
 
 export function requestPasswordReset(email) {
-  return http('/forgot-password', { method: 'POST', body: { email }, auth: false })
+  return http('/forgetpassword', { method: 'POST', body: { email }, auth: false })
 }
 
-export function resetPassword(credentials) {
-  return http('/reset-password', { method: 'POST', body: credentials, auth: false })
+export function resetPassword(token, credentials) {
+  return http(`/forgetpassword/${encodeURIComponent(token)}`, {
+    method: 'POST',
+    body: credentials,
+    auth: false,
+  })
 }
 
 export function verifyEmail(token) {
