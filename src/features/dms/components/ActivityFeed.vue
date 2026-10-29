@@ -135,7 +135,7 @@ const upcomingReminders = computed(() =>
 
 const mentions = computed(() => activity.sorted.filter((item) => item.type === 'mention'))
 const unreadMentionCount = computed(() => mentions.value.filter((item) => !item.read).length)
-const visibleTabs = computed(() => (tabPage.value === 0 ? tabs.slice(0, 5) : tabs.slice(1)))
+const visibleTabs = computed(() => (tabPage.value === 0 ? tabs.slice(0, 5) : tabs.slice(2)))
 const activeTabIsEmpty = computed(() => {
   switch (activeTab.value) {
     case 'recent-dms':

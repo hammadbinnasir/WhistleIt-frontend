@@ -469,11 +469,13 @@ describe('ActivityFeed', () => {
     expect(nav.text()).toContain('Upcoming Reminders')
     expect(nav.text()).not.toContain('All Mentions')
     expect(nav.text()).not.toContain('Workflows')
+    expect(nav.findAll('button')).toHaveLength(5)
 
     await wrapper.get('button[aria-label="Scroll tabs right"]').trigger('click')
     expect(nav.text()).toContain('All Mentions')
     expect(nav.text()).toContain('Workflows')
     expect(nav.text()).not.toContain('Recent DMs')
+    expect(nav.findAll('button')).toHaveLength(5)
     expect(
       wrapper.get('button[aria-label="Scroll tabs right"]').attributes('disabled'),
     ).toBeDefined()
