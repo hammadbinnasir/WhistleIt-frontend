@@ -94,6 +94,24 @@ const upcomingReminders = computed(() =>
 const mentions = computed(() => activity.sorted.filter((item) => item.type === 'mention'))
 const unreadMentionCount = computed(() => mentions.value.filter((item) => !item.read).length)
 const visibleTabs = computed(() => (tabPage.value === 0 ? tabs.slice(0, 5) : tabs.slice(1)))
+const activeTabIsEmpty = computed(() => {
+  switch (activeTab.value) {
+    case 'recent-dms':
+      return !dms.loading && !dms.error && !recentDms.value.length
+    case 'recent-messages':
+      return !dms.loading && !dms.error && !recentMessages.value.length
+    case 'scheduled':
+      return !dms.loading && !dms.error && !scheduledMessages.value.length
+    case 'pinned':
+      return !dms.loading && !dms.error && !pinnedMessages.value.length
+    case 'reminders':
+      return !upcomingReminders.value.length
+    case 'mentions':
+      return activity.loaded && !activity.loading && !activity.error && !mentions.value.length
+    default:
+      return false
+  }
+})
 
 const filteredWorkflows = computed(() => {
   const query = workflowSearch.value.trim().toLowerCase()
@@ -328,7 +346,18 @@ function saveWorkflow() {
 
     <div class="flex min-h-0 flex-1">
       <div class="min-h-0 min-w-0 flex-1 overflow-y-auto">
-        <div v-if="activeTab === 'recent-dms'" class="space-y-4 p-5">
+        <div
+          v-if="activeTabIsEmpty"
+          class="flex min-h-full items-center justify-center px-6 text-center"
+          role="status"
+        >
+          <div>
+            <h2 class="text-xl font-bold text-slate-800">No Messages</h2>
+            <p class="mt-2 text-lg text-slate-700">You are all done.</p>
+          </div>
+        </div>
+
+        <div v-else-if="activeTab === 'recent-dms'" class="space-y-4 p-5">
           <article
             v-for="{ conversation, message } in recentDms"
             :key="conversation.id"
@@ -362,9 +391,6 @@ function saveWorkflow() {
               </button>
             </div>
           </article>
-          <p v-if="!recentDms.length" class="py-12 text-center text-slate-500">
-            No recent direct messages.
-          </p>
         </div>
 
         <div v-else-if="activeTab === 'recent-messages'" class="space-y-4 p-5">
@@ -401,9 +427,6 @@ function saveWorkflow() {
               </button>
             </div>
           </article>
-          <p v-if="!recentMessages.length" class="py-12 text-center text-slate-500">
-            No recent messages.
-          </p>
         </div>
 
         <div v-else-if="activeTab === 'scheduled'" class="space-y-4 p-5">
@@ -427,9 +450,6 @@ function saveWorkflow() {
               Cancel
             </button>
           </article>
-          <p v-if="!scheduledMessages.length" class="py-12 text-center text-slate-500">
-            No scheduled messages. Schedule a message from the composer to see it here.
-          </p>
         </div>
 
         <div v-else-if="activeTab === 'pinned'" class="space-y-4 p-5">
@@ -445,9 +465,6 @@ function saveWorkflow() {
               <p class="mt-2 text-sm text-slate-500">{{ formatDate(message.createdAt) }}</p>
             </div>
           </article>
-          <p v-if="!pinnedMessages.length" class="py-12 text-center text-slate-500">
-            No pinned messages.
-          </p>
         </div>
 
         <div v-else-if="activeTab === 'reminders'" class="space-y-4 p-5">
@@ -481,9 +498,6 @@ function saveWorkflow() {
               Delete
             </button>
           </article>
-          <p v-if="!upcomingReminders.length" class="py-12 text-center text-slate-500">
-            No upcoming reminders. Use “Remind me” on a message to add one.
-          </p>
         </div>
 
         <div v-else-if="activeTab === 'mentions'" class="space-y-4 p-5">
@@ -513,7 +527,6 @@ function saveWorkflow() {
               {{ item.read ? 'Mark unread' : 'Mark read' }}
             </button>
           </article>
-          <p v-if="!mentions.length" class="py-12 text-center text-slate-500">No mentions yet.</p>
         </div>
 
         <div v-else class="space-y-8 p-6">

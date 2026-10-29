@@ -84,6 +84,17 @@ export const useDmStore = defineStore('dms', () => {
     if (activeId.value === id) activeId.value = null
   }
 
+  function isFavorite(id) {
+    return conversations.value.find((conversation) => conversation.id === id)?.isFavorite ?? false
+  }
+
+  function toggleFavorite(id) {
+    const conversation = conversations.value.find((item) => item.id === id)
+    if (!conversation || conversation.type !== 'dm') return false
+    conversation.isFavorite = !conversation.isFavorite
+    return conversation.isFavorite
+  }
+
   function startConversation(memberIds, name = '') {
     const members = [...new Set([meId.value, ...memberIds])]
     const existing = conversations.value.find(
@@ -194,6 +205,8 @@ export const useDmStore = defineStore('dms', () => {
     openConversation,
     deactivateConversation,
     closeConversation,
+    isFavorite,
+    toggleFavorite,
     startDm,
     startGroup,
     sendMessage,

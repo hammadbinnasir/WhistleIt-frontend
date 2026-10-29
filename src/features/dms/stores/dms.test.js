@@ -31,6 +31,18 @@ describe('dms store', () => {
     expect(dms.activeId).toBe(group.id)
   })
 
+  it('toggles a favorite for a direct message conversation', async () => {
+    const dms = useDmStore()
+    await dms.init()
+
+    expect(dms.isFavorite('c1')).toBe(false)
+    expect(dms.toggleFavorite('c1')).toBe(true)
+    expect(dms.isFavorite('c1')).toBe(true)
+    expect(dms.toggleFavorite('c1')).toBe(false)
+    expect(dms.isFavorite('c1')).toBe(false)
+    expect(dms.toggleFavorite('missing')).toBe(false)
+  })
+
   it('cancels a scheduled message without removing other conversation messages', async () => {
     const dms = useDmStore()
     await dms.init()
