@@ -28,8 +28,8 @@ export const useUiStore = defineStore('ui', () => {
   function selectChannel(id) {
     selectedChannelId.value = id
   }
-  function openChannelSettings() {
-    channelSettingsTab.value = 'settings'
+  function openChannelSettings(tab = 'settings') {
+    channelSettingsTab.value = tab
     channelSettingsOpen.value = true
   }
   function closeChannelSettings() {

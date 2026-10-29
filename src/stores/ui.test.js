@@ -34,8 +34,13 @@ describe('ui store', () => {
 
     ui.openChannelSettings()
     expect(ui.channelSettingsOpen).toBe(true)
+    expect(ui.channelSettingsTab).toBe('settings')
     ui.closeChannelSettings()
     expect(ui.channelSettingsOpen).toBe(false)
+
+    ui.openChannelSettings('members')
+    expect(ui.channelSettingsOpen).toBe(true)
+    expect(ui.channelSettingsTab).toBe('members')
   })
 
   it('toggles modals properly', () => {
