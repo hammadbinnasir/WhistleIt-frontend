@@ -117,7 +117,9 @@ describe('message composer', () => {
 
     await wrapper.get('button[aria-label="Insert poll"]').trigger('click')
 
-    expect(document.querySelector('[role="dialog"][aria-labelledby="message-poll-title"]')).not.toBeNull()
+    expect(
+      document.querySelector('[role="dialog"][aria-labelledby="message-poll-title"]'),
+    ).not.toBeNull()
     expect(document.querySelectorAll('.message-composer__poll-option')).toHaveLength(3)
 
     const titleInput = document.querySelector('#poll-title-input')
@@ -143,7 +145,9 @@ describe('message composer', () => {
     expect(wrapper.get('[contenteditable="true"]').text()).toContain('Before the poll')
     expect(wrapper.get('[contenteditable="true"]').text()).toContain('Poll: Lunch vote')
     expect(wrapper.get('[contenteditable="true"]').text()).toContain('What should we order?')
-    expect(document.querySelector('[role="dialog"][aria-labelledby="message-poll-title"]')).toBeNull()
+    expect(
+      document.querySelector('[role="dialog"][aria-labelledby="message-poll-title"]'),
+    ).toBeNull()
     wrapper.unmount()
   })
 
@@ -154,11 +158,9 @@ describe('message composer', () => {
     const typeTrigger = document.querySelector('#poll-type-0')
     typeTrigger.click()
     await wrapper.vm.$nextTick()
-    expect([...document.querySelectorAll('[role="option"]')].map((option) => option.textContent.trim())).toEqual([
-      'Open Ended',
-      'Choice',
-      'Rating',
-    ])
+    expect(
+      [...document.querySelectorAll('[role="option"]')].map((option) => option.textContent.trim()),
+    ).toEqual(['Open Ended', 'Choice', 'Rating'])
 
     document.querySelector('[role="option"][aria-selected="false"]').click()
     await wrapper.vm.$nextTick()
@@ -174,8 +176,11 @@ describe('message composer', () => {
     expect(document.activeElement).toBe(typeTrigger)
     const ratingSelect = document.querySelector('#poll-rating-type-0')
     expect(ratingSelect.value).toBe('1-5')
-    expect([...document.querySelectorAll('.message-composer__poll-option input')].map((input) => input.value))
-      .toEqual(['1', '2', '3', '4', '5'])
+    expect(
+      [...document.querySelectorAll('.message-composer__poll-option input')].map(
+        (input) => input.value,
+      ),
+    ).toEqual(['1', '2', '3', '4', '5'])
     ratingSelect.value = '1-10'
     ratingSelect.dispatchEvent(new Event('change', { bubbles: true }))
     ratingSelect.focus()
@@ -216,18 +221,18 @@ describe('message composer', () => {
     const pollQuestion = document.querySelector('#poll-question-0')
     expect(pollQuestion.getAttribute('placeholder')).toBe('Type your question')
     expect(document.querySelector('.message-composer__poll-question-floating-label')).toBeNull()
-    expect(document.querySelector('.message-composer__poll-validation-error').textContent.trim()).toBe(
-      'This is a required field',
-    )
+    expect(
+      document.querySelector('.message-composer__poll-validation-error').textContent.trim(),
+    ).toBe('This is a required field')
 
     document.querySelector('[aria-label="Poll creation steps"] button:nth-child(2)').click()
     await wrapper.vm.$nextTick()
     expect(document.querySelector('.message-composer__poll-placeholder')).toBeNull()
     expect(document.querySelector('#poll-title-input').getAttribute('aria-invalid')).toBe('true')
     expect(document.querySelector('#poll-question-0').getAttribute('aria-invalid')).toBe('true')
-    expect(document.querySelector('.message-composer__poll-validation-error').textContent.trim()).toBe(
-      'This is a required field',
-    )
+    expect(
+      document.querySelector('.message-composer__poll-validation-error').textContent.trim(),
+    ).toBe('This is a required field')
 
     const titleInput = document.querySelector('#poll-title-input')
     titleInput.value = 'Lunch vote'

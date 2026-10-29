@@ -1181,8 +1181,7 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', closeActionsOn
   font-size: 18px;
 }
 
-.composer-conversation__reaction-picker
-  :deep(.v3-body-inner .v3-group .v3-emojis button img) {
+.composer-conversation__reaction-picker :deep(.v3-body-inner .v3-group .v3-emojis button img) {
   width: 32px;
   height: 32px;
   max-width: 32px;

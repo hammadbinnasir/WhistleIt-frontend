@@ -36,9 +36,7 @@ describe('ChannelSidebar', () => {
 
   it('closes the activity panel when a channel is selected', async () => {
     const channels = useChannelsStore()
-    channels.channels = [
-      { id: 'frontend', name: 'Frontend', isDefault: true, isFavorite: false },
-    ]
+    channels.channels = [{ id: 'frontend', name: 'Frontend', isDefault: true, isFavorite: false }]
     channels.loaded = true
     const dms = useDmStore()
     const ui = useUiStore()

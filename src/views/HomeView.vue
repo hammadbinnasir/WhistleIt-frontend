@@ -75,9 +75,7 @@ const activeConversationPartnerId = computed(() =>
   activeConversation.value?.type === 'dm' ? dms.partnerId(activeConversation.value) : null,
 )
 const activeConversationPresence = computed(() =>
-  activeConversationPartnerId.value
-    ? presence.stateOf(activeConversationPartnerId.value)
-    : null,
+  activeConversationPartnerId.value ? presence.stateOf(activeConversationPartnerId.value) : null,
 )
 const activeConversationIsFavorite = computed(() =>
   activeConversation.value ? dms.isFavorite(activeConversation.value.id) : false,
@@ -378,7 +376,9 @@ onBeforeUnmount(() => {
                 type="button"
                 class="shrink-0 rounded p-0.5 transition-colors hover:bg-slate-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-indigo-500"
                 :class="activeConversationIsFavorite ? 'text-indigo-500' : 'text-slate-400'"
-                :aria-label="activeConversationIsFavorite ? 'Remove from favorites' : 'Add to favorites'"
+                :aria-label="
+                  activeConversationIsFavorite ? 'Remove from favorites' : 'Add to favorites'
+                "
                 :aria-pressed="activeConversationIsFavorite"
                 @click="dms.toggleFavorite(activeConversation.id)"
               >
@@ -406,11 +406,7 @@ onBeforeUnmount(() => {
                   class="flex items-center gap-1.5 text-xs text-slate-500"
                   :aria-label="STATES[activeConversationPresence]"
                 >
-                  <PresenceDot
-                    :state="activeConversationPresence"
-                    :size="9"
-                    ring="border-white"
-                  />
+                  <PresenceDot :state="activeConversationPresence" :size="9" ring="border-white" />
                   {{ STATES[activeConversationPresence] }}
                 </p>
                 <p v-else class="text-xs text-slate-500">

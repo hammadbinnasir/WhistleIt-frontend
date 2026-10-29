@@ -108,9 +108,7 @@ const pinnedMessages = computed(() =>
       (item) => String(item.id) === String(conversation?.id),
     )
     const isDm = Boolean(
-      directConversation ||
-      conversation?.kind === 'dm' ||
-        conversation?.type === 'dm',
+      directConversation || conversation?.kind === 'dm' || conversation?.type === 'dm',
     )
 
     return {

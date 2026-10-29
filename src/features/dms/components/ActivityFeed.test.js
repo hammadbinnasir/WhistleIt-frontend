@@ -144,9 +144,7 @@ describe('ActivityFeed', () => {
     ui.activePanel = 'activity'
     const wrapper = mountActivityFeed()
 
-    await wrapper
-      .get('[aria-label="Open direct message with Muniba Naseer"]')
-      .trigger('click')
+    await wrapper.get('[aria-label="Open direct message with Muniba Naseer"]').trigger('click')
 
     expect(dms.activeId).toBe('c1')
     expect(ui.activePanel).toBeNull()
@@ -174,9 +172,7 @@ describe('ActivityFeed', () => {
       .findAll('button')
       .find((button) => button.text() === 'Recent Messages')
       .trigger('click')
-    await wrapper
-      .get('[aria-label="Open direct message with Muniba Naseer"]')
-      .trigger('click')
+    await wrapper.get('[aria-label="Open direct message with Muniba Naseer"]').trigger('click')
 
     expect(dms.activeId).toBe('c1')
     expect(ui.activePanel).toBeNull()
@@ -367,9 +363,7 @@ describe('ActivityFeed', () => {
       .find((button) => button.text() === 'Pinned Messages')
       .trigger('click')
 
-    await wrapper
-      .get('[aria-label="Open direct message with Muniba Naseer"]')
-      .trigger('click')
+    await wrapper.get('[aria-label="Open direct message with Muniba Naseer"]').trigger('click')
 
     expect(dms.activeId).toBe('c1')
     expect(ui.selectedChannelId).toBeNull()

@@ -20,7 +20,10 @@ const hasPinnedMessages = computed(() => ui.pinnedMessages.length > 0)
       </button>
     </header>
 
-    <div v-if="!hasPinnedMessages" class="flex flex-1 flex-col items-center px-6 pt-16 text-slate-500">
+    <div
+      v-if="!hasPinnedMessages"
+      class="flex flex-1 flex-col items-center px-6 pt-16 text-slate-500"
+    >
       <i
         class="fa-vellum fa-solid fa-thumbtack mb-6 text-[96px] text-[#8079a3]"
         aria-hidden="true"
@@ -29,7 +32,10 @@ const hasPinnedMessages = computed(() => ui.pinnedMessages.length > 0)
         <p class="flex gap-3"><span>•</span><span>There are no pinned messages yet.</span></p>
         <p class="flex gap-3">
           <span>•</span>
-          <span>All members of this channel can pin important<br />or useful messages for easy reference.</span>
+          <span
+            >All members of this channel can pin important<br />or useful messages for easy
+            reference.</span
+          >
         </p>
       </div>
     </div>

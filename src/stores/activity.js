@@ -88,9 +88,7 @@ export const useActivityStore = defineStore('activity', () => {
   function recordMessageMentions({ text, conversationId, conversationName, conversationType }) {
     const mentionedUsers = [
       ...new Set(
-        [...String(text || '').matchAll(/(?:^|\s)@([\p{L}\p{N}_.-]+)/gu)].map(
-          (match) => match[1],
-        ),
+        [...String(text || '').matchAll(/(?:^|\s)@([\p{L}\p{N}_.-]+)/gu)].map((match) => match[1]),
       ),
     ]
     if (!mentionedUsers.length) return
