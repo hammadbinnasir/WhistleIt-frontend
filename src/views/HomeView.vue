@@ -267,7 +267,7 @@ onBeforeUnmount(() => {
         <ChannelHeader
           v-if="selectedChannelId && !activeConversation"
           :channel-id="selectedChannelId"
-          @members-click="ui.toggleMemberManageModal()"
+          @members-click="ui.openChannelSettings('members')"
         >
           <template #actions>
             <ChatHeaderActions :is-dm="false" />
