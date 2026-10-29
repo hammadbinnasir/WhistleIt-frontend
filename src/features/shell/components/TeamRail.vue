@@ -1,5 +1,5 @@
 <script setup>
-import { onMounted } from 'vue'
+import { nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useRouter } from 'vue-router'
 import { useTeamsStore } from '@/stores/teams'
@@ -12,9 +12,10 @@ const ui = useUiStore()
 const { activeWorkspaceId, activeTeamId, teamsOfActiveWorkspace, loading, error } =
   storeToRefs(teamsStore)
 
-onMounted(() => {
-  void teamsStore.fetchTeams()
-})
+const teamActionsOpen = ref(false)
+const teamActionsButton = ref(null)
+const teamActionsPopover = ref(null)
+const teamActionsPosition = ref({ top: 0, left: 0 })
 
 function getInitials(name) {
   return name
@@ -44,100 +45,175 @@ async function handleTeamSelect(teamId) {
   if (!teamsStore.selectTeam(teamId)) return
   await updateRoute(activeWorkspaceId.value, teamId)
 }
+
+function closeTeamActions(restoreFocus = false) {
+  teamActionsOpen.value = false
+  if (restoreFocus) nextTick(() => teamActionsButton.value?.focus())
+}
+
+function toggleTeamActions() {
+  if (teamActionsOpen.value) {
+    closeTeamActions()
+    return
+  }
+  const bounds = teamActionsButton.value.getBoundingClientRect()
+  const railBounds = teamActionsButton.value.closest('.team-rail').getBoundingClientRect()
+  teamActionsPosition.value = {
+    top: Math.min(bounds.top, window.innerHeight - 108),
+    left: Math.max(bounds.right + 8, railBounds.right + 8),
+  }
+  teamActionsOpen.value = true
+  nextTick(() => teamActionsPopover.value?.querySelector('button')?.focus())
+}
+
+function handleDocumentPointer(event) {
+  if (
+    teamActionsOpen.value &&
+    !teamActionsButton.value?.contains(event.target) &&
+    !teamActionsPopover.value?.contains(event.target)
+  ) {
+    closeTeamActions()
+  }
+}
+
+function handleDocumentKeydown(event) {
+  if (event.key === 'Escape' && teamActionsOpen.value) {
+    event.preventDefault()
+    closeTeamActions(true)
+  }
+}
+
+function openCreateTeam() {
+  closeTeamActions()
+  ui.toggleTeamCreateModal()
+}
+
+function openJoinTeam() {
+  closeTeamActions()
+  ui.toggleTeamJoinModal()
+}
+
+onMounted(() => {
+  document.addEventListener('pointerdown', handleDocumentPointer)
+  document.addEventListener('keydown', handleDocumentKeydown)
+})
+
+onBeforeUnmount(() => {
+  document.removeEventListener('pointerdown', handleDocumentPointer)
+  document.removeEventListener('keydown', handleDocumentKeydown)
+})
 </script>
 
 <template>
   <aside class="team-rail" role="navigation" aria-label="Workspace and team navigation">
-    <section class="team-rail__workspaces" aria-labelledby="workspace-heading">
-      <h2 id="workspace-heading" class="team-rail__label">Workspace</h2>
-      <div
-        v-if="loading && !teamsStore.workspaces.length"
-        class="team-rail__loading"
-        aria-label="Loading workspaces"
-      >
-        <span v-for="item in 2" :key="item" class="team-rail__skeleton" />
-      </div>
-      <WorkspaceSwitcher v-else @select="handleWorkspaceSelect" />
-      <p v-if="!loading && !error && !teamsStore.workspaces.length" class="team-rail__empty">
-        None yet
-      </p>
-    </section>
-
-    <section class="team-rail__teams" aria-labelledby="teams-heading">
-      <h2 id="teams-heading" class="team-rail__label">Teams</h2>
-      <p v-if="error" class="team-rail__message" role="alert">{{ error }}</p>
-      <p
-        v-else-if="!loading && !teamsStore.workspaces.length"
-        class="team-rail__message"
-        role="status"
-      >
-        No workspaces
-      </p>
-      <p
-        v-else-if="!loading && activeWorkspaceId && !teamsOfActiveWorkspace.length"
-        class="team-rail__message"
-        role="status"
-      >
-        No teams yet
-      </p>
-
-      <div class="team-rail__team-list" aria-label="Teams in the active workspace">
-        <template v-if="loading && !teamsOfActiveWorkspace.length">
-          <span v-for="item in 3" :key="item" class="team-rail__skeleton" />
-        </template>
-        <button
-          v-for="team in teamsOfActiveWorkspace"
-          :key="team.id"
-          type="button"
-          class="team-rail__team"
-          :class="{ 'team-rail__team--active': activeTeamId === team.id }"
-          :title="team.name"
-          :aria-label="`Switch to team ${team.name}`"
-          :aria-current="activeTeamId === team.id ? 'page' : undefined"
-          @click="handleTeamSelect(team.id)"
+    <div class="team-rail__middle">
+      <section class="team-rail__section" aria-labelledby="workspace-heading">
+        <h2 id="workspace-heading" class="team-rail__label">Workspace</h2>
+        <div
+          v-if="loading && !teamsStore.workspaces.length"
+          class="team-rail__icon-list"
+          aria-label="Loading workspaces"
         >
-          <span class="team-rail__initials">{{ team.initials || getInitials(team.name) }}</span>
-          <span class="team-rail__indicator" aria-hidden="true" />
-        </button>
-      </div>
-
-      <div class="team-rail__team-actions" aria-label="Team actions">
+          <span v-for="item in 2" :key="item" class="team-rail__skeleton" />
+        </div>
+        <WorkspaceSwitcher v-else @select="handleWorkspaceSelect" />
+        <p v-if="!loading && !error && !teamsStore.workspaces.length" class="team-rail__message">
+          None yet
+        </p>
         <button
           type="button"
-          class="team-rail__action"
-          title="Create a team in this workspace"
-          aria-label="Create a team"
-          :disabled="!activeWorkspaceId"
-          @click="ui.toggleTeamCreateModal()"
+          class="team-rail__add"
+          aria-label="Create a workspace"
+          title="Create a workspace"
+          @click="ui.toggleWorkspaceCreateModal()"
         >
           <span aria-hidden="true">+</span>
         </button>
-        <button
-          type="button"
-          class="team-rail__action"
-          title="Join a team"
-          aria-label="Join a team"
-          :disabled="!activeWorkspaceId"
-          @click="ui.toggleTeamJoinModal()"
-        >
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <circle cx="10.5" cy="10.5" r="6.5" />
-            <path d="m16 16 5 5M10.5 7v7M7 10.5h7" />
-          </svg>
-        </button>
-      </div>
-    </section>
+      </section>
 
-    <button
-      type="button"
-      class="team-rail__help"
-      :class="{ 'team-rail__help--active': ui.helpModalOpen }"
-      title="Help"
-      aria-label="Open help"
-      @click="ui.toggleHelpModal()"
-    >
-      ?
-    </button>
+      <section class="team-rail__section team-rail__section--teams" aria-labelledby="teams-heading">
+        <h2 id="teams-heading" class="team-rail__label">Teams</h2>
+        <p v-if="error" class="team-rail__message" role="alert">{{ error }}</p>
+        <p
+          v-else-if="!loading && !teamsStore.workspaces.length"
+          class="team-rail__message"
+          role="status"
+        >
+          No workspaces
+        </p>
+        <p
+          v-else-if="!loading && activeWorkspaceId && !teamsOfActiveWorkspace.length"
+          class="team-rail__message"
+          role="status"
+        >
+          No teams yet
+        </p>
+
+        <div class="team-rail__team-list" aria-label="Teams in the active workspace">
+          <template v-if="loading && !teamsOfActiveWorkspace.length">
+            <span v-for="item in 3" :key="item" class="team-rail__skeleton" />
+          </template>
+          <button
+            v-for="team in teamsOfActiveWorkspace"
+            :key="team.id"
+            type="button"
+            class="team-rail__team"
+            :class="{ 'team-rail__team--active': activeTeamId === team.id }"
+            :title="team.name"
+            :aria-label="`Switch to team ${team.name}`"
+            :aria-current="activeTeamId === team.id ? 'page' : undefined"
+            @click="handleTeamSelect(team.id)"
+          >
+            <span class="team-rail__initials">{{ team.initials || getInitials(team.name) }}</span>
+            <span class="team-rail__indicator" aria-hidden="true" />
+          </button>
+        </div>
+
+        <button
+          ref="teamActionsButton"
+          type="button"
+          class="team-rail__add"
+          aria-label="Team actions"
+          title="Create or join a team"
+          aria-haspopup="menu"
+          :aria-expanded="teamActionsOpen"
+          :disabled="!activeWorkspaceId"
+          @click="toggleTeamActions"
+        >
+          <span aria-hidden="true">+</span>
+        </button>
+      </section>
+    </div>
+
+    <footer class="team-rail__footer">
+      <button
+        type="button"
+        class="team-rail__help"
+        :class="{ 'team-rail__help--active': ui.helpModalOpen }"
+        title="Help"
+        aria-label="Open help"
+        @click="ui.toggleHelpModal()"
+      >
+        ?
+      </button>
+      <div class="team-rail__user">
+        <slot name="footer" />
+      </div>
+    </footer>
+
+    <Teleport to="body">
+      <div
+        v-if="teamActionsOpen"
+        ref="teamActionsPopover"
+        class="team-rail__popover"
+        role="menu"
+        aria-label="Team actions"
+        :style="{ top: `${teamActionsPosition.top}px`, left: `${teamActionsPosition.left}px` }"
+      >
+        <button type="button" role="menuitem" @click="openCreateTeam">Create a team</button>
+        <button type="button" role="menuitem" @click="openJoinTeam">Join a team</button>
+      </div>
+    </Teleport>
   </aside>
 </template>
 
@@ -147,32 +223,36 @@ async function handleTeamSelect(teamId) {
   display: flex;
   width: 74px;
   min-width: 74px;
+  height: 100%;
+  min-height: 0;
   flex-direction: column;
-  align-items: center;
-  gap: 10px;
-  overflow: hidden;
   border-right: 1px solid color-mix(in srgb, var(--color-white) 8%, transparent);
   background: var(--color-indigo-950);
   color: var(--color-white);
-  padding: 10px 0 62px;
 }
 
-.team-rail__workspaces,
-.team-rail__teams {
+.team-rail__middle {
+  display: flex;
+  min-height: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  overflow-y: auto;
+  padding: 10px 0;
+  scrollbar-color: var(--color-slate-400) transparent;
+  scrollbar-width: thin;
+}
+
+.team-rail__section {
   display: flex;
   width: 100%;
+  flex: 0 0 auto;
   flex-direction: column;
   align-items: center;
 }
 
-.team-rail__workspaces {
-  flex: 0 0 auto;
-}
-
-.team-rail__teams {
-  min-height: 0;
-  flex: 1 1 auto;
-  overflow: hidden;
+.team-rail__section--teams {
   border-top: 1px solid color-mix(in srgb, var(--color-white) 14%, transparent);
   padding-top: 8px;
 }
@@ -187,18 +267,13 @@ async function handleTeamSelect(teamId) {
 }
 
 .team-rail__team-list,
-.team-rail__loading {
+.team-rail__icon-list {
   display: flex;
   width: 100%;
-  min-height: 0;
-  flex: 1 1 auto;
   flex-direction: column;
   align-items: center;
   gap: 7px;
-  overflow-y: auto;
   padding: 2px 0 6px;
-  scrollbar-width: thin;
-  scrollbar-color: var(--color-slate-400) transparent;
 }
 
 .team-rail__team {
@@ -230,8 +305,9 @@ async function handleTeamSelect(teamId) {
 }
 
 .team-rail__team:focus-visible,
-.team-rail__action:focus-visible,
-.team-rail__help:focus-visible {
+.team-rail__add:focus-visible,
+.team-rail__help:focus-visible,
+.team-rail__popover button:focus-visible {
   outline: 2px solid var(--color-white);
   outline-offset: 3px;
 }
@@ -261,18 +337,12 @@ async function handleTeamSelect(teamId) {
   font-weight: 700;
 }
 
-.team-rail__team-actions {
-  display: flex;
-  flex: 0 0 auto;
-  gap: 8px;
-  padding: 4px 0 2px;
-}
-
-.team-rail__action,
+.team-rail__add,
 .team-rail__help {
   display: grid;
   width: 30px;
   height: 30px;
+  flex: 0 0 auto;
   place-items: center;
   border: 0;
   border-radius: 7px;
@@ -281,49 +351,30 @@ async function handleTeamSelect(teamId) {
   cursor: pointer;
 }
 
-.team-rail__action {
+.team-rail__add {
   font-size: 22px;
   line-height: 1;
 }
 
-.team-rail__action svg {
-  width: 16px;
-  height: 16px;
-}
-
-.team-rail__action:hover,
+.team-rail__add:hover,
 .team-rail__help:hover,
 .team-rail__help--active {
   background: color-mix(in srgb, var(--color-white) 20%, transparent);
 }
 
-.team-rail__action:disabled {
+.team-rail__add:disabled {
   cursor: not-allowed;
   opacity: 0.4;
 }
 
-.team-rail__help {
-  position: absolute;
-  bottom: 60px;
-  left: 22px;
-  border: 1px solid color-mix(in srgb, var(--color-white) 50%, transparent);
-  border-radius: 50%;
-  font-size: 16px;
-  font-weight: 700;
-}
-
-.team-rail__message,
-.team-rail__empty {
+.team-rail__message {
   max-width: 62px;
   margin: 2px 0;
+  padding: 0 3px;
   color: var(--color-slate-300);
   font-size: 9px;
   line-height: 1.3;
   text-align: center;
-}
-
-.team-rail__message {
-  padding: 0 3px;
 }
 
 .team-rail__skeleton {
@@ -333,6 +384,58 @@ async function handleTeamSelect(teamId) {
   border-radius: 8px;
   background: color-mix(in srgb, var(--color-white) 12%, transparent);
   animation: rail-pulse 1.2s ease-in-out infinite alternate;
+}
+
+.team-rail__footer {
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 0 0 12px;
+}
+
+.team-rail__help {
+  border: 1px solid color-mix(in srgb, var(--color-white) 50%, transparent);
+  border-radius: 50%;
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.team-rail__user {
+  display: flex;
+  min-height: 32px;
+  align-items: center;
+  justify-content: center;
+}
+
+.team-rail__popover {
+  position: fixed;
+  z-index: 45;
+  display: flex;
+  width: 11rem;
+  flex-direction: column;
+  gap: 2px;
+  border: 1px solid var(--color-slate-300);
+  border-radius: 0.5rem;
+  padding: 0.25rem;
+  background: var(--color-white);
+  color: var(--color-slate-800);
+  box-shadow: 0 0.5rem 1.5rem color-mix(in srgb, var(--color-slate-950) 20%, transparent);
+}
+
+.team-rail__popover button {
+  border: 0;
+  border-radius: 0.25rem;
+  padding: 0.5rem 0.625rem;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+
+.team-rail__popover button:hover {
+  background: var(--color-slate-100);
 }
 
 @keyframes rail-pulse {

@@ -17,6 +17,7 @@ export const useUiStore = defineStore('ui', () => {
 
   // modal visibility flags
   const helpModalOpen = ref(false)
+  const workspaceCreateModalOpen = ref(false)
   const teamCreateModalOpen = ref(false)
   const teamJoinModalOpen = ref(false)
   const memberManageModalOpen = ref(false)
@@ -83,8 +84,10 @@ export const useUiStore = defineStore('ui', () => {
 
   // modal & drawer toggles
   function toggleHelpModal() {
-    activePanel.value = activePanel.value === 'help' ? null : 'help'
-    helpModalOpen.value = activePanel.value === 'help'
+    helpModalOpen.value = !helpModalOpen.value
+  }
+  function toggleWorkspaceCreateModal() {
+    workspaceCreateModalOpen.value = !workspaceCreateModalOpen.value
   }
   function toggleTeamCreateModal() {
     teamCreateModalOpen.value = !teamCreateModalOpen.value
@@ -117,10 +120,12 @@ export const useUiStore = defineStore('ui', () => {
     dismissToast,
     toggleSidebar,
     helpModalOpen,
+    workspaceCreateModalOpen,
     teamCreateModalOpen,
     teamJoinModalOpen,
     memberManageModalOpen,
     toggleHelpModal,
+    toggleWorkspaceCreateModal,
     toggleTeamCreateModal,
     toggleTeamJoinModal,
     toggleMemberManageModal,

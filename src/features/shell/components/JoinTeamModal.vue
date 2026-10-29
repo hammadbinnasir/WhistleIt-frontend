@@ -1,6 +1,5 @@
 <script setup>
-import { ref, watch } from 'vue'
-import { storeToRefs } from 'pinia'
+import { onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useTeamsStore } from '@/stores/teams'
 import { useUiStore } from '@/stores/ui'
@@ -9,399 +8,252 @@ const teamsStore = useTeamsStore()
 const ui = useUiStore()
 const router = useRouter()
 
-const { teamsOfActiveWorkspace, searchResults, searchLoading, activeWorkspaceId } =
-  storeToRefs(teamsStore)
-
-const searchInput = ref('')
-const joiningTeamId = ref(null)
+const inviteInput = ref('')
+const isSubmitting = ref(false)
 const statusMessage = ref('')
 const errorMessage = ref('')
+let closeTimer
 
-let searchDebounce = null
-
-watch(searchInput, (query) => {
-  clearTimeout(searchDebounce)
-  if (!query.trim()) {
-    teamsStore.clearSearch()
-    return
+function getInviteCode(value) {
+  const trimmedValue = value.trim()
+  try {
+    const url = new URL(trimmedValue)
+    const segments = url.pathname.split('/').filter(Boolean)
+    return decodeURIComponent(segments.at(-1) ?? '').trim()
+  } catch {
+    return trimmedValue
   }
-  searchDebounce = setTimeout(() => {
-    teamsStore.searchAvailableTeams(query.trim())
-  }, 250)
-})
-
-function isAlreadyMember(teamId) {
-  return teamsOfActiveWorkspace.value.some((team) => team.id === teamId)
 }
 
-async function handleJoin(team) {
-  joiningTeamId.value = team.id
-  errorMessage.value = ''
+async function handleSubmit() {
+  const inviteCode = getInviteCode(inviteInput.value)
   statusMessage.value = ''
+  errorMessage.value = ''
+  if (!inviteCode) {
+    errorMessage.value = 'Enter an invite code or invite link.'
+    return
+  }
+
+  isSubmitting.value = true
   try {
-    const joinedTeam = await teamsStore.joinTeam(team.id)
-    if (activeWorkspaceId.value) {
-      await router.push({
-        name: 'workspace-team',
-        params: { workspaceId: activeWorkspaceId.value, teamId: joinedTeam.id },
-      })
-    }
-    statusMessage.value = `Joined ${team.name} successfully!`
-    setTimeout(() => {
-      ui.toggleTeamJoinModal()
-      statusMessage.value = ''
-    }, 800)
-  } catch (err) {
-    errorMessage.value = err?.message || 'Failed to join team.'
+    const result = await teamsStore.joinTeam(inviteCode)
+    await router.push({
+      name: 'workspace-team',
+      params: {
+        workspaceId: result.team.workspaceId,
+        teamId: result.team.id,
+      },
+    })
+    statusMessage.value = result.alreadyMember
+      ? `You are already a member of ${result.team.name}.`
+      : `Joined ${result.team.name}.`
+    closeTimer = setTimeout(handleClose, 900)
+  } catch (error) {
+    errorMessage.value = error?.message || 'Could not join this team. Try again.'
   } finally {
-    joiningTeamId.value = null
+    isSubmitting.value = false
   }
 }
 
 function handleClose() {
+  if (isSubmitting.value) return
+  if (closeTimer) clearTimeout(closeTimer)
   ui.toggleTeamJoinModal()
-  teamsStore.clearSearch()
-  searchInput.value = ''
-  errorMessage.value = ''
+  inviteInput.value = ''
   statusMessage.value = ''
+  errorMessage.value = ''
 }
+
+function handleKeydown(event) {
+  if (event.key === 'Escape' && ui.teamJoinModalOpen) {
+    event.preventDefault()
+    handleClose()
+  }
+}
+
+onMounted(() => document.addEventListener('keydown', handleKeydown))
+onBeforeUnmount(() => {
+  document.removeEventListener('keydown', handleKeydown)
+  if (closeTimer) clearTimeout(closeTimer)
+})
 </script>
 
 <template>
   <div
     v-if="ui.teamJoinModalOpen"
-    class="modal-backdrop"
-    @click.self="handleClose"
+    class="join-modal-backdrop"
     role="dialog"
     aria-modal="true"
     aria-labelledby="join-team-title"
+    @click.self="handleClose"
   >
-    <div class="modal-card">
-      <div class="modal-header">
-        <h3 id="join-team-title" class="modal-title">Join a Team</h3>
-        <button type="button" class="close-btn" aria-label="Close dialog" @click="handleClose">
-          <svg
-            width="18"
-            height="18"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2"
-          >
-            <line x1="18" y1="6" x2="6" y2="18" />
-            <line x1="6" y1="6" x2="18" y2="18" />
-          </svg>
+    <form class="join-modal" @submit.prevent="handleSubmit">
+      <header class="join-modal__header">
+        <h2 id="join-team-title">Join a Team</h2>
+        <button
+          type="button"
+          aria-label="Close dialog"
+          :disabled="isSubmitting"
+          @click="handleClose"
+        >
+          ×
         </button>
+      </header>
+
+      <p class="join-modal__description">Enter the invite code or paste the team invite link.</p>
+
+      <div v-if="statusMessage" class="join-modal__success" role="status" aria-live="polite">
+        {{ statusMessage }}
+      </div>
+      <div v-if="errorMessage" class="join-modal__error" role="alert">
+        {{ errorMessage }}
       </div>
 
-      <div class="modal-body">
-        <p class="modal-desc">Search for teams you can join in this workspace.</p>
+      <label class="join-modal__field" for="team-invite-code">
+        <span>Invite code or link</span>
+        <input
+          id="team-invite-code"
+          v-model="inviteInput"
+          type="text"
+          autocomplete="off"
+          autofocus
+          :disabled="isSubmitting"
+          placeholder="Paste an invite code or link"
+        />
+      </label>
 
-        <div v-if="statusMessage" class="success-banner" role="status">
-          {{ statusMessage }}
-        </div>
-        <div v-if="errorMessage" class="error-banner" role="alert">
-          {{ errorMessage }}
-        </div>
-
-        <div class="search-box">
-          <svg
-            class="search-icon"
-            width="16"
-            height="16"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2"
-          >
-            <circle cx="11" cy="11" r="8" />
-            <line x1="21" y1="21" x2="16.65" y2="16.65" />
-          </svg>
-          <input
-            v-model="searchInput"
-            type="text"
-            class="search-input"
-            placeholder="Search teams by name..."
-            autofocus
-          />
-        </div>
-
-        <div class="results-container">
-          <div v-if="searchLoading" class="loading-state">
-            <div class="spinner" />
-            <span>Searching teams...</span>
-          </div>
-
-          <div v-else-if="searchInput.trim() && searchResults.length === 0" class="empty-state">
-            No workspaces matching "{{ searchInput }}".
-          </div>
-
-          <div v-else-if="!searchInput.trim()" class="hint-state">
-            Type a team name to search available teams.
-          </div>
-
-          <ul v-else class="team-results-list">
-            <li v-for="team in searchResults" :key="team.id" class="team-result-row">
-              <div class="team-info">
-                <div class="team-avatar" :style="{ background: team.color || '#7C3AED' }">
-                  {{ team.initials || team.name.slice(0, 2).toUpperCase() }}
-                </div>
-                <div class="team-meta">
-                  <span class="team-name">{{ team.name }}</span>
-                  <span class="team-count">{{ team.memberCount || 1 }} members</span>
-                </div>
-              </div>
-
-              <div class="team-action">
-                <span v-if="isAlreadyMember(team.id)" class="joined-badge"> Joined </span>
-                <button
-                  v-else
-                  type="button"
-                  class="join-btn"
-                  :disabled="joiningTeamId === team.id"
-                  @click="handleJoin(team)"
-                >
-                  <span v-if="joiningTeamId === team.id">Joining...</span>
-                  <span v-else>Join</span>
-                </button>
-              </div>
-            </li>
-          </ul>
-        </div>
-      </div>
-    </div>
+      <footer class="join-modal__actions">
+        <button
+          type="button"
+          class="join-modal__secondary"
+          :disabled="isSubmitting"
+          @click="handleClose"
+        >
+          Cancel
+        </button>
+        <button type="submit" class="join-modal__primary" :disabled="isSubmitting">
+          {{ isSubmitting ? 'Joining...' : 'Join' }}
+        </button>
+      </footer>
+    </form>
   </div>
 </template>
 
 <style scoped>
-.modal-backdrop {
+.join-modal-backdrop {
   position: fixed;
+  z-index: 60;
   inset: 0;
-  background: rgba(10, 8, 18, 0.75);
-  backdrop-filter: blur(4px);
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+  background: color-mix(in srgb, var(--color-slate-950) 65%, transparent);
+}
+
+.join-modal {
   display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 50;
-  padding: 16px;
+  width: min(100%, 28rem);
+  flex-direction: column;
+  gap: 1rem;
+  border: 1px solid var(--color-slate-300);
+  border-radius: 0.75rem;
+  padding: 1.25rem;
+  background: var(--color-white);
+  color: var(--color-slate-900);
+  box-shadow: 0 1.25rem 3rem color-mix(in srgb, var(--color-slate-950) 25%, transparent);
 }
 
-.modal-card {
-  width: 100%;
-  max-width: 480px;
-  background: #1e1b2e;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 12px;
-  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.45);
-  color: #f1f5f9;
-  overflow: hidden;
-}
-
-.modal-header {
+.join-modal__header,
+.join-modal__actions {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 16px 20px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  gap: 0.75rem;
 }
 
-.modal-title {
-  font-size: 16px;
-  font-weight: 700;
+.join-modal__header h2 {
   margin: 0;
-  color: #fff;
+  font-size: 1.125rem;
 }
 
-.close-btn {
+.join-modal__header button {
+  border: 0;
+  border-radius: 0.375rem;
+  padding: 0.25rem 0.5rem;
   background: transparent;
-  border: none;
-  color: rgba(255, 255, 255, 0.4);
+  color: inherit;
   cursor: pointer;
-  display: flex;
-  align-items: center;
-  padding: 4px;
-  border-radius: 6px;
-  transition: all 0.15s ease;
-}
-.close-btn:hover {
-  color: #fff;
-  background: rgba(255, 255, 255, 0.08);
+  font-size: 1.5rem;
 }
 
-.modal-body {
-  padding: 20px;
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
-.modal-desc {
-  font-size: 13px;
-  color: rgba(255, 255, 255, 0.6);
+.join-modal__description {
   margin: 0;
+  color: var(--color-slate-600);
+  font-size: 0.875rem;
 }
 
-.success-banner {
-  background: rgba(34, 197, 94, 0.15);
-  border: 1px solid rgba(34, 197, 94, 0.4);
-  color: #86efac;
-  padding: 10px 12px;
-  border-radius: 8px;
-  font-size: 13px;
+.join-modal__field {
+  display: grid;
+  gap: 0.375rem;
+  font-size: 0.875rem;
+  font-weight: 600;
 }
 
-.error-banner {
-  background: rgba(239, 68, 68, 0.15);
-  border: 1px solid rgba(239, 68, 68, 0.4);
-  color: #fca5a5;
-  padding: 10px 12px;
-  border-radius: 8px;
-  font-size: 13px;
-}
-
-.search-box {
-  position: relative;
-  display: flex;
-  align-items: center;
-}
-
-.search-icon {
-  position: absolute;
-  left: 12px;
-  color: rgba(255, 255, 255, 0.4);
-}
-
-.search-input {
+.join-modal__field input {
   width: 100%;
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 8px;
-  padding: 10px 12px 10px 38px;
-  color: #fff;
-  font-size: 14px;
-  outline: none;
-  transition: border-color 0.15s ease;
-}
-.search-input:focus {
-  border-color: #7c3aed;
-  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--color-slate-400);
+  border-radius: 0.375rem;
+  padding: 0.625rem 0.75rem;
+  color: var(--color-slate-900);
 }
 
-.results-container {
-  min-height: 180px;
-  max-height: 260px;
-  overflow-y: auto;
-  border: 1px solid rgba(255, 255, 255, 0.06);
-  border-radius: 8px;
-  background: rgba(0, 0, 0, 0.15);
+.join-modal__field input:focus-visible,
+.join-modal button:focus-visible {
+  outline: 2px solid var(--color-indigo-600);
+  outline-offset: 2px;
 }
 
-.loading-state,
-.empty-state,
-.hint-state {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  padding: 40px 16px;
-  color: rgba(255, 255, 255, 0.4);
-  font-size: 13px;
-  text-align: center;
+.join-modal__success,
+.join-modal__error {
+  border-radius: 0.375rem;
+  padding: 0.625rem 0.75rem;
+  font-size: 0.875rem;
 }
 
-.spinner {
-  width: 20px;
-  height: 20px;
-  border: 2px solid rgba(255, 255, 255, 0.2);
-  border-top-color: #7c3aed;
-  border-radius: 50%;
-  animation: spin 0.7s linear infinite;
-}
-@keyframes spin {
-  to {
-    transform: rotate(360deg);
-  }
+.join-modal__success {
+  background: var(--color-emerald-100);
+  color: var(--color-emerald-800);
 }
 
-.team-results-list {
-  list-style: none;
-  margin: 0;
-  padding: 4px;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
+.join-modal__error {
+  background: var(--color-red-100);
+  color: var(--color-red-800);
 }
 
-.team-result-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 8px 12px;
-  border-radius: 6px;
-  transition: background 0.15s ease;
-}
-.team-result-row:hover {
-  background: rgba(255, 255, 255, 0.04);
+.join-modal__actions {
+  justify-content: flex-end;
 }
 
-.team-info {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.team-avatar {
-  width: 34px;
-  height: 34px;
-  border-radius: 8px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: #fff;
-  font-weight: 700;
-  font-size: 12px;
-}
-
-.team-meta {
-  display: flex;
-  flex-direction: column;
-}
-
-.team-name {
-  font-size: 13px;
-  font-weight: 600;
-  color: #fff;
-}
-
-.team-count {
-  font-size: 11px;
-  color: rgba(255, 255, 255, 0.4);
-}
-
-.join-btn {
-  background: #7c3aed;
-  color: #fff;
-  border: none;
-  padding: 6px 14px;
-  border-radius: 6px;
-  font-size: 12px;
-  font-weight: 600;
+.join-modal__actions button {
+  border: 1px solid var(--color-slate-300);
+  border-radius: 0.375rem;
+  padding: 0.625rem 0.875rem;
   cursor: pointer;
-  transition: background 0.15s ease;
-}
-.join-btn:hover:not(:disabled) {
-  background: #6d28d9;
-}
-.join-btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
 }
 
-.joined-badge {
-  font-size: 12px;
-  color: rgba(255, 255, 255, 0.4);
-  font-weight: 500;
-  padding: 4px 8px;
+.join-modal__secondary {
+  background: var(--color-white);
+  color: var(--color-slate-700);
+}
+
+.join-modal__primary {
+  border-color: var(--color-indigo-600) !important;
+  background: var(--color-indigo-600);
+  color: var(--color-white);
+}
+
+.join-modal button:disabled {
+  cursor: wait;
+  opacity: 0.65;
 }
 </style>
