@@ -153,6 +153,14 @@ export const useDmStore = defineStore('dms', () => {
         : {}),
     }
     conversation.messages.push(message)
+    if (!message.scheduled) {
+      useActivityStore().recordMessageMentions({
+        text: message.text,
+        conversationId: conversation.id,
+        conversationName: titleOf(conversation),
+        conversationType: 'dm',
+      })
+    }
     conversation.unreadCount = 0
     activeId.value = conversationId
     return message

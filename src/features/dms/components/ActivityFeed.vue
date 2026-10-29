@@ -2,9 +2,13 @@
 import { computed, onMounted, ref } from 'vue'
 import { useActivityStore } from '@/stores/activity'
 import { useDmStore } from '@/features/dms/stores/dms'
+import { useMessagesStore } from '@/features/messages/messages'
+import { messageSegments } from '@/features/messages/message-utils'
 import { useUiStore } from '@/stores/ui'
 import { useRemindersStore } from '@/features/search/reminders'
 import { useChannelsStore } from '@/features/channels/store/channels.store'
+import { useTeamsStore } from '@/stores/teams'
+import UserAvatar from './UserAvatar.vue'
 import MessageComposer from '@/features/composer/components/MessageComposer.vue'
 
 const tabs = [
@@ -19,9 +23,12 @@ const tabs = [
 
 const activity = useActivityStore()
 const dms = useDmStore()
+const messageStore = useMessagesStore()
 const ui = useUiStore()
 const reminders = useRemindersStore()
 const channels = useChannelsStore()
+const teams = useTeamsStore()
+const emit = defineEmits(['open-conversation', 'open-user-chat'])
 
 const activeTab = ref('recent-dms')
 const tabPage = ref(0)
@@ -52,14 +59,26 @@ const recentDms = computed(() =>
     })),
 )
 
-const recentMessages = computed(() =>
-  dms.conversations
-    .flatMap((conversation) => conversation.messages.map((message) => ({ conversation, message })))
-    .sort(
-      (a, b) =>
-        new Date(b.message.createdAt || 0).getTime() - new Date(a.message.createdAt || 0).getTime(),
-    ),
-)
+const recentMessages = computed(() => {
+  const dmMessages = dms.conversations.flatMap((conversation) =>
+    conversation.messages.map((message) => ({ conversation, message })),
+  )
+  const channelMessages = Object.entries(messageStore.messagesByChannel).flatMap(
+    ([conversationId, messages]) => {
+      const channel = channels.getById(conversationId)
+      const conversation = {
+        id: conversationId,
+        type: 'channel',
+        name: channel?.name || conversationId.replaceAll('-', ' '),
+      }
+      return messages.map((message) => ({ conversation, message }))
+    },
+  )
+  return [...dmMessages, ...channelMessages].sort(
+    (a, b) =>
+      new Date(b.message.createdAt || 0).getTime() - new Date(a.message.createdAt || 0).getTime(),
+  )
+})
 
 const threadConversation = computed(
   () =>
@@ -83,7 +102,30 @@ const scheduledMessages = computed(() =>
     ),
 )
 
-const pinnedMessages = computed(() => recentMessages.value.filter(({ message }) => message.pinned))
+const pinnedMessages = computed(() =>
+  ui.pinnedMessages.map(({ conversation, ...message }) => {
+    const directConversation = dms.conversations.find(
+      (item) => String(item.id) === String(conversation?.id),
+    )
+    const isDm = Boolean(
+      directConversation ||
+      conversation?.kind === 'dm' ||
+        conversation?.type === 'dm',
+    )
+
+    return {
+      conversation: {
+        ...conversation,
+        ...(directConversation || {}),
+        type: isDm ? 'dm' : 'channel',
+        name: directConversation
+          ? titleOf(directConversation)
+          : conversation?.name || conversation?.id,
+      },
+      message,
+    }
+  }),
+)
 
 const upcomingReminders = computed(() =>
   reminders.sorted.filter(
@@ -124,7 +166,11 @@ const filteredWorkflows = computed(() => {
 })
 
 function titleOf(conversation) {
-  return dms.titleOf(conversation) || 'Direct message'
+  return (
+    (conversation?.members ? dms.titleOf(conversation) : '') ||
+    conversation?.name ||
+    'Direct message'
+  )
 }
 
 function initials(name) {
@@ -142,6 +188,50 @@ function displayMessage(message) {
   return 'Message'
 }
 
+function authorName(message, conversation) {
+  return dms.usersById[message.from]?.name || message.author || titleOf(conversation)
+}
+
+function authorUserId(message) {
+  if (message.mine || message.from === dms.meId) return null
+  const authorId = message.from ?? message.authorId
+  if (dms.usersById[authorId]) return authorId
+  return dms.users.find((user) => user.name === message.author)?.id || null
+}
+
+function openAuthorChat(message) {
+  const userId = authorUserId(message)
+  if (!userId || userId === dms.meId) return
+  emit('open-user-chat', userId)
+}
+
+function messageParts(message) {
+  return messageSegments(message.text || message.content || '')
+}
+
+function pinnedDate(value) {
+  if (!value) return '—'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return '—'
+
+  const today = new Date()
+  const yesterday = new Date(today)
+  yesterday.setDate(today.getDate() - 1)
+  const prefix =
+    date.toDateString() === today.toDateString()
+      ? 'Today'
+      : date.toDateString() === yesterday.toDateString()
+        ? 'Yesterday'
+        : new Intl.DateTimeFormat('en-US', { month: 'long', day: 'numeric' }).format(date)
+  const time = new Intl.DateTimeFormat('en-US', {
+    hour: 'numeric',
+    minute: '2-digit',
+  })
+    .format(date)
+    .toLowerCase()
+  return `${prefix} at ${time}`
+}
+
 function formatDate(value) {
   if (!value) return '—'
   const date = new Date(value)
@@ -156,12 +246,24 @@ function formatDate(value) {
 }
 
 function openConversation(conversationId) {
-  if (dms.openConversation(conversationId)) ui.activePanel = null
+  emit('open-conversation', { id: conversationId, type: 'dm' })
+}
+
+function openActivityConversation(conversation) {
+  emit('open-conversation', { id: conversation.id, type: conversation.type })
 }
 
 function openThread(conversation, message) {
   if (!message) return
   activeThread.value = { conversationId: conversation.id, message }
+}
+
+function replyToPinned(conversation, message) {
+  if (conversation.type === 'dm') {
+    openThread(conversation, message)
+    return
+  }
+  openActivityConversation(conversation)
 }
 
 function closeThread() {
@@ -189,7 +291,19 @@ function selectTab(tabId) {
 
 function openMention(item) {
   activity.setRead(item.id, true)
+  if (item.conversationType === 'channel') {
+    openActivityConversation({ id: item.conversationId, type: 'channel' })
+    return
+  }
   openConversation(item.conversationId)
+}
+
+function cancelScheduledMessage(conversation, message) {
+  if (conversation.type === 'dm') {
+    dms.cancelScheduledMessage(conversation.id, message.id)
+    return
+  }
+  messageStore.cancelScheduledMessage(conversation.id, message.id)
 }
 
 function openReminder(reminder) {
@@ -197,8 +311,7 @@ function openReminder(reminder) {
     openConversation(reminder.conversationId)
     return
   }
-  ui.selectChannel(reminder.conversationId)
-  ui.activePanel = null
+  openActivityConversation({ id: reminder.conversationId, type: 'channel' })
 }
 
 function openWorkflowForm(template) {
@@ -263,14 +376,14 @@ function saveWorkflow() {
         ‹
       </button>
       <nav
-        class="flex min-w-0 flex-1 items-center justify-around gap-1 overflow-hidden"
+        class="flex min-w-0 flex-1 flex-nowrap items-center justify-around gap-1 overflow-hidden"
         aria-label="Activity views"
       >
         <button
           v-for="tab in visibleTabs"
           :key="tab.id"
           type="button"
-          class="min-w-0 shrink border-b-2 px-2 py-4 text-center text-sm font-semibold transition-colors"
+          class="shrink-0 whitespace-nowrap border-b-2 px-2 py-4 text-center text-sm font-semibold transition-colors"
           :class="
             activeTab === tab.id
               ? 'border-indigo-500 text-indigo-600'
@@ -335,13 +448,6 @@ function saveWorkflow() {
       >
         Mark all as read
       </button>
-      <button
-        type="button"
-        class="rounded border border-indigo-300 px-3 py-1 text-xs text-indigo-600 hover:bg-indigo-50"
-        @click="dms.receiveDemo()"
-      >
-        Demo: new message
-      </button>
     </div>
 
     <div class="flex min-h-0 flex-1">
@@ -365,7 +471,14 @@ function saveWorkflow() {
           >
             <div class="mb-3 flex items-center gap-2 text-sm text-slate-600">
               <span class="text-indigo-300" aria-hidden="true">♙</span>
-              <span>{{ titleOf(conversation) }}</span>
+              <button
+                type="button"
+                class="text-left hover:text-indigo-600 hover:underline"
+                :aria-label="`Open direct message with ${titleOf(conversation)}`"
+                @click="openActivityConversation(conversation)"
+              >
+                {{ titleOf(conversation) }}
+              </button>
               <time class="ml-auto text-xs text-slate-500">{{
                 formatDate(message?.createdAt)
               }}</time>
@@ -377,7 +490,14 @@ function saveWorkflow() {
                 {{ initials(titleOf(conversation)) }}
               </span>
               <div class="min-w-0 flex-1">
-                <strong class="block truncate">{{ titleOf(conversation) }}</strong>
+                <button
+                  type="button"
+                  class="block max-w-full truncate text-left font-semibold hover:text-indigo-600 hover:underline"
+                  :aria-label="`Open direct message with ${titleOf(conversation)}`"
+                  @click="openActivityConversation(conversation)"
+                >
+                  {{ titleOf(conversation) }}
+                </button>
                 <p class="break-words text-slate-700">
                   {{ message ? displayMessage(message) : 'No messages yet.' }}
                 </p>
@@ -401,7 +521,14 @@ function saveWorkflow() {
           >
             <div class="mb-3 flex items-center gap-2 text-sm text-slate-600">
               <span class="text-indigo-300" aria-hidden="true">♙</span>
-              <span>{{ titleOf(conversation) }}</span>
+              <button
+                type="button"
+                class="text-left hover:text-indigo-600 hover:underline"
+                :aria-label="`Open ${conversation.type === 'dm' ? 'direct message with' : 'channel'} ${titleOf(conversation)}`"
+                @click="openActivityConversation(conversation)"
+              >
+                {{ titleOf(conversation) }}
+              </button>
               <time class="ml-auto text-xs text-slate-500">{{
                 formatDate(message.createdAt)
               }}</time>
@@ -410,20 +537,42 @@ function saveWorkflow() {
               <span
                 class="grid h-12 w-12 shrink-0 place-items-center rounded-md bg-emerald-500 font-semibold text-white"
               >
-                {{ initials(dms.usersById[message.from]?.name || titleOf(conversation)) }}
+                {{
+                  initials(
+                    dms.usersById[message.from]?.name || message.author || titleOf(conversation),
+                  )
+                }}
               </span>
               <div class="min-w-0 flex-1">
-                <strong class="block">{{
-                  dms.usersById[message.from]?.name || titleOf(conversation)
+                <button
+                  v-if="authorUserId(message)"
+                  type="button"
+                  class="block text-left font-semibold hover:text-indigo-600 hover:underline"
+                  :aria-label="`Open direct message with ${authorName(message, conversation)}`"
+                  @click="openAuthorChat(message)"
+                >
+                  {{ authorName(message, conversation) }}
+                </button>
+                <strong v-else class="block">{{
+                  dms.usersById[message.from]?.name || message.author || titleOf(conversation)
                 }}</strong>
                 <p class="break-words text-slate-700">{{ displayMessage(message) }}</p>
               </div>
               <button
+                v-if="conversation.type === 'dm'"
                 type="button"
                 class="rounded border border-slate-400 px-3 py-1 text-xs font-semibold hover:bg-slate-50"
                 @click="openThread(conversation, message)"
               >
                 Reply
+              </button>
+              <button
+                v-else
+                type="button"
+                class="rounded border border-slate-400 px-3 py-1 text-xs font-semibold hover:bg-slate-50"
+                @click="openActivityConversation(conversation)"
+              >
+                Open
               </button>
             </div>
           </article>
@@ -445,24 +594,107 @@ function saveWorkflow() {
             <button
               type="button"
               class="rounded border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-50"
-              @click="dms.cancelScheduledMessage(conversation.id, message.id)"
+              @click="cancelScheduledMessage(conversation, message)"
             >
               Cancel
             </button>
           </article>
         </div>
 
-        <div v-else-if="activeTab === 'pinned'" class="space-y-4 p-5">
+        <div v-else-if="activeTab === 'pinned'" class="space-y-3 p-4">
           <article
             v-for="{ conversation, message } in pinnedMessages"
             :key="`${conversation.id}-${message.id}`"
-            class="flex items-center gap-4 rounded-xl border border-slate-200 p-4"
+            class="rounded-xl border border-slate-200 p-2.5"
           >
-            <span class="text-xl text-indigo-500" aria-hidden="true">◆</span>
-            <div class="min-w-0 flex-1">
-              <p class="font-semibold">{{ titleOf(conversation) }}</p>
-              <p class="mt-1 break-words text-slate-700">{{ displayMessage(message) }}</p>
-              <p class="mt-2 text-sm text-slate-500">{{ formatDate(message.createdAt) }}</p>
+            <div class="mb-1.5 flex flex-wrap items-center gap-x-2 gap-y-1">
+              <span class="inline-flex items-center gap-1.5 text-sm text-slate-700">
+                <svg
+                  aria-hidden="true"
+                  class="h-4 w-4 text-slate-500"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.6"
+                >
+                  <circle cx="9" cy="8" r="3" />
+                  <circle cx="17" cy="9" r="2.5" />
+                  <path d="M3.5 19v-1.5a5.5 5.5 0 0 1 11 0V19zM15 14a4.5 4.5 0 0 1 5.5 4.4v.6H17" />
+                </svg>
+                <span>{{ teams.activeTeam?.name || 'Team' }}</span>
+              </span>
+              <span class="inline-flex items-center gap-1.5 text-sm text-slate-700">
+                <svg
+                  aria-hidden="true"
+                  class="h-4 w-4 text-indigo-300"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.6"
+                >
+                  <circle cx="12" cy="12" r="9" />
+                  <path d="M3 12h18M12 3a15 15 0 0 1 0 18M12 3a15 15 0 0 0 0 18" />
+                </svg>
+                <button
+                  type="button"
+                  class="text-left hover:text-indigo-600 hover:underline"
+                  :aria-label="`Open ${conversation.type === 'dm' ? 'direct message with' : 'channel'} ${titleOf(conversation)}`"
+                  @click="openActivityConversation(conversation)"
+                >
+                  {{ titleOf(conversation) }}
+                </button>
+              </span>
+              <button
+                type="button"
+                aria-label="Open pinned message conversation"
+                title="Open conversation"
+                class="activity-feed__pinned-badge rounded-md bg-indigo-500 font-semibold text-white hover:bg-indigo-600"
+                @click="openActivityConversation(conversation)"
+              >
+                PINNED
+              </button>
+            </div>
+            <div class="flex flex-col gap-2.5 sm:flex-row sm:items-start">
+              <UserAvatar :name="authorName(message, conversation)" :size="36" />
+              <div class="min-w-0 flex-1">
+                <button
+                  v-if="authorUserId(message)"
+                  type="button"
+                  class="block text-left text-sm font-bold text-slate-900 hover:text-indigo-600 hover:underline"
+                  :aria-label="`Open direct message with ${authorName(message, conversation)}`"
+                  @click="openAuthorChat(message)"
+                >
+                  {{ authorName(message, conversation) }}
+                </button>
+                <strong v-else class="block text-sm text-slate-900">
+                  {{ authorName(message, conversation) }}
+                </strong>
+                <p class="break-words text-sm leading-5 text-slate-900">
+                  <template v-for="(part, index) in messageParts(message)" :key="index">
+                    <a
+                      v-if="part.href"
+                      :href="part.href"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      class="text-indigo-600 underline"
+                      >{{ part.text }}</a
+                    >
+                    <span v-else>{{ part.text }}</span>
+                  </template>
+                </p>
+              </div>
+              <div
+                class="flex shrink-0 flex-row items-center justify-between gap-2 sm:flex-col sm:items-end"
+              >
+                <time class="text-xs text-slate-500">{{ pinnedDate(message.createdAt) }}</time>
+                <button
+                  type="button"
+                  class="activity-feed__pinned-reply rounded-md border border-slate-700 font-semibold text-slate-900 hover:bg-slate-50"
+                  @click="replyToPinned(conversation, message)"
+                >
+                  Reply
+                </button>
+              </div>
             </div>
           </article>
         </div>
@@ -879,3 +1111,17 @@ function saveWorkflow() {
     </div>
   </section>
 </template>
+
+<style scoped>
+.activity-feed__pinned-badge {
+  padding: 2px 6px;
+  font-size: 9px;
+  line-height: 12px;
+}
+
+.activity-feed__pinned-reply {
+  padding: 2px 8px;
+  font-size: 12px;
+  line-height: 16px;
+}
+</style>

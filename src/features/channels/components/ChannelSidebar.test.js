@@ -6,6 +6,7 @@ import { useDmStore } from '@/features/dms/stores/dms'
 import { useUiStore } from '@/stores/ui'
 import { useChannelsStore } from '../store/channels.store'
 import ChannelSidebar from './ChannelSidebar.vue'
+import ChannelListItem from './ChannelListItem.vue'
 
 describe('ChannelSidebar', () => {
   beforeEach(() => setActivePinia(createPinia()))
@@ -31,5 +32,24 @@ describe('ChannelSidebar', () => {
     await nextTick()
 
     expect(ui.selectedChannelId).toBe('channel-1')
+  })
+
+  it('closes the activity panel when a channel is selected', async () => {
+    const channels = useChannelsStore()
+    channels.channels = [
+      { id: 'frontend', name: 'Frontend', isDefault: true, isFavorite: false },
+    ]
+    channels.loaded = true
+    const dms = useDmStore()
+    const ui = useUiStore()
+    ui.activePanel = 'activity'
+
+    const wrapper = shallowMount(ChannelSidebar)
+    wrapper.findComponent(ChannelListItem).vm.$emit('select')
+    await nextTick()
+
+    expect(ui.selectedChannelId).toBe('frontend')
+    expect(ui.activePanel).toBeNull()
+    expect(dms.activeId).toBeNull()
   })
 })

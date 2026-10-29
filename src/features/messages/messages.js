@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
+import { useActivityStore } from '@/stores/activity'
 
 const STORAGE_KEY = 'whistleit:channel-messages'
 const PAGE_SIZE = 20
@@ -52,7 +53,7 @@ export const useMessagesStore = defineStore('messages', () => {
     return true
   }
 
-  function sendMessage(channelId, payload, author) {
+  function sendMessage(channelId, payload, author, conversationName = String(channelId)) {
     const key = String(channelId)
     const message = {
       id: createId(),
@@ -77,6 +78,14 @@ export const useMessagesStore = defineStore('messages', () => {
     }
     if (!messagesByChannel.value[key]) messagesByChannel.value[key] = []
     messagesByChannel.value[key].push(message)
+    if (!message.scheduled) {
+      useActivityStore().recordMessageMentions({
+        text: message.content,
+        conversationId: key,
+        conversationName,
+        conversationType: 'channel',
+      })
+    }
     persist()
     return message
   }
@@ -118,6 +127,15 @@ export const useMessagesStore = defineStore('messages', () => {
     return true
   }
 
+  function cancelScheduledMessage(channelId, messageId) {
+    const key = String(channelId)
+    const message = messagesFor(key).find((item) => item.id === messageId)
+    if (!message?.scheduled) return false
+    messagesByChannel.value[key] = messagesFor(key).filter((item) => item.id !== messageId)
+    persist()
+    return true
+  }
+
   return {
     messagesByChannel,
     visibleCounts,
@@ -129,5 +147,6 @@ export const useMessagesStore = defineStore('messages', () => {
     editMessage,
     deleteMessage,
     toggleReaction,
+    cancelScheduledMessage,
   }
 })
