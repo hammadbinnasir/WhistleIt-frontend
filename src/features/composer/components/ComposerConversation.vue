@@ -25,13 +25,6 @@ const props = defineProps({
 const dms = useDmStore()
 const channelsStore = useChannelsStore()
 const ui = useUiStore()
-const messagesByConversation = ref({})
-const localConversationKey = computed(
-  () => `${props.conversationType}:${props.conversationId ?? ''}`,
-)
-const localMessages = computed(
-  () => messagesByConversation.value[localConversationKey.value] || [],
-)
 const messageStore = useMessagesStore()
 const messagesContainer = ref(null)
 const editingId = ref(null)
@@ -86,7 +79,6 @@ const visibleMessages = computed(() =>
     : messageStore.visibleMessagesFor(channelId.value),
 )
 const renderedMessages = computed(() => {
-  if (!conversation.value) return localMessages.value
   const currentUser = dms.usersById[dms.meId]?.name || 'You'
   let previous = null
 
@@ -140,11 +132,6 @@ const reminderMessage = computed(() => {
   }
 })
 
-function addLocalMessage(message) {
-  const key = localConversationKey.value
-  messagesByConversation.value[key] = [...(messagesByConversation.value[key] || []), message]
-}
-
 watch(
   () => `${props.conversationType}:${props.conversationId}`,
   () => {
@@ -180,62 +167,58 @@ function togglePin(message) {
 
 function addMessage(payload) {
   const messagePayload = replyTo.value ? { ...payload, replyTo: { ...replyTo.value } } : payload
-  let sentMessage
-  if (conversation.value) {
-    sentMessage = dms.sendMessage(conversation.value.id, messagePayload)
-  } else {
-    sentMessage = messageStore.sendMessage(
-      channelId.value,
-      messagePayload,
-      dms.usersById[dms.meId]?.name || 'You',
-    )
-    if (!sentMessage.scheduled) {
-      ui.addPoll(sentMessage, conversationMeta.value)
-      addMockMessage({
-        id: sentMessage.id,
-        text: sentMessage.content,
-        sender: sentMessage.author,
-        conversation: conversationMeta.value,
-      })
-    }
-    addLocalMessage(sentMessage)
-    ui.addPoll(sentMessage, {
-      id: String(props.conversationId || ''),
-      name: conversationLabel.value,
-      kind: props.conversationType === 'dm' ? 'dm' : 'public',
-    })
+  const sentMessage = conversation.value
+    ? dms.sendMessage(conversation.value.id, messagePayload)
+    : messageStore.sendMessage(
+        channelId.value,
+        messagePayload,
+        dms.usersById[dms.meId]?.name || 'You',
+      )
+  if (!sentMessage) {
+    ui.toast('Message not sent', 'The conversation could not be found.', 'error')
+    return
+  }
+  if (!conversation.value && !sentMessage.scheduled) {
+    ui.addPoll(sentMessage, conversationMeta.value)
     addMockMessage({
       id: sentMessage.id,
       text: sentMessage.content,
       sender: sentMessage.author,
-      conversation: {
-        id: String(props.conversationId),
-        name: String(props.conversationId).replaceAll('-', ' '),
-        kind: props.conversationType === 'dm' ? 'dm' : 'public',
-      },
+      conversation: conversationMeta.value,
     })
-  }
-  if (!sentMessage) {
-    ui.toast('Message not sent', 'The conversation could not be found.', 'error')
-    return
   }
   replyTo.value = null
   scrollMessagesToLatest()
 }
 
 function addScheduledMessage(message) {
-  addLocalMessage({ ...message, scheduled: true, author: ' ABDULLAH', mine: true })
+  const scheduledMessage = conversation.value
+    ? dms.sendMessage(conversation.value.id, message)
+    : messageStore.sendMessage(
+        channelId.value,
+        message,
+        dms.usersById[dms.meId]?.name || 'You',
+      )
+  if (!scheduledMessage) {
+    ui.toast('Message not scheduled', 'The conversation could not be found.', 'error')
+    return
+  }
   scrollMessagesToLatest()
 }
 
 function addGif(gif) {
-  addLocalMessage({
-    content: '',
-    gif,
-    scheduledAt: null,
-    author: ' ABDULLAH',
-    mine: true,
-  })
+  const message = { content: '', gif }
+  const sentMessage = conversation.value
+    ? dms.sendMessage(conversation.value.id, message)
+    : messageStore.sendMessage(
+        channelId.value,
+        message,
+        dms.usersById[dms.meId]?.name || 'You',
+      )
+  if (!sentMessage) {
+    ui.toast('GIF not sent', 'The conversation could not be found.', 'error')
+    return
+  }
   scrollMessagesToLatest()
 }
 
@@ -297,8 +280,32 @@ function deleteMessage(message) {
 async function copyMessage(message) {
   openMenuId.value = null
   try {
-    if (!navigator.clipboard?.writeText) throw new Error('Clipboard access is unavailable.')
-    await navigator.clipboard.writeText(message.content)
+    let copied = false
+    try {
+      if (typeof navigator.clipboard?.writeText === 'function') {
+        await navigator.clipboard.writeText(message.content)
+        copied = true
+      }
+    } catch {
+      // Fall back to the browser's copy command when clipboard permissions are unavailable.
+    }
+
+    if (!copied) {
+      const input = document.createElement('textarea')
+      input.value = message.content
+      input.setAttribute('readonly', '')
+      input.style.position = 'fixed'
+      input.style.opacity = '0'
+      document.body.append(input)
+      input.select()
+      try {
+        if (typeof document.execCommand !== 'function' || !document.execCommand('copy')) {
+          throw new Error('Clipboard access is unavailable.')
+        }
+      } finally {
+        input.remove()
+      }
+    }
     ui.toast('Copied', 'Message copied to clipboard.', 'success')
   } catch (error) {
     ui.toast(
@@ -1125,7 +1132,16 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', closeActionsOn
 .composer-conversation__reaction-picker :deep(.v3-body-inner .v3-group .v3-emojis button) {
   flex-basis: 20%;
   max-width: 20%;
-  font-size: 24px;
+  font-size: 18px;
+}
+
+.composer-conversation__reaction-picker
+  :deep(.v3-body-inner .v3-group .v3-emojis button img) {
+  width: 32px;
+  height: 32px;
+  max-width: 32px;
+  padding: 0;
+  object-fit: contain;
 }
 
 .composer-conversation__reactions {

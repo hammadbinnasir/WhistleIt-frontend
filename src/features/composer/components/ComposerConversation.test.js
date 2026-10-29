@@ -191,6 +191,31 @@ describe('composer conversation', () => {
     vi.unstubAllGlobals()
   })
 
+  it('falls back to the browser copy command when clipboard access is blocked', async () => {
+    const writeText = vi.fn().mockRejectedValue(new Error('Permission denied'))
+    const execCommand = vi.fn().mockReturnValue(true)
+    const originalExecCommand = Object.getOwnPropertyDescriptor(document, 'execCommand')
+    Object.defineProperty(document, 'execCommand', { configurable: true, value: execCommand })
+    vi.stubGlobal('navigator', { clipboard: { writeText } })
+    const wrapper = mount(ComposerConversation)
+    const ui = useUiStore()
+    await sendMessage(wrapper, 'Copy with fallback')
+
+    await wrapper.get('button[aria-label="Copy message"]').trigger('click')
+
+    expect(writeText).toHaveBeenCalledWith('Copy with fallback')
+    expect(execCommand).toHaveBeenCalledWith('copy')
+    expect(ui.toasts.at(-1)).toMatchObject({ title: 'Copied', type: 'success' })
+    expect(document.querySelector('textarea[readonly]')).toBeNull()
+
+    if (originalExecCommand) {
+      Object.defineProperty(document, 'execCommand', originalExecCommand)
+    } else {
+      delete document.execCommand
+    }
+    vi.unstubAllGlobals()
+  })
+
   it('deletes a message and removes its pin', async () => {
     vi.stubGlobal(
       'confirm',
