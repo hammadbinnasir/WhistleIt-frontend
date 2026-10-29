@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useTeamsStore } from '@/stores/teams'
 import { useMembersStore } from '@/stores/members'
@@ -130,6 +130,16 @@ function handleClose() {
   successNotice.value = ''
   searchSuggestions.value = []
 }
+
+function handleKeydown(event) {
+  if (event.key === 'Escape' && ui.memberManageModalOpen) {
+    event.preventDefault()
+    handleClose()
+  }
+}
+
+onMounted(() => document.addEventListener('keydown', handleKeydown))
+onBeforeUnmount(() => document.removeEventListener('keydown', handleKeydown))
 
 function getInitials(name) {
   return name
@@ -383,6 +393,12 @@ function getInitials(name) {
   box-shadow: 0 20px 40px rgba(0, 0, 0, 0.45);
   color: #f1f5f9;
   overflow: hidden;
+}
+
+.modal-card button:focus-visible,
+.modal-card input:focus-visible {
+  outline: 2px solid var(--color-indigo-400);
+  outline-offset: 2px;
 }
 
 .modal-header {

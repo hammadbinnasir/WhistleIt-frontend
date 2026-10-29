@@ -29,11 +29,9 @@ export function createTeam(payload) {
   )
 }
 
-export function joinTeam(teamId) {
-  return withMock(
-    () => import('./__mocks__/teams.mock').then((m) => m.mockJoinTeam(teamId)),
-    () => apiRequest(`/teams/${teamId}/join`, { method: 'POST' }),
-  )
+export function joinTeam(inviteCode) {
+  // TODO: Replace the mock with POST /teams/join using { inviteCode }.
+  return import('./__mocks__/teams.mock').then((m) => m.mockJoinTeam(inviteCode))
 }
 
 export function searchTeams(query) {

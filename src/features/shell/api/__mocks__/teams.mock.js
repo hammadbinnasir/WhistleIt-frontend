@@ -3,9 +3,14 @@
  * Simulates a ~300ms network delay for realistic loading states.
  */
 
-let _nextId = 100
+const MOCK_DATA_KEY = 'whistleit:shell-mock-data'
 
-const _userTeams = [
+const initialWorkspaces = [
+  { id: 'workspace-1', name: 'WhistleIt', initials: 'WI' },
+  { id: 'workspace-2', name: 'Design', initials: 'DE' },
+]
+
+const initialUserTeams = [
   {
     id: 'team-1',
     name: 'Programmers Force',
@@ -40,8 +45,8 @@ const _userTeams = [
   },
 ]
 
-const _allTeams = [
-  ..._userTeams,
+const initialDiscoverableTeams = [
+  ...initialUserTeams,
   {
     id: 'team-5',
     name: 'Backend Crew',
@@ -60,6 +65,50 @@ const _allTeams = [
   },
 ]
 
+function loadMockData() {
+  try {
+    const stored = localStorage.getItem(MOCK_DATA_KEY)
+    if (stored) {
+      const parsed = JSON.parse(stored)
+      if (
+        Array.isArray(parsed.workspaces) &&
+        Array.isArray(parsed.userTeams) &&
+        Array.isArray(parsed.discoverableTeams)
+      ) {
+        return parsed
+      }
+    }
+  } catch (error) {
+    console.warn('Could not load persisted shell mock data:', error)
+  }
+
+  return {
+    workspaces: initialWorkspaces,
+    userTeams: initialUserTeams,
+    discoverableTeams: initialDiscoverableTeams,
+  }
+}
+
+const mockData = loadMockData()
+let _workspaces = mockData.workspaces
+let _userTeams = mockData.userTeams
+let _allTeams = mockData.discoverableTeams
+
+function persistMockData() {
+  try {
+    localStorage.setItem(
+      MOCK_DATA_KEY,
+      JSON.stringify({
+        workspaces: _workspaces,
+        userTeams: _userTeams,
+        discoverableTeams: _allTeams,
+      }),
+    )
+  } catch (error) {
+    console.warn('Could not persist shell mock data:', error)
+  }
+}
+
 function delay(ms = 300) {
   return new Promise((r) => setTimeout(r, ms))
 }
@@ -71,10 +120,7 @@ export async function mockTeams() {
 
 export async function mockWorkspaces() {
   await delay()
-  return [
-    { id: 'workspace-1', name: 'WhistleIt', initials: 'WI' },
-    { id: 'workspace-2', name: 'Design', initials: 'DE' },
-  ]
+  return _workspaces.map((workspace) => ({ ...workspace }))
 }
 
 export async function mockWorkspaceTeams(workspaceId) {
@@ -84,7 +130,9 @@ export async function mockWorkspaceTeams(workspaceId) {
 
 export async function mockCreateTeam(payload) {
   await delay(400)
-  const id = `team-${++_nextId}`
+  const nextId =
+    Math.max(100, ..._allTeams.map((team) => Number(String(team.id).replace('team-', '')) || 0)) + 1
+  const id = `team-${nextId}`
   const initials = payload.name
     .split(' ')
     .map((w) => w[0])
@@ -101,17 +149,59 @@ export async function mockCreateTeam(payload) {
   }
   _userTeams.push(team)
   _allTeams.push(team)
+  persistMockData()
   return team
 }
 
-export async function mockJoinTeam(teamId) {
-  await delay(400)
-  const team = _allTeams.find((t) => t.id === teamId)
-  if (!team) throw { status: 404, message: 'Team not found' }
-  if (!_userTeams.find((t) => t.id === teamId)) {
-    _userTeams.push(team)
+export async function mockCreateWorkspace(payload) {
+  await delay(300)
+  const nextId =
+    Math.max(
+      0,
+      ..._workspaces.map(
+        (workspace) => Number(String(workspace.id).replace('workspace-', '')) || 0,
+      ),
+    ) + 1
+  const workspace = {
+    id: `workspace-${nextId}`,
+    name: payload.name,
+    initials: payload.initials,
   }
-  return team
+  _workspaces.push(workspace)
+  persistMockData()
+  return { ...workspace }
+}
+
+export async function mockJoinTeam(inviteCode) {
+  await delay(400)
+  const code = String(inviteCode).trim()
+  if (code.toLowerCase() === 'invalid' || code.length < 6) {
+    throw new Error('This invite code is invalid or has expired.')
+  }
+
+  let team =
+    _allTeams.find((item) => item.id === code) ??
+    _allTeams.find((item) => item.inviteCode?.toLowerCase() === code.toLowerCase())
+
+  if (!team) {
+    const workspaceId = _workspaces[1]?.id ?? _workspaces[0]?.id
+    if (!workspaceId) throw new Error('No workspace is available for this invite.')
+    team = {
+      id: `invite-${encodeURIComponent(code.toLowerCase())}`,
+      name: 'Joined Team',
+      initials: 'JT',
+      color: 'var(--color-indigo-500)',
+      memberCount: 1,
+      workspaceId,
+      inviteCode: code,
+    }
+    _allTeams.push(team)
+  }
+
+  const alreadyMember = _userTeams.some((item) => item.id === team.id)
+  if (!alreadyMember) _userTeams.push(team)
+  persistMockData()
+  return { team: { ...team }, workspaceId: team.workspaceId, alreadyMember }
 }
 
 export async function mockSearchTeams(query) {
