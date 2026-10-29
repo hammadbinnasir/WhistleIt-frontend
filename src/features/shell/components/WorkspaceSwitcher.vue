@@ -38,14 +38,11 @@ function getInitials(name) {
 <style scoped>
 .workspace-switcher {
   display: flex;
+  width: 100%;
   flex-direction: column;
   align-items: center;
   gap: 7px;
-  max-height: clamp(56px, 28vh, 224px);
-  overflow-y: auto;
   padding: 2px 0;
-  scrollbar-width: thin;
-  scrollbar-color: var(--color-slate-400) transparent;
 }
 
 .workspace-switcher__button {

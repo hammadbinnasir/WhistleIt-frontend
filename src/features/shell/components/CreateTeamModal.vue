@@ -1,5 +1,5 @@
 <script setup>
-import { ref } from 'vue'
+import { onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useTeamsStore } from '@/stores/teams'
 import { useUiStore } from '@/stores/ui'
@@ -47,6 +47,16 @@ function handleClose() {
   if (isSubmitting.value) return
   ui.toggleTeamCreateModal()
 }
+
+function handleKeydown(event) {
+  if (event.key === 'Escape' && ui.teamCreateModalOpen) {
+    event.preventDefault()
+    handleClose()
+  }
+}
+
+onMounted(() => document.addEventListener('keydown', handleKeydown))
+onBeforeUnmount(() => document.removeEventListener('keydown', handleKeydown))
 </script>
 
 <template>
@@ -302,5 +312,13 @@ function handleClose() {
 .btn-secondary:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+.close-btn:focus-visible,
+.color-swatch:focus-visible,
+.btn-primary:focus-visible,
+.btn-secondary:focus-visible {
+  outline: 2px solid var(--color-indigo-400);
+  outline-offset: 2px;
 }
 </style>

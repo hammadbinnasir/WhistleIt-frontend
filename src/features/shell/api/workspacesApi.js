@@ -22,6 +22,11 @@ export function getWorkspaces() {
   )
 }
 
+export function createWorkspace(payload) {
+  // TODO: Replace the mock with POST /workspaces when the backend contract is available.
+  return import('./__mocks__/teams.mock').then((mock) => mock.mockCreateWorkspace(payload))
+}
+
 export function getWorkspaceTeams(workspaceId) {
   if (!workspaceId) {
     throw new Error('A workspace ID is required to load its teams.')

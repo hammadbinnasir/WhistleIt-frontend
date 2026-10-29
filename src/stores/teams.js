@@ -5,7 +5,11 @@ import {
   joinTeam as apiJoinTeam,
   searchTeams as apiSearchTeams,
 } from '@/features/shell/api/teamsApi'
-import { getWorkspaces, getWorkspaceTeams } from '@/features/shell/api/workspacesApi'
+import {
+  createWorkspace as apiCreateWorkspace,
+  getWorkspaces,
+  getWorkspaceTeams,
+} from '@/features/shell/api/workspacesApi'
 
 const LAST_TEAM_KEY = 'whistleit:last-team'
 
@@ -125,6 +129,26 @@ export const useTeamsStore = defineStore('teams', () => {
     return activeWorkspace.value
   }
 
+  async function createWorkspace(payload) {
+    loading.value = true
+    error.value = null
+    try {
+      const workspace = await apiCreateWorkspace(payload)
+      if (!workspace?.id || !workspace.name) {
+        throw new Error('The workspace response is missing required fields.')
+      }
+      if (!workspaces.value.some((item) => item.id === workspace.id)) {
+        workspaces.value = [...workspaces.value, workspace]
+      }
+      teamsByWorkspaceId.value[workspace.id] = []
+      activeWorkspaceId.value = workspace.id
+      activeTeamId.value = null
+      return workspace
+    } finally {
+      loading.value = false
+    }
+  }
+
   function selectTeam(id) {
     if (!teams.value.some((team) => team.id === id)) return false
     activeTeamId.value = id
@@ -163,32 +187,43 @@ export const useTeamsStore = defineStore('teams', () => {
     }
   }
 
-  /** Join an existing team by ID and auto-select it. */
-  async function joinTeam(teamId) {
+  /** Join a team by invite code and auto-select it in its owning workspace. */
+  async function joinTeam(inviteCode) {
     loading.value = true
     error.value = null
     try {
-      const response = await apiJoinTeam(teamId)
-      const workspaceId = response.workspaceId ?? activeWorkspaceId.value
-      if (!workspaceId) throw new Error('Select a workspace before joining a team.')
+      const response = await apiJoinTeam(inviteCode)
+      const team = response.team
+      const workspaceId = response.workspaceId ?? team?.workspaceId
+      if (!team?.id || !workspaceId) {
+        throw new Error('The invite response is missing its team or workspace.')
+      }
+      const alreadyKnown = (teamsByWorkspaceId.value[workspaceId] ?? []).some(
+        (item) => item.id === team.id,
+      )
       if (!workspaces.value.some((workspace) => workspace.id === workspaceId)) {
         await fetchWorkspaces()
       }
       if (!workspaces.value.some((workspace) => workspace.id === workspaceId)) {
         throw new Error('The joined team belongs to an unavailable workspace.')
       }
-      if (workspaceId !== activeWorkspaceId.value) await selectWorkspace(workspaceId)
+      if (
+        workspaceId !== activeWorkspaceId.value ||
+        !Object.prototype.hasOwnProperty.call(teamsByWorkspaceId.value, workspaceId)
+      ) {
+        await selectWorkspace(workspaceId)
+      }
 
-      const team = { ...response, workspaceId }
       const workspaceTeams = teamsByWorkspaceId.value[workspaceId] ?? []
-      if (!workspaceTeams.some((item) => item.id === team.id)) {
-        teamsByWorkspaceId.value[workspaceId] = [...workspaceTeams, team]
+      const existingTeam = workspaceTeams.find((item) => item.id === team.id)
+      if (!existingTeam) {
+        teamsByWorkspaceId.value[workspaceId] = [...workspaceTeams, { ...team, workspaceId }]
       }
       selectTeam(team.id)
-      return team
-    } catch (err) {
-      error.value = err.message ?? 'Failed to join team'
-      throw err
+      return {
+        team: existingTeam ?? { ...team, workspaceId },
+        alreadyMember: Boolean(response.alreadyMember || alreadyKnown),
+      }
     } finally {
       loading.value = false
     }
@@ -232,6 +267,7 @@ export const useTeamsStore = defineStore('teams', () => {
     fetchWorkspaces,
     fetchTeams,
     selectWorkspace,
+    createWorkspace,
     selectTeam,
     switchTeam,
     createTeam,

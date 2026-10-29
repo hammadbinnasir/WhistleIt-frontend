@@ -14,12 +14,14 @@ import { useActivityStore } from '@/stores/activity'
 import { useRemindersStore } from '@/features/search/reminders'
 import { useUserStore, UserModule } from '@/features/account'
 import { clearAuthSession, getAuthUser } from '@/features/auth/session'
+import { logout as logoutRequest } from '@/features/auth/api'
 
 // Shell
 import {
   TeamRail,
   TeamSwitcher,
   CreateTeamModal,
+  CreateWorkspaceModal,
   JoinTeamModal,
   HelpModal,
   MemberManageModal,
@@ -63,7 +65,7 @@ if (!userStore.state.profile.fullName && authenticatedUser?.fullName) {
 
 const { selectedChannelId, sidebarOpen } = storeToRefs(ui)
 const { activeId: activeDmId } = storeToRefs(dms)
-const { activeTeam } = storeToRefs(teamsStore)
+const { activeTeam, activeWorkspace } = storeToRefs(teamsStore)
 
 const isTeamSwitcherOpen = ref(false)
 const reminderModalOpen = ref(false)
@@ -156,8 +158,18 @@ async function toggleChannelFavorite() {
 }
 
 async function logout() {
-  clearAuthSession()
-  await router.push({ name: 'login' })
+  try {
+    await logoutRequest()
+  } catch (error) {
+    ui.toast(
+      'Unable to log out from server',
+      error?.message || 'Your local session was cleared.',
+      'error',
+    )
+  } finally {
+    clearAuthSession()
+    await router.push({ name: 'login' })
+  }
 }
 
 onMounted(async () => {
@@ -177,7 +189,18 @@ onBeforeUnmount(() => {
 <template>
   <div class="flex h-screen w-screen overflow-hidden bg-slate-50 text-slate-800">
     <!-- 1. Leftmost Rail: Workspace/Teams Switcher & Bottom User Profile -->
-    <TeamRail />
+    <TeamRail>
+      <template #footer>
+        <UserModule
+          :user="user"
+          :avatar-size="32"
+          :fixed="false"
+          @log-out="logout"
+          @settings-saved="onAccountSettingsSaved"
+          @error="onAccountError"
+        />
+      </template>
+    </TeamRail>
 
     <!-- 2. Workspace Sidebar: Header Switcher + Activities + Channels + Direct Messages -->
     <aside
@@ -190,6 +213,7 @@ onBeforeUnmount(() => {
           <button
             type="button"
             class="flex w-full cursor-pointer items-center justify-between rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-white/5"
+            aria-haspopup="menu"
             :aria-expanded="isTeamSwitcherOpen"
             @click="isTeamSwitcherOpen = !isTeamSwitcherOpen"
           >
@@ -260,7 +284,54 @@ onBeforeUnmount(() => {
 
     <!-- 3. Main Chat Stage -->
     <main class="flex min-w-0 flex-1 flex-col bg-white">
-      <ActivityFeed v-if="ui.activePanel === 'activity'" class="min-h-0 flex-1" />
+      <section
+        v-if="!teamsStore.loading && !teamsStore.error && !activeTeam"
+        class="flex min-h-0 flex-1 flex-col items-center justify-center gap-4 px-6 text-center"
+        aria-labelledby="workspace-empty-title"
+      >
+        <div class="max-w-lg space-y-2">
+          <h1 id="workspace-empty-title" class="text-xl font-semibold text-slate-800">
+            {{
+              activeWorkspace ? `Welcome to ${activeWorkspace.name}` : 'Create your first workspace'
+            }}
+          </h1>
+          <p class="text-sm text-slate-600">
+            {{
+              activeWorkspace
+                ? 'This workspace does not have any teams yet.'
+                : 'Create a workspace to start organizing teams and conversations.'
+            }}
+          </p>
+        </div>
+        <div class="flex flex-wrap justify-center gap-3">
+          <template v-if="activeWorkspace">
+            <button
+              type="button"
+              class="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600"
+              @click="ui.toggleTeamCreateModal()"
+            >
+              Create a team
+            </button>
+            <button
+              type="button"
+              class="rounded-md border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600"
+              @click="ui.toggleTeamJoinModal()"
+            >
+              Join a team
+            </button>
+          </template>
+          <button
+            v-else
+            type="button"
+            class="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600"
+            @click="ui.toggleWorkspaceCreateModal()"
+          >
+            Create a workspace
+          </button>
+        </div>
+      </section>
+
+      <ActivityFeed v-else-if="ui.activePanel === 'activity'" class="min-h-0 flex-1" />
 
       <template v-else>
         <!-- Channel or Conversation Header -->
@@ -366,7 +437,6 @@ onBeforeUnmount(() => {
               v-else-if="ui.activePanel === 'search'"
               :channel-id="selectedChannelId || ''"
             />
-            <HelpDrawer v-else-if="ui.activePanel === 'help'" />
           </aside>
         </div>
       </template>
@@ -416,7 +486,10 @@ onBeforeUnmount(() => {
         </svg>
         <div class="min-w-0 flex-1">
           <p class="font-semibold">{{ toast.title }}</p>
-          <p class="mt-1 text-sm" :class="toast.type === 'success' ? 'text-slate-500' : 'text-slate-200'">
+          <p
+            class="mt-1 text-sm"
+            :class="toast.type === 'success' ? 'text-slate-500' : 'text-slate-200'"
+          >
             {{ toast.body }}
           </p>
         </div>
@@ -441,6 +514,7 @@ onBeforeUnmount(() => {
     />
 
     <!-- Shell Modals -->
+    <CreateWorkspaceModal />
     <CreateTeamModal />
     <JoinTeamModal />
     <HelpModal />

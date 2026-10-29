@@ -68,7 +68,7 @@ router.beforeEach(async (to) => {
     to.name === 'workspace-team'
       ? workspaces.find((workspace) => String(workspace.id) === String(to.params.workspaceId))
       : teamsStore.activeWorkspace
-  const workspace = requestedWorkspace ?? workspaces[0]
+  const workspace = requestedWorkspace ?? teamsStore.activeWorkspace ?? workspaces[0]
 
   if (
     teamsStore.activeWorkspaceId !== workspace.id ||

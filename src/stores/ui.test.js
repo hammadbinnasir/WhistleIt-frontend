@@ -45,9 +45,14 @@ describe('ui store', () => {
 
   it('toggles modals properly', () => {
     const ui = useUiStore()
+
     expect(ui.helpModalOpen).toBe(false)
     ui.toggleHelpModal()
     expect(ui.helpModalOpen).toBe(true)
+
+    expect(ui.workspaceCreateModalOpen).toBe(false)
+    ui.toggleWorkspaceCreateModal()
+    expect(ui.workspaceCreateModalOpen).toBe(true)
 
     expect(ui.teamCreateModalOpen).toBe(false)
     ui.toggleTeamCreateModal()
