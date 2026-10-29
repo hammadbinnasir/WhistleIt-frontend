@@ -24,7 +24,6 @@ import {
   CreateWorkspaceModal,
   JoinTeamModal,
   HelpModal,
-  HelpDrawer,
   MemberManageModal,
 } from '@/features/shell'
 
