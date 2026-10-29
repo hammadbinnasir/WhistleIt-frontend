@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { http } from '@/features/channels/api/http'
-import { requestPasswordReset, resetPassword } from './api'
+import { logout, requestPasswordReset, resetPassword } from './api'
 
 vi.mock('@/features/channels/api/http', () => ({
   http: vi.fn(),
@@ -19,6 +19,12 @@ describe('auth API', () => {
       body: { email: 'sam@example.com' },
       auth: false,
     })
+  })
+
+  it('posts to the authenticated logout endpoint', () => {
+    logout()
+
+    expect(http).toHaveBeenCalledWith('/logout', { method: 'POST' })
   })
 
   it('posts reset credentials to the token-specific password reset endpoint', () => {
