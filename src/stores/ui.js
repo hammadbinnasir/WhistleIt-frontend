@@ -63,7 +63,10 @@ export const useUiStore = defineStore('ui', () => {
   }
   function togglePinnedMessage(message, conversation) {
     const id = String(message.id)
-    const existingIndex = pinnedMessages.value.findIndex((item) => String(item.id) === id)
+    const conversationId = String(conversation?.id ?? message.conversation?.id ?? '')
+    const existingIndex = pinnedMessages.value.findIndex(
+      (item) => String(item.id) === id && String(item.conversation?.id ?? '') === conversationId,
+    )
     if (existingIndex !== -1) {
       pinnedMessages.value.splice(existingIndex, 1)
       return

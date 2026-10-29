@@ -53,9 +53,10 @@ export const useRemindersStore = defineStore('reminders', {
         this.items.forEach((r) => {
           if (!r.fired && new Date(r.remindAt).getTime() <= now) {
             r.fired = true
-            ui.toast(`Reminder: ${r.conversationName}`, r.text)
+            const title = r.title || `Reminder: ${r.conversationName}`
+            ui.toast(title, r.text)
             if ('Notification' in window && Notification.permission === 'granted') {
-              new Notification(`Reminder: ${r.conversationName}`, { body: r.text })
+              new Notification(title, { body: r.text })
             }
             this.persist()
           }

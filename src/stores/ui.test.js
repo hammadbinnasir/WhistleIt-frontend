@@ -24,6 +24,19 @@ describe('ui store', () => {
     expect(ui.sidebarOpen).toBe(false)
   })
 
+  it('scopes pinned messages to their conversation', () => {
+    const ui = useUiStore()
+    const message = { id: 'same-id', content: 'Pinned' }
+
+    ui.togglePinnedMessage(message, { id: 'general', name: 'General' })
+    ui.togglePinnedMessage(message, { id: 'random', name: 'Random' })
+    expect(ui.pinnedMessages).toHaveLength(2)
+
+    ui.togglePinnedMessage(message, { id: 'general', name: 'General' })
+    expect(ui.pinnedMessages).toHaveLength(1)
+    expect(ui.pinnedMessages[0].conversation.name).toBe('Random')
+  })
+
   it('opens and closes search panels and channel settings', () => {
     const ui = useUiStore()
 

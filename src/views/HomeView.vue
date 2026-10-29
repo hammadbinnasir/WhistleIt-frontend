@@ -24,6 +24,7 @@ import {
   CreateWorkspaceModal,
   JoinTeamModal,
   HelpModal,
+  HelpDrawer,
   MemberManageModal,
 } from '@/features/shell'
 
@@ -38,7 +39,6 @@ import PresenceDot from '@/features/dms/components/PresenceDot.vue'
 // Composer
 import { ComposerConversation } from '@/features/composer'
 
-// Search & Reminders
 import ChatHeaderActions from '@/features/search/ChatHeaderActions.vue'
 import ChannelSettingsModal from '@/features/search/ChannelSettingsModal.vue'
 import RemindersPanel from '@/features/search/RemindersPanel.vue'
@@ -453,7 +453,6 @@ onBeforeUnmount(() => {
       @close="ui.channelSettingsOpen = false"
     />
 
-    <!-- Set Reminder Modal -->
     <SetReminderModal
       v-if="reminderModalOpen && reminderMessage"
       :message="reminderMessage"

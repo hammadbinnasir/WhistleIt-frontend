@@ -79,6 +79,7 @@ const saveEdit = (r) => {
           In {{ r.conversationType === 'dm' ? 'conversation with' : 'channel' }}
           <span class="font-normal text-blue-500">@{{ r.conversationName }}</span>
         </p>
+        <p v-if="r.title" class="mt-2 text-sm font-semibold text-slate-900">{{ r.title }}</p>
         <p class="mt-1 text-sm font-bold text-slate-900">Message:</p>
         <template v-if="editingId === r.id">
           <textarea
