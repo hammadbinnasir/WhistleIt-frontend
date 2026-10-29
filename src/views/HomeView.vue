@@ -9,6 +9,7 @@ import { useTeamsStore } from '@/stores/teams'
 import { useMembersStore } from '@/stores/members'
 import { useChannelsStore } from '@/features/channels'
 import { useDmStore } from '@/features/dms/stores/dms'
+import { usePresenceStore, STATES } from '@/features/dms/stores/presence'
 import { useActivityStore } from '@/stores/activity'
 import { useRemindersStore } from '@/features/search/reminders'
 import { useUserStore, UserModule } from '@/features/account'
@@ -30,6 +31,7 @@ import { ChannelSidebar, ChannelHeader } from '@/features/channels'
 // Direct Messages
 import DmList from '@/features/dms/components/DmList.vue'
 import ActivityFeed from '@/features/dms/components/ActivityFeed.vue'
+import PresenceDot from '@/features/dms/components/PresenceDot.vue'
 
 // Composer
 import { ComposerConversation } from '@/features/composer'
@@ -49,6 +51,7 @@ const teamsStore = useTeamsStore()
 const membersStore = useMembersStore()
 const channelsStore = useChannelsStore()
 const dms = useDmStore()
+const presence = usePresenceStore()
 const activity = useActivityStore()
 const remindersStore = useRemindersStore()
 const userStore = useUserStore()
@@ -66,6 +69,17 @@ const isTeamSwitcherOpen = ref(false)
 const reminderModalOpen = ref(false)
 const activeConversation = computed(
   () => dms.conversations.find((conversation) => conversation.id === activeDmId.value) || null,
+)
+const activeConversationPartnerId = computed(() =>
+  activeConversation.value?.type === 'dm' ? dms.partnerId(activeConversation.value) : null,
+)
+const activeConversationPresence = computed(() =>
+  activeConversationPartnerId.value
+    ? presence.stateOf(activeConversationPartnerId.value)
+    : null,
+)
+const activeConversationIsFavorite = computed(() =>
+  activeConversation.value ? dms.isFavorite(activeConversation.value.id) : false,
 )
 
 const user = computed(() => ({
@@ -265,12 +279,52 @@ onBeforeUnmount(() => {
           class="flex items-center justify-between border-b border-slate-200 bg-white px-5 py-3"
         >
           <div class="min-w-0">
-            <h1 class="truncate text-lg font-semibold text-slate-800">
-              {{ dms.titleOf(activeConversation) }}
-            </h1>
-            <p class="text-xs text-slate-500">
-              {{ activeConversation.type === 'group' ? 'Group direct message' : 'Direct message' }}
-            </p>
+            <div class="flex items-center gap-2">
+              <button
+                v-if="activeConversationPartnerId"
+                type="button"
+                class="shrink-0 rounded p-0.5 transition-colors hover:bg-slate-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-indigo-500"
+                :class="activeConversationIsFavorite ? 'text-indigo-500' : 'text-slate-400'"
+                :aria-label="activeConversationIsFavorite ? 'Remove from favorites' : 'Add to favorites'"
+                :aria-pressed="activeConversationIsFavorite"
+                @click="dms.toggleFavorite(activeConversation.id)"
+              >
+                <svg
+                  class="h-5 w-5"
+                  viewBox="0 0 24 24"
+                  :fill="activeConversationIsFavorite ? 'currentColor' : 'none'"
+                  stroke="currentColor"
+                  stroke-width="1.8"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  aria-hidden="true"
+                >
+                  <path
+                    d="m12 3 2.8 5.7 6.2.9-4.5 4.4 1.1 6.2-5.6-3-5.6 3 1.1-6.2L3 9.6l6.2-.9L12 3Z"
+                  />
+                </svg>
+              </button>
+              <div class="min-w-0">
+                <h1 class="truncate text-lg font-semibold text-slate-800">
+                  {{ dms.titleOf(activeConversation) }}
+                </h1>
+                <p
+                  v-if="activeConversationPartnerId && !presence.loading && !presence.error"
+                  class="flex items-center gap-1.5 text-xs text-slate-500"
+                  :aria-label="STATES[activeConversationPresence]"
+                >
+                  <PresenceDot
+                    :state="activeConversationPresence"
+                    :size="9"
+                    ring="border-white"
+                  />
+                  {{ STATES[activeConversationPresence] }}
+                </p>
+                <p v-else class="text-xs text-slate-500">
+                  {{ activeConversationPartnerId ? 'Direct message' : 'Group direct message' }}
+                </p>
+              </div>
+            </div>
           </div>
           <ChatHeaderActions :is-dm="true" />
         </header>

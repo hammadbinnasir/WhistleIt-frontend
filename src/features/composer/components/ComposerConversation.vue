@@ -12,8 +12,14 @@ const props = defineProps({
 
 const dms = useDmStore()
 const ui = useUiStore()
-const messages = ref([])
+const messagesByConversation = ref({})
 const messagesContainer = ref(null)
+const localConversationKey = computed(
+  () => `${props.conversationType}:${props.conversationId ?? ''}`,
+)
+const localMessages = computed(
+  () => messagesByConversation.value[localConversationKey.value] || [],
+)
 
 const conversation = computed(() =>
   props.conversationType === 'dm'
@@ -21,7 +27,7 @@ const conversation = computed(() =>
     : null,
 )
 const renderedMessages = computed(() => {
-  if (!conversation.value) return messages.value
+  if (!conversation.value) return localMessages.value
   const currentUser = dms.usersById[dms.meId]?.name || 'You'
   return conversation.value.messages.map((message) => ({
     ...message,
@@ -33,6 +39,11 @@ const renderedMessages = computed(() => {
     mine: message.from === dms.meId,
   }))
 })
+
+function addLocalMessage(message) {
+  const key = localConversationKey.value
+  messagesByConversation.value[key] = [...(messagesByConversation.value[key] || []), message]
+}
 
 watch(
   () => conversation.value?.messages.length,
@@ -49,7 +60,7 @@ function addMessage(message) {
       author: dms.usersById[dms.meId]?.name || 'You',
       mine: true,
     }
-    messages.value.push(sentMessage)
+    addLocalMessage(sentMessage)
     ui.addPoll(sentMessage, {
       id: String(props.conversationId || ''),
       name: conversationLabel.value,
@@ -70,12 +81,12 @@ function addMessage(message) {
 }
 
 function addScheduledMessage(message) {
-  messages.value.push({ ...message, scheduled: true, author: ' ABDULLAH', mine: true })
+  addLocalMessage({ ...message, scheduled: true, author: ' ABDULLAH', mine: true })
   scrollMessagesToLatest()
 }
 
 function addGif(gif) {
-  messages.value.push({
+  addLocalMessage({
     content: '',
     gif,
     scheduledAt: null,

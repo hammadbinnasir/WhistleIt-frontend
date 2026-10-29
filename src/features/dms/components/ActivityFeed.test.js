@@ -101,6 +101,19 @@ describe('ActivityFeed', () => {
     wrapper.unmount()
   })
 
+  it('shows the centered empty state when an activity list has no messages', async () => {
+    const wrapper = mount(ActivityFeed)
+    await useDmStore().init()
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text() === 'Scheduled Messages')
+      .trigger('click')
+
+    expect(wrapper.get('[role="status"]').text()).toContain('No Messages')
+    expect(wrapper.get('[role="status"]').text()).toContain('You are all done.')
+    wrapper.unmount()
+  })
+
   it('shows upcoming reminders and lets the user delete them', async () => {
     const reminders = useRemindersStore()
     reminders.add({

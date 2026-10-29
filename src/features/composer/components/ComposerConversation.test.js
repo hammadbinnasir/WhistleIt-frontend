@@ -72,6 +72,34 @@ describe('composer conversation', () => {
     expect(wrapper.text()).toContain('Reply from the composer')
   })
 
+  it('keeps channel messages scoped to the channel they were sent in', async () => {
+    const wrapper = mount(ComposerConversation, {
+      props: { conversationId: 'channel-one', conversationType: 'channel' },
+    })
+    const send = async (text) => {
+      const editor = wrapper.get('[contenteditable="true"]')
+      editor.element.textContent = text
+      editor.element.dispatchEvent(new Event('input', { bubbles: true }))
+      await nextTick()
+      await wrapper.get('form').trigger('submit')
+    }
+
+    await send('Only in channel one')
+    expect(wrapper.text()).toContain('Only in channel one')
+
+    await wrapper.setProps({ conversationId: 'channel-two' })
+    expect(wrapper.text()).not.toContain('Only in channel one')
+
+    await send('Only in channel two')
+    expect(wrapper.text()).toContain('Only in channel two')
+    expect(wrapper.text()).not.toContain('Only in channel one')
+
+    await wrapper.setProps({ conversationId: 'channel-one' })
+    expect(wrapper.text()).toContain('Only in channel one')
+    expect(wrapper.text()).not.toContain('Only in channel two')
+    wrapper.unmount()
+  })
+
   it('shows scheduled message time and timezone in the conversation', async () => {
     const wrapper = mount(ComposerConversation)
 

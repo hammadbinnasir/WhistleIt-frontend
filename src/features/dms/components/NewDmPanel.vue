@@ -16,23 +16,27 @@ const selected = ref([]) // chune hue user ids
 const groupName = ref('')
 const highlight = ref(0)
 const input = ref(null)
+const listOpen = ref(false)
 
 const remaining = computed(() => MAX_MEMBERS - selected.value.length)
 
-// List tabhi dikhti hai jab kuch likha ho
-const showList = computed(() => query.value.trim().length > 0)
+const showList = computed(() => listOpen.value)
 
-// Naam likhte hi filter; jo pehle chun liye wo list se hat jate hain
 const results = computed(() => {
   const q = query.value.trim().toLowerCase()
-  if (!q) return []
   return dms.users.filter(
-    (u) => u.id !== dms.meId && !selected.value.includes(u.id) && u.name.toLowerCase().includes(q),
+    (u) =>
+      u.id !== dms.meId &&
+      !selected.value.includes(u.id) &&
+      u.name.toLowerCase().includes(q),
   )
 })
 
 onMounted(() => input.value?.focus())
-watch(query, () => (highlight.value = 0))
+watch(query, (value) => {
+  highlight.value = 0
+  if (value.trim()) listOpen.value = true
+})
 watch(highlight, async () => {
   await nextTick()
   document.getElementById(`dm-opt-${highlight.value}`)?.scrollIntoView({ block: 'nearest' })
@@ -42,11 +46,17 @@ function add(user) {
   if (!user || remaining.value <= 0) return
   selected.value.push(user.id)
   query.value = '' // list dobara band ho jati hai
+  listOpen.value = false
   highlight.value = 0
   input.value?.focus()
 }
 function remove(id) {
   selected.value = selected.value.filter((x) => x !== id)
+}
+
+function toggleList() {
+  listOpen.value = !listOpen.value
+  if (listOpen.value) input.value?.focus()
 }
 
 function go() {
@@ -58,17 +68,19 @@ function go() {
 }
 
 function onKeydown(e) {
-  if (e.key === 'ArrowDown' && showList.value) {
+  if (e.key === 'ArrowDown' && showList.value && results.value.length) {
     e.preventDefault()
     highlight.value = Math.min(highlight.value + 1, results.value.length - 1)
-  } else if (e.key === 'ArrowUp' && showList.value) {
+  } else if (e.key === 'ArrowUp' && showList.value && results.value.length) {
     e.preventDefault()
     highlight.value = Math.max(highlight.value, 1) - 1
   } else if (e.key === 'Enter') {
     e.preventDefault()
-    if (showList.value && results.value.length && remaining.value > 0)
-      add(results.value[highlight.value])
-    else go()
+    if (showList.value) {
+      if (results.value.length && remaining.value > 0) add(results.value[highlight.value])
+    } else {
+      go()
+    }
   } else if (e.key === 'Backspace' && !query.value && selected.value.length) {
     remove(selected.value.at(-1))
   } else if (e.key === 'Escape') {
@@ -136,10 +148,17 @@ function onKeydown(e) {
                 @keydown="onKeydown"
               />
 
-              <span class="px-1 text-indigo-500">▾</span>
+              <button
+                type="button"
+                class="px-1 text-indigo-500"
+                aria-label="Show members"
+                :aria-expanded="showList"
+                @click.stop="toggleList"
+              >
+                ▾
+              </button>
             </div>
 
-            <!-- Sirf tab dikhti hai jab naam likha ho -->
             <ul
               v-if="showList"
               class="absolute left-0 right-0 top-full z-10 mt-1 max-h-64 overflow-y-auto rounded border bg-white shadow-lg"
