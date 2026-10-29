@@ -3,6 +3,7 @@ import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { useActivityStore } from '@/stores/activity'
 import { useDmStore } from '@/features/dms/stores/dms'
+import { useMessagesStore } from '@/features/messages/messages'
 import { useUiStore } from '@/stores/ui'
 import { useRemindersStore } from '@/features/search/reminders'
 import { useChannelsStore } from '@/features/channels/store/channels.store'
@@ -20,14 +21,48 @@ vi.mock('vue3-emoji-picker', async () => {
   }
 })
 
+function mountActivityFeed() {
+  const dms = useDmStore()
+  const ui = useUiStore()
+
+  return mount(ActivityFeed, {
+    attrs: {
+      onOpenConversation: ({ id, type }) => {
+        if (type === 'dm') {
+          if (!dms.openConversation(id)) return
+          ui.selectChannel(null)
+        } else {
+          dms.deactivateConversation()
+          ui.selectChannel(id)
+        }
+        ui.closePanel()
+      },
+      onOpenUserChat: (userId) => {
+        if (userId === dms.meId) return
+        dms.startDm(userId)
+        ui.selectChannel(null)
+        ui.closePanel()
+      },
+    },
+  })
+}
+
 describe('ActivityFeed', () => {
   beforeEach(() => setActivePinia(createPinia()))
+
+  it('keeps activity tab labels on one line', () => {
+    const wrapper = mountActivityFeed()
+
+    expect(wrapper.get('nav').classes()).toContain('flex-nowrap')
+    expect(wrapper.get('nav button').classes()).toContain('whitespace-nowrap')
+    wrapper.unmount()
+  })
 
   it('opens a reply thread and sends a message from Recent DMs', async () => {
     const dms = useDmStore()
     const ui = useUiStore()
     ui.activePanel = 'activity'
-    const wrapper = mount(ActivityFeed)
+    const wrapper = mountActivityFeed()
     await dms.init()
 
     expect(wrapper.text()).toContain('Muniba Naseer')
@@ -59,7 +94,7 @@ describe('ActivityFeed', () => {
 
   it('opens a reply thread from Recent Messages and has no pin action', async () => {
     const dms = useDmStore()
-    const wrapper = mount(ActivityFeed)
+    const wrapper = mountActivityFeed()
     await dms.init()
 
     await wrapper
@@ -74,6 +109,73 @@ describe('ActivityFeed', () => {
     expect(
       wrapper.findAll('button').some((button) => ['Pin', 'Unpin'].includes(button.text().trim())),
     ).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('opens a channel from Recent Messages', async () => {
+    const ui = useUiStore()
+    const dms = useDmStore()
+    await dms.init()
+    dms.startDm('u2')
+    const messages = useMessagesStore()
+    messages.sendMessage('general', { content: 'Channel activity' }, 'You', 'General')
+    const wrapper = mountActivityFeed()
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text() === 'Recent Messages')
+      .trigger('click')
+
+    expect(wrapper.text()).toContain('Channel activity')
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text() === 'Open')
+      .trigger('click')
+    expect(ui.selectedChannelId).toBe('general')
+    expect(dms.activeId).toBeNull()
+    expect(ui.activePanel).toBeNull()
+    wrapper.unmount()
+  })
+
+  it('opens a direct message from the Recent DMs contact name', async () => {
+    const dms = useDmStore()
+    const ui = useUiStore()
+    await dms.init()
+    ui.selectChannel('general')
+    ui.activePanel = 'activity'
+    const wrapper = mountActivityFeed()
+
+    await wrapper.get('[aria-label="Open direct message with Muniba Naseer"]').trigger('click')
+
+    expect(dms.activeId).toBe('c1')
+    expect(ui.activePanel).toBeNull()
+    wrapper.unmount()
+  })
+
+  it('opens a direct message when an activity message author is clicked', async () => {
+    const dms = useDmStore()
+    const messages = useMessagesStore()
+    const ui = useUiStore()
+    await dms.init()
+    ui.activePanel = 'activity'
+    messages.messagesByChannel.general = [
+      {
+        id: 'from-muniba',
+        content: 'A message from Muniba',
+        author: 'Muniba Naseer',
+        authorId: 'u2',
+        mine: false,
+        createdAt: new Date().toISOString(),
+      },
+    ]
+    const wrapper = mountActivityFeed()
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text() === 'Recent Messages')
+      .trigger('click')
+    await wrapper.get('[aria-label="Open direct message with Muniba Naseer"]').trigger('click')
+
+    expect(dms.activeId).toBe('c1')
+    expect(ui.activePanel).toBeNull()
     wrapper.unmount()
   })
 
@@ -139,28 +241,160 @@ describe('ActivityFeed', () => {
     wrapper.unmount()
   })
 
+  it('shows no mentions until a message mentions someone', async () => {
+    const activity = useActivityStore()
+    await activity.init()
+
+    expect(activity.sorted.filter((item) => item.type === 'mention')).toHaveLength(0)
+
+    const dms = useDmStore()
+    await dms.init()
+    dms.sendMessage('c1', { content: 'Please review this, @Aiman' })
+    expect(activity.sorted[0]).toMatchObject({
+      type: 'mention',
+      title: 'You mentioned @Aiman',
+      body: 'Please review this, @Aiman',
+      conversationId: 'c1',
+    })
+  })
+
   it('opens the related DM from All Mentions and marks it read', async () => {
     const dms = useDmStore()
     const activity = useActivityStore()
     const ui = useUiStore()
     await Promise.all([dms.init(), activity.init()])
+    dms.sendMessage('c1', { content: 'Hello @Muniba' })
     ui.activePanel = 'activity'
 
-    const wrapper = mount(ActivityFeed)
+    const wrapper = mountActivityFeed()
     await wrapper.get('button[aria-label="Scroll tabs right"]').trigger('click')
     await wrapper
       .findAll('button')
-      .find((button) => button.text() === 'All Mentions')
+      .find((button) => button.text().includes('All Mentions'))
       .trigger('click')
-    expect(wrapper.text()).toContain('Ali Umais ne mention kiya')
+    expect(wrapper.text()).toContain('You mentioned @Muniba')
 
     await wrapper
       .findAll('button')
-      .find((button) => button.text().includes('Ali Umais ne mention kiya'))
+      .find((button) => button.text().includes('You mentioned @Muniba'))
       .trigger('click')
-    expect(dms.activeId).toBe('c2')
+    expect(dms.activeId).toBe('c1')
     expect(ui.activePanel).toBeNull()
-    expect(activity.items.find((item) => item.id === 'n3').read).toBe(true)
+    expect(activity.items.find((item) => item.type === 'mention').read).toBe(true)
+    wrapper.unmount()
+  })
+
+  it('opens the related channel from All Mentions', async () => {
+    const activity = useActivityStore()
+    const messages = useMessagesStore()
+    const ui = useUiStore()
+    await activity.init()
+    messages.sendMessage('general', { content: 'Please look, @Aiman' }, 'You', 'General')
+
+    const wrapper = mountActivityFeed()
+    await wrapper.get('button[aria-label="Scroll tabs right"]').trigger('click')
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text().includes('All Mentions'))
+      .trigger('click')
+    expect(wrapper.text()).toContain('You mentioned @Aiman')
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text().includes('You mentioned @Aiman'))
+      .trigger('click')
+
+    expect(ui.selectedChannelId).toBe('general')
+    expect(ui.activePanel).toBeNull()
+    expect(activity.sorted[0].read).toBe(true)
+    wrapper.unmount()
+  })
+
+  it('shows pinned messages in the pinned message card layout', async () => {
+    const ui = useUiStore()
+    ui.activePanel = 'activity'
+    const wrapper = mountActivityFeed()
+    ui.togglePinnedMessage(
+      {
+        id: 'pinned-1',
+        content: 'Pinned for the team https://example.com',
+        author: 'Aiman Iqbal',
+        createdAt: new Date().toISOString(),
+      },
+      { id: 'general', name: 'General', kind: 'public' },
+    )
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text() === 'Pinned Messages')
+      .trigger('click')
+
+    expect(wrapper.text()).toContain('Pinned for the team')
+    expect(wrapper.text()).toContain('General')
+    expect(wrapper.text()).toContain('PINNED')
+    expect(wrapper.text()).toContain('Aiman Iqbal')
+    expect(wrapper.text()).toContain('Reply')
+    expect(wrapper.get('article').classes()).toContain('p-2.5')
+    expect(wrapper.get('article .relative').attributes('style')).toContain('36px')
+    expect(wrapper.get('article a').attributes('href')).toBe('https://example.com/')
+    await wrapper.get('button[aria-label="Open pinned message conversation"]').trigger('click')
+    expect(ui.selectedChannelId).toBe('general')
+    expect(ui.activePanel).toBeNull()
+    expect(ui.pinnedMessages).toHaveLength(1)
+    wrapper.unmount()
+  })
+
+  it('opens the direct message when a pinned DM name is clicked', async () => {
+    const dms = useDmStore()
+    const ui = useUiStore()
+    await dms.init()
+    ui.selectChannel('general')
+    ui.activePanel = 'activity'
+    ui.togglePinnedMessage(
+      {
+        id: 'pinned-dm',
+        content: 'A pinned direct message',
+        from: 'u2',
+        createdAt: new Date().toISOString(),
+      },
+      { id: 'c1', name: 'Muniba Naseer', type: 'dm' },
+    )
+    const wrapper = mountActivityFeed()
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text() === 'Pinned Messages')
+      .trigger('click')
+
+    await wrapper.get('[aria-label="Open direct message with Muniba Naseer"]').trigger('click')
+
+    expect(dms.activeId).toBe('c1')
+    expect(ui.selectedChannelId).toBeNull()
+    expect(ui.activePanel).toBeNull()
+    expect(ui.pinnedMessages).toHaveLength(1)
+    wrapper.unmount()
+  })
+
+  it('shows and cancels scheduled channel messages', async () => {
+    const messages = useMessagesStore()
+    const scheduled = messages.sendMessage(
+      'general',
+      {
+        content: 'Scheduled channel post',
+        scheduledAt: new Date(Date.now() + 60_000).toISOString(),
+      },
+      'You',
+      'General',
+    )
+    const wrapper = mount(ActivityFeed)
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text() === 'Scheduled Messages')
+      .trigger('click')
+
+    expect(wrapper.text()).toContain('Scheduled channel post')
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text() === 'Cancel')
+      .trigger('click')
+    expect(messages.messagesFor('general')).not.toContain(scheduled)
     wrapper.unmount()
   })
 
@@ -229,11 +463,13 @@ describe('ActivityFeed', () => {
     expect(nav.text()).toContain('Upcoming Reminders')
     expect(nav.text()).not.toContain('All Mentions')
     expect(nav.text()).not.toContain('Workflows')
+    expect(nav.findAll('button')).toHaveLength(5)
 
     await wrapper.get('button[aria-label="Scroll tabs right"]').trigger('click')
     expect(nav.text()).toContain('All Mentions')
     expect(nav.text()).toContain('Workflows')
     expect(nav.text()).not.toContain('Recent DMs')
+    expect(nav.findAll('button')).toHaveLength(5)
     expect(
       wrapper.get('button[aria-label="Scroll tabs right"]').attributes('disabled'),
     ).toBeDefined()

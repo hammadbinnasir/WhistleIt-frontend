@@ -98,6 +98,49 @@ describe('composer conversation', () => {
     expect(wrapper.text()).toContain('Reply from the composer')
   })
 
+  it('opens the message author direct message from a channel', async () => {
+    const dms = useDmStore()
+    const ui = useUiStore()
+    await dms.init()
+    const messages = useMessagesStore()
+    messages.messagesByChannel.general = [
+      {
+        id: 'from-muniba',
+        content: 'A message from Muniba',
+        author: 'Muniba Naseer',
+        authorId: 'u2',
+        mine: false,
+        createdAt: new Date().toISOString(),
+      },
+    ]
+    ui.activePanel = 'activity'
+    const wrapper = mount(ComposerConversation)
+
+    await wrapper.get('[aria-label="Open direct message with Muniba Naseer"]').trigger('click')
+
+    expect(dms.activeId).toBe('c1')
+    expect(ui.activePanel).toBeNull()
+    wrapper.unmount()
+  })
+
+  it('opens the message author direct message from a DM', async () => {
+    const dms = useDmStore()
+    const ui = useUiStore()
+    await dms.init()
+    const otherConversation = dms.startDm('u3')
+    ui.activePanel = 'activity'
+    const wrapper = mount(ComposerConversation, {
+      props: { conversationId: 'c1', conversationType: 'dm' },
+    })
+
+    await wrapper.get('[aria-label="Open direct message with Muniba Naseer"]').trigger('click')
+
+    expect(dms.activeId).toBe('c1')
+    expect(dms.activeId).not.toBe(otherConversation.id)
+    expect(ui.activePanel).toBeNull()
+    wrapper.unmount()
+  })
+
   it('keeps channel messages scoped to the channel they were sent in', async () => {
     const wrapper = mount(ComposerConversation, {
       props: { conversationId: 'channel-one', conversationType: 'channel' },

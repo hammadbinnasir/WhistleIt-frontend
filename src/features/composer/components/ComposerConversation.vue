@@ -161,6 +161,20 @@ function isPinned(message) {
   )
 }
 
+function messageAuthorUserId(message) {
+  if (message.mine || message.from === dms.meId) return null
+  const authorId = message.from ?? message.authorId
+  if (dms.usersById[authorId]) return authorId
+  return dms.users.find((user) => user.name === message.author)?.id || null
+}
+
+function openMessageAuthor(message) {
+  const userId = messageAuthorUserId(message)
+  if (!userId || userId === dms.meId) return
+  dms.startDm(userId)
+  ui.activePanel = null
+}
+
 function togglePin(message) {
   ui.togglePinnedMessage(message, conversationMeta.value)
 }
@@ -173,6 +187,7 @@ function addMessage(payload) {
         channelId.value,
         messagePayload,
         dms.usersById[dms.meId]?.name || 'You',
+        conversationMeta.value.name,
       )
   if (!sentMessage) {
     ui.toast('Message not sent', 'The conversation could not be found.', 'error')
@@ -198,6 +213,7 @@ function addScheduledMessage(message) {
         channelId.value,
         message,
         dms.usersById[dms.meId]?.name || 'You',
+        conversationMeta.value.name,
       )
   if (!scheduledMessage) {
     ui.toast('Message not scheduled', 'The conversation could not be found.', 'error')
@@ -214,6 +230,7 @@ function addGif(gif) {
         channelId.value,
         message,
         dms.usersById[dms.meId]?.name || 'You',
+        conversationMeta.value.name,
       )
   if (!sentMessage) {
     ui.toast('GIF not sent', 'The conversation could not be found.', 'error')
@@ -362,7 +379,12 @@ function forwardMessage() {
   const forwarded =
     destination.type === 'dm'
       ? dms.sendMessage(destination.id, payload)
-      : messageStore.sendMessage(destination.id, payload, dms.usersById[dms.meId]?.name || 'You')
+      : messageStore.sendMessage(
+          destination.id,
+          payload,
+          dms.usersById[dms.meId]?.name || 'You',
+          destination.name.replace(/^#/, ''),
+        )
 
   if (!forwarded) {
     ui.toast('Unable to forward message', 'The destination is no longer available.', 'error')
@@ -444,7 +466,16 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', closeActionsOn
 
           <div class="composer-conversation__message-content">
             <header v-if="!message.grouped" class="composer-conversation__message-heading">
-              <strong>{{ message.author }}</strong>
+              <button
+                v-if="messageAuthorUserId(message)"
+                type="button"
+                class="composer-conversation__author"
+                :aria-label="`Open direct message with ${message.author}`"
+                @click="openMessageAuthor(message)"
+              >
+                {{ message.author }}
+              </button>
+              <strong v-else>{{ message.author }}</strong>
               <time :datetime="message.createdAt">{{ message.time }}</time>
               <span v-if="message.editedAt" class="composer-conversation__edited">(edited)</span>
             </header>
@@ -848,6 +879,21 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', closeActionsOn
   font-size: 14px;
 }
 
+.composer-conversation__author {
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.composer-conversation__author:hover {
+  color: #514bc7;
+  text-decoration: underline;
+}
+
 .composer-conversation__message-heading time,
 .composer-conversation__edited {
   color: #696d81;
@@ -1135,8 +1181,7 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', closeActionsOn
   font-size: 18px;
 }
 
-.composer-conversation__reaction-picker
-  :deep(.v3-body-inner .v3-group .v3-emojis button img) {
+.composer-conversation__reaction-picker :deep(.v3-body-inner .v3-group .v3-emojis button img) {
   width: 32px;
   height: 32px;
   max-width: 32px;

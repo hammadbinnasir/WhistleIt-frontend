@@ -5,7 +5,6 @@ import { useUiStore } from '@/stores/ui'
 
 defineProps({ isDm: { type: Boolean, default: false } })
 const ui = useUiStore()
-
 </script>
 
 <template>

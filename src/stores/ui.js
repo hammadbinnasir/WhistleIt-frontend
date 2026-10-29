@@ -69,9 +69,10 @@ export const useUiStore = defineStore('ui', () => {
     )
     if (existingIndex !== -1) {
       pinnedMessages.value.splice(existingIndex, 1)
-      return
+      return false
     }
     pinnedMessages.value.unshift({ ...message, conversation })
+    return true
   }
   function toggleSidebar() {
     sidebarOpen.value = !sidebarOpen.value

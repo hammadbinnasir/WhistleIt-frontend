@@ -2,13 +2,21 @@
 import { onMounted, ref } from 'vue'
 import { useDmStore } from '@/features/dms/stores/dms'
 import { usePresenceStore } from '@/features/dms/stores/presence'
+import { useUiStore } from '@/stores/ui'
 import DmListItem from './DmListItem.vue'
 import NewDmPanel from './NewDmPanel.vue'
 
 const dms = useDmStore()
 const presence = usePresenceStore()
+const ui = useUiStore()
 const open = ref(true)
 const panelOpen = ref(false)
+
+function openConversation(conversationId) {
+  if (!dms.openConversation(conversationId)) return
+  ui.selectChannel(null)
+  ui.closePanel()
+}
 
 onMounted(() => {
   void dms.init()
@@ -59,7 +67,7 @@ onMounted(() => {
         :key="c.id"
         :conversation="c"
         :active="c.id === dms.activeId"
-        @select="dms.openConversation"
+        @select="openConversation"
         @close="dms.closeConversation"
       />
     </template>

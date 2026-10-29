@@ -1,7 +1,6 @@
 import { http } from '@/features/channels/api/http'
 
-const userPath = (userId, suffix = '') =>
-  `/v1/users/${encodeURIComponent(userId)}${suffix}`
+const userPath = (userId, suffix = '') => `/v1/users/${encodeURIComponent(userId)}${suffix}`
 
 export function getPublicProfile(userId) {
   return http(userPath(userId))

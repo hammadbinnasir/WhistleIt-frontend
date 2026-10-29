@@ -63,13 +63,4 @@ export const NOTIFICATIONS = [
     createdAt: ago(3),
     read: false,
   },
-  {
-    id: 'n3',
-    type: 'mention',
-    conversationId: 'c2',
-    title: 'Ali Umais ne mention kiya',
-    body: '@Aiman kal meeting hai',
-    createdAt: ago(2),
-    read: true,
-  },
 ]

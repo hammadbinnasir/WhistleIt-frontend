@@ -25,10 +25,7 @@ const showList = computed(() => listOpen.value)
 const results = computed(() => {
   const q = query.value.trim().toLowerCase()
   return dms.users.filter(
-    (u) =>
-      u.id !== dms.meId &&
-      !selected.value.includes(u.id) &&
-      u.name.toLowerCase().includes(q),
+    (u) => u.id !== dms.meId && !selected.value.includes(u.id) && u.name.toLowerCase().includes(q),
   )
 })
 

@@ -24,7 +24,6 @@ import {
   CreateWorkspaceModal,
   JoinTeamModal,
   HelpModal,
-  HelpDrawer,
   MemberManageModal,
 } from '@/features/shell'
 
@@ -76,9 +75,7 @@ const activeConversationPartnerId = computed(() =>
   activeConversation.value?.type === 'dm' ? dms.partnerId(activeConversation.value) : null,
 )
 const activeConversationPresence = computed(() =>
-  activeConversationPartnerId.value
-    ? presence.stateOf(activeConversationPartnerId.value)
-    : null,
+  activeConversationPartnerId.value ? presence.stateOf(activeConversationPartnerId.value) : null,
 )
 const activeConversationIsFavorite = computed(() =>
   activeConversation.value ? dms.isFavorite(activeConversation.value.id) : false,
@@ -172,6 +169,24 @@ async function logout() {
   }
 }
 
+function openActivityConversation({ id, type }) {
+  if (type === 'dm') {
+    if (!dms.openConversation(id)) return
+    ui.selectChannel(null)
+  } else {
+    dms.deactivateConversation()
+    ui.selectChannel(id)
+  }
+  ui.closePanel()
+}
+
+function openActivityUserChat(userId) {
+  if (userId === dms.meId) return
+  dms.startDm(userId)
+  ui.selectChannel(null)
+  ui.closePanel()
+}
+
 onMounted(async () => {
   void activity.init()
   await teamsStore.fetchTeams()
@@ -204,7 +219,7 @@ onBeforeUnmount(() => {
 
     <!-- 2. Workspace Sidebar: Header Switcher + Activities + Channels + Direct Messages -->
     <aside
-      v-show="sidebarOpen && ui.activePanel !== 'activity'"
+      v-show="sidebarOpen"
       class="flex w-64 shrink-0 flex-col justify-between overflow-hidden bg-[#22123b] text-slate-100"
     >
       <div class="flex flex-1 flex-col overflow-y-auto">
@@ -331,7 +346,12 @@ onBeforeUnmount(() => {
         </div>
       </section>
 
-      <ActivityFeed v-else-if="ui.activePanel === 'activity'" class="min-h-0 flex-1" />
+      <ActivityFeed
+        v-else-if="ui.activePanel === 'activity'"
+        class="min-h-0 flex-1"
+        @open-conversation="openActivityConversation"
+        @open-user-chat="openActivityUserChat"
+      />
 
       <template v-else>
         <!-- Channel or Conversation Header -->
@@ -356,7 +376,9 @@ onBeforeUnmount(() => {
                 type="button"
                 class="shrink-0 rounded p-0.5 transition-colors hover:bg-slate-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-indigo-500"
                 :class="activeConversationIsFavorite ? 'text-indigo-500' : 'text-slate-400'"
-                :aria-label="activeConversationIsFavorite ? 'Remove from favorites' : 'Add to favorites'"
+                :aria-label="
+                  activeConversationIsFavorite ? 'Remove from favorites' : 'Add to favorites'
+                "
                 :aria-pressed="activeConversationIsFavorite"
                 @click="dms.toggleFavorite(activeConversation.id)"
               >
@@ -384,11 +406,7 @@ onBeforeUnmount(() => {
                   class="flex items-center gap-1.5 text-xs text-slate-500"
                   :aria-label="STATES[activeConversationPresence]"
                 >
-                  <PresenceDot
-                    :state="activeConversationPresence"
-                    :size="9"
-                    ring="border-white"
-                  />
+                  <PresenceDot :state="activeConversationPresence" :size="9" ring="border-white" />
                   {{ STATES[activeConversationPresence] }}
                 </p>
                 <p v-else class="text-xs text-slate-500">
