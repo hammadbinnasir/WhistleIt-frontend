@@ -153,6 +153,25 @@ export async function mockCreateTeam(payload) {
   return team
 }
 
+export async function mockUpdateTeam(workspaceId, teamId, payload) {
+  await delay(300)
+  const team = _userTeams.find((item) => item.id === teamId && item.workspaceId === workspaceId)
+  if (!team) throw new Error('The team could not be found.')
+  Object.assign(team, payload, { workspaceId })
+  persistMockData()
+  return { ...team }
+}
+
+export async function mockDeleteTeam(workspaceId, teamId) {
+  await delay(300)
+  const team = _userTeams.find((item) => item.id === teamId && item.workspaceId === workspaceId)
+  if (!team) throw new Error('The team could not be found.')
+  _userTeams = _userTeams.filter((item) => item !== team)
+  _allTeams = _allTeams.filter((item) => item.id !== teamId)
+  persistMockData()
+  return { success: true }
+}
+
 export async function mockCreateWorkspace(payload) {
   await delay(300)
   const nextId =
@@ -172,19 +191,23 @@ export async function mockCreateWorkspace(payload) {
   return { ...workspace }
 }
 
-export async function mockJoinTeam(inviteCode) {
+export async function mockJoinTeam(inviteCode, workspaceIdOverride = null) {
   await delay(400)
   const code = String(inviteCode).trim()
   if (code.toLowerCase() === 'invalid' || code.length < 6) {
     throw new Error('This invite code is invalid or has expired.')
   }
 
-  let team =
+  const foundTeam =
     _allTeams.find((item) => item.id === code) ??
     _allTeams.find((item) => item.inviteCode?.toLowerCase() === code.toLowerCase())
 
+  let team = foundTeam
+    ? { ...foundTeam, workspaceId: workspaceIdOverride ?? foundTeam.workspaceId }
+    : null
+
   if (!team) {
-    const workspaceId = _workspaces[1]?.id ?? _workspaces[0]?.id
+    const workspaceId = workspaceIdOverride ?? _workspaces[1]?.id ?? _workspaces[0]?.id
     if (!workspaceId) throw new Error('No workspace is available for this invite.')
     team = {
       id: `invite-${encodeURIComponent(code.toLowerCase())}`,
