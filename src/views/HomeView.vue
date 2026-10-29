@@ -14,6 +14,7 @@ import { useActivityStore } from '@/stores/activity'
 import { useRemindersStore } from '@/features/search/reminders'
 import { useUserStore, UserModule } from '@/features/account'
 import { clearAuthSession, getAuthUser } from '@/features/auth/session'
+import { logout as logoutRequest } from '@/features/auth/api'
 
 // Shell
 import {
@@ -157,8 +158,18 @@ async function toggleChannelFavorite() {
 }
 
 async function logout() {
-  clearAuthSession()
-  await router.push({ name: 'login' })
+  try {
+    await logoutRequest()
+  } catch (error) {
+    ui.toast(
+      'Unable to log out from server',
+      error?.message || 'Your local session was cleared.',
+      'error',
+    )
+  } finally {
+    clearAuthSession()
+    await router.push({ name: 'login' })
+  }
 }
 
 onMounted(async () => {
