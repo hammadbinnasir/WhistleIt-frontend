@@ -9,8 +9,15 @@ import WorkspaceSwitcher from './WorkspaceSwitcher.vue'
 const router = useRouter()
 const teamsStore = useTeamsStore()
 const ui = useUiStore()
-const { activeWorkspaceId, activeTeamId, teamsOfActiveWorkspace, loading, error } =
-  storeToRefs(teamsStore)
+const {
+  activeWorkspaceId,
+  activeTeamId,
+  teamsOfActiveWorkspace,
+  workspacesLoading,
+  workspacesError,
+  teamsLoading,
+  teamsError,
+} = storeToRefs(teamsStore)
 
 const teamActionsOpen = ref(false)
 const teamActionsButton = ref(null)
@@ -93,6 +100,14 @@ function openJoinTeam() {
   ui.toggleTeamJoinModal()
 }
 
+function retryLoad() {
+  if (workspacesError.value) {
+    void teamsStore.fetchWorkspaces()
+  } else if (activeWorkspaceId.value) {
+    void teamsStore.fetchTeams(activeWorkspaceId.value)
+  }
+}
+
 onMounted(() => {
   document.addEventListener('pointerdown', handleDocumentPointer)
   document.addEventListener('keydown', handleDocumentKeydown)
@@ -110,14 +125,23 @@ onBeforeUnmount(() => {
       <section class="team-rail__section" aria-labelledby="workspace-heading">
         <h2 id="workspace-heading" class="team-rail__label">Workspace</h2>
         <div
-          v-if="loading && !teamsStore.workspaces.length"
+          v-if="workspacesLoading && !teamsStore.workspaces.length"
           class="team-rail__icon-list"
           aria-label="Loading workspaces"
         >
           <span v-for="item in 2" :key="item" class="team-rail__skeleton" />
         </div>
         <WorkspaceSwitcher v-else @select="handleWorkspaceSelect" />
-        <p v-if="!loading && !error && !teamsStore.workspaces.length" class="team-rail__message">
+        <p v-if="workspacesError" class="team-rail__message" role="alert">
+          {{ workspacesError }}
+        </p>
+        <button v-if="workspacesError" type="button" class="team-rail__retry" @click="retryLoad">
+          Retry
+        </button>
+        <p
+          v-if="!workspacesLoading && !workspacesError && !teamsStore.workspaces.length"
+          class="team-rail__message"
+        >
           None yet
         </p>
         <button
@@ -133,16 +157,21 @@ onBeforeUnmount(() => {
 
       <section class="team-rail__section team-rail__section--teams" aria-labelledby="teams-heading">
         <h2 id="teams-heading" class="team-rail__label">Teams</h2>
-        <p v-if="error" class="team-rail__message" role="alert">{{ error }}</p>
+        <p v-if="teamsError" class="team-rail__message" role="alert">
+          {{ teamsError }}
+        </p>
+        <button v-if="teamsError" type="button" class="team-rail__retry" @click="retryLoad">
+          Retry
+        </button>
         <p
-          v-else-if="!loading && !teamsStore.workspaces.length"
+          v-else-if="!workspacesLoading && !teamsStore.workspaces.length"
           class="team-rail__message"
           role="status"
         >
           No workspaces
         </p>
         <p
-          v-else-if="!loading && activeWorkspaceId && !teamsOfActiveWorkspace.length"
+          v-else-if="!teamsLoading && activeWorkspaceId && !teamsOfActiveWorkspace.length"
           class="team-rail__message"
           role="status"
         >
@@ -150,7 +179,7 @@ onBeforeUnmount(() => {
         </p>
 
         <div class="team-rail__team-list" aria-label="Teams in the active workspace">
-          <template v-if="loading && !teamsOfActiveWorkspace.length">
+          <template v-if="teamsLoading && !teamsOfActiveWorkspace.length">
             <span v-for="item in 3" :key="item" class="team-rail__skeleton" />
           </template>
           <button
@@ -375,6 +404,21 @@ onBeforeUnmount(() => {
   font-size: 9px;
   line-height: 1.3;
   text-align: center;
+}
+
+.team-rail__retry {
+  border: 0;
+  padding: 2px 4px;
+  background: transparent;
+  color: var(--color-indigo-200);
+  cursor: pointer;
+  font-size: 9px;
+  text-decoration: underline;
+}
+
+.team-rail__retry:focus-visible {
+  outline: 2px solid var(--color-white);
+  outline-offset: 2px;
 }
 
 .team-rail__skeleton {

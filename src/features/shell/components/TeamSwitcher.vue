@@ -4,6 +4,7 @@ import { storeToRefs } from 'pinia'
 import { useRouter } from 'vue-router'
 import { useTeamsStore } from '@/stores/teams'
 import { useUiStore } from '@/stores/ui'
+import EditTeamModal from './EditTeamModal.vue'
 
 const props = defineProps({
   isOpen: {
@@ -18,7 +19,10 @@ const ui = useUiStore()
 const router = useRouter()
 const root = ref(null)
 const searchInput = ref(null)
-const { teamsOfActiveWorkspace, activeTeamId, activeWorkspaceId } = storeToRefs(teamsStore)
+const editTeamOpen = ref(false)
+const deletingTeam = ref(false)
+const { teamsOfActiveWorkspace, activeTeamId, activeWorkspaceId, activeTeam } =
+  storeToRefs(teamsStore)
 const searchFilter = ref('')
 
 const filteredTeams = computed(() => {
@@ -41,6 +45,28 @@ async function handleSelect(teamId) {
 function closeAndRun(action) {
   emit('close')
   action()
+}
+
+function openEditTeam() {
+  emit('close')
+  editTeamOpen.value = true
+}
+
+async function deleteActiveTeam() {
+  const team = activeTeam.value
+  if (!team || deletingTeam.value) return
+  emit('close')
+  if (!window.confirm(`Delete the team "${team.name}"?`)) return
+
+  deletingTeam.value = true
+  try {
+    await teamsStore.deleteTeam(team.id)
+    await router.replace({ path: `/app/${encodeURIComponent(activeWorkspaceId.value)}` })
+  } catch (error) {
+    ui.toast('Unable to delete team', error?.message || 'Please try again.', 'error')
+  } finally {
+    deletingTeam.value = false
+  }
 }
 
 function handleOutsidePointer(event) {
@@ -108,8 +134,15 @@ onBeforeUnmount(() => {
       <button type="button" @click="closeAndRun(ui.toggleTeamCreateModal)">Create a team</button>
       <button type="button" @click="closeAndRun(ui.toggleTeamJoinModal)">Join a Team</button>
       <button type="button" @click="closeAndRun(ui.toggleMemberManageModal)">Manage Members</button>
+      <template v-if="activeTeam">
+        <button type="button" @click="openEditTeam">Edit team</button>
+        <button type="button" :disabled="deletingTeam" @click="deleteActiveTeam">
+          {{ deletingTeam ? 'Deleting…' : 'Delete team' }}
+        </button>
+      </template>
     </div>
   </div>
+  <EditTeamModal :is-open="editTeamOpen" :team="activeTeam" @close="editTeamOpen = false" />
 </template>
 
 <style scoped>

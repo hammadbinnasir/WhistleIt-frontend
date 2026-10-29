@@ -1,29 +1,17 @@
 import { apiRequest } from '@/lib/api/client'
-
-const USE_MOCKS = import.meta.env.VITE_USE_MOCKS !== 'false'
-
-async function withMockFallback(mockRequest, apiRequestFn) {
-  if (USE_MOCKS) return mockRequest()
-
-  try {
-    return await apiRequestFn()
-  } catch (error) {
-    if (error?.status !== 404) throw error
-    console.warn('Workspace API endpoint is unavailable; using mock data:', error)
-    return mockRequest()
-  }
-}
+import { USE_SHELL_MOCKS } from './config'
+import { normalizeWorkspaces } from './normalizers'
+import { getTeams } from './teamsApi'
 
 export function getWorkspaces() {
-  return withMockFallback(
-    () => import('./__mocks__/teams.mock').then((mock) => mock.mockWorkspaces()),
-    // TODO: Confirm the authenticated user's workspace-list endpoint with the backend.
-    () => apiRequest('/workspaces'),
-  )
+  if (USE_SHELL_MOCKS) {
+    return import('./__mocks__/teams.mock').then((mock) => mock.mockWorkspaces())
+  }
+  return apiRequest('/company').then(normalizeWorkspaces)
 }
 
 export function createWorkspace(payload) {
-  // TODO: Replace the mock with POST /workspaces when the backend contract is available.
+  // TODO: Replace with the workspace creation endpoint when the backend contract is available.
   return import('./__mocks__/teams.mock').then((mock) => mock.mockCreateWorkspace(payload))
 }
 
@@ -32,9 +20,8 @@ export function getWorkspaceTeams(workspaceId) {
     throw new Error('A workspace ID is required to load its teams.')
   }
 
-  return withMockFallback(
-    () => import('./__mocks__/teams.mock').then((mock) => mock.mockWorkspaceTeams(workspaceId)),
-    // TODO: Confirm the workspace-scoped team-list endpoint with the backend.
-    () => apiRequest(`/workspaces/${encodeURIComponent(workspaceId)}/teams`),
-  )
+  if (USE_SHELL_MOCKS) {
+    return import('./__mocks__/teams.mock').then((mock) => mock.mockWorkspaceTeams(workspaceId))
+  }
+  return getTeams(workspaceId)
 }
