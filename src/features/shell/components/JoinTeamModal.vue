@@ -3,6 +3,7 @@ import { onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useTeamsStore } from '@/stores/teams'
 import { useUiStore } from '@/stores/ui'
+import { USE_SHELL_MOCKS } from '@/features/shell/api/config'
 
 const teamsStore = useTeamsStore()
 const ui = useUiStore()
@@ -101,6 +102,9 @@ onBeforeUnmount(() => {
       </header>
 
       <p class="join-modal__description">Enter the invite code or paste the team invite link.</p>
+      <p v-if="!USE_SHELL_MOCKS" class="join-modal__notice" role="status">
+        Team joining is not available on the backend yet; this action uses local mock data.
+      </p>
 
       <div v-if="statusMessage" class="join-modal__success" role="status" aria-live="polite">
         {{ statusMessage }}
@@ -190,6 +194,15 @@ onBeforeUnmount(() => {
   margin: 0;
   color: var(--color-slate-600);
   font-size: 0.875rem;
+}
+
+.join-modal__notice {
+  margin: 0;
+  border-radius: 0.375rem;
+  padding: 0.625rem 0.75rem;
+  background: var(--color-amber-100);
+  color: var(--color-amber-900);
+  font-size: 0.8125rem;
 }
 
 .join-modal__field {

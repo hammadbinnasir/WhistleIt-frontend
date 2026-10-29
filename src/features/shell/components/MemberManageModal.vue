@@ -4,6 +4,7 @@ import { storeToRefs } from 'pinia'
 import { useTeamsStore } from '@/stores/teams'
 import { useMembersStore } from '@/stores/members'
 import { useUiStore } from '@/stores/ui'
+import { USE_SHELL_MOCKS } from '@/features/shell/api/config'
 import { searchUsers } from '@/features/shell/api/membersApi'
 
 const teamsStore = useTeamsStore()
@@ -11,7 +12,7 @@ const membersStore = useMembersStore()
 const ui = useUiStore()
 
 const { activeTeam, activeTeamId } = storeToRefs(teamsStore)
-const { members, loading: membersLoading } = storeToRefs(membersStore)
+const { members, loading: membersLoading, error: membersError } = storeToRefs(membersStore)
 
 const searchMemberQuery = ref('')
 const newMemberInput = ref('')
@@ -66,7 +67,8 @@ async function onAddInputChange() {
       const results = await searchUsers(q)
       // filter out existing members
       searchSuggestions.value = results.filter((u) => !members.value.some((m) => m.id === u.id))
-    } catch {
+    } catch (error) {
+      actionError.value = error?.message || 'Could not search for users.'
       searchSuggestions.value = []
     } finally {
       isSearchingSuggestions.value = false
@@ -190,9 +192,12 @@ function getInitials(name) {
         <div v-if="actionError" class="error-banner" role="alert">
           {{ actionError }}
         </div>
+        <p v-if="!USE_SHELL_MOCKS" class="not-available-banner" role="status">
+          The member list is read-only for now. Adding and removing members is not available yet.
+        </p>
 
         <!-- Add Member section -->
-        <div class="add-section">
+        <div v-if="USE_SHELL_MOCKS" class="add-section">
           <label class="section-label">Add New Member</label>
           <div class="add-input-wrapper">
             <input
@@ -262,6 +267,7 @@ function getInitials(name) {
 
           <div class="members-table-container">
             <div v-if="membersLoading" class="loading-state">Loading members...</div>
+            <div v-else-if="membersError" class="error-banner" role="alert">{{ membersError }}</div>
             <div v-else-if="filteredMembers.length === 0" class="empty-state">No members found</div>
             <ul v-else class="members-table">
               <li
@@ -296,7 +302,7 @@ function getInitials(name) {
 
                   <!-- Remove button -->
                   <button
-                    v-if="member.role !== 'admin'"
+                    v-if="USE_SHELL_MOCKS && member.role !== 'admin'"
                     type="button"
                     class="remove-btn"
                     :disabled="removingMemberId === member.id"
@@ -442,6 +448,16 @@ function getInitials(name) {
   display: flex;
   flex-direction: column;
   gap: 16px;
+}
+
+.not-available-banner {
+  margin: 0;
+  border: 1px solid var(--color-amber-400);
+  border-radius: 0.5rem;
+  padding: 0.625rem 0.75rem;
+  background: color-mix(in srgb, var(--color-amber-500) 12%, transparent);
+  color: var(--color-amber-200);
+  font-size: 0.8125rem;
 }
 
 .success-banner {

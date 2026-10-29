@@ -3,6 +3,7 @@ import { onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useTeamsStore } from '@/stores/teams'
 import { useUiStore } from '@/stores/ui'
+import { USE_SHELL_MOCKS } from '@/features/shell/api/config'
 
 const teamsStore = useTeamsStore()
 const ui = useUiStore()
@@ -99,6 +100,9 @@ onBeforeUnmount(() => document.removeEventListener('keydown', handleKeydown))
       </header>
 
       <p class="workspace-modal__description">Workspaces keep teams and conversations organized.</p>
+      <p v-if="!USE_SHELL_MOCKS" class="workspace-modal__hint" role="status">
+        Workspace creation is not available on the backend yet; this action uses local mock data.
+      </p>
 
       <div v-if="validationError" class="workspace-modal__error" role="alert">
         {{ validationError }}
