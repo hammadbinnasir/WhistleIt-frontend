@@ -451,6 +451,7 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', closeActionsOn
         <article
           class="composer-conversation__message"
           :class="{ 'composer-conversation__message--grouped': message.grouped }"
+          :data-message-id="message.id"
         >
           <span v-if="!message.grouped" class="composer-conversation__avatar" aria-hidden="true">
             {{
