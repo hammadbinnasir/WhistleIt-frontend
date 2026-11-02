@@ -1,9 +1,26 @@
 import { useMembersStore } from '@/stores/members'
 import { useTeamsStore } from '@/stores/teams'
+import {
+  addChannelMember,
+  listMembers as listChannelMembers,
+  removeChannelMember,
+} from '@/features/channels/api/channels.api'
 
 const wait = (ms = 200) => new Promise((resolve) => setTimeout(resolve, ms))
 
-export async function listMembers() {
+export async function listMembers(channelId = null) {
+  if (channelId) {
+    const { items } = await listChannelMembers(channelId, { limit: 100 })
+    return items.map((member) => ({
+      id: member.userId || member.id,
+      name: member.name || member.email || 'Channel member',
+      email: member.email || '',
+      avatar: member.avatar || '',
+      role: member.role || 'member',
+      status: member.status || 'offline',
+    }))
+  }
+
   const teamsStore = useTeamsStore()
   const membersStore = useMembersStore()
 
@@ -21,24 +38,14 @@ export async function listMembers() {
   }))
 }
 
-export async function removeMember(userId) {
-  const teamsStore = useTeamsStore()
-  const membersStore = useMembersStore()
-  await membersStore.removeMember(
-    teamsStore.activeWorkspaceId,
-    teamsStore.activeTeamId,
-    userId,
-  )
+export async function removeMember(userId, channelId) {
+  if (!channelId) throw new Error('A channel ID is required to remove a member.')
+  await removeChannelMember(channelId, userId)
 }
 
-export async function addMember(user) {
-  const teamsStore = useTeamsStore()
-  const membersStore = useMembersStore()
-  await membersStore.addMember(
-    teamsStore.activeWorkspaceId,
-    teamsStore.activeTeamId,
-    user.id,
-  )
+export async function addMember(user, channelId) {
+  if (!channelId) throw new Error('A channel ID is required to add a member.')
+  await addChannelMember(channelId, user.id)
 }
 export async function getWebhookUrl(channelId) {
   await wait(100)
