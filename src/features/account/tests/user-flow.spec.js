@@ -47,7 +47,12 @@ beforeEach(() => {
       statusText: 'OK',
       json: async () =>
         options.method === 'POST' && String(url).endsWith('/avatar')
-          ? { avatarUrl: 'https://example.test/avatar.png' }
+          ? {
+              data: {
+                avatar_url:
+                  'http://10.0.105.90:8000/api/v1/avatars/avatars/test-user/avatar.jpg',
+              },
+            }
           : {},
     })),
   )
@@ -169,6 +174,29 @@ describe('status menu', () => {
     expect($('.badge.online')).toBeNull()
     expect($('[role=menu]')).toBeNull()
     expect(wrapper.emitted('status-change')[0]).toEqual(['away'])
+    const [url, options] = fetch.mock.calls.find(
+      ([requestUrl, request]) =>
+        request.method === 'PUT' && String(requestUrl).endsWith('/v1/users/test-user/status'),
+    )
+    expect(url).toContain('/v1/users/test-user/status')
+    expect(JSON.parse(options.body)).toEqual({ mode: 'away' })
+  })
+
+  it('keeps the previous status and emits an error when the status update fails', async () => {
+    fetch.mockResolvedValueOnce({
+      ok: false,
+      status: 500,
+      statusText: 'Internal Server Error',
+      json: async () => ({ message: 'Status update failed' }),
+    })
+
+    await openStatusMenu()
+    await click(byText('Away', '.status-menu .label').closest('button'))
+
+    expect(store.state.status).toBe('online')
+    expect($('.badge.online')).toBeTruthy()
+    expect(wrapper.emitted('status-change')).toBeUndefined()
+    expect(wrapper.emitted('error')[0][0].message).toContain('Status update failed')
   })
 
   it('supports Do Not Disturb and Offline', async () => {
@@ -213,9 +241,32 @@ describe('custom status modal', () => {
     await openStatusModal()
     await setValue($('.input'), 'emergency')
     expect($('.subtitle')).toBeTruthy()
+    expect($('.status-emoji').textContent).toBe('☕')
     await click(byText('SAVE'))
     expect(store.state.customStatus).toBe('emergency')
+    expect(store.state.customStatusEmoji).toBe('☕')
     expect(store.state.customStatusExpiresAt).toBeNull()
+    const [url, options] = fetch.mock.calls.find(
+      ([requestUrl, request]) =>
+        request.method === 'PUT' && String(requestUrl).endsWith('/v1/users/test-user/status'),
+    )
+    expect(url).toContain('/v1/users/test-user/status')
+    expect(options.method).toBe('PUT')
+    expect(JSON.parse(options.body)).toEqual({
+      custom_status: { emoji: '☕', text: 'emergency' },
+    })
+  })
+
+  it('shows preset status emojis and does not render an emoji picker', async () => {
+    await openStatusModal()
+    expect($$('.row .icon').map((item) => item.textContent.trim())).toEqual([
+      '📅',
+      '🚌',
+      '🤒',
+      '🌴',
+      '🏠',
+    ])
+    expect($('button[aria-label="Choose status emoji"]')).toBeNull()
   })
 
   it('picking a predefined status shows the "Remove status after" view', async () => {
@@ -374,6 +425,13 @@ describe('custom status modal', () => {
     expect(store.state.customStatus).toBe('')
     expect(store.state.customStatusDuration).toBe('never')
     expect(store.state.customStatusExpiresAt).toBeNull()
+    const [url, options] = fetch.mock.calls.find(
+      ([requestUrl, request]) =>
+        request.method === 'DELETE' &&
+        String(requestUrl).endsWith('/v1/users/test-user/status/custom'),
+    )
+    expect(url).toContain('/v1/users/test-user/status/custom')
+    expect(options.method).toBe('DELETE')
     expect($('[role=dialog]')).toBeNull()
   })
 
@@ -560,7 +618,38 @@ describe('account settings modal', () => {
 
     expect($('[role=dialog]')).toBeNull()
     const payload = wrapper.emitted('settings-saved')[0][0]
-    expect(payload.password).toEqual({ oldPassword: 'oldpass123', newPassword: 'abcdefgh' })
+    expect(payload.password).toEqual({
+      oldPassword: 'oldpass123',
+      newPassword: 'abcdefgh',
+      newPasswordConfirmation: 'abcdefgh',
+    })
+    const [url, options] = fetch.mock.calls.find(([, request]) => request.method === 'PUT')
+    expect(url).toContain('/v1/users/test-user/password')
+    expect(options.method).toBe('PUT')
+    expect(JSON.parse(options.body)).toEqual({
+      old_password: 'oldpass123',
+      new_password: 'abcdefgh',
+      new_password_confirmation: 'abcdefgh',
+    })
+  })
+
+  it('keeps the Security form open and emits an error when the password update fails', async () => {
+    await openSettings()
+    await click(tab('Security'))
+    await setValue($('input[placeholder="Old Password"]'), 'oldpass123')
+    await setValue($('input[placeholder="Enter New Password"]'), 'abcdefgh')
+    await setValue($('input[placeholder="Confirm New Password"]'), 'abcdefgh')
+    fetch.mockResolvedValueOnce({
+      ok: false,
+      status: 400,
+      json: async () => ({ message: 'Current password is incorrect' }),
+    })
+
+    await click(byText('SAVE'))
+
+    expect($('[role=dialog]')).toBeTruthy()
+    expect(wrapper.emitted('error')[0][0].message).toContain('Current password is incorrect')
+    expect(wrapper.emitted('settings-saved')).toBeUndefined()
   })
 
   it('does not require a password when the user is not changing it', async () => {
@@ -654,19 +743,77 @@ describe('account settings modal', () => {
     expect($('.avatar-btn img').getAttribute('src')).toBe('blob:mock')
   })
 
-  it('loads the saved image URL into the profile icon', async () => {
+  it('loads the user profile and saved image URL', async () => {
     fetch.mockClear()
     fetch.mockResolvedValueOnce({
       ok: true,
       status: 200,
-      json: async () => ({ user: { profile_picture: 'https://example.test/saved.png' } }),
+      json: async () => ({
+        success: true,
+        message: 'User retrieved successfully.',
+        data: {
+          id: 'test-user',
+          name: 'Saved User',
+          display_name: 'saved',
+          title: 'Engineer',
+          avatar_url: 'http://10.0.105.90:8000//api//v1//avatars//avatars//test-user//saved.png',
+          presence: 'away',
+          custom_status: 'Working remotely',
+        },
+      }),
     })
 
-    await store.loadPublicProfile()
+    await store.loadUserProfile()
     await flushPromises()
 
-    expect(store.state.profile.photoUrl).toBe('https://example.test/saved.png')
-    expect($('.avatar-btn img').getAttribute('src')).toBe('https://example.test/saved.png')
+    const [url, options] = fetch.mock.calls.at(-1)
+    expect(url).toContain('/v1/users/test-user/profile')
+    expect(options.method).toBe('GET')
+    expect(store.state.profile.fullName).toBe('Saved User')
+    expect(store.state.profile.alias).toBe('saved')
+    expect(store.state.profile.designation).toBe('Engineer')
+    expect(store.state.profile.photoUrl).toBe(
+      'http://10.0.105.90:8000/api/v1/avatars/avatars/test-user/saved.png',
+    )
+    expect(store.state.status).toBe('away')
+    expect(store.state.customStatus).toBe('Working remotely')
+    expect($('.avatar-btn img').getAttribute('src')).toBe(
+      'http://10.0.105.90:8000/api/v1/avatars/avatars/test-user/saved.png',
+    )
+    expect($('.avatar-tooltip').textContent.trim()).toBe('Saved User')
+  })
+
+  it('requests the user profile automatically when the account module mounts', () => {
+    const request = fetch.mock.calls.find(([url]) =>
+      String(url).includes('/v1/users/test-user/profile'),
+    )
+
+    expect(request).toBeTruthy()
+    expect(request[0]).toContain('/v1/users/test-user/profile')
+    expect(request[1].method).toBe('GET')
+  })
+
+  it('loads account settings from the user settings endpoint', async () => {
+    fetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        data: {
+          settings: {
+            preferences: { enterKey: 'newline' },
+            security: { hideEmail: true },
+          },
+        },
+      }),
+    })
+
+    await store.loadSettings()
+
+    const [url, options] = fetch.mock.calls.at(-1)
+    expect(url).toContain('/v1/users/test-user/settings')
+    expect(options.method).toBe('GET')
+    expect(store.state.preferences.enterKey).toBe('newline')
+    expect(store.state.security.hideEmail).toBe(true)
   })
 
   it('removes a saved profile photo and restores initials in the account icon', async () => {

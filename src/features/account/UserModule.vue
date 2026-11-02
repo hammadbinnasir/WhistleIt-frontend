@@ -91,7 +91,8 @@ onMounted(() => {
   document.addEventListener('mousedown', onDocMouseDown)
   document.addEventListener('keydown', onDocKeydown)
   if (getAuthUserId()) {
-    store.loadPublicProfile().catch((err) => emit('error', err))
+    store.loadUserProfile().catch((err) => emit('error', err))
+    store.loadSettings().catch((err) => emit('error', err))
   }
 })
 
@@ -121,10 +122,10 @@ const closeStatusModal = () => {
   refocusAvatar()
 }
 
-const saveCustomStatus = async ({ text, duration, expiresAt }) => {
+const saveCustomStatus = async ({ text, emoji, duration, expiresAt }) => {
   try {
-    await store.setCustomStatus(text, { duration, expiresAt })
-    emit('custom-status-change', text, { duration, expiresAt })
+    await store.setCustomStatus(text, { emoji, duration, expiresAt })
+    emit('custom-status-change', text, { emoji, duration, expiresAt })
     closeStatusModal()
   } catch (err) {
     emit('error', err)
@@ -134,7 +135,7 @@ const saveCustomStatus = async ({ text, duration, expiresAt }) => {
 const clearCustomStatus = async () => {
   try {
     await store.clearCustomStatus()
-    emit('custom-status-change', '', { duration: 'never', expiresAt: null })
+    emit('custom-status-change', '', { emoji: '', duration: 'never', expiresAt: null })
     closeStatusModal()
   } catch (err) {
     emit('error', err)
@@ -240,6 +241,7 @@ const logOut = () => {
     <BaseModal v-if="statusModalOpen" @close="closeStatusModal">
       <StatusModal
         :model-value="state.customStatus"
+        :emoji="state.customStatusEmoji"
         :duration="state.customStatusDuration"
         :expires-at="state.customStatusExpiresAt"
         @save="saveCustomStatus"
