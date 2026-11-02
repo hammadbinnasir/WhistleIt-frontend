@@ -1,6 +1,3 @@
-// Minimal fetch wrapper used by the Channels API.
-// If your project already has an axios/fetch instance (with auth + interceptors),
-// replace the body of `http()` to use it. Nothing else in the module needs to change.
 import { clearAuthSession, getAuthToken } from '@/features/auth/session'
 
 const BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://10.0.105.90:8000/api'
@@ -14,7 +11,6 @@ export class ApiError extends Error {
   }
 }
 
-// TODO(adapt): return the auth header your app uses, e.g. { Authorization: `Bearer ${token}` }
 function getAuthHeaders() {
   const token = getAuthToken()
   return token ? { Authorization: `Bearer ${token}` } : {}

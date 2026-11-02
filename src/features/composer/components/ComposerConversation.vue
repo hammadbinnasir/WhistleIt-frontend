@@ -157,7 +157,10 @@ function isPinned(message) {
   return ui.pinnedMessages.some(
     (item) =>
       String(item.id) === String(message.id) &&
-      String(item.conversation?.id ?? '') === conversationMeta.value.id,
+      String(item.conversation?.id ?? '') === String(conversationMeta.value.id) &&
+      (item.conversation?.kind === 'dm' ||
+        item.conversation?.type === 'dm') ===
+        (props.conversationType === 'dm'),
   )
 }
 
@@ -451,6 +454,7 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', closeActionsOn
         <article
           class="composer-conversation__message"
           :class="{ 'composer-conversation__message--grouped': message.grouped }"
+          :data-message-id="message.id"
         >
           <span v-if="!message.grouped" class="composer-conversation__avatar" aria-hidden="true">
             {{
