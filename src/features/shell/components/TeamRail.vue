@@ -9,6 +9,7 @@ import WorkspaceSwitcher from './WorkspaceSwitcher.vue'
 const router = useRouter()
 const teamsStore = useTeamsStore()
 const ui = useUiStore()
+const emit = defineEmits(['invite'])
 const {
   activeWorkspaceId,
   activeTeamId,
@@ -23,6 +24,7 @@ const teamActionsOpen = ref(false)
 const teamActionsButton = ref(null)
 const teamActionsPopover = ref(null)
 const teamActionsPosition = ref({ top: 0, left: 0 })
+const railTooltip = ref(null)
 
 function getInitials(name) {
   return name
@@ -108,6 +110,19 @@ function retryLoad() {
   }
 }
 
+function showRailTooltip(event, text) {
+  const bounds = event.currentTarget.getBoundingClientRect()
+  railTooltip.value = {
+    text,
+    top: bounds.top + bounds.height / 2,
+    left: bounds.right + 10,
+  }
+}
+
+function hideRailTooltip() {
+  railTooltip.value = null
+}
+
 onMounted(() => {
   document.addEventListener('pointerdown', handleDocumentPointer)
   document.addEventListener('keydown', handleDocumentKeydown)
@@ -146,12 +161,29 @@ onBeforeUnmount(() => {
         </p>
         <button
           type="button"
-          class="team-rail__add"
-          aria-label="Create a workspace"
-          title="Create a workspace"
-          @click="ui.toggleWorkspaceCreateModal()"
+          class="team-rail__add team-rail__add--invite"
+          aria-label="Invite people"
+          @mouseenter="showRailTooltip($event, 'Invite People')"
+          @mouseleave="hideRailTooltip"
+          @focus="showRailTooltip($event, 'Invite People')"
+          @blur="hideRailTooltip"
+          @click="emit('invite')"
         >
-          <span aria-hidden="true">+</span>
+          <svg
+            class="team-rail__invite-icon"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+          >
+            <path d="M16 21v-2a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v2" />
+            <circle cx="9.5" cy="7" r="4" />
+            <path d="M19 8v6" />
+            <path d="M22 11h-6" />
+          </svg>
         </button>
       </section>
 
@@ -215,22 +247,33 @@ onBeforeUnmount(() => {
     </div>
 
     <footer class="team-rail__footer">
+      <div class="team-rail__user">
+        <slot name="footer" />
+      </div>
       <button
         type="button"
         class="team-rail__help"
         :class="{ 'team-rail__help--active': ui.helpModalOpen }"
-        title="Help"
         aria-label="Open help"
+        @mouseenter="showRailTooltip($event, 'Help')"
+        @mouseleave="hideRailTooltip"
+        @focus="showRailTooltip($event, 'Help')"
+        @blur="hideRailTooltip"
         @click="ui.toggleHelpModal()"
       >
         ?
       </button>
-      <div class="team-rail__user">
-        <slot name="footer" />
-      </div>
     </footer>
 
     <Teleport to="body">
+      <div
+        v-if="railTooltip"
+        class="team-rail__tooltip"
+        role="tooltip"
+        :style="{ top: `${railTooltip.top}px`, left: `${railTooltip.left}px` }"
+      >
+        {{ railTooltip.text }}
+      </div>
       <div
         v-if="teamActionsOpen"
         ref="teamActionsPopover"
@@ -385,6 +428,23 @@ onBeforeUnmount(() => {
   line-height: 1;
 }
 
+.team-rail__add--invite {
+  position: relative;
+  margin-top: 8px;
+  padding: 0;
+  line-height: 0;
+}
+
+.team-rail__invite-icon {
+  display: block;
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 20px;
+  height: 20px;
+  transform: translate(-50%, -50%);
+}
+
 .team-rail__add:hover,
 .team-rail__help:hover,
 .team-rail__help--active {
@@ -440,9 +500,11 @@ onBeforeUnmount(() => {
 }
 
 .team-rail__help {
-  border: 1px solid color-mix(in srgb, var(--color-white) 50%, transparent);
+  width: 22px;
+  height: 22px;
+  border: 1px solid color-mix(in srgb, var(--color-white) 70%, transparent);
   border-radius: 50%;
-  font-size: 16px;
+  font-size: 12px;
   font-weight: 700;
 }
 
@@ -466,6 +528,22 @@ onBeforeUnmount(() => {
   background: var(--color-white);
   color: var(--color-slate-800);
   box-shadow: 0 0.5rem 1.5rem color-mix(in srgb, var(--color-slate-950) 20%, transparent);
+}
+
+.team-rail__tooltip {
+  position: fixed;
+  z-index: 80;
+  transform: translateY(-50%);
+  border-radius: 0.35rem;
+  padding: 0.4rem 0.75rem;
+  background: #555;
+  color: var(--color-white);
+  box-shadow: 0 2px 8px rgb(0 0 0 / 18%);
+  font-size: 0.8125rem;
+  font-weight: 500;
+  line-height: 1.25rem;
+  white-space: nowrap;
+  pointer-events: none;
 }
 
 .team-rail__popover button {
