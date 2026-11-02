@@ -2,8 +2,20 @@ import { http } from '@/features/channels/api/http'
 
 const userPath = (userId, suffix = '') => `/v1/users/${encodeURIComponent(userId)}${suffix}`
 
-export function getPublicProfile(userId) {
-  return http(userPath(userId))
+export function getUserProfile(userId) {
+  return http(userPath(userId, '/profile'))
+}
+
+export function getUserSettings(userId) {
+  return http(userPath(userId, '/settings'))
+}
+
+export function updateUserStatus(userId, status) {
+  return http(userPath(userId, '/status'), { method: 'PUT', body: status })
+}
+
+export function deleteUserCustomStatus(userId) {
+  return http(userPath(userId, '/status/custom'), { method: 'DELETE' })
 }
 
 export function uploadUserAvatar(userId, file) {
@@ -14,4 +26,15 @@ export function uploadUserAvatar(userId, file) {
 
 export function deleteUserAvatar(userId) {
   return http(userPath(userId, '/avatar'), { method: 'DELETE' })
+}
+
+export function updateUserPassword(userId, password) {
+  return http(userPath(userId, '/password'), {
+    method: 'PUT',
+    body: {
+      old_password: password.oldPassword,
+      new_password: password.newPassword,
+      new_password_confirmation: password.newPasswordConfirmation,
+    },
+  })
 }

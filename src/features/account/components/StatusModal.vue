@@ -5,6 +5,7 @@ import { DURATIONS, computeExpiry, toDateInput, todayInput } from '../composable
 
 const props = defineProps({
   modelValue: { type: String, default: '' },
+  emoji: { type: String, default: '' },
   duration: { type: String, default: 'never' },
   expiresAt: { type: Number, default: null },
 })
@@ -12,6 +13,7 @@ const props = defineProps({
 const emit = defineEmits(['update:modelValue', 'close', 'save', 'clear'])
 
 const text = ref(props.modelValue)
+const emoji = ref(props.emoji || (props.modelValue.trim() ? '☕' : ''))
 const hasStatus = props.modelValue.trim().length > 0
 
 /** 'list'     → predefined statuses
@@ -26,11 +28,11 @@ const today = todayInput()
 const inputEl = ref(null)
 
 const predefined = [
-  { id: 'meeting', label: 'In a meeting', icon: 'meeting' },
-  { id: 'commuting', label: 'Commuting', icon: 'bus' },
-  { id: 'sick', label: 'Sick Leave', icon: 'sick' },
-  { id: 'vacation', label: 'On Vacations', icon: 'vacation' },
-  { id: 'remote', label: 'Working Remotely', icon: 'remote' },
+  { id: 'meeting', label: 'In a meeting', emoji: '📅' },
+  { id: 'commuting', label: 'Commuting', emoji: '🚌' },
+  { id: 'sick', label: 'Sick Leave', emoji: '🤒' },
+  { id: 'vacation', label: 'On Vacations', emoji: '🌴' },
+  { id: 'remote', label: 'Working Remotely', emoji: '🏠' },
 ]
 
 const dateValid = computed(() => duration.value !== 'date' || (!!date.value && date.value >= today))
@@ -39,6 +41,7 @@ const canSave = computed(() => text.value.trim().length > 0 && dateValid.value)
 
 const pick = (item) => {
   text.value = item.label
+  emoji.value = item.emoji
   duration.value = 'never'
   date.value = ''
   view.value = 'duration'
@@ -47,6 +50,7 @@ const pick = (item) => {
 /** The X in the input: wipe the text and go back to the predefined list. */
 const clearText = async () => {
   text.value = ''
+  emoji.value = ''
   duration.value = 'never'
   date.value = ''
   view.value = 'list'
@@ -54,8 +58,14 @@ const clearText = async () => {
   inputEl.value?.focus()
 }
 
+const onTextInput = () => {
+  if (text.value.trim() && !emoji.value) emoji.value = '☕'
+  if (!text.value.trim()) emoji.value = ''
+}
+
 const clear = () => {
   text.value = ''
+  emoji.value = ''
   emit('update:modelValue', '')
   emit('clear')
 }
@@ -64,6 +74,7 @@ const save = () => {
   if (!canSave.value) return
   const payload = {
     text: text.value.trim(),
+    emoji: emoji.value,
     duration: duration.value,
     expiresAt: computeExpiry(duration.value, date.value),
   }
@@ -97,8 +108,10 @@ const save = () => {
           type="text"
           placeholder="What's your current status?"
           data-autofocus
+          @input="onTextInput"
           @keydown.enter="save"
         />
+        <span v-if="emoji" class="status-emoji" aria-label="Status emoji">{{ emoji }}</span>
         <button
           v-if="view === 'duration'"
           type="button"
@@ -117,7 +130,7 @@ const save = () => {
           </svg>
         </button>
         <svg
-          v-else
+          v-else-if="!emoji"
           class="cup"
           viewBox="0 0 24 24"
           fill="none"
@@ -140,57 +153,7 @@ const save = () => {
         <ul class="list">
           <li v-for="item in predefined" :key="item.id">
             <button class="row" @click="pick(item)">
-              <svg
-                class="icon"
-                viewBox="0 0 32 32"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="1.7"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-              >
-                <!-- meeting -->
-                <template v-if="item.icon === 'meeting'">
-                  <circle cx="16" cy="9" r="3.2" />
-                  <circle cx="7" cy="12.5" r="2.6" />
-                  <circle cx="25" cy="12.5" r="2.6" />
-                  <path d="M10.5 24v-5a3 3 0 0 1 3-3h5a3 3 0 0 1 3 3v5z" />
-                  <path d="M3 24v-4a2.5 2.5 0 0 1 2.5-2.5H8" />
-                  <path d="M29 24v-4a2.5 2.5 0 0 0-2.5-2.5H24" />
-                  <path d="M2 24h28" />
-                </template>
-                <!-- bus -->
-                <template v-else-if="item.icon === 'bus'">
-                  <rect x="5" y="3" width="22" height="24" rx="2.5" />
-                  <path d="M5 16h22" />
-                  <path d="M5 8h22" />
-                  <circle cx="10.5" cy="21.5" r="1.2" />
-                  <circle cx="21.5" cy="21.5" r="1.2" />
-                  <path d="M9 27v2M23 27v2" />
-                </template>
-                <!-- sick -->
-                <template v-else-if="item.icon === 'sick'">
-                  <circle cx="16" cy="16" r="13" />
-                  <path d="M8 11c2.5-2 13.5-2 16 0" />
-                  <path d="M10.5 14.5l2 1M21.5 14.5l-2 1" />
-                  <rect x="8.5" y="18" width="15" height="7" rx="2" />
-                  <path d="M8.5 21.5h15" />
-                </template>
-                <!-- vacation -->
-                <template v-else-if="item.icon === 'vacation'">
-                  <circle cx="19" cy="19" r="10" />
-                  <path d="M9 19c3 0 4 2 7 2M19 9c0 3 2 4 2 7M22 25c-1-2 1-4 4-4" />
-                  <path d="M4 13l8.5-4.5a1.5 1.5 0 0 1 2 .8l.4 1-4.5 2.2 4 6-2 1-5-5.5-2.5 1.2z" />
-                </template>
-                <!-- remote -->
-                <template v-else-if="item.icon === 'remote'">
-                  <path d="M3 14L16 3l13 11" />
-                  <path d="M6 12v14M26 12v14" />
-                  <path d="M6 20h20" />
-                  <rect x="9" y="20" width="14" height="6" rx="1" />
-                  <path d="M4 28h24" />
-                </template>
-              </svg>
+              <span class="icon" aria-hidden="true">{{ item.emoji }}</span>
               <span class="label">{{ item.label }}</span>
             </button>
           </li>
@@ -292,11 +255,45 @@ const save = () => {
   position: relative;
 }
 
+.emoji-field {
+  position: relative;
+  margin-top: 12px;
+}
+
+.emoji-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 34px;
+  padding: 4px 10px;
+  border: 1px solid #d5d5df;
+  border-radius: 4px;
+  background: #fff;
+  color: #3b3b55;
+  cursor: pointer;
+  font: inherit;
+}
+
+.emoji-trigger:hover {
+  background: #f4f4f7;
+}
+
+.emoji-trigger span {
+  font-size: 18px;
+}
+
+.emoji-picker-popover {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 3;
+}
+
 .input {
   width: 100%;
   height: 38px;
   box-sizing: border-box;
-  padding: 0 52px 0 14px;
+  padding: 0 84px 0 14px;
   font-size: 15px;
   font-family: inherit;
   color: #1f1f2e;
@@ -309,6 +306,15 @@ const save = () => {
 }
 .input:focus {
   border-color: #5559f4;
+}
+
+.status-emoji {
+  position: absolute;
+  top: 50%;
+  right: 48px;
+  transform: translateY(-50%);
+  font-size: 18px;
+  line-height: 1;
 }
 
 .cup {
@@ -412,7 +418,10 @@ const save = () => {
   width: 26px;
   height: 26px;
   flex-shrink: 0;
-  color: #3b3b55;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 22px;
 }
 
 .label {

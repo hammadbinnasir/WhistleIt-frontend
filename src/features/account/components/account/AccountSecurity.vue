@@ -56,7 +56,11 @@ const validate = () => {
 const getValues = () => ({
   security: { hideEmail: hideEmail.value },
   password: changingPassword.value
-    ? { oldPassword: passwords.old, newPassword: passwords.next }
+    ? {
+        oldPassword: passwords.old,
+        newPassword: passwords.next,
+        newPasswordConfirmation: passwords.confirm,
+      }
     : null,
 })
 
