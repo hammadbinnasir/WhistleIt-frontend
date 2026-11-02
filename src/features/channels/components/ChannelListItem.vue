@@ -33,15 +33,6 @@ const emit = defineEmits(['select', 'menu'])
         {{ channel.unreadCount > 99 ? '99+' : channel.unreadCount }}
       </span>
     </button>
-    <button
-      class="ch-item__more"
-      type="button"
-      :aria-label="`Options for ${channel.name}`"
-      aria-haspopup="menu"
-      @click.stop="emit('menu', $event)"
-    >
-      <ChIcon name="more" :size="16" />
-    </button>
   </li>
 </template>
 

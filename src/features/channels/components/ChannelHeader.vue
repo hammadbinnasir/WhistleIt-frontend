@@ -1,11 +1,10 @@
 <script setup>
-import { computed, ref, watch } from 'vue'
+import { computed, watch } from 'vue'
 import { useChannelsStore } from '../store/channels.store'
 import { useChannelActions } from '../composables/useChannelActions'
 import { HEADER_AVATAR_MAX } from '../constants'
 import ChIcon from './ChIcon.vue'
 import MemberAvatarStack from './MemberAvatarStack.vue'
-import ChannelContextMenu from './ChannelContextMenu.vue'
 import '../styles/tokens.css'
 
 // Drop this into any chat screen:  <ChannelHeader :channel-id="route.params.channelId" />
@@ -17,15 +16,12 @@ const props = defineProps({
 const emit = defineEmits(['members-click'])
 
 const store = useChannelsStore()
-const { menuItemsFor, run } = useChannelActions()
+const { run } = useChannelActions()
 
 const channel = computed(() => store.getById(props.channelId))
 const memberState = computed(
   () => store.members[String(props.channelId)] || { items: [], total: 0 },
 )
-const menu = ref({ open: false, x: 0, y: 0 })
-const menuItems = computed(() => menuItemsFor(channel.value))
-
 watch(
   () => props.channelId,
   (id) => {
@@ -37,16 +33,6 @@ watch(
 
 function toggleFavorite() {
   run('favorite', channel.value)
-}
-
-function openMenu(event) {
-  const rect = event.currentTarget.getBoundingClientRect()
-  menu.value = { open: true, x: rect.left, y: rect.bottom + 4 }
-}
-
-function onMenuSelect(key) {
-  menu.value = { ...menu.value, open: false }
-  run(key, channel.value)
 }
 </script>
 
@@ -81,15 +67,6 @@ function onMenuSelect(key) {
 
       <div class="ch-header__actions">
         <slot name="actions" />
-        <button
-          class="ch-header__icon"
-          type="button"
-          aria-label="Channel options"
-          aria-haspopup="menu"
-          @click="openMenu"
-        >
-          <ChIcon name="more" :size="20" />
-        </button>
       </div>
     </div>
 
@@ -97,14 +74,6 @@ function onMenuSelect(key) {
       <span class="ch-header__bullet" aria-hidden="true">•</span>{{ channel.description }}
     </p>
 
-    <ChannelContextMenu
-      :open="menu.open"
-      :x="menu.x"
-      :y="menu.y"
-      :items="menuItems"
-      @select="onMenuSelect"
-      @close="menu = { ...menu, open: false }"
-    />
   </header>
   <div v-else class="ch-header ch-header--skeleton" aria-hidden="true" />
 </template>
@@ -165,20 +134,6 @@ function onMenuSelect(key) {
   align-items: center;
   gap: 4px;
   margin-left: auto;
-}
-.ch-header__icon {
-  display: grid;
-  place-items: center;
-  width: 36px;
-  height: 36px;
-  border: 0;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--ch-muted);
-  cursor: pointer;
-}
-.ch-header__icon:hover {
-  background: #f1f0f8;
 }
 .ch-header__desc {
   margin: 2px 0 0 36px;
