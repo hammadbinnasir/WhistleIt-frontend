@@ -1,9 +1,10 @@
 <script setup>
 // Right side of the channel/DM header.
-// Channel: Reminders + Search + Settings.  DM: Reminders + Search only.
 import { useUiStore } from '@/stores/ui'
 
-defineProps({ isDm: { type: Boolean, default: false } })
+defineProps({
+  isDm: { type: Boolean, default: false },
+})
 const ui = useUiStore()
 </script>
 
@@ -29,7 +30,12 @@ const ui = useUiStore()
     >
       <i class="fa-vellum fa-solid fa-thumbtack" aria-hidden="true"></i>
     </button>
-    <button class="icon-btn" title="Search" aria-label="Search" @click="ui.openPanel('search')">
+    <button
+      class="icon-btn"
+      title="Search"
+      aria-label="Search"
+      @click="ui.openPanel('search')"
+    >
       <svg viewBox="0 0 24 24" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="2">
         <circle cx="11" cy="11" r="7" />
         <path d="m20 20-3.5-3.5" />
@@ -54,7 +60,6 @@ const ui = useUiStore()
 
 <style scoped>
 @reference "../../assets/main.css";
-
 .icon-btn {
   @apply flex h-9 w-9 cursor-pointer items-center justify-center rounded-full border border-slate-200 text-slate-600 hover:bg-indigo-50 hover:text-indigo-600;
 }

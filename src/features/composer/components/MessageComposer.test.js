@@ -290,7 +290,7 @@ describe('message composer', () => {
     expect(wrapper.emitted('send')).toBeUndefined()
   })
 
-  it('sends the message when Enter is pressed', async () => {
+  it('keeps the message draft when Enter is pressed', async () => {
     const wrapper = mount(MessageComposer)
     setEditorText(wrapper, 'Send with Enter')
 
