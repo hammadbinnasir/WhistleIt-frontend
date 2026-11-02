@@ -104,7 +104,7 @@ export function normalizeMembers(response) {
     }
 
     const normalized = {
-      userId: record.joined_by == null ? null : String(record.joined_by),
+      userId: String(user.id ?? record.user_id ?? record.joined_by ?? record.id),
       membershipId: String(record.id),
       status: 'offline',
       isCreator: false,

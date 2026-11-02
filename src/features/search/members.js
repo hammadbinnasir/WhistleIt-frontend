@@ -1,24 +1,44 @@
-// Mock members API. Replace with real calls (members, add/remove endpoints).
-const wait = (ms = 200) => new Promise((r) => setTimeout(r, ms))
-let MEMBERS = [
-  { id: 'u5', name: 'Aiman Iqbal' },
-  { id: 'u6', name: 'Ali Umais' },
-  { id: 'u3', name: 'Hammad Bin Nasir' },
-  { id: 'u2', name: 'Hammad Haider' },
-  { id: 'u8', name: 'Muhammad Abdullah Tariq' },
-  { id: 'u4', name: 'Muhammad Ahmad Imran' },
-]
+import { useMembersStore } from '@/stores/members'
+import { useTeamsStore } from '@/stores/teams'
+
+const wait = (ms = 200) => new Promise((resolve) => setTimeout(resolve, ms))
+
 export async function listMembers() {
-  await wait()
-  return [...MEMBERS]
+  const teamsStore = useTeamsStore()
+  const membersStore = useMembersStore()
+
+  if (teamsStore.activeWorkspaceId && teamsStore.activeTeamId) {
+    await membersStore.fetchMembers(teamsStore.activeWorkspaceId, teamsStore.activeTeamId)
+  }
+
+  return membersStore.members.map((member) => ({
+    id: member.userId || member.membershipId,
+    name: member.name || member.email || 'Team member',
+    email: member.email || '',
+    avatar: member.avatar || '',
+    role: member.role || 'member',
+    status: member.status || 'offline',
+  }))
 }
+
 export async function removeMember(userId) {
-  await wait()
-  MEMBERS = MEMBERS.filter((m) => m.id !== userId)
+  const teamsStore = useTeamsStore()
+  const membersStore = useMembersStore()
+  await membersStore.removeMember(
+    teamsStore.activeWorkspaceId,
+    teamsStore.activeTeamId,
+    userId,
+  )
 }
+
 export async function addMember(user) {
-  await wait()
-  if (!MEMBERS.find((m) => m.id === user.id)) MEMBERS.push(user)
+  const teamsStore = useTeamsStore()
+  const membersStore = useMembersStore()
+  await membersStore.addMember(
+    teamsStore.activeWorkspaceId,
+    teamsStore.activeTeamId,
+    user.id,
+  )
 }
 export async function getWebhookUrl(channelId) {
   await wait(100)
