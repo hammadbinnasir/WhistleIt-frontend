@@ -90,7 +90,7 @@ export function normalizeMembers(response) {
     if (record?.id == null) throw new Error('A member record is missing its ID.')
     const user = record.user && typeof record.user === 'object' ? record.user : {}
     const normalized = {
-      userId: record.joined_by == null ? null : String(record.joined_by),
+      userId: String(user.id ?? record.user_id ?? record.joined_by ?? record.id),
       membershipId: String(record.id),
       role: String(record.role ?? 'member'),
       joinedDate: record.joined_date == null ? null : String(record.joined_date),

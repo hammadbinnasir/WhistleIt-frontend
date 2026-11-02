@@ -58,10 +58,33 @@ export async function removeMember(workspaceId, teamId, userId) {
   }).then(normalizeDeleteResult)
 }
 
-export async function searchUsers(query) {
+export async function searchUsers(query, workspaceId = null) {
   if (USE_SHELL_MOCKS) {
     const mock = await import('./__mocks__/members.mock')
     return mock.mockSearchUsers(query)
   }
-  throw new Error('User search is not available yet.')
+
+  const normalizedQuery = String(query ?? '').trim()
+  const encodedQuery = encodeURIComponent(normalizedQuery)
+  const path = workspaceId
+    ? `/v1/${encodeURIComponent(workspaceId)}/users?search=${encodedQuery}`
+    : `/v1/users?search=${encodedQuery}`
+
+  const response = await apiRequest(path)
+  const data = response?.data ?? response
+  const records = data?.users ?? data?.members ?? (Array.isArray(data) ? data : [])
+
+  return records.map((record) => {
+    const user = record.user && typeof record.user === 'object' ? record.user : record
+    const id = user.id ?? user.user_id ?? record.id
+    const name = user.name ?? user.full_name ?? user.fullName ?? ''
+    const email = user.email ?? record.email ?? ''
+    if (id == null) return null
+    return {
+      id: String(id),
+      name: String(name || email || 'User'),
+      email: String(email),
+      avatar: user.avatar ?? user.avatar_url ?? record.avatar ?? '',
+    }
+  }).filter(Boolean)
 }

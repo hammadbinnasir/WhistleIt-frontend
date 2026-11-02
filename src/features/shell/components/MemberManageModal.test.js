@@ -75,15 +75,14 @@ describe('MemberManageModal', () => {
     expect(wrapper.findAll('.remove-btn')).toHaveLength(1)
   })
 
-  it('keeps Add members disabled until user search is available', async () => {
+  it('shows API-backed add member search in production mode', async () => {
     const wrapper = mountOpenModal()
     await flushPromises()
 
-    const addButton = wrapper
-      .findAll('button')
-      .find((button) => button.text().includes('User search'))
-    expect(addButton.exists()).toBe(true)
-    expect(addButton.attributes('disabled')).toBeDefined()
+    expect(wrapper.find('input[placeholder="Enter name or email..."]').exists()).toBe(true)
+    const addButton = wrapper.findAll('button').find((button) => button.text().includes('Add Member'))
+    expect(addButton).toBeDefined()
+    expect(addButton.attributes('disabled')).not.toBeDefined()
   })
 
   it('confirms removal by user ID and refreshes the member list on success', async () => {

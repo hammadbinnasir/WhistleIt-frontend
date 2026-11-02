@@ -5,7 +5,6 @@ import { useTeamsStore } from '@/stores/teams'
 import { useMembersStore } from '@/stores/members'
 import { useUiStore } from '@/stores/ui'
 import { getAuthUserId } from '@/features/auth/session'
-import { USE_SHELL_MOCKS } from '@/features/shell/api/config'
 import { searchUsers } from '@/features/shell/api/membersApi'
 
 const teamsStore = useTeamsStore()
@@ -82,7 +81,7 @@ async function onAddInputChange() {
   debounceTimer = setTimeout(async () => {
     isSearchingSuggestions.value = true
     try {
-      const results = await searchUsers(q)
+      const results = await searchUsers(q, activeWorkspaceId.value)
       // filter out existing members
       searchSuggestions.value = results.filter(
         (user) => !members.value.some((member) => member.userId === user.id),
@@ -247,7 +246,7 @@ function getInitials(name) {
         </p>
 
         <!-- Add Member section -->
-        <div v-if="USE_SHELL_MOCKS" class="add-section">
+        <div class="add-section">
           <label class="section-label">Add New Member</label>
           <div class="add-input-wrapper">
             <input
@@ -261,8 +260,8 @@ function getInitials(name) {
             <button
               type="button"
               class="add-btn"
-              :disabled="!newMemberInput.trim() || isAdding || membersWriting"
-              @click="handleAddUser()"
+              :disabled="isAdding || membersWriting"
+              @click="searchSuggestions.length ? selectSuggestion(searchSuggestions[0]) : null"
             >
               <span v-if="isAdding">Adding...</span>
               <span v-else>Add Member</span>
@@ -288,10 +287,6 @@ function getInitials(name) {
               <span class="invite-label">+ Add</span>
             </button>
           </div>
-        </div>
-        <div v-else class="add-section">
-          <label class="section-label">Add members</label>
-          <button type="button" class="add-btn" disabled>User search not available yet</button>
         </div>
 
         <!-- Member list header & search -->
