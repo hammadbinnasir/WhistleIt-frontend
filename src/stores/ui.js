@@ -64,8 +64,21 @@ export const useUiStore = defineStore('ui', () => {
   function togglePinnedMessage(message, conversation) {
     const id = String(message.id)
     const conversationId = String(conversation?.id ?? message.conversation?.id ?? '')
+    const conversationKind =
+      conversation?.kind === 'dm' || conversation?.type === 'dm' ? 'dm' : 'channel'
     const existingIndex = pinnedMessages.value.findIndex(
-      (item) => String(item.id) === id && String(item.conversation?.id ?? '') === conversationId,
+      (item) => {
+        const itemConversation = item.conversation || {}
+        const itemKind =
+          itemConversation.kind === 'dm' || itemConversation.type === 'dm'
+            ? 'dm'
+            : 'channel'
+        return (
+          String(item.id) === id &&
+          String(itemConversation.id ?? '') === conversationId &&
+          itemKind === conversationKind
+        )
+      },
     )
     if (existingIndex !== -1) {
       pinnedMessages.value.splice(existingIndex, 1)

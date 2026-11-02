@@ -3,9 +3,26 @@ import { computed, nextTick } from 'vue'
 import { useUiStore } from '@/stores/ui'
 import { useDmStore } from '@/stores/dms'
 
+const props = defineProps({
+  conversationId: { type: [String, Number], default: '' },
+  conversationType: { type: String, default: 'channel' },
+})
 const ui = useUiStore()
 const dms = useDmStore()
-const hasPinnedMessages = computed(() => ui.pinnedMessages.length > 0)
+const currentPinnedMessages = computed(() =>
+  ui.pinnedMessages.filter((item) => {
+    const conversation = item.conversation || {}
+    const kind =
+      conversation.kind === 'dm' || conversation.type === 'dm'
+        ? 'dm'
+        : 'channel'
+    return (
+      kind === props.conversationType &&
+      String(conversation.id ?? '') === String(props.conversationId ?? '')
+    )
+  }),
+)
+const hasPinnedMessages = computed(() => currentPinnedMessages.value.length > 0)
 
 function initials(name) {
   return String(name || 'You')
@@ -79,7 +96,7 @@ async function jumpToMessage(message) {
     </div>
 
     <ul v-else class="min-h-0 flex-1 divide-y overflow-y-auto">
-      <li v-for="message in ui.pinnedMessages" :key="message.id" class="px-5 py-4">
+      <li v-for="message in currentPinnedMessages" :key="message.id" class="px-5 py-4">
         <div class="mb-3 text-center">
           <span class="rounded bg-slate-100 px-3 py-1 text-xs text-slate-500">
             {{ formatDate(message.createdAt) }}
