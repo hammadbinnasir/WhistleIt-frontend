@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 vi.mock('@/lib/api/client', () => ({ apiRequest: vi.fn() }))
 
 import { apiRequest } from '@/lib/api/client'
-import { getMembers, addMember, removeMember } from './membersApi'
+import { getMembers, getNotMembers, addMember, addMembers, removeMember } from './membersApi'
 import { createTeam, deleteTeam, getTeam, getTeams, joinTeam, updateTeam } from './teamsApi'
 import { createWorkspace, getWorkspaces, getWorkspaceTeams } from './workspacesApi'
 
@@ -104,19 +104,36 @@ describe('shell API adapters', () => {
     apiRequest.mockResolvedValueOnce({
       success: true,
       data: {
-        members: [
-          { id: 'membership-1', joined_by: 'user-1', role: 'member', joined_date: 'today' },
-        ],
+        teamusers: {
+          creator_id: 'user-1',
+          members: [{ id: 'user-1', name: 'Team Creator' }],
+        },
       },
     })
 
     await expect(getMembers('company-1', 'team-1')).resolves.toMatchObject([
-      { membershipId: 'membership-1', userId: 'user-1', role: 'member', joinedDate: 'today' },
+      { userId: 'user-1', name: 'Team Creator', isCreator: true },
     ])
     expect(apiRequest).toHaveBeenCalledWith('/v1/company-1/teams/team-1/members')
   })
 
-  it('sends member writes with user_ids and removes by user ID', async () => {
+  it('loads notmembers from its confirmed envelope path', async () => {
+    apiRequest.mockResolvedValue({
+      success: true,
+      data: {
+        notteamusers: {
+          members: [{ id: 'user-1', name: 'Available User' }],
+        },
+      },
+    })
+
+    await expect(getNotMembers('company-1', 'team-1')).resolves.toEqual([
+      { userId: 'user-1', name: 'Available User' },
+    ])
+    expect(apiRequest).toHaveBeenCalledWith('/v1/company-1/teams/team-1/notmembers')
+  })
+
+  it('uses single and multiple member routes with array user_ids and removes by user ID', async () => {
     apiRequest
       .mockResolvedValueOnce({
         success: true,
@@ -125,23 +142,35 @@ describe('shell API adapters', () => {
       })
       .mockResolvedValueOnce({
         success: true,
+        message: 'Team members added successfully',
+        data: null,
+      })
+      .mockResolvedValueOnce({
+        success: true,
         message: 'Team member deleted successfully',
         data: null,
       })
 
-    await expect(addMember('company-1', 'team-1', ['user-1', 'user-2'])).resolves.toMatchObject({
+    await expect(addMember('company-1', 'team-1', 'user-1')).resolves.toMatchObject({
       message: 'Team member added successfully',
+    })
+    await expect(addMembers('company-1', 'team-1', ['user-1', 'user-2'])).resolves.toMatchObject({
+      message: 'Team members added successfully',
     })
     await expect(removeMember('company-1', 'team-1', 'user-2')).resolves.toEqual({
       success: true,
       message: 'Team member deleted successfully',
     })
 
-    expect(apiRequest).toHaveBeenNthCalledWith(1, '/v1/company-1/teams/team-1/members', {
+    expect(apiRequest).toHaveBeenNthCalledWith(1, '/v1/company-1/teams/team-1/member', {
+      method: 'POST',
+      body: JSON.stringify({ user_ids: ['user-1'] }),
+    })
+    expect(apiRequest).toHaveBeenNthCalledWith(2, '/v1/company-1/teams/team-1/multiplemembers', {
       method: 'POST',
       body: JSON.stringify({ user_ids: ['user-1', 'user-2'] }),
     })
-    expect(apiRequest).toHaveBeenNthCalledWith(2, '/v1/company-1/teams/team-1/members/user-2', {
+    expect(apiRequest).toHaveBeenNthCalledWith(3, '/v1/company-1/teams/team-1/members/user-2', {
       method: 'DELETE',
     })
   })

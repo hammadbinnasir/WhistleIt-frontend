@@ -81,22 +81,37 @@ export function normalizeTeamDetail(response, workspaceId) {
 }
 
 export function normalizeMembers(response) {
-  const records = unwrapResponse(response)?.members
+  const data = unwrapResponse(response)
+  const teamusers = data?.teamusers
+  const records = Array.isArray(teamusers?.members) ? teamusers.members : data?.members
   if (!Array.isArray(records)) {
-    throw new Error('The members response is missing data.members.')
+    throw new Error('The members response is missing data.teamusers.members or data.members.')
   }
 
   return records.map((record) => {
     if (record?.id == null) throw new Error('A member record is missing its ID.')
     const user = record.user && typeof record.user === 'object' ? record.user : {}
+    if (Array.isArray(teamusers?.members)) {
+      const userId = String(record.id)
+      const member = {
+        userId,
+        name: String(record.name ?? user.name ?? user.full_name ?? 'Member').trim() || 'Member',
+        isCreator: teamusers.creator_id != null && userId === String(teamusers.creator_id),
+      }
+      if (record.role != null) member.role = String(record.role)
+      if (record.joined_date != null) member.joinedDate = String(record.joined_date)
+      return member
+    }
+
     const normalized = {
       userId: record.joined_by == null ? null : String(record.joined_by),
       membershipId: String(record.id),
-      role: String(record.role ?? 'member'),
-      joinedDate: record.joined_date == null ? null : String(record.joined_date),
       status: 'offline',
+      isCreator: false,
     }
 
+    if (record.role != null) normalized.role = String(record.role)
+    if (record.joined_date != null) normalized.joinedDate = String(record.joined_date)
     const name = record.name ?? user.name ?? user.full_name ?? user.display_name
     const email = record.email ?? user.email
     const avatar = record.avatar ?? record.avatar_url ?? user.avatar ?? user.avatar_url
@@ -105,6 +120,30 @@ export function normalizeMembers(response) {
     if (typeof avatar === 'string' && avatar.trim()) normalized.avatar = avatar.trim()
 
     return normalized
+  })
+}
+
+export function normalizeNotMembers(response) {
+  const records = unwrapResponse(response)?.notteamusers?.members
+  if (!Array.isArray(records)) {
+    throw new Error('The not-members response is missing data.notteamusers.members.')
+  }
+
+  return records.flatMap((record) => {
+    if (record?.id == null || String(record.id).trim() === '') return []
+
+    // ASSUMED: email and avatar are optional fields until verified in a non-empty live response.
+    const member = {
+      userId: String(record.id),
+      name: String(record.name ?? 'Member').trim() || 'Member',
+    }
+    if (typeof record.email === 'string' && record.email.trim()) {
+      member.email = record.email.trim()
+    }
+    if (typeof record.avatar === 'string' && record.avatar.trim()) {
+      member.avatarUrl = record.avatar.trim()
+    }
+    return [member]
   })
 }
 
