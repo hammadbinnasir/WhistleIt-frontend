@@ -23,7 +23,7 @@ import {
   CreateTeamModal,
   CreateWorkspaceModal,
   JoinTeamModal,
-  HelpModal,
+  HelpDrawer,
   MemberManageModal,
   InviteUsersModal,
 } from '@/features/shell'
@@ -445,9 +445,9 @@ onBeforeUnmount(() => {
             />
           </section>
 
-          <!-- Side Drawer: Reminders or Search -->
+          <!-- Side Drawer: Reminders, Search, and other conversation panels -->
           <aside
-            v-if="ui.activePanel"
+            v-if="ui.activePanel && ui.activePanel !== 'help'"
             class="min-h-0 w-full shrink-0 border-l border-slate-200 bg-white md:w-[min(450px,40vw)] shadow-lg"
           >
             <RemindersPanel v-if="ui.activePanel === 'reminders'" />
@@ -461,6 +461,14 @@ onBeforeUnmount(() => {
         </div>
       </template>
     </main>
+
+    <aside
+      v-if="ui.activePanel === 'help'"
+      class="h-full w-[min(432px,40vw)] shrink-0 border-l border-slate-200 bg-white shadow-lg"
+      aria-label="Help panel"
+    >
+      <HelpDrawer />
+    </aside>
 
     <!-- Channel Settings Modal -->
     <ChannelSettingsModal
@@ -527,7 +535,6 @@ onBeforeUnmount(() => {
     <CreateWorkspaceModal />
     <CreateTeamModal />
     <JoinTeamModal />
-    <HelpModal />
     <MemberManageModal />
     <InviteUsersModal v-if="inviteModalOpen" @close="inviteModalOpen = false" />
   </div>
