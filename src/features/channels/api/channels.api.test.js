@@ -28,11 +28,20 @@ describe('channel API routes', () => {
     http.mockResolvedValue({ id: 'channel-3', name: 'Engineering' })
   })
 
-  it('lists and browses channels through the team collection route', async () => {
-    http.mockResolvedValue({ items: [{ id: 'channel-3', name: 'Engineering' }] })
+  it('preserves explicit membership status from list and browse responses', async () => {
+    http.mockResolvedValue({
+      items: [
+        { id: 'channel-3', name: 'Engineering' },
+        { id: 'channel-4', name: 'Design Reviews', is_member: false },
+      ],
+    })
 
-    await listMyChannels()
+    const channels = await listMyChannels()
     expect(http).toHaveBeenLastCalledWith(collectionPath)
+    expect(channels.map(({ id, isMember }) => [id, isMember])).toEqual([
+      ['channel-3', false],
+      ['channel-4', false],
+    ])
 
     await browseChannels('eng')
     expect(http).toHaveBeenLastCalledWith(collectionPath, { params: { q: 'eng' } })
@@ -42,11 +51,16 @@ describe('channel API routes', () => {
     await getChannel('channel-3')
     expect(http).toHaveBeenLastCalledWith(channelPath)
 
-    await createChannel({ name: 'Engineering', description: 'Build things', isPrivate: true })
+    const created = await createChannel({
+      name: 'Engineering',
+      description: 'Build things',
+      isPrivate: true,
+    })
     expect(http).toHaveBeenLastCalledWith(collectionPath, {
       method: 'POST',
       body: { name: 'Engineering', description: 'Build things', type: 'private' },
     })
+    expect(created.isMember).toBe(true)
 
     await updateChannel('channel-3', { name: 'Platform', description: 'Tools' })
     expect(http).toHaveBeenLastCalledWith(channelPath, {
