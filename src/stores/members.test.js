@@ -23,12 +23,7 @@ describe('members store', () => {
       { id: 'm1', name: 'Member One', status: 'online', role: 'admin' },
       { id: 'm2', name: 'Member Two', status: 'offline', role: 'member' },
     ])
-    api.addMember.mockImplementation(async (teamId, userId) => ({
-      id: `${teamId}-${userId}`,
-      name: 'Added Member',
-      status: 'offline',
-      role: 'member',
-    }))
+    api.addMember.mockResolvedValue({ success: true })
     api.removeMember.mockResolvedValue({ success: true })
   })
 
@@ -41,7 +36,7 @@ describe('members store', () => {
 
   it('fetches members for a team and calculates online/offline', async () => {
     const store = useMembersStore()
-    await store.fetchMembers('team-1')
+    await store.fetchMembers('workspace-1', 'team-1')
 
     expect(store.members.length).toBeGreaterThan(0)
     expect(store.memberCount).toBe(store.members.length)
@@ -51,26 +46,50 @@ describe('members store', () => {
 
   it('adds and removes a member', async () => {
     const store = useMembersStore()
-    await store.fetchMembers('team-2')
+    await store.fetchMembers('workspace-1', 'team-2')
     const initialCount = store.members.length
 
-    // Add member
-    const added = await store.addMember('team-2', 'u20')
-    expect(store.members.length).toBe(initialCount + 1)
-    expect(store.members.some((m) => m.id === added.id)).toBe(true)
-
-    // Remove member
-    await store.removeMember('team-2', added.id)
+    await store.addMember('workspace-1', 'team-2', ['u20'])
+    expect(api.addMember).toHaveBeenCalledWith('workspace-1', 'team-2', ['u20'])
     expect(store.members.length).toBe(initialCount)
-    expect(store.members.some((m) => m.id === added.id)).toBe(false)
+
+    await store.removeMember('workspace-1', 'team-2', 'u20')
+    expect(api.removeMember).toHaveBeenCalledWith('workspace-1', 'team-2', 'u20')
+    expect(api.getMembers).toHaveBeenCalledTimes(3)
   })
 
   it('clears members on team switch', async () => {
     const store = useMembersStore()
-    await store.fetchMembers('team-1')
+    await store.fetchMembers('workspace-1', 'team-1')
     expect(store.members.length).toBeGreaterThan(0)
 
     store.clearMembers()
     expect(store.members).toEqual([])
+  })
+
+  it('maps a forbidden write to a read-only permission state', async () => {
+    const store = useMembersStore()
+    api.removeMember.mockRejectedValue({ status: 403, message: 'forbidden' })
+
+    await expect(store.removeMember('workspace-1', 'team-1', 'user-2')).rejects.toMatchObject({
+      status: 403,
+    })
+    expect(store.permissionDenied).toBe(true)
+    expect(store.error).toContain('do not have permission')
+  })
+
+  it('maps missing teams and invalid write payloads to actionable messages', async () => {
+    const store = useMembersStore()
+    api.removeMember.mockRejectedValueOnce({ status: 404, message: 'Not found' })
+    await expect(store.removeMember('workspace-1', 'team-1', 'user-2')).rejects.toMatchObject({
+      status: 404,
+    })
+    expect(store.error).toContain('could not be found')
+
+    api.addMember.mockRejectedValueOnce({ status: 422, message: 'Select a valid user.' })
+    await expect(store.addMember('workspace-1', 'team-1', ['invalid'])).rejects.toMatchObject({
+      status: 422,
+    })
+    expect(store.error).toBe('Select a valid user.')
   })
 })
