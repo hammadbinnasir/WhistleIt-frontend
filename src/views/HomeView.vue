@@ -363,7 +363,10 @@ onBeforeUnmount(() => {
           @members-click="ui.openChannelSettings('members')"
         >
           <template #actions>
-            <ChatHeaderActions :is-dm="false" />
+            <ChatHeaderActions
+              :is-dm="false"
+              :conversation-id="selectedChannelId"
+            />
           </template>
         </ChannelHeader>
 
@@ -417,7 +420,10 @@ onBeforeUnmount(() => {
               </div>
             </div>
           </div>
-          <ChatHeaderActions :is-dm="true" />
+          <ChatHeaderActions
+            :is-dm="true"
+            :conversation-id="activeConversation.id"
+          />
         </header>
 
         <header
@@ -433,7 +439,7 @@ onBeforeUnmount(() => {
             </button>
             <h2 class="text-sm font-semibold text-slate-700">Select a channel</h2>
           </div>
-          <ChatHeaderActions :is-dm="true" />
+          <ChatHeaderActions :is-dm="true" conversation-id="" />
         </header>
 
         <!-- Chat area with composer & optional side panel -->
@@ -447,11 +453,20 @@ onBeforeUnmount(() => {
 
           <!-- Side Drawer: Reminders, Search, and other conversation panels -->
           <aside
-            v-if="ui.activePanel && ui.activePanel !== 'help'"
+<<<<<<<<< Temporary merge branch 1
+            v-if="ui.activePanel"
             class="min-h-0 w-full shrink-0 border-l border-slate-200 bg-white shadow-lg md:w-[min(480px,40vw)]"
+=========
+            v-if="ui.activePanel && ui.activePanel !== 'help'"
+            class="min-h-0 w-full shrink-0 border-l border-slate-200 bg-white md:w-[min(450px,40vw)] shadow-lg"
+>>>>>>>>> Temporary merge branch 2
           >
             <RemindersPanel v-if="ui.activePanel === 'reminders'" />
-            <PinnedMessagesPanel v-else-if="ui.activePanel === 'pinned'" />
+            <PinnedMessagesPanel
+              v-else-if="ui.activePanel === 'pinned'"
+              :conversation-id="activeConversation?.id || selectedChannelId || ''"
+              :conversation-type="activeConversation ? 'dm' : 'channel'"
+            />
             <PollHistoryPanel v-else-if="ui.activePanel === 'poll-history'" />
             <SearchPage
               v-else-if="ui.activePanel === 'search'"

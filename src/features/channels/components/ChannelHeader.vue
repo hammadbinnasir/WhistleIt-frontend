@@ -39,18 +39,6 @@ function toggleFavorite() {
 <template>
   <header v-if="channel" class="ch-header">
     <div class="ch-header__row">
-      <button
-        class="ch-header__star"
-        :class="{ 'ch-header__star--on': channel.isFavorite }"
-        type="button"
-        :aria-pressed="channel.isFavorite"
-        :aria-label="channel.isFavorite ? 'Remove from favorites' : 'Add to favorites'"
-        :title="channel.isFavorite ? 'Remove from favorites' : 'Add to favorites'"
-        @click="toggleFavorite"
-      >
-        <ChIcon name="star" :size="24" :filled="channel.isFavorite" />
-      </button>
-
       <h1 class="ch-header__name" :title="channel.name">
         <ChIcon v-if="channel.isPrivate" name="lock" :size="18" />
         <span>{{ channel.name }}</span>
@@ -93,21 +81,6 @@ function toggleFavorite() {
   align-items: center;
   gap: 10px;
   min-width: 0;
-}
-.ch-header__star {
-  display: grid;
-  place-items: center;
-  padding: 2px;
-  border: 0;
-  background: transparent;
-  color: var(--ch-muted);
-  cursor: pointer;
-}
-.ch-header__star:hover {
-  color: var(--ch-star);
-}
-.ch-header__star--on {
-  color: var(--ch-star);
 }
 .ch-header__name {
   display: flex;

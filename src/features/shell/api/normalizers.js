@@ -42,28 +42,31 @@ export function normalizeWorkspaces(response) {
 }
 
 export function normalizeTeam(record, workspaceId) {
-  if (!record || record.id == null || !String(record.name ?? '').trim()) {
+  const id = record?.id ?? record?.team_id
+  const name = record?.name ?? record?.team_name
+  if (!record || id == null || !String(name ?? '').trim()) {
     throw new Error('A team is missing its ID or name.')
   }
 
-  const name = String(record.name).trim()
-  const teamWorkspaceId = workspaceId ?? record.company_id
+  const normalizedName = String(name).trim()
+  const teamWorkspaceId = workspaceId ?? record.company_id ?? record.workspace_id
   if (teamWorkspaceId == null) {
     throw new Error('A team is missing its workspace ID.')
   }
 
   return {
-    id: String(record.id),
+    id: String(id),
     workspaceId: String(teamWorkspaceId),
-    name,
-    initials: getInitials(name),
+    name: normalizedName,
+    initials: getInitials(normalizedName),
     description: record.description == null ? '' : String(record.description),
     memberCount: Array.isArray(record.user_ids) ? record.user_ids.length : 0,
   }
 }
 
 export function normalizeTeams(response, workspaceId) {
-  const records = unwrapResponse(response)?.teams
+  const payload = unwrapResponse(response)
+  const records = Array.isArray(payload) ? payload : (payload?.teams ?? payload?.items)
   if (!Array.isArray(records)) {
     throw new Error('The teams response is missing data.teams.')
   }
@@ -71,7 +74,8 @@ export function normalizeTeams(response, workspaceId) {
 }
 
 export function normalizeTeamDetail(response, workspaceId) {
-  const record = unwrapResponse(response)?.team
+  const payload = unwrapResponse(response)
+  const record = payload?.team ?? payload
   if (!record) throw new Error('The team response is missing data.team.')
   return normalizeTeam(record, workspaceId)
 }

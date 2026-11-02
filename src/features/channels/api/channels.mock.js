@@ -64,6 +64,11 @@ export async function listMyChannels() {
   return db.filter((c) => c.isMember && !c.isArchived).map(normalizeChannel)
 }
 
+export async function getChannel(id) {
+  await delay()
+  return normalizeChannel(find(id))
+}
+
 export async function browseChannels(query = '') {
   await delay(200)
   const q = query.toLowerCase()
@@ -73,12 +78,16 @@ export async function browseChannels(query = '') {
     .map(normalizeChannel)
 }
 
-export async function createChannel({ name, description, isPrivate }) {
+export async function createChannel({ name, description, isPrivate, type }) {
   await delay()
   if (db.some((c) => c.name.toLowerCase() === name.toLowerCase())) {
     throw new ApiError('A channel with this name already exists.', { status: 409 })
   }
-  const channel = mk(nextId++, name, { description, isPrivate, memberCount: 1 })
+  const channel = mk(nextId++, name, {
+    description,
+    isPrivate: isPrivate ?? type === 'private',
+    memberCount: 1,
+  })
   db.push(channel)
   return normalizeChannel(channel)
 }
@@ -109,27 +118,11 @@ export async function leaveChannel(id) {
   channel.memberCount = Math.max(0, channel.memberCount - 1)
 }
 
-export async function archiveChannel(id) {
+export async function deleteChannel(id) {
   await delay()
   const channel = find(id)
-  if (channel.isDefault)
-    throw new ApiError('A default channel cannot be archived.', { status: 403 })
-  channel.isArchived = true
-}
-
-export async function setFavorite(id, value) {
-  await delay(120)
-  find(id).isFavorite = value
-}
-
-export async function setMuted(id, value) {
-  await delay(120)
-  find(id).isMuted = value
-}
-
-export async function markUnread(id) {
-  await delay(120)
-  find(id).isUnread = true
+  if (channel.isDefault) throw new ApiError('A default channel cannot be deleted.', { status: 403 })
+  db.splice(db.indexOf(channel), 1)
 }
 
 export async function listMembers(id, { limit = 10 } = {}) {
@@ -143,4 +136,23 @@ export async function listMembers(id, { limit = 10 } = {}) {
     }),
   )
   return { items, total }
+}
+
+export async function addChannelMember(id, targetUser) {
+  await delay()
+  if (targetUser == null || String(targetUser).trim() === '') {
+    throw new ApiError('A user ID is required to add a channel member.', { status: 400 })
+  }
+  const channel = find(id)
+  channel.memberCount += 1
+  return { user_id: String(targetUser) }
+}
+
+export async function removeChannelMember(id, targetUser) {
+  await delay()
+  if (targetUser == null || String(targetUser).trim() === '') {
+    throw new ApiError('A user ID is required to remove a channel member.', { status: 400 })
+  }
+  const channel = find(id)
+  channel.memberCount = Math.max(0, channel.memberCount - 1)
 }
