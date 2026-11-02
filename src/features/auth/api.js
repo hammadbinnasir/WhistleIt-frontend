@@ -4,6 +4,10 @@ export function login(credentials) {
   return http('/login', { method: 'POST', body: credentials, auth: false })
 }
 
+export function logout() {
+  return http('/logout', { method: 'POST' })
+}
+
 export function register(account) {
   return http('/register', { method: 'POST', body: account, auth: false })
 }

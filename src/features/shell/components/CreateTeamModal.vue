@@ -1,8 +1,9 @@
 <script setup>
-import { ref } from 'vue'
+import { onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useTeamsStore } from '@/stores/teams'
 import { useUiStore } from '@/stores/ui'
+import { USE_SHELL_MOCKS } from '@/features/shell/api/config'
 
 const teamsStore = useTeamsStore()
 const ui = useUiStore()
@@ -16,8 +17,13 @@ const errorMessage = ref('')
 const presetColors = ['#7C3AED', '#2DD4BF', '#F97316', '#EC4899', '#3B82F6', '#10B981']
 
 async function handleSubmit() {
-  if (!teamName.value.trim()) {
+  const name = teamName.value.trim()
+  if (!name) {
     errorMessage.value = 'Please enter a team name.'
+    return
+  }
+  if (!/^[\p{L}\s]+$/u.test(name)) {
+    errorMessage.value = 'Team names may only contain letters and spaces.'
     return
   }
 
@@ -25,7 +31,7 @@ async function handleSubmit() {
   errorMessage.value = ''
   try {
     const team = await teamsStore.createTeam({
-      name: teamName.value.trim(),
+      name,
       color: selectedColor.value,
     })
     teamName.value = ''
@@ -47,6 +53,16 @@ function handleClose() {
   if (isSubmitting.value) return
   ui.toggleTeamCreateModal()
 }
+
+function handleKeydown(event) {
+  if (event.key === 'Escape' && ui.teamCreateModalOpen) {
+    event.preventDefault()
+    handleClose()
+  }
+}
+
+onMounted(() => document.addEventListener('keydown', handleKeydown))
+onBeforeUnmount(() => document.removeEventListener('keydown', handleKeydown))
 </script>
 
 <template>
@@ -99,7 +115,7 @@ function handleClose() {
           />
         </div>
 
-        <div class="form-group">
+        <div v-if="USE_SHELL_MOCKS" class="form-group">
           <label class="form-label">Theme Color</label>
           <div class="color-palette">
             <button
@@ -302,5 +318,13 @@ function handleClose() {
 .btn-secondary:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+.close-btn:focus-visible,
+.color-swatch:focus-visible,
+.btn-primary:focus-visible,
+.btn-secondary:focus-visible {
+  outline: 2px solid var(--color-indigo-400);
+  outline-offset: 2px;
 }
 </style>

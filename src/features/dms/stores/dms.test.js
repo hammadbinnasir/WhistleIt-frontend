@@ -31,6 +31,18 @@ describe('dms store', () => {
     expect(dms.activeId).toBe(group.id)
   })
 
+  it('toggles a favorite for a direct message conversation', async () => {
+    const dms = useDmStore()
+    await dms.init()
+
+    expect(dms.isFavorite('c1')).toBe(false)
+    expect(dms.toggleFavorite('c1')).toBe(true)
+    expect(dms.isFavorite('c1')).toBe(true)
+    expect(dms.toggleFavorite('c1')).toBe(false)
+    expect(dms.isFavorite('c1')).toBe(false)
+    expect(dms.toggleFavorite('missing')).toBe(false)
+  })
+
   it('cancels a scheduled message without removing other conversation messages', async () => {
     const dms = useDmStore()
     await dms.init()
@@ -44,5 +56,30 @@ describe('dms store', () => {
     expect(dms.cancelScheduledMessage(conversation.id, scheduled.id)).toBe(true)
     expect(conversation.messages).toHaveLength(originalMessageCount)
     expect(dms.cancelScheduledMessage(conversation.id, 'missing-message')).toBe(false)
+  })
+
+  it('edits, deletes, and reacts to messages authored by the current user', async () => {
+    const dms = useDmStore()
+    await dms.init()
+    const conversation = dms.startDm('u2')
+    const sent = dms.sendMessage(conversation.id, { content: 'Original' })
+
+    expect(dms.editMessage(conversation.id, sent.id, 'Updated')).toBe(true)
+    expect(sent).toMatchObject({ text: 'Updated', editedAt: expect.any(String) })
+    expect(dms.toggleReaction(conversation.id, sent.id, '🎉')).toBe(true)
+    expect(sent.reactions).toEqual([{ emoji: '🎉', users: [dms.meId] }])
+    expect(dms.deleteMessage(conversation.id, sent.id)).toBe(true)
+    expect(conversation.messages).not.toContain(sent)
+  })
+
+  it('does not allow editing or deleting another user message', async () => {
+    const dms = useDmStore()
+    await dms.init()
+    const conversation = dms.startDm('u2')
+    const received = conversation.messages[0]
+
+    expect(dms.editMessage(conversation.id, received.id, 'Changed')).toBe(false)
+    expect(dms.deleteMessage(conversation.id, received.id)).toBe(false)
+    expect(conversation.messages).toContain(received)
   })
 })

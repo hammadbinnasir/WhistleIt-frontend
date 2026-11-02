@@ -28,7 +28,9 @@ async function jumpToPoll(poll) {
 <template>
   <aside class="flex h-full w-full flex-col bg-white">
     <header class="flex items-center justify-between border-b border-slate-200 px-5 py-4">
-      <h2 class="text-xl text-slate-700">Polls in {{ polls[0]?.conversation?.name || 'this channel' }}</h2>
+      <h2 class="text-xl text-slate-700">
+        Polls in {{ polls[0]?.conversation?.name || 'this channel' }}
+      </h2>
       <button
         type="button"
         class="cursor-pointer text-2xl text-slate-700"
@@ -44,7 +46,11 @@ async function jumpToPoll(poll) {
         No polls created in this channel yet.
       </p>
 
-      <article v-for="poll in polls" :key="poll.id" class="relative border-b border-slate-200 px-5 py-5">
+      <article
+        v-for="poll in polls"
+        :key="poll.id"
+        class="relative border-b border-slate-200 px-5 py-5"
+      >
         <p class="mb-5 text-center text-sm text-slate-600">{{ formatDate(poll.createdAt) }}</p>
         <div class="border-l-4 border-indigo-500 pl-5 pr-16">
           <h3 class="text-xl font-bold text-slate-900">{{ poll.title }}</h3>

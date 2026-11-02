@@ -17,6 +17,7 @@ export const useUiStore = defineStore('ui', () => {
 
   // modal visibility flags
   const helpModalOpen = ref(false)
+  const workspaceCreateModalOpen = ref(false)
   const teamCreateModalOpen = ref(false)
   const teamJoinModalOpen = ref(false)
   const memberManageModalOpen = ref(false)
@@ -28,8 +29,8 @@ export const useUiStore = defineStore('ui', () => {
   function selectChannel(id) {
     selectedChannelId.value = id
   }
-  function openChannelSettings() {
-    channelSettingsTab.value = 'settings'
+  function openChannelSettings(tab = 'settings') {
+    channelSettingsTab.value = tab
     channelSettingsOpen.value = true
   }
   function closeChannelSettings() {
@@ -62,12 +63,16 @@ export const useUiStore = defineStore('ui', () => {
   }
   function togglePinnedMessage(message, conversation) {
     const id = String(message.id)
-    const existingIndex = pinnedMessages.value.findIndex((item) => String(item.id) === id)
+    const conversationId = String(conversation?.id ?? message.conversation?.id ?? '')
+    const existingIndex = pinnedMessages.value.findIndex(
+      (item) => String(item.id) === id && String(item.conversation?.id ?? '') === conversationId,
+    )
     if (existingIndex !== -1) {
       pinnedMessages.value.splice(existingIndex, 1)
-      return
+      return false
     }
     pinnedMessages.value.unshift({ ...message, conversation })
+    return true
   }
   function toggleSidebar() {
     sidebarOpen.value = !sidebarOpen.value
@@ -83,8 +88,10 @@ export const useUiStore = defineStore('ui', () => {
 
   // modal & drawer toggles
   function toggleHelpModal() {
-    activePanel.value = activePanel.value === 'help' ? null : 'help'
-    helpModalOpen.value = activePanel.value === 'help'
+    helpModalOpen.value = !helpModalOpen.value
+  }
+  function toggleWorkspaceCreateModal() {
+    workspaceCreateModalOpen.value = !workspaceCreateModalOpen.value
   }
   function toggleTeamCreateModal() {
     teamCreateModalOpen.value = !teamCreateModalOpen.value
@@ -117,10 +124,12 @@ export const useUiStore = defineStore('ui', () => {
     dismissToast,
     toggleSidebar,
     helpModalOpen,
+    workspaceCreateModalOpen,
     teamCreateModalOpen,
     teamJoinModalOpen,
     memberManageModalOpen,
     toggleHelpModal,
+    toggleWorkspaceCreateModal,
     toggleTeamCreateModal,
     toggleTeamJoinModal,
     toggleMemberManageModal,

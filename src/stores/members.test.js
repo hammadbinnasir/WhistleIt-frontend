@@ -1,10 +1,35 @@
-import { beforeEach, describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
+
+const api = vi.hoisted(() => ({
+  getMembers: vi.fn(),
+  addMember: vi.fn(),
+  removeMember: vi.fn(),
+}))
+
+vi.mock('@/features/shell/api/membersApi', () => ({
+  getMembers: api.getMembers,
+  addMember: api.addMember,
+  removeMember: api.removeMember,
+}))
+
 import { useMembersStore } from './members'
 
 describe('members store', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
+    vi.clearAllMocks()
+    api.getMembers.mockResolvedValue([
+      { id: 'm1', name: 'Member One', status: 'online', role: 'admin' },
+      { id: 'm2', name: 'Member Two', status: 'offline', role: 'member' },
+    ])
+    api.addMember.mockImplementation(async (teamId, userId) => ({
+      id: `${teamId}-${userId}`,
+      name: 'Added Member',
+      status: 'offline',
+      role: 'member',
+    }))
+    api.removeMember.mockResolvedValue({ success: true })
   })
 
   it('starts with empty members and zero count', () => {

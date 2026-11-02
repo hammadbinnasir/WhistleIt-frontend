@@ -57,7 +57,7 @@ router.beforeEach(async (to) => {
   const teamsStore = useTeamsStore()
   const uiStore = useUiStore()
   if (!teamsStore.workspaces.length) await teamsStore.fetchWorkspaces()
-  if (teamsStore.error) return true
+  if (teamsStore.workspacesError) return true
 
   const workspaces = teamsStore.workspaces
   if (!workspaces.length) {
@@ -68,15 +68,15 @@ router.beforeEach(async (to) => {
     to.name === 'workspace-team'
       ? workspaces.find((workspace) => String(workspace.id) === String(to.params.workspaceId))
       : teamsStore.activeWorkspace
-  const workspace = requestedWorkspace ?? workspaces[0]
+  const workspace = requestedWorkspace ?? teamsStore.activeWorkspace ?? workspaces[0]
 
   if (
-    teamsStore.activeWorkspaceId !== workspace.id ||
+    String(teamsStore.activeWorkspaceId) !== String(workspace.id) ||
     !teamsStore.teamsByWorkspaceId[workspace.id]
   ) {
     await teamsStore.selectWorkspace(workspace.id)
   }
-  if (teamsStore.error) return true
+  if (teamsStore.teamsError) return true
 
   const workspaceTeams = teamsStore.teamsByWorkspaceId[workspace.id] ?? []
   const requestedTeam =

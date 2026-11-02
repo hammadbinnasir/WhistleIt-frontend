@@ -352,7 +352,7 @@ const save = () => {
 
 .date-input {
   width: 100%;
-  height: 36px;
+  height: 38px;
   box-sizing: border-box;
   padding: 0 14px;
   font-family: inherit;

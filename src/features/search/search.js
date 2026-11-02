@@ -75,6 +75,16 @@ export function addMockMessage(message) {
   })
 }
 
+export function updateMockMessage(id, text) {
+  const message = MESSAGES.find((item) => String(item.id) === String(id))
+  if (message) message.text = text
+}
+
+export function removeMockMessage(id) {
+  const index = MESSAGES.findIndex((item) => String(item.id) === String(id))
+  if (index !== -1) MESSAGES.splice(index, 1)
+}
+
 function applyFilters(
   list,
   { q, userIds = [], date, dateEnd, dateMode = 'on', webhooks, channelId },

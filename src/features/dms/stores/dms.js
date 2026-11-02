@@ -84,6 +84,17 @@ export const useDmStore = defineStore('dms', () => {
     if (activeId.value === id) activeId.value = null
   }
 
+  function isFavorite(id) {
+    return conversations.value.find((conversation) => conversation.id === id)?.isFavorite ?? false
+  }
+
+  function toggleFavorite(id) {
+    const conversation = conversations.value.find((item) => item.id === id)
+    if (!conversation || conversation.type !== 'dm') return false
+    conversation.isFavorite = !conversation.isFavorite
+    return conversation.isFavorite
+  }
+
   function startConversation(memberIds, name = '') {
     const members = [...new Set([meId.value, ...memberIds])]
     const existing = conversations.value.find(
@@ -129,7 +140,10 @@ export const useDmStore = defineStore('dms', () => {
       createdAt: new Date().toISOString(),
       ...(payload.threadId ? { threadId: payload.threadId } : {}),
       ...(payload.attachments?.length ? { attachments: [...payload.attachments] } : {}),
+      ...(payload.replyTo ? { replyTo: payload.replyTo } : {}),
+      ...(payload.forwardedFrom ? { forwardedFrom: payload.forwardedFrom } : {}),
       ...(payload.important ? { important: true } : {}),
+      ...(payload.gif ? { gif: payload.gif } : {}),
       ...(payload.scheduledAt
         ? {
             scheduled: true,
@@ -139,9 +153,55 @@ export const useDmStore = defineStore('dms', () => {
         : {}),
     }
     conversation.messages.push(message)
+    if (!message.scheduled) {
+      useActivityStore().recordMessageMentions({
+        text: message.text,
+        conversationId: conversation.id,
+        conversationName: titleOf(conversation),
+        conversationType: 'dm',
+      })
+    }
     conversation.unreadCount = 0
     activeId.value = conversationId
     return message
+  }
+
+  function editMessage(conversationId, messageId, text) {
+    const conversation = conversations.value.find((item) => item.id === conversationId)
+    const message = conversation?.messages.find((item) => item.id === messageId)
+    if (!message || message.from !== meId.value || message.scheduled || !text.trim()) return false
+    message.text = text.trim()
+    message.editedAt = new Date().toISOString()
+    return true
+  }
+
+  function deleteMessage(conversationId, messageId) {
+    const conversation = conversations.value.find((item) => item.id === conversationId)
+    const message = conversation?.messages.find((item) => item.id === messageId)
+    if (!conversation || !message || message.from !== meId.value || message.scheduled) return false
+    conversation.messages = conversation.messages.filter((item) => item.id !== messageId)
+    return true
+  }
+
+  function toggleReaction(conversationId, messageId, emoji) {
+    const conversation = conversations.value.find((item) => item.id === conversationId)
+    const message = conversation?.messages.find((item) => item.id === messageId)
+    if (!message || !emoji) return false
+    if (!message.reactions) message.reactions = []
+
+    const userId = meId.value || 'current-user'
+    const reaction = message.reactions.find((item) => item.emoji === emoji)
+    if (!reaction) {
+      message.reactions.push({ emoji, users: [userId] })
+    } else if (reaction.users.includes(userId)) {
+      reaction.users = reaction.users.filter((id) => id !== userId)
+      if (!reaction.users.length) {
+        message.reactions = message.reactions.filter((item) => item !== reaction)
+      }
+    } else {
+      reaction.users.push(userId)
+    }
+    return true
   }
 
   function cancelScheduledMessage(conversationId, messageId) {
@@ -194,9 +254,14 @@ export const useDmStore = defineStore('dms', () => {
     openConversation,
     deactivateConversation,
     closeConversation,
+    isFavorite,
+    toggleFavorite,
     startDm,
     startGroup,
     sendMessage,
+    editMessage,
+    deleteMessage,
+    toggleReaction,
     cancelScheduledMessage,
     receiveDemo,
   }

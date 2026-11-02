@@ -1,6 +1,7 @@
 <script setup>
 import { computed, onMounted, ref, watch } from 'vue'
 import { useDmStore } from '@/features/dms/stores/dms'
+import { useUiStore } from '@/stores/ui'
 import { useChannelsStore } from '../store/channels.store'
 import { useChannelsUiStore } from '../store/channels.ui.store'
 import { useChannelActions } from '../composables/useChannelActions'
@@ -14,6 +15,7 @@ import '../styles/tokens.css'
 
 const store = useChannelsStore()
 const dms = useDmStore()
+const appUi = useUiStore()
 const ui = useChannelsUiStore()
 const { activeId, select, clear } = useActiveChannel()
 const { menuItemsFor, run } = useChannelActions()
@@ -51,6 +53,7 @@ function ensureSelection() {
 function selectChannel(id) {
   dms.deactivateConversation()
   select(id)
+  appUi.closePanel()
 }
 
 onMounted(() => store.fetchChannels())

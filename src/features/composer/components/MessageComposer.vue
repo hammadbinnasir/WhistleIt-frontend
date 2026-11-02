@@ -77,7 +77,10 @@ function handleScheduleKeydown(event) {
 
 function handlePollQuestionTypePointerDown(event) {
   const target = event.target instanceof Element ? event.target : event.target.parentElement
-  if (openPollQuestionType.value !== null && !target?.closest('.message-composer__poll-type-select')) {
+  if (
+    openPollQuestionType.value !== null &&
+    !target?.closest('.message-composer__poll-type-select')
+  ) {
     openPollQuestionType.value = null
   }
 }
@@ -740,9 +743,8 @@ function setPollQuestionType(question, type, questionIndex) {
 }
 
 function updatePollRatingType(question, questionIndex) {
-  question.options = Array.from(
-    { length: Number(question.ratingType.split('-')[1]) },
-    (_, index) => String(index + 1),
+  question.options = Array.from({ length: Number(question.ratingType.split('-')[1]) }, (_, index) =>
+    String(index + 1),
   )
   if (pollValidationErrors.value.choices[questionIndex]) {
     pollValidationErrors.value.choices[questionIndex] = question.options.length < 2
@@ -789,11 +791,7 @@ function createPollDraft() {
       return [questionLabel, ...options].join('\n')
     })
     .join('\n\n')
-  const pollText = [
-    `Poll: ${pollTitle.value.trim()}`,
-    pollDescription.value.trim(),
-    questionText,
-  ]
+  const pollText = [`Poll: ${pollTitle.value.trim()}`, pollDescription.value.trim(), questionText]
     .filter(Boolean)
     .join('\n\n')
   const prefix = content.value.trim() ? '\n\n' : ''
@@ -1183,10 +1181,7 @@ function handleKeydown(event) {
               type="text"
               placeholder="Enter Poll Title"
             />
-            <p
-              v-if="pollValidationErrors.title"
-              class="message-composer__poll-validation-error"
-            >
+            <p v-if="pollValidationErrors.title" class="message-composer__poll-validation-error">
               This is a required field
             </p>
             <label class="sr-only" for="poll-description-input">Description (Optional)</label>
@@ -1204,7 +1199,9 @@ function handleKeydown(event) {
               :key="questionIndex"
               class="message-composer__poll-question"
             >
-              <h3><span>Question {{ questionIndex + 1 }}</span></h3>
+              <h3>
+                <span>Question {{ questionIndex + 1 }}</span>
+              </h3>
               <div class="message-composer__poll-question-types">
                 <div class="message-composer__poll-question-type">
                   <label :id="`poll-type-label-${questionIndex}`">Question Type</label>
@@ -1246,10 +1243,7 @@ function handleKeydown(event) {
                     </div>
                   </div>
                 </div>
-                <div
-                  v-if="question.type === 'rating'"
-                  class="message-composer__poll-question-type"
-                >
+                <div v-if="question.type === 'rating'" class="message-composer__poll-question-type">
                   <label :for="`poll-rating-type-${questionIndex}`">Rating Type</label>
                   <div class="message-composer__poll-rating-select">
                     <select
@@ -1257,8 +1251,8 @@ function handleKeydown(event) {
                       v-model="question.ratingType"
                       @change="updatePollRatingType(question, questionIndex)"
                     >
-                    <option value="1-5">1-5</option>
-                    <option value="1-10">1-10</option>
+                      <option value="1-5">1-5</option>
+                      <option value="1-10">1-10</option>
                     </select>
                     <span class="message-composer__poll-select-arrow" aria-hidden="true"></span>
                   </div>
@@ -1296,9 +1290,7 @@ function handleKeydown(event) {
                       : 'Type your question'
                   "
                   @focus="pollQuestionFocused[questionIndex] = true"
-                  @blur="
-                    pollQuestionFocused[questionIndex] = Boolean(question.text)
-                  "
+                  @blur="pollQuestionFocused[questionIndex] = Boolean(question.text)"
                 />
               </div>
               <p
@@ -1310,7 +1302,10 @@ function handleKeydown(event) {
               <div class="message-composer__poll-toggles">
                 <label>
                   <input v-model="question.required" type="checkbox" />
-                  <span><strong>Required*</strong><small>Uncheck if you want this question optional</small></span>
+                  <span
+                    ><strong>Required*</strong
+                    ><small>Uncheck if you want this question optional</small></span
+                  >
                 </label>
                 <label v-if="question.type === 'choice'">
                   <input v-model="question.multiple" type="checkbox" />
@@ -1356,9 +1351,7 @@ function handleKeydown(event) {
                   + Add Choice
                 </button>
                 <p
-                  v-if="
-                    pollValidationErrors.choices[questionIndex]
-                  "
+                  v-if="pollValidationErrors.choices[questionIndex]"
                   class="message-composer__poll-validation-error"
                 >
                   Add at least two choices

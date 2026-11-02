@@ -9,16 +9,19 @@ import { useTeamsStore } from '@/stores/teams'
 import { useMembersStore } from '@/stores/members'
 import { useChannelsStore } from '@/features/channels'
 import { useDmStore } from '@/features/dms/stores/dms'
+import { usePresenceStore, STATES } from '@/features/dms/stores/presence'
 import { useActivityStore } from '@/stores/activity'
 import { useRemindersStore } from '@/features/search/reminders'
 import { useUserStore, UserModule } from '@/features/account'
 import { clearAuthSession, getAuthUser } from '@/features/auth/session'
+import { logout as logoutRequest } from '@/features/auth/api'
 
 // Shell
 import {
   TeamRail,
   TeamSwitcher,
   CreateTeamModal,
+  CreateWorkspaceModal,
   JoinTeamModal,
   HelpModal,
   MemberManageModal,
@@ -30,11 +33,11 @@ import { ChannelSidebar, ChannelHeader } from '@/features/channels'
 // Direct Messages
 import DmList from '@/features/dms/components/DmList.vue'
 import ActivityFeed from '@/features/dms/components/ActivityFeed.vue'
+import PresenceDot from '@/features/dms/components/PresenceDot.vue'
 
 // Composer
 import { ComposerConversation } from '@/features/composer'
 
-// Search & Reminders
 import ChatHeaderActions from '@/features/search/ChatHeaderActions.vue'
 import ChannelSettingsModal from '@/features/search/ChannelSettingsModal.vue'
 import RemindersPanel from '@/features/search/RemindersPanel.vue'
@@ -49,6 +52,7 @@ const teamsStore = useTeamsStore()
 const membersStore = useMembersStore()
 const channelsStore = useChannelsStore()
 const dms = useDmStore()
+const presence = usePresenceStore()
 const activity = useActivityStore()
 const remindersStore = useRemindersStore()
 const userStore = useUserStore()
@@ -60,12 +64,21 @@ if (!userStore.state.profile.fullName && authenticatedUser?.fullName) {
 
 const { selectedChannelId, sidebarOpen } = storeToRefs(ui)
 const { activeId: activeDmId } = storeToRefs(dms)
-const { activeTeam } = storeToRefs(teamsStore)
+const { activeTeam, activeWorkspace } = storeToRefs(teamsStore)
 
 const isTeamSwitcherOpen = ref(false)
 const reminderModalOpen = ref(false)
 const activeConversation = computed(
   () => dms.conversations.find((conversation) => conversation.id === activeDmId.value) || null,
+)
+const activeConversationPartnerId = computed(() =>
+  activeConversation.value?.type === 'dm' ? dms.partnerId(activeConversation.value) : null,
+)
+const activeConversationPresence = computed(() =>
+  activeConversationPartnerId.value ? presence.stateOf(activeConversationPartnerId.value) : null,
+)
+const activeConversationIsFavorite = computed(() =>
+  activeConversation.value ? dms.isFavorite(activeConversation.value.id) : false,
 )
 
 const user = computed(() => ({
@@ -142,8 +155,36 @@ async function toggleChannelFavorite() {
 }
 
 async function logout() {
-  clearAuthSession()
-  await router.push({ name: 'login' })
+  try {
+    await logoutRequest()
+  } catch (error) {
+    ui.toast(
+      'Unable to log out from server',
+      error?.message || 'Your local session was cleared.',
+      'error',
+    )
+  } finally {
+    clearAuthSession()
+    await router.push({ name: 'login' })
+  }
+}
+
+function openActivityConversation({ id, type }) {
+  if (type === 'dm') {
+    if (!dms.openConversation(id)) return
+    ui.selectChannel(null)
+  } else {
+    dms.deactivateConversation()
+    ui.selectChannel(id)
+  }
+  ui.closePanel()
+}
+
+function openActivityUserChat(userId) {
+  if (userId === dms.meId) return
+  dms.startDm(userId)
+  ui.selectChannel(null)
+  ui.closePanel()
 }
 
 onMounted(async () => {
@@ -163,11 +204,22 @@ onBeforeUnmount(() => {
 <template>
   <div class="flex h-screen w-screen overflow-hidden bg-slate-50 text-slate-800">
     <!-- 1. Leftmost Rail: Workspace/Teams Switcher & Bottom User Profile -->
-    <TeamRail />
+    <TeamRail>
+      <template #footer>
+        <UserModule
+          :user="user"
+          :avatar-size="32"
+          :fixed="false"
+          @log-out="logout"
+          @settings-saved="onAccountSettingsSaved"
+          @error="onAccountError"
+        />
+      </template>
+    </TeamRail>
 
     <!-- 2. Workspace Sidebar: Header Switcher + Activities + Channels + Direct Messages -->
     <aside
-      v-show="sidebarOpen && ui.activePanel !== 'activity'"
+      v-show="sidebarOpen"
       class="flex w-64 shrink-0 flex-col justify-between overflow-hidden bg-[#22123b] text-slate-100"
     >
       <div class="flex flex-1 flex-col overflow-y-auto">
@@ -176,6 +228,7 @@ onBeforeUnmount(() => {
           <button
             type="button"
             class="flex w-full cursor-pointer items-center justify-between rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-white/5"
+            aria-haspopup="menu"
             :aria-expanded="isTeamSwitcherOpen"
             @click="isTeamSwitcherOpen = !isTeamSwitcherOpen"
           >
@@ -246,14 +299,66 @@ onBeforeUnmount(() => {
 
     <!-- 3. Main Chat Stage -->
     <main class="flex min-w-0 flex-1 flex-col bg-white">
-      <ActivityFeed v-if="ui.activePanel === 'activity'" class="min-h-0 flex-1" />
+      <section
+        v-if="!teamsStore.loading && !teamsStore.error && !activeTeam"
+        class="flex min-h-0 flex-1 flex-col items-center justify-center gap-4 px-6 text-center"
+        aria-labelledby="workspace-empty-title"
+      >
+        <div class="max-w-lg space-y-2">
+          <h1 id="workspace-empty-title" class="text-xl font-semibold text-slate-800">
+            {{
+              activeWorkspace ? `Welcome to ${activeWorkspace.name}` : 'Create your first workspace'
+            }}
+          </h1>
+          <p class="text-sm text-slate-600">
+            {{
+              activeWorkspace
+                ? 'This workspace does not have any teams yet.'
+                : 'Create a workspace to start organizing teams and conversations.'
+            }}
+          </p>
+        </div>
+        <div class="flex flex-wrap justify-center gap-3">
+          <template v-if="activeWorkspace">
+            <button
+              type="button"
+              class="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600"
+              @click="ui.toggleTeamCreateModal()"
+            >
+              Create a team
+            </button>
+            <button
+              type="button"
+              class="rounded-md border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600"
+              @click="ui.toggleTeamJoinModal()"
+            >
+              Join a team
+            </button>
+          </template>
+          <button
+            v-else
+            type="button"
+            class="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600"
+            @click="ui.toggleWorkspaceCreateModal()"
+          >
+            Create a workspace
+          </button>
+        </div>
+      </section>
+
+      <ActivityFeed
+        v-else-if="ui.activePanel === 'activity'"
+        class="min-h-0 flex-1"
+        @open-conversation="openActivityConversation"
+        @open-user-chat="openActivityUserChat"
+      />
 
       <template v-else>
         <!-- Channel or Conversation Header -->
         <ChannelHeader
           v-if="selectedChannelId && !activeConversation"
           :channel-id="selectedChannelId"
-          @members-click="ui.toggleMemberManageModal()"
+          @members-click="ui.openChannelSettings('members')"
         >
           <template #actions>
             <ChatHeaderActions :is-dm="false" />
@@ -265,12 +370,50 @@ onBeforeUnmount(() => {
           class="flex items-center justify-between border-b border-slate-200 bg-white px-5 py-3"
         >
           <div class="min-w-0">
-            <h1 class="truncate text-lg font-semibold text-slate-800">
-              {{ dms.titleOf(activeConversation) }}
-            </h1>
-            <p class="text-xs text-slate-500">
-              {{ activeConversation.type === 'group' ? 'Group direct message' : 'Direct message' }}
-            </p>
+            <div class="flex items-center gap-2">
+              <button
+                v-if="activeConversationPartnerId"
+                type="button"
+                class="shrink-0 rounded p-0.5 transition-colors hover:bg-slate-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-indigo-500"
+                :class="activeConversationIsFavorite ? 'text-indigo-500' : 'text-slate-400'"
+                :aria-label="
+                  activeConversationIsFavorite ? 'Remove from favorites' : 'Add to favorites'
+                "
+                :aria-pressed="activeConversationIsFavorite"
+                @click="dms.toggleFavorite(activeConversation.id)"
+              >
+                <svg
+                  class="h-5 w-5"
+                  viewBox="0 0 24 24"
+                  :fill="activeConversationIsFavorite ? 'currentColor' : 'none'"
+                  stroke="currentColor"
+                  stroke-width="1.8"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  aria-hidden="true"
+                >
+                  <path
+                    d="m12 3 2.8 5.7 6.2.9-4.5 4.4 1.1 6.2-5.6-3-5.6 3 1.1-6.2L3 9.6l6.2-.9L12 3Z"
+                  />
+                </svg>
+              </button>
+              <div class="min-w-0">
+                <h1 class="truncate text-lg font-semibold text-slate-800">
+                  {{ dms.titleOf(activeConversation) }}
+                </h1>
+                <p
+                  v-if="activeConversationPartnerId && !presence.loading && !presence.error"
+                  class="flex items-center gap-1.5 text-xs text-slate-500"
+                  :aria-label="STATES[activeConversationPresence]"
+                >
+                  <PresenceDot :state="activeConversationPresence" :size="9" ring="border-white" />
+                  {{ STATES[activeConversationPresence] }}
+                </p>
+                <p v-else class="text-xs text-slate-500">
+                  {{ activeConversationPartnerId ? 'Direct message' : 'Group direct message' }}
+                </p>
+              </div>
+            </div>
           </div>
           <ChatHeaderActions :is-dm="true" />
         </header>
@@ -312,7 +455,6 @@ onBeforeUnmount(() => {
               v-else-if="ui.activePanel === 'search'"
               :channel-id="selectedChannelId || ''"
             />
-            <HelpDrawer v-else-if="ui.activePanel === 'help'" />
           </aside>
         </div>
       </template>
@@ -329,7 +471,6 @@ onBeforeUnmount(() => {
       @close="ui.channelSettingsOpen = false"
     />
 
-    <!-- Set Reminder Modal -->
     <SetReminderModal
       v-if="reminderModalOpen && reminderMessage"
       :message="reminderMessage"
@@ -362,7 +503,10 @@ onBeforeUnmount(() => {
         </svg>
         <div class="min-w-0 flex-1">
           <p class="font-semibold">{{ toast.title }}</p>
-          <p class="mt-1 text-sm" :class="toast.type === 'success' ? 'text-slate-500' : 'text-slate-200'">
+          <p
+            class="mt-1 text-sm"
+            :class="toast.type === 'success' ? 'text-slate-500' : 'text-slate-200'"
+          >
             {{ toast.body }}
           </p>
         </div>
@@ -377,16 +521,8 @@ onBeforeUnmount(() => {
       </div>
     </div>
 
-    <!-- Account UserModule (Pinned to bottom-left of TeamRail) -->
-    <UserModule
-      :user="user"
-      :avatar-size="32"
-      @log-out="logout"
-      @settings-saved="onAccountSettingsSaved"
-      @error="onAccountError"
-    />
-
     <!-- Shell Modals -->
+    <CreateWorkspaceModal />
     <CreateTeamModal />
     <JoinTeamModal />
     <HelpModal />

@@ -49,7 +49,12 @@ const searchCategory = ref('Messages')
 const categories = ['Messages', 'Companies', 'Teams', 'Channels']
 const directoryItems = computed(() => [
   { id: 'company-1', category: 'Companies', name: 'Whistle It', detail: 'Company workspace' },
-  { id: 'team-1', category: 'Teams', name: 'Frontend & Backend Team Cmi 2', detail: 'Development team' },
+  {
+    id: 'team-1',
+    category: 'Teams',
+    name: 'Frontend & Backend Team Cmi 2',
+    detail: 'Development team',
+  },
   ...channelsStore.channels.map((channel) => ({
     id: channel.id,
     category: 'Channels',
@@ -64,8 +69,10 @@ async function run() {
   if (searchCategory.value !== 'Messages') {
     const needle = q.value.trim().toLowerCase()
     items.value = directoryItems.value.filter((item) => {
-      return item.category === searchCategory.value &&
+      return (
+        item.category === searchCategory.value &&
         (!needle || `${item.name} ${item.detail}`.toLowerCase().includes(needle))
+      )
     })
     totalPages.value = 1
     searched.value = Boolean(needle)
@@ -653,7 +660,9 @@ const senderInitials = (name = '') =>
         :key="category"
         type="button"
         class="relative py-3"
-        :class="searchCategory === category ? 'text-indigo-600' : 'text-slate-600 hover:text-indigo-500'"
+        :class="
+          searchCategory === category ? 'text-indigo-600' : 'text-slate-600 hover:text-indigo-500'
+        "
         @click="searchCategory = category"
       >
         {{ category }}
@@ -682,7 +691,8 @@ const senderInitials = (name = '') =>
         <template v-if="searched">
           <h3 class="text-xl font-bold text-slate-900">Nothing turned up</h3>
           <p class="mt-1 text-slate-700">
-            Nothing found against the search. Try using different keywords and filters to get the desired results
+            Nothing found against the search. Try using different keywords and filters to get the
+            desired results
           </p>
         </template>
         <template v-else>
@@ -729,13 +739,17 @@ const senderInitials = (name = '') =>
       <!-- text + link results -->
       <ul v-else class="divide-y divide-slate-100">
         <li v-for="m in items" :key="m.id" class="group relative flex gap-3 py-3 text-sm">
-          <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-violet-600 text-sm font-bold text-white">
+          <div
+            class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-violet-600 text-sm font-bold text-white"
+          >
             {{ senderInitials(m.sender) }}
           </div>
           <div class="min-w-0 flex-1 pr-16">
             <p class="font-bold text-slate-900">
               {{ m.sender }}
-              <span class="ml-3 text-xs font-normal text-slate-500">{{ fmtDate(m.createdAt) }}</span>
+              <span class="ml-3 text-xs font-normal text-slate-500">{{
+                fmtDate(m.createdAt)
+              }}</span>
             </p>
           </div>
           <button

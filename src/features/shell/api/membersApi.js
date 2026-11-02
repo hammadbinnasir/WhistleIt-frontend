@@ -1,48 +1,44 @@
 import { apiRequest } from '@/lib/api/client'
+import { USE_SHELL_MOCKS } from './config'
+import { getCompanyIdForTeam } from './teamsApi'
+import { normalizeMembers } from './normalizers'
 
-// ── Mock gate ────────────────────────────────────────────
-const USE_MOCKS = import.meta.env.VITE_USE_MOCKS !== 'false'
-
-async function withMock(mockFn, apiFn) {
-  if (USE_MOCKS) return mockFn()
-  try {
-    return await apiFn()
-  } catch (err) {
-    console.warn('Members API request failed; falling back to mock data:', err)
-    return mockFn()
-  }
+function getMembersPath(teamId) {
+  const companyId = getCompanyIdForTeam(teamId)
+  if (!companyId) throw new Error('The workspace for this team is not available.')
+  return `/v1/${encodeURIComponent(companyId)}/teams/${encodeURIComponent(teamId)}/members`
 }
-
-// ── Live API calls ───────────────────────────────────────
 
 export function getMembers(teamId) {
-  return withMock(
-    () => import('./__mocks__/members.mock').then((m) => m.mockGetMembers(teamId)),
-    () => apiRequest(`/teams/${teamId}/members`),
-  )
+  if (USE_SHELL_MOCKS) {
+    return import('./__mocks__/members.mock').then((mock) => mock.mockGetMembers(teamId))
+  }
+  return apiRequest(getMembersPath(teamId)).then(normalizeMembers)
 }
 
-export function addMember(teamId, userId) {
-  return withMock(
-    () => import('./__mocks__/members.mock').then((m) => m.mockAddMember(teamId, userId)),
-    () =>
-      apiRequest(`/teams/${teamId}/members`, {
-        method: 'POST',
-        body: JSON.stringify({ userId }),
-      }),
-  )
+export async function addMember(teamId, userId) {
+  if (USE_SHELL_MOCKS) {
+    const mock = await import('./__mocks__/members.mock')
+    return mock.mockAddMember(teamId, userId)
+  }
+  // TODO: Confirm which members response field contains the target user ID.
+  // TODO: Confirm the required POST /members body field.
+  throw new Error('Adding members is not available yet.')
 }
 
-export function removeMember(teamId, userId) {
-  return withMock(
-    () => import('./__mocks__/members.mock').then((m) => m.mockRemoveMember(teamId, userId)),
-    () => apiRequest(`/teams/${teamId}/members/${userId}`, { method: 'DELETE' }),
-  )
+export async function removeMember(teamId, userId) {
+  if (USE_SHELL_MOCKS) {
+    const mock = await import('./__mocks__/members.mock')
+    return mock.mockRemoveMember(teamId, userId)
+  }
+  // TODO: Confirm whether DELETE /members/{targetuser} expects a user ID or membership ID.
+  throw new Error('Removing members is not available yet.')
 }
 
-export function searchUsers(query) {
-  return withMock(
-    () => import('./__mocks__/members.mock').then((m) => m.mockSearchUsers(query)),
-    () => apiRequest(`/users/search?q=${encodeURIComponent(query)}`),
-  )
+export async function searchUsers(query) {
+  if (USE_SHELL_MOCKS) {
+    const mock = await import('./__mocks__/members.mock')
+    return mock.mockSearchUsers(query)
+  }
+  throw new Error('User search is not available yet.')
 }
