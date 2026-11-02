@@ -453,13 +453,8 @@ onBeforeUnmount(() => {
 
           <!-- Side Drawer: Reminders, Search, and other conversation panels -->
           <aside
-<<<<<<<<< Temporary merge branch 1
-            v-if="ui.activePanel"
-            class="min-h-0 w-full shrink-0 border-l border-slate-200 bg-white shadow-lg md:w-[min(480px,40vw)]"
-=========
             v-if="ui.activePanel && ui.activePanel !== 'help'"
-            class="min-h-0 w-full shrink-0 border-l border-slate-200 bg-white md:w-[min(450px,40vw)] shadow-lg"
->>>>>>>>> Temporary merge branch 2
+            class="min-h-0 w-full shrink-0 border-l border-slate-200 bg-white shadow-lg md:w-[min(480px,40vw)]"
           >
             <RemindersPanel v-if="ui.activePanel === 'reminders'" />
             <PinnedMessagesPanel
