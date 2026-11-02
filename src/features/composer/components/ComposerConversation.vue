@@ -157,7 +157,10 @@ function isPinned(message) {
   return ui.pinnedMessages.some(
     (item) =>
       String(item.id) === String(message.id) &&
-      String(item.conversation?.id ?? '') === conversationMeta.value.id,
+      String(item.conversation?.id ?? '') === String(conversationMeta.value.id) &&
+      (item.conversation?.kind === 'dm' ||
+        item.conversation?.type === 'dm') ===
+        (props.conversationType === 'dm'),
   )
 }
 

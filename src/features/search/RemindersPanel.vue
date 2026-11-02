@@ -37,11 +37,21 @@ const saveEdit = (r) => {
     <header class="flex h-14 shrink-0 items-center justify-between border-b border-slate-200 px-5">
       <h2 class="text-xl text-slate-700">Reminders</h2>
       <button
-        class="flex h-7 w-7 cursor-pointer items-center justify-center text-2xl font-light leading-none text-slate-600 hover:text-slate-900"
+        class="flex h-8 w-8 cursor-pointer items-center justify-center text-slate-600 hover:text-slate-900"
         aria-label="Close"
         @click="ui.closePanel()"
       >
-        ×
+        <svg
+          class="h-5 w-5"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.75"
+          stroke-linecap="round"
+          aria-hidden="true"
+        >
+          <path d="M5 5l14 14M19 5 5 19" />
+        </svg>
       </button>
     </header>
 
@@ -118,13 +128,25 @@ const saveEdit = (r) => {
           @click="deletedExpanded = !deletedExpanded"
         >
           <span>Deleted Reminders</span>
-          <span class="text-lg">{{ deletedExpanded ? '⌃' : '⌄' }}</span>
+          <svg
+            class="h-4 w-4 shrink-0 transition-transform duration-150"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.8"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            :class="{ 'rotate-180': !deletedExpanded }"
+            aria-hidden="true"
+          >
+            <path d="m5 15 7-7 7 7" />
+          </svg>
         </button>
         <div v-if="deletedExpanded" class="space-y-3">
           <div
             v-for="r in store.deletedItems"
             :key="r.id"
-            class="border-l-4 border-red-500 bg-slate-50 p-3"
+            class="border-l-4 border-red-500 bg-slate-50 px-4 py-4"
           >
             <p class="text-sm font-bold text-slate-900">
               In {{ r.conversationType === 'dm' ? 'conversation with' : 'channel' }}

@@ -1,11 +1,21 @@
 <script setup>
 // Right side of the channel/DM header.
+import { computed } from 'vue'
 import { useUiStore } from '@/stores/ui'
 
-defineProps({
+const props = defineProps({
   isDm: { type: Boolean, default: false },
+  conversationId: { type: [String, Number], default: '' },
 })
 const ui = useUiStore()
+const hasCurrentConversationPins = computed(() =>
+  ui.pinnedMessages.some((item) => {
+    const conversation = item.conversation || {}
+    const kind = conversation.kind === 'dm' || conversation.type === 'dm' ? 'dm' : 'channel'
+    return kind === (props.isDm ? 'dm' : 'channel') &&
+      String(conversation.id ?? '') === String(props.conversationId ?? '')
+  }),
+)
 </script>
 
 <template>
@@ -22,7 +32,7 @@ const ui = useUiStore()
       </svg>
     </button>
     <button
-      v-if="ui.pinnedMessages.length > 0"
+      v-if="hasCurrentConversationPins"
       class="icon-btn"
       title="Pinned messages"
       aria-label="Pinned messages"
