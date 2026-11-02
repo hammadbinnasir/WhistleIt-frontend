@@ -25,6 +25,7 @@ import {
   JoinTeamModal,
   HelpModal,
   MemberManageModal,
+  InviteUsersModal,
 } from '@/features/shell'
 
 // Channels
@@ -68,6 +69,7 @@ const { activeTeam, activeWorkspace } = storeToRefs(teamsStore)
 
 const isTeamSwitcherOpen = ref(false)
 const reminderModalOpen = ref(false)
+const inviteModalOpen = ref(false)
 const activeConversation = computed(
   () => dms.conversations.find((conversation) => conversation.id === activeDmId.value) || null,
 )
@@ -204,7 +206,7 @@ onBeforeUnmount(() => {
 <template>
   <div class="flex h-screen w-screen overflow-hidden bg-slate-50 text-slate-800">
     <!-- 1. Leftmost Rail: Workspace/Teams Switcher & Bottom User Profile -->
-    <TeamRail>
+    <TeamRail @invite="inviteModalOpen = true">
       <template #footer>
         <UserModule
           :user="user"
@@ -527,5 +529,6 @@ onBeforeUnmount(() => {
     <JoinTeamModal />
     <HelpModal />
     <MemberManageModal />
+    <InviteUsersModal v-if="inviteModalOpen" @close="inviteModalOpen = false" />
   </div>
 </template>

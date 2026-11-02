@@ -1,6 +1,7 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { installAuthGuard } from '@/features/auth/guard'
 import AuthView from '@/features/auth/AuthView.vue'
+import { invitationRoutes } from '@/features/auth/routes'
 import EmailVerificationView from '@/features/auth/EmailVerificationView.vue'
 import HomeView from '@/views/HomeView.vue'
 import { channelRoutes } from '@/features/channels/routes'
@@ -15,6 +16,7 @@ const router = createRouter({
     { path: '/', redirect: '/login' },
     { path: '/login', name: 'login', component: AuthView },
     { path: '/signup', name: 'signup', component: AuthView },
+    ...invitationRoutes,
     { path: '/forgot-password', name: 'forgot-password', component: AuthView },
     { path: '/reset-password', name: 'reset-password', component: AuthView },
     {

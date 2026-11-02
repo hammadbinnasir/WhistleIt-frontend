@@ -12,6 +12,32 @@ export function register(account) {
   return http('/register', { method: 'POST', body: account, auth: false })
 }
 
+export function sendInvitation(
+  email,
+  frontendUrl = typeof window !== 'undefined' ? window.location.origin : '',
+) {
+  return http('/sendinvitation', {
+    method: 'POST',
+    body: { email, frontend_url: frontendUrl },
+  })
+}
+
+export function registerViaInvitation(token, account) {
+  return http(`/invitation/register/${encodeURIComponent(token)}`, {
+    method: 'POST',
+    body: account,
+    auth: false,
+  })
+}
+
+export function loginViaInvitation(token, credentials) {
+  return http(`/invitation/login/${encodeURIComponent(token)}`, {
+    method: 'POST',
+    body: credentials,
+    auth: false,
+  })
+}
+
 export function requestPasswordReset(email) {
   return http('/forgetpassword', { method: 'POST', body: { email }, auth: false })
 }
