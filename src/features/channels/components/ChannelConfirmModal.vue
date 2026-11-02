@@ -2,9 +2,9 @@
 import { computed } from 'vue'
 import ChannelModal from './ChannelModal.vue'
 
-// Presentational confirm dialog for "leave" and "archive". The action itself runs in ChannelDialogs.
+// Presentational confirm dialog for leaving or deleting a channel.
 const props = defineProps({
-  type: { type: String, required: true }, // 'leave' | 'archive'
+  type: { type: String, required: true }, // 'leave' | 'delete'
   channelName: { type: String, required: true },
   isPrivate: { type: Boolean, default: false },
   busy: { type: Boolean, default: false },
@@ -13,7 +13,7 @@ const props = defineProps({
 const emit = defineEmits(['confirm', 'close'])
 
 const isLeave = computed(() => props.type === 'leave')
-const title = computed(() => (isLeave.value ? 'Leave Channel' : 'Archive Channel'))
+const title = computed(() => (isLeave.value ? 'Leave Channel' : 'Delete Channel'))
 </script>
 
 <template>
@@ -26,8 +26,8 @@ const title = computed(() => (isLeave.value ? 'Leave Channel' : 'Archive Channel
       >
     </p>
     <p v-else class="ch-confirm__text">
-      Archive <strong>{{ channelName }}</strong
-      >? It will be hidden from the channel list and become read-only for all members.
+      Delete <strong>{{ channelName }}</strong
+      >? This removes the channel for all team members.
     </p>
     <p v-if="error" class="ch-error" role="alert">{{ error }}</p>
 
@@ -36,7 +36,7 @@ const title = computed(() => (isLeave.value ? 'Leave Channel' : 'Archive Channel
         Cancel
       </button>
       <button class="ch-btn ch-btn--danger" type="button" :disabled="busy" @click="emit('confirm')">
-        {{ busy ? 'Please wait…' : isLeave ? 'Leave' : 'Archive' }}
+        {{ busy ? 'Please wait…' : isLeave ? 'Leave' : 'Delete' }}
       </button>
     </template>
   </ChannelModal>
