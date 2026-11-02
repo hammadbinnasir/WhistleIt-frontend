@@ -100,3 +100,83 @@ export async function removeMember(workspaceId, teamId, userId) {
     method: 'DELETE',
   }).then(normalizeDeleteResult)
 }
+
+export async function searchUsers(query, workspaceId = null) {
+  if (USE_SHELL_MOCKS) {
+    const mock = await import('./__mocks__/members.mock')
+    return mock.mockSearchUsers(query)
+  }
+
+  const normalizedQuery = String(query ?? '').trim()
+  const encodedQuery = encodeURIComponent(normalizedQuery)
+  const path = workspaceId
+    ? `/v1/${encodeURIComponent(workspaceId)}/users?search=${encodedQuery}`
+    : `/v1/users?search=${encodedQuery}`
+
+  const response = await apiRequest(path)
+  const data = response?.data ?? response
+  const records = data?.users ?? data?.members ?? (Array.isArray(data) ? data : [])
+
+  return records.map((record) => {
+    const user = record.user && typeof record.user === 'object' ? record.user : record
+    const id = user.id ?? user.user_id ?? record.id
+    const name = user.name ?? user.full_name ?? user.fullName ?? ''
+    const email = user.email ?? record.email ?? ''
+    if (id == null) return null
+    return {
+      id: String(id),
+      name: String(name || email || 'User'),
+      email: String(email),
+      avatar: user.avatar ?? user.avatar_url ?? record.avatar ?? '',
+    }
+  }).filter(Boolean)
+}
+
+export async function getWorkspaceMembers(workspaceId) {
+  if (!workspaceId) throw new Error('A workspace ID is required to load workspace members.')
+
+  const response = await apiRequest(`/company/${encodeURIComponent(workspaceId)}/members`)
+  const preferredKeys = ['members', 'users', 'items', 'results', 'data', 'company_members']
+
+  function findMemberRecords(value, seen = new Set()) {
+    if (!value || typeof value !== 'object' || seen.has(value)) return null
+    seen.add(value)
+
+    if (Array.isArray(value)) return value
+
+    for (const key of preferredKeys) {
+      if (!(key in value)) continue
+      const records = findMemberRecords(value[key], seen)
+      if (records?.length || records === []) return records
+    }
+
+    for (const nested of Object.values(value)) {
+      if (typeof nested !== 'object' || nested === null) continue
+      const records = findMemberRecords(nested, seen)
+      if (records?.length) return records
+    }
+    return []
+  }
+
+  const records = findMemberRecords(response) ?? []
+
+  return records.map((record) => {
+    const user = record?.user && typeof record.user === 'object' ? record.user : record
+    const id = user.id ?? user.user_id ?? record.user_id ?? record.id
+    if (id == null) return null
+
+    const name = user.name
+      ?? user.full_name
+      ?? user.fullName
+      ?? [user.first_name, user.last_name].filter(Boolean).join(' ')
+      ?? record.name
+    return {
+      id: String(id),
+      name: String(name || user.email || record.email || 'User'),
+      email: String(user.email ?? record.email ?? ''),
+      avatar: String(user.avatar ?? user.avatar_url ?? record.avatar ?? ''),
+      role: String(record.role ?? user.role ?? 'member'),
+      status: String(user.status ?? record.status ?? 'offline'),
+    }
+  }).filter(Boolean)
+}

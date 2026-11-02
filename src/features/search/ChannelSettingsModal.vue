@@ -3,7 +3,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { useUiStore } from '@/stores/ui'
 import { listMembers, removeMember, addMember, getWebhookUrl } from './members'
-import { searchUsers } from '@/features/shell/api/membersApi'
+import { getWorkspaceMembers } from '@/features/shell/api/membersApi'
 import { useTeamsStore } from '@/stores/teams'
 
 const props = defineProps({
@@ -23,6 +23,9 @@ const addQuery = ref('')
 const addOptions = ref([])
 const selectedUserIds = ref([])
 const dropdownOpen = ref(false)
+const loadingAddOptions = ref(false)
+const addOptionsError = ref('')
+const addMemberError = ref('')
 const webhookUrl = ref('')
 const copied = ref(false)
 const confirmLeave = ref(false)
@@ -42,7 +45,7 @@ const filtered = computed(() =>
 )
 
 async function refresh() {
-  members.value = await listMembers()
+  members.value = await listMembers(props.channel.id)
   loadingMembers.value = false
 }
 onMounted(async () => {
@@ -61,19 +64,39 @@ function closeAdd() {
   dropdownOpen.value = false
 }
 async function onAddSearch() {
-  addOptions.value = await searchUsers(addQuery.value, teamsStore.activeWorkspaceId)
-  addOptions.value = addOptions.value.filter(
-    (user) => !members.value.some((member) => String(member.id) === String(user.id)),
-  )
+  loadingAddOptions.value = true
+  addOptionsError.value = ''
+  try {
+    const workspaceMembers = await getWorkspaceMembers(teamsStore.activeWorkspaceId)
+    const query = addQuery.value.trim().toLowerCase()
+    addOptions.value = workspaceMembers.filter((user) => {
+      if (!query) return true
+      return `${user.name} ${user.email}`.toLowerCase().includes(query)
+    }).filter(
+      (user) => !members.value.some((member) => String(member.id) === String(user.id)),
+    )
+  } catch (error) {
+    addOptions.value = []
+    addOptionsError.value = error?.message || 'Unable to load workspace members.'
+  } finally {
+    loadingAddOptions.value = false
+  }
 }
 async function toggleDropdown() {
   dropdownOpen.value = !dropdownOpen.value
   if (dropdownOpen.value) await onAddSearch()
 }
 async function add(u) {
-  await addMember(u)
-  await refresh()
-  onAddSearch()
+  addMemberError.value = ''
+  try {
+    await addMember(u, props.channel.id)
+    await refresh()
+    await onAddSearch()
+  } catch (error) {
+    addMemberError.value = error?.status === 403
+      ? 'You are not authorized to add members to this channel.'
+      : (error?.message || 'Unable to add this member to the channel.')
+  }
 }
 function toggleSelectedUser(userId) {
   const id = String(userId)
@@ -85,12 +108,19 @@ async function addSelected() {
   const selectedUsers = addOptions.value.filter((user) =>
     selectedUserIds.value.includes(String(user.id)),
   )
-  for (const user of selectedUsers) await addMember(user)
-  await refresh()
-  closeAdd()
+  addMemberError.value = ''
+  try {
+    for (const user of selectedUsers) await addMember(user, props.channel.id)
+    await refresh()
+    closeAdd()
+  } catch (error) {
+    addMemberError.value = error?.status === 403
+      ? 'You are not authorized to add members to this channel.'
+      : (error?.message || 'Unable to add the selected members to the channel.')
+  }
 }
 async function remove(m) {
-  await removeMember(m.id)
+  await removeMember(m.id, props.channel.id)
   await refresh()
 }
 
@@ -272,13 +302,30 @@ const showSample = ref(false)
                 </label>
 
                 <div
-                  v-if="dropdownOpen && addOptions.length"
+                  v-if="dropdownOpen && loadingAddOptions"
+                  class="mt-2 rounded border border-slate-200 px-4 py-3 text-center text-sm text-slate-500"
+                >
+                  Loading members...
+                </div>
+                <div
+                  v-else-if="dropdownOpen && addOptionsError"
+                  class="mt-2 rounded border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600"
+                >
+                  {{ addOptionsError }}
+                </div>
+                <div
+                  v-else-if="dropdownOpen && !addOptions.length"
+                  class="mt-2 rounded border border-slate-200 px-4 py-3 text-center text-sm text-slate-500"
+                >
+                  No available workspace members
+                </div>
+                <div
+                  v-else-if="dropdownOpen && addOptions.length"
                   class="mt-2 max-h-44 overflow-y-auto rounded border border-slate-200 bg-white shadow-sm"
                 >
-                  <button
+                  <div
                     v-for="user in addOptions"
                     :key="user.id"
-                    type="button"
                     class="flex w-full cursor-pointer items-center justify-between px-4 py-3 text-left text-lg text-slate-800 hover:bg-indigo-50"
                     @click="toggleSelectedUser(user.id)"
                   >
@@ -290,8 +337,21 @@ const showSample = ref(false)
                       />
                       {{ user.name }}
                     </span>
-                    <span class="text-indigo-500">Add</span>
-                  </button>
+                    <button
+                      type="button"
+                      class="cursor-pointer rounded px-3 py-1 text-sm font-semibold text-indigo-500 hover:bg-indigo-100"
+                      @click.stop="add(user)"
+                    >
+                      Add
+                    </button>
+                  </div>
+                </div>
+                <div
+                  v-if="addMemberError"
+                  class="mt-2 rounded border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600"
+                  role="alert"
+                >
+                  {{ addMemberError }}
                 </div>
               </div>
 
