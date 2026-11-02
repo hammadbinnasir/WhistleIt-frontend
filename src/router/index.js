@@ -41,11 +41,12 @@ const router = createRouter({
         query: { token: to.params.token || to.query.token },
       }),
     },
-    { path: '/app', name: 'home', component: HomeView },
+    { path: '/app', name: 'home', component: HomeView, meta: { requiresAuth: true } },
     {
       path: '/app/:workspaceId/:teamId?/:channelId?',
       name: 'workspace-team',
       component: HomeView,
+      meta: { requiresAuth: true },
     },
     ...channelRoutes,
   ],
