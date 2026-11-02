@@ -32,7 +32,11 @@ export async function createChannel({ name, description, isPrivate }) {
     method: 'POST',
     body: { name, description, type: isPrivate ? 'private' : 'public' },
   })
-  return normalizeChannel(asObject(res))
+  const channel = asObject(res)
+  return normalizeChannel({
+    ...channel,
+    isMember: channel.isMember ?? channel.is_member ?? true,
+  })
 }
 
 export async function updateChannel(id, { name, description }) {

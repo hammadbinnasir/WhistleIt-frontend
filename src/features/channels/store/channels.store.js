@@ -19,7 +19,7 @@ export const useChannelsStore = defineStore('channels', () => {
   // ---------- getters ----------
   // Keep the order supplied by the team API; channels without these fields remain supported.
   const visibleChannels = computed(() => {
-    return channels.value.filter((channel) => !channel.isArchived)
+    return channels.value.filter((channel) => channel.isMember && !channel.isArchived)
   })
 
   function getById(id) {
@@ -50,7 +50,7 @@ export const useChannelsStore = defineStore('channels', () => {
       .listMyChannels()
       .then((list) => {
         if (requestId !== channelsRequestId) return
-        channels.value = list
+        channels.value = list.filter((channel) => channel.isMember && !channel.isArchived)
         loaded.value = true
       })
       .catch((err) => {
@@ -148,6 +148,10 @@ export const useChannelsStore = defineStore('channels', () => {
 
   // ---------- local mutations (also usable by a realtime/socket handler) ----------
   function upsertChannel(channel) {
+    if (!channel.isMember) {
+      removeChannel(channel.id)
+      return
+    }
     const index = channels.value.findIndex((c) => c.id === channel.id)
     if (index === -1) channels.value.push(channel)
     else channels.value[index] = { ...channels.value[index], ...channel }
