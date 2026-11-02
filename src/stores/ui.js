@@ -16,7 +16,6 @@ export const useUiStore = defineStore('ui', () => {
   let nextToastId = 0
 
   // modal visibility flags
-  const helpModalOpen = ref(false)
   const workspaceCreateModalOpen = ref(false)
   const teamCreateModalOpen = ref(false)
   const teamJoinModalOpen = ref(false)
@@ -24,6 +23,7 @@ export const useUiStore = defineStore('ui', () => {
 
   // getters
   const hasSelection = computed(() => selectedChannelId.value !== null)
+  const helpModalOpen = computed(() => activePanel.value === 'help')
 
   // actions
   function selectChannel(id) {
@@ -101,7 +101,7 @@ export const useUiStore = defineStore('ui', () => {
 
   // modal & drawer toggles
   function toggleHelpModal() {
-    helpModalOpen.value = !helpModalOpen.value
+    openPanel('help')
   }
   function toggleWorkspaceCreateModal() {
     workspaceCreateModalOpen.value = !workspaceCreateModalOpen.value
