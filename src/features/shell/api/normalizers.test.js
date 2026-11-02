@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   normalizeMembers,
+  normalizeNotMembers,
   normalizeTeamDetail,
   normalizeTeams,
   normalizeWorkspaces,
@@ -48,7 +49,27 @@ describe('shell API normalizers', () => {
     expect(normalizeTeamDetail({ success: true, data: { team: record } }, 7).id).toBe('8')
   })
 
-  it('normalizes target user IDs from joined_by, never the membership ID', () => {
+  it('normalizes the new teamusers shape using member IDs as user IDs', () => {
+    expect(
+      normalizeMembers({
+        success: true,
+        data: {
+          teamusers: {
+            creator_id: 'user-creator',
+            members: [
+              { id: 'user-creator', name: 'Creator Name' },
+              { id: 'user-member', name: 'Member Name' },
+            ],
+          },
+        },
+      }),
+    ).toEqual([
+      { userId: 'user-creator', name: 'Creator Name', isCreator: true },
+      { userId: 'user-member', name: 'Member Name', isCreator: false },
+    ])
+  })
+
+  it('keeps the legacy shape and gets user ID from joined_by, not membership ID', () => {
     expect(
       normalizeMembers({
         success: true,
@@ -70,31 +91,39 @@ describe('shell API normalizers', () => {
         role: 'member',
         joinedDate: '2026-10-28',
         status: 'offline',
+        isCreator: false,
       },
     ])
   })
 
-  it('maps profile fields only when the members response provides them', () => {
+  it('normalizes notmembers records and skips entries without a usable id', () => {
+    // ASSUMED: id/name are inferred from the confirmed members shape; email/avatar are optional and unverified.
     expect(
-      normalizeMembers({
+      normalizeNotMembers({
         success: true,
         data: {
-          members: [
-            {
-              id: 'membership-1',
-              joined_by: 'user-2',
-              user: { name: 'Member Name', email: 'member@example.test', avatar_url: '/avatar' },
-            },
-          ],
+          notteamusers: {
+            members: [
+              {
+                id: 'user-available',
+                name: 'Available User',
+                email: 'available@example.test',
+                avatar: '/avatar.png',
+              },
+              { id: '  ', name: 'Invalid User' },
+              { name: 'Missing ID' },
+            ],
+          },
         },
-      })[0],
-    ).toMatchObject({
-      userId: 'user-2',
-      membershipId: 'membership-1',
-      name: 'Member Name',
-      email: 'member@example.test',
-      avatar: '/avatar',
-    })
+      }),
+    ).toEqual([
+      {
+        userId: 'user-available',
+        name: 'Available User',
+        email: 'available@example.test',
+        avatarUrl: '/avatar.png',
+      },
+    ])
   })
 
   it('surfaces a backend error envelope message', () => {

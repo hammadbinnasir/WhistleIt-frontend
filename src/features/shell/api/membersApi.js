@@ -1,7 +1,7 @@
 import { apiRequest } from '@/lib/api/client'
 import { USE_SHELL_MOCKS } from './config'
 import { getCompanyIdForTeam } from './teamsApi'
-import { normalizeDeleteResult, normalizeMembers } from './normalizers'
+import { normalizeDeleteResult, normalizeMembers, normalizeNotMembers } from './normalizers'
 
 function getMembersPath(workspaceId, teamId) {
   const resolvedTeamId = teamId ?? workspaceId
@@ -30,18 +30,61 @@ export function getMembers(workspaceId, teamId = null) {
   return apiRequest(getMembersPath(workspaceId, teamId)).then(normalizeMembers)
 }
 
-export async function addMember(workspaceId, teamId, userIds) {
-  const ids = Array.isArray(userIds) ? userIds : [userIds]
-  if (!ids.length || ids.some((id) => id == null || String(id).trim() === '')) {
-    throw new Error('At least one valid user ID is required.')
+export function getNotMembers(workspaceId, teamId) {
+  if (USE_SHELL_MOCKS) {
+    return Promise.all([import('./__mocks__/members.mock'), getMembers(workspaceId, teamId)]).then(
+      ([mock, currentMembers]) =>
+        mock.mockSearchUsers('').then((users) =>
+          users
+            .filter(
+              (user) => !currentMembers.some((member) => String(member.userId) === String(user.id)),
+            )
+            .map((user) => ({
+              userId: String(user.id),
+              name: user.name,
+              ...(user.email ? { email: user.email } : {}),
+            })),
+        ),
+    )
   }
+  return apiRequest(
+    `${getMembersPath(workspaceId, teamId).replace(/\/members$/, '')}/notmembers`,
+  ).then(normalizeNotMembers)
+}
+
+function validateUserIds(userIds, minimumCount) {
+  if (
+    !Array.isArray(userIds) ||
+    userIds.length < minimumCount ||
+    userIds.some((id) => id == null || String(id).trim() === '')
+  ) {
+    throw new Error('Select valid users to add to the team.')
+  }
+}
+
+export async function addMember(workspaceId, teamId, userId) {
+  validateUserIds([userId], 1)
   if (USE_SHELL_MOCKS) {
     const mock = await import('./__mocks__/members.mock')
-    return Promise.all(ids.map((userId) => mock.mockAddMember(teamId, userId)))
+    return mock.mockAddMember(teamId, userId)
   }
-  return apiRequest(getMembersPath(workspaceId, teamId), {
+  const teamPath = getMembersPath(workspaceId, teamId).replace(/\/members$/, '')
+  return apiRequest(`${teamPath}/member`, {
     method: 'POST',
-    body: JSON.stringify({ user_ids: ids }),
+    body: JSON.stringify({ user_ids: [userId] }),
+  })
+}
+
+export async function addMembers(workspaceId, teamId, userIds) {
+  validateUserIds(userIds, 2)
+  if (USE_SHELL_MOCKS) {
+    const mock = await import('./__mocks__/members.mock')
+    return Promise.all(userIds.map((userId) => mock.mockAddMember(teamId, userId)))
+  }
+  const teamPath = getMembersPath(workspaceId, teamId).replace(/\/members$/, '')
+  return apiRequest(`${teamPath}/multiplemembers`, {
+    method: 'POST',
+    body: JSON.stringify({ user_ids: userIds }),
   })
 }
 
@@ -56,12 +99,4 @@ export async function removeMember(workspaceId, teamId, userId) {
   return apiRequest(`${getMembersPath(workspaceId, teamId)}/${encodeURIComponent(userId)}`, {
     method: 'DELETE',
   }).then(normalizeDeleteResult)
-}
-
-export async function searchUsers(query) {
-  if (USE_SHELL_MOCKS) {
-    const mock = await import('./__mocks__/members.mock')
-    return mock.mockSearchUsers(query)
-  }
-  throw new Error('User search is not available yet.')
 }
