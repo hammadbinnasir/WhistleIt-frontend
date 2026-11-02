@@ -48,6 +48,28 @@ describe('shell API normalizers', () => {
     expect(normalizeTeamDetail({ success: true, data: { team: record } }, 7).id).toBe('8')
   })
 
+  it('accepts direct team list/detail payloads and snake_case display names', () => {
+    expect(
+      normalizeTeams(
+        {
+          success: true,
+          data: [{ team_id: 'team-2', team_name: 'Support Team', company_id: 'company-1' }],
+        },
+        'company-1',
+      ),
+    ).toMatchObject([{ id: 'team-2', name: 'Support Team', workspaceId: 'company-1' }])
+
+    expect(
+      normalizeTeamDetail(
+        {
+          success: true,
+          data: { team_id: 'team-3', team_name: 'Design Team' },
+        },
+        'company-1',
+      ),
+    ).toMatchObject({ id: 'team-3', name: 'Design Team', workspaceId: 'company-1' })
+  })
+
   it('normalizes target user IDs from joined_by, never the membership ID', () => {
     expect(
       normalizeMembers({
