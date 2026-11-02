@@ -100,28 +100,50 @@ describe('shell API adapters', () => {
     })
   })
 
-  it('loads members using the company ID associated with their team', async () => {
+  it('loads members and normalizes identity fields using the explicit workspace scope', async () => {
+    apiRequest.mockResolvedValueOnce({
+      success: true,
+      data: {
+        members: [
+          { id: 'membership-1', joined_by: 'user-1', role: 'member', joined_date: 'today' },
+        ],
+      },
+    })
+
+    await expect(getMembers('company-1', 'team-1')).resolves.toMatchObject([
+      { membershipId: 'membership-1', userId: 'user-1', role: 'member', joinedDate: 'today' },
+    ])
+    expect(apiRequest).toHaveBeenCalledWith('/v1/company-1/teams/team-1/members')
+  })
+
+  it('sends member writes with user_ids and removes by user ID', async () => {
     apiRequest
       .mockResolvedValueOnce({
         success: true,
-        data: { teams: [{ id: 'team-1', company_id: 'company-1', name: 'Design' }] },
+        message: 'Team member added successfully',
+        data: null,
       })
       .mockResolvedValueOnce({
         success: true,
-        data: { members: [{ id: 'membership-1', role: 'member' }] },
+        message: 'Team member deleted successfully',
+        data: null,
       })
 
-    await getTeams('company-1')
-    await expect(getMembers('team-1')).resolves.toMatchObject([
-      { id: 'membership-1', name: 'Member', role: 'member' },
-    ])
-    expect(apiRequest).toHaveBeenNthCalledWith(2, '/v1/company-1/teams/team-1/members')
-  })
+    await expect(addMember('company-1', 'team-1', ['user-1', 'user-2'])).resolves.toMatchObject({
+      message: 'Team member added successfully',
+    })
+    await expect(removeMember('company-1', 'team-1', 'user-2')).resolves.toEqual({
+      success: true,
+      message: 'Team member deleted successfully',
+    })
 
-  it('does not call live member write endpoints until their contract is confirmed', async () => {
-    await expect(addMember('team-1', 'user-1')).rejects.toThrow('not available yet')
-    await expect(removeMember('team-1', 'user-1')).rejects.toThrow('not available yet')
-    expect(apiRequest).not.toHaveBeenCalled()
+    expect(apiRequest).toHaveBeenNthCalledWith(1, '/v1/company-1/teams/team-1/members', {
+      method: 'POST',
+      body: JSON.stringify({ user_ids: ['user-1', 'user-2'] }),
+    })
+    expect(apiRequest).toHaveBeenNthCalledWith(2, '/v1/company-1/teams/team-1/members/user-2', {
+      method: 'DELETE',
+    })
   })
 
   it('keeps team joining on the mock layer in backend mode and scopes it to the active workspace', async () => {

@@ -1,56 +1,173 @@
-import { beforeEach, describe, expect, it } from 'vitest'
-import { mount } from '@vue/test-utils'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
-import { nextTick } from 'vue'
 import MemberManageModal from './MemberManageModal.vue'
 import { useMembersStore } from '@/stores/members'
 import { useTeamsStore } from '@/stores/teams'
 import { useUiStore } from '@/stores/ui'
 
+const api = vi.hoisted(() => ({
+  getMembers: vi.fn(),
+  addMember: vi.fn(),
+  removeMember: vi.fn(),
+  searchUsers: vi.fn(),
+}))
+
+vi.mock('@/features/shell/api/membersApi', () => ({
+  getMembers: api.getMembers,
+  addMember: api.addMember,
+  removeMember: api.removeMember,
+  searchUsers: api.searchUsers,
+}))
+
+vi.mock('@/features/auth/session', () => ({
+  getAuthUserId: () => 'self-user',
+}))
+
+const initialMembers = [
+  {
+    userId: 'self-user',
+    membershipId: 'membership-self',
+    name: 'Current User',
+    role: 'member',
+    joinedDate: 'today',
+    status: 'offline',
+  },
+  {
+    userId: 'target-user',
+    membershipId: 'membership-target',
+    name: 'Other Member',
+    email: 'other@example.test',
+    role: 'member',
+    joinedDate: 'today',
+    status: 'offline',
+  },
+]
+
 describe('MemberManageModal', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
+    vi.clearAllMocks()
+    api.getMembers.mockResolvedValue(initialMembers)
+    api.addMember.mockResolvedValue({ success: true })
+    api.removeMember.mockResolvedValue({ success: true })
   })
 
-  it('shows a quick profile preview when hovering a member row', async () => {
-    const ui = useUiStore()
+  afterEach(() => vi.restoreAllMocks())
+
+  function mountOpenModal() {
     const teamsStore = useTeamsStore()
-    const membersStore = useMembersStore()
+    teamsStore.workspaces = [{ id: 'workspace-1', name: 'Workspace' }]
+    teamsStore.activeWorkspaceId = 'workspace-1'
+    teamsStore.teamsByWorkspaceId = {
+      'workspace-1': [{ id: 'team-1', name: 'Design Team', workspaceId: 'workspace-1' }],
+    }
+    teamsStore.activeTeamId = 'team-1'
+    useUiStore().memberManageModalOpen = true
+    return mount(MemberManageModal)
+  }
 
-    teamsStore.$state.activeTeam = { id: 'team-1', name: 'Design Team' }
-    membersStore.members = [
-      {
-        id: 'm-1',
-        name: 'Abbas Ali',
-        email: 'abbas.alicm@pf.com.pk',
-        role: 'member',
-        status: 'offline',
-      },
-    ]
-    ui.memberManageModalOpen = true
+  it('marks the current user and never renders a Remove button for them', async () => {
+    const wrapper = mountOpenModal()
+    await flushPromises()
 
-    const wrapper = mount(MemberManageModal)
-    const row = wrapper.find('.member-row')
-
-    await row.trigger('mouseenter')
-    await nextTick()
-
-    expect(wrapper.find('.member-hover-card').exists()).toBe(true)
-    expect(wrapper.text()).toContain('Abbas Ali')
-    expect(wrapper.text()).toContain('abbas.alicm@pf.com.pk')
+    expect(wrapper.text()).toContain('Current User (You)')
+    expect(wrapper.findAll('.remove-btn')).toHaveLength(1)
   })
 
-  it('shows the read-only backend state without add or remove controls', () => {
-    const ui = useUiStore()
+  it('keeps Add members disabled until user search is available', async () => {
+    const wrapper = mountOpenModal()
+    await flushPromises()
+
+    const addButton = wrapper
+      .findAll('button')
+      .find((button) => button.text().includes('User search'))
+    expect(addButton.exists()).toBe(true)
+    expect(addButton.attributes('disabled')).toBeDefined()
+  })
+
+  it('confirms removal by user ID and refreshes the member list on success', async () => {
+    const wrapper = mountOpenModal()
     const membersStore = useMembersStore()
-    membersStore.members = [{ id: 'member-1', name: 'Member', role: 'member' }]
-    ui.memberManageModalOpen = true
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    await flushPromises()
 
-    const wrapper = mount(MemberManageModal)
+    await wrapper.find('.remove-btn').trigger('click')
+    await flushPromises()
 
-    expect(wrapper.text()).toContain('read-only for now')
-    expect(wrapper.text()).toContain('Adding and removing members is not available yet')
-    expect(wrapper.text()).not.toContain('Add Member')
+    expect(confirm).toHaveBeenCalled()
+    expect(api.removeMember).toHaveBeenCalledWith('workspace-1', 'team-1', 'target-user')
+    expect(api.getMembers).toHaveBeenCalledTimes(2)
+    expect(membersStore.members).toHaveLength(2)
+    expect(wrapper.text()).toContain('Removed Other Member.')
+    confirm.mockRestore()
+  })
+
+  it('disables member actions while a remove request is pending', async () => {
+    const wrapper = mountOpenModal()
+    let finishRemove
+    api.removeMember.mockReturnValue(
+      new Promise((resolve) => {
+        finishRemove = resolve
+      }),
+    )
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    await flushPromises()
+
+    await wrapper.find('.remove-btn').trigger('click')
+    expect(wrapper.find('.remove-btn').attributes('disabled')).toBeDefined()
+
+    finishRemove({ success: true })
+    await flushPromises()
+  })
+
+  it('shows a clear error for a missing member', async () => {
+    const wrapper = mountOpenModal()
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    api.removeMember.mockRejectedValue({ status: 404, message: 'not found' })
+    await flushPromises()
+
+    await wrapper.find('.remove-btn').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('The team or member could not be found.')
+  })
+
+  it('shows the backend validation message for a rejected member operation', async () => {
+    const wrapper = mountOpenModal()
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    api.removeMember.mockRejectedValue({
+      status: 422,
+      message: 'The selected member cannot be removed.',
+    })
+    await flushPromises()
+
+    await wrapper.find('.remove-btn').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('The selected member cannot be removed.')
+  })
+
+  it('keeps the list read-only after a permission error', async () => {
+    const wrapper = mountOpenModal()
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    api.removeMember.mockRejectedValue({ status: 403, message: 'forbidden' })
+    await flushPromises()
+
+    await wrapper.find('.remove-btn').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('The list is read-only.')
     expect(wrapper.find('.remove-btn').exists()).toBe(false)
+  })
+
+  it('shows the backend validation message for an invalid add request', async () => {
+    const store = useMembersStore()
+    api.addMember.mockRejectedValue({ status: 422, message: 'Select a valid member.' })
+
+    await expect(store.addMember('workspace-1', 'team-1', ['invalid-user'])).rejects.toMatchObject({
+      status: 422,
+    })
+    expect(store.error).toBe('Select a valid member.')
   })
 })
