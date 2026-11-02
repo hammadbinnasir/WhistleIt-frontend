@@ -4,6 +4,7 @@ import { storeToRefs } from 'pinia'
 import { useTeamsStore } from '@/stores/teams'
 import { useMembersStore } from '@/stores/members'
 import { useUiStore } from '@/stores/ui'
+import { getAuthUserId } from '@/features/auth/session'
 import { USE_SHELL_MOCKS } from '@/features/shell/api/config'
 import { searchUsers } from '@/features/shell/api/membersApi'
 
@@ -11,13 +12,20 @@ const teamsStore = useTeamsStore()
 const membersStore = useMembersStore()
 const ui = useUiStore()
 
-const { activeTeam, activeTeamId } = storeToRefs(teamsStore)
-const { members, loading: membersLoading, error: membersError } = storeToRefs(membersStore)
+const { activeTeam, activeTeamId, activeWorkspaceId } = storeToRefs(teamsStore)
+const {
+  members,
+  loading: membersLoading,
+  writing: membersWriting,
+  error: membersError,
+  permissionDenied,
+} = storeToRefs(membersStore)
+const currentUserId = getAuthUserId()
 
 const searchMemberQuery = ref('')
 const newMemberInput = ref('')
 const isAdding = ref(false)
-const removingMemberId = ref(null)
+const removingUserId = ref(null)
 const actionError = ref('')
 const successNotice = ref('')
 
@@ -33,12 +41,20 @@ function hideProfilePreview() {
   hoveredMember.value = null
 }
 
+function isCurrentUser(member) {
+  return (
+    currentUserId != null &&
+    member.userId != null &&
+    String(member.userId) === String(currentUserId)
+  )
+}
+
 // Fetch members whenever modal opens
 watch(
   () => ui.memberManageModalOpen,
   (isOpen) => {
-    if (isOpen && activeTeamId.value) {
-      membersStore.fetchMembers(activeTeamId.value)
+    if (isOpen && activeWorkspaceId.value && activeTeamId.value) {
+      membersStore.fetchMembers(activeWorkspaceId.value, activeTeamId.value)
     }
   },
   { immediate: true },
@@ -48,7 +64,9 @@ const filteredMembers = computed(() => {
   if (!searchMemberQuery.value.trim()) return members.value
   const q = searchMemberQuery.value.toLowerCase().trim()
   return members.value.filter(
-    (m) => m.name.toLowerCase().includes(q) || (m.email && m.email.toLowerCase().includes(q)),
+    (member) =>
+      (member.name ?? '').toLowerCase().includes(q) ||
+      (member.email && member.email.toLowerCase().includes(q)),
   )
 })
 
@@ -66,7 +84,9 @@ async function onAddInputChange() {
     try {
       const results = await searchUsers(q)
       // filter out existing members
-      searchSuggestions.value = results.filter((u) => !members.value.some((m) => m.id === u.id))
+      searchSuggestions.value = results.filter(
+        (user) => !members.value.some((member) => member.userId === user.id),
+      )
     } catch (error) {
       actionError.value = error?.message || 'Could not search for users.'
       searchSuggestions.value = []
@@ -83,44 +103,64 @@ function selectSuggestion(user) {
 }
 
 async function handleAddUser(userId = null) {
-  if (!newMemberInput.value.trim() && !userId) return
-  if (!activeTeamId.value) return
+  if (!userId || !activeWorkspaceId.value || !activeTeamId.value) return
 
   isAdding.value = true
   actionError.value = ''
   successNotice.value = ''
 
   try {
-    const added = await membersStore.addMember(
-      activeTeamId.value,
-      userId || newMemberInput.value.trim(),
-    )
-    successNotice.value = `Added ${added.name} to ${activeTeam.value?.name || 'workspace'}.`
+    const response = await membersStore.addMember(activeWorkspaceId.value, activeTeamId.value, [
+      userId,
+    ])
+    if (membersStore.error) actionError.value = membersStore.error
+    else {
+      successNotice.value =
+        response?.message || `Member added to ${activeTeam.value?.name || 'team'}.`
+    }
     newMemberInput.value = ''
     searchSuggestions.value = []
   } catch (err) {
-    actionError.value = err?.message || 'Could not add member.'
+    actionError.value = membersStore.error || err?.message || 'Could not add member.'
   } finally {
     isAdding.value = false
   }
 }
 
 async function handleRemove(member) {
-  if (!confirm(`Are you sure you want to remove ${member.name} from this workspace?`)) {
+  if (
+    permissionDenied.value ||
+    !member.userId ||
+    String(member.userId) === String(currentUserId) ||
+    !activeWorkspaceId.value ||
+    !activeTeamId.value
+  ) {
+    return
+  }
+  if (
+    !window.confirm(
+      `Are you sure you want to remove ${member.name || 'this member'} from this team?`,
+    )
+  ) {
     return
   }
 
-  removingMemberId.value = member.id
+  removingUserId.value = member.userId
   actionError.value = ''
   successNotice.value = ''
 
   try {
-    await membersStore.removeMember(activeTeamId.value, member.id)
-    successNotice.value = `Removed ${member.name}.`
+    const response = await membersStore.removeMember(
+      activeWorkspaceId.value,
+      activeTeamId.value,
+      member.userId,
+    )
+    if (membersStore.error) actionError.value = membersStore.error
+    else successNotice.value = response?.message || `Removed ${member.name || 'member'}.`
   } catch (err) {
-    actionError.value = err?.message || 'Failed to remove member.'
+    actionError.value = membersStore.error || err?.message || 'Failed to remove member.'
   } finally {
-    removingMemberId.value = null
+    removingUserId.value = null
   }
 }
 
@@ -192,8 +232,18 @@ function getInitials(name) {
         <div v-if="actionError" class="error-banner" role="alert">
           {{ actionError }}
         </div>
-        <p v-if="!USE_SHELL_MOCKS" class="not-available-banner" role="status">
-          The member list is read-only for now. Adding and removing members is not available yet.
+        <div v-if="membersError && membersError !== actionError" class="error-banner" role="alert">
+          {{ membersError }}
+          <button
+            type="button"
+            class="retry-members"
+            @click="membersStore.fetchMembers(activeWorkspaceId, activeTeamId)"
+          >
+            Retry
+          </button>
+        </div>
+        <p v-if="permissionDenied" class="not-available-banner" role="status">
+          You do not have permission to manage this team’s members. The list is read-only.
         </p>
 
         <!-- Add Member section -->
@@ -211,7 +261,7 @@ function getInitials(name) {
             <button
               type="button"
               class="add-btn"
-              :disabled="!newMemberInput.trim() || isAdding"
+              :disabled="!newMemberInput.trim() || isAdding || membersWriting"
               @click="handleAddUser()"
             >
               <span v-if="isAdding">Adding...</span>
@@ -238,6 +288,10 @@ function getInitials(name) {
               <span class="invite-label">+ Add</span>
             </button>
           </div>
+        </div>
+        <div v-else class="add-section">
+          <label class="section-label">Add members</label>
+          <button type="button" class="add-btn" disabled>User search not available yet</button>
         </div>
 
         <!-- Member list header & search -->
@@ -267,19 +321,19 @@ function getInitials(name) {
 
           <div class="members-table-container">
             <div v-if="membersLoading" class="loading-state">Loading members...</div>
-            <div v-else-if="membersError" class="error-banner" role="alert">{{ membersError }}</div>
             <div v-else-if="filteredMembers.length === 0" class="empty-state">No members found</div>
             <ul v-else class="members-table">
               <li
                 v-for="member in filteredMembers"
-                :key="member.id"
+                :key="member.membershipId"
                 class="member-row"
                 @mouseenter="showProfilePreview(member)"
                 @mouseleave="hideProfilePreview()"
               >
                 <div class="member-user-info">
                   <div class="member-avatar">
-                    {{ getInitials(member.name) }}
+                    <img v-if="member.avatar" :src="member.avatar" alt="" />
+                    <template v-else>{{ getInitials(member.name || 'Member') }}</template>
                     <span
                       class="status-indicator"
                       :class="
@@ -290,7 +344,9 @@ function getInitials(name) {
                     />
                   </div>
                   <div class="member-details">
-                    <span class="member-name">{{ member.name }}</span>
+                    <span class="member-name">
+                      {{ member.name || 'Member' }}<span v-if="isCurrentUser(member)"> (You)</span>
+                    </span>
                     <span class="member-email">{{ member.email || 'team-member' }}</span>
                   </div>
                 </div>
@@ -302,14 +358,19 @@ function getInitials(name) {
 
                   <!-- Remove button -->
                   <button
-                    v-if="USE_SHELL_MOCKS && member.role !== 'admin'"
+                    v-if="
+                      member.role !== 'admin' &&
+                      member.userId &&
+                      String(member.userId) !== String(currentUserId) &&
+                      !permissionDenied
+                    "
                     type="button"
                     class="remove-btn"
-                    :disabled="removingMemberId === member.id"
+                    :disabled="membersWriting || removingUserId === member.userId"
                     title="Remove user"
                     @click="handleRemove(member)"
                   >
-                    <span v-if="removingMemberId === member.id">...</span>
+                    <span v-if="removingUserId === member.userId">...</span>
                     <svg
                       v-else
                       width="14"
@@ -328,13 +389,13 @@ function getInitials(name) {
                 </div>
 
                 <div
-                  v-if="hoveredMember && hoveredMember.id === member.id"
+                  v-if="hoveredMember && hoveredMember.membershipId === member.membershipId"
                   class="member-hover-card"
                   aria-live="polite"
                 >
                   <div class="member-hover-card__header">
                     <div class="member-hover-card__avatar">
-                      {{ getInitials(member.name) }}
+                      {{ getInitials(member.name || 'Member') }}
                     </div>
                     <span
                       class="member-hover-card__status"
@@ -345,7 +406,7 @@ function getInitials(name) {
                   </div>
 
                   <div class="member-hover-card__body">
-                    <h4>{{ member.name }}</h4>
+                    <h4>{{ member.name || 'Member' }}</h4>
                     <p>{{ member.email || 'team-member' }}</p>
                   </div>
 

@@ -84,18 +84,30 @@ export function normalizeMembers(response) {
 
   return records.map((record) => {
     if (record?.id == null) throw new Error('A member record is missing its ID.')
-    return {
-      id: String(record.id),
-      name: 'Member',
-      email: '',
+    const user = record.user && typeof record.user === 'object' ? record.user : {}
+    const normalized = {
+      userId: record.joined_by == null ? null : String(record.joined_by),
+      membershipId: String(record.id),
       role: String(record.role ?? 'member'),
+      joinedDate: record.joined_date == null ? null : String(record.joined_date),
       status: 'offline',
-      avatar: null,
     }
+
+    const name = record.name ?? user.name ?? user.full_name ?? user.display_name
+    const email = record.email ?? user.email
+    const avatar = record.avatar ?? record.avatar_url ?? user.avatar ?? user.avatar_url
+    if (typeof name === 'string' && name.trim()) normalized.name = name.trim()
+    if (typeof email === 'string' && email.trim()) normalized.email = email.trim()
+    if (typeof avatar === 'string' && avatar.trim()) normalized.avatar = avatar.trim()
+
+    return normalized
   })
 }
 
 export function normalizeDeleteResult(response) {
   unwrapResponse(response)
-  return { success: true }
+  return {
+    success: true,
+    ...(typeof response.message === 'string' ? { message: response.message } : {}),
+  }
 }

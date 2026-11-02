@@ -48,22 +48,53 @@ describe('shell API normalizers', () => {
     expect(normalizeTeamDetail({ success: true, data: { team: record } }, 7).id).toBe('8')
   })
 
-  it('normalizes member list records without inventing user profile fields', () => {
+  it('normalizes target user IDs from joined_by, never the membership ID', () => {
     expect(
       normalizeMembers({
         success: true,
-        data: { members: [{ id: 'membership-1', role: 'member', joined_by: 'user-2' }] },
+        data: {
+          members: [
+            {
+              id: 'membership-1',
+              joined_by: 'user-2',
+              role: 'member',
+              joined_date: '2026-10-28',
+            },
+          ],
+        },
       }),
     ).toEqual([
       {
-        id: 'membership-1',
-        name: 'Member',
-        email: '',
+        userId: 'user-2',
+        membershipId: 'membership-1',
         role: 'member',
+        joinedDate: '2026-10-28',
         status: 'offline',
-        avatar: null,
       },
     ])
+  })
+
+  it('maps profile fields only when the members response provides them', () => {
+    expect(
+      normalizeMembers({
+        success: true,
+        data: {
+          members: [
+            {
+              id: 'membership-1',
+              joined_by: 'user-2',
+              user: { name: 'Member Name', email: 'member@example.test', avatar_url: '/avatar' },
+            },
+          ],
+        },
+      })[0],
+    ).toMatchObject({
+      userId: 'user-2',
+      membershipId: 'membership-1',
+      name: 'Member Name',
+      email: 'member@example.test',
+      avatar: '/avatar',
+    })
   })
 
   it('surfaces a backend error envelope message', () => {
