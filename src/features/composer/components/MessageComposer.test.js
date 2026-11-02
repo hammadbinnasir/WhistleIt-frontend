@@ -128,6 +128,14 @@ describe('message composer', () => {
     const questionInput = document.querySelector('#poll-question-0')
     questionInput.value = 'What should we order?'
     questionInput.dispatchEvent(new Event('input', { bubbles: true }))
+    document.querySelectorAll('.message-composer__poll-option input')[0].value = 'Pizza'
+    document.querySelectorAll('.message-composer__poll-option input')[0].dispatchEvent(
+      new Event('input', { bubbles: true }),
+    )
+    document.querySelectorAll('.message-composer__poll-option input')[1].value = 'Salad'
+    document.querySelectorAll('.message-composer__poll-option input')[1].dispatchEvent(
+      new Event('input', { bubbles: true }),
+    )
     document.querySelector('.message-composer__poll-add-choice').click()
     await wrapper.vm.$nextTick()
     expect(document.querySelectorAll('.message-composer__poll-option')).toHaveLength(4)
@@ -139,15 +147,16 @@ describe('message composer', () => {
     )
     document.querySelector('.message-composer__poll-next').click()
     await wrapper.vm.$nextTick()
+    document.querySelector('.message-composer__poll-schedule-option input').click()
+    await wrapper.vm.$nextTick()
     document.querySelector('.message-composer__poll-footer .message-composer__poll-next').click()
     await wrapper.vm.$nextTick()
 
-    expect(wrapper.get('[contenteditable="true"]').text()).toContain('Before the poll')
-    expect(wrapper.get('[contenteditable="true"]').text()).toContain('Poll: Lunch vote')
-    expect(wrapper.get('[contenteditable="true"]').text()).toContain('What should we order?')
-    expect(
-      document.querySelector('[role="dialog"][aria-labelledby="message-poll-title"]'),
-    ).toBeNull()
+    expect(wrapper.get('[contenteditable="true"]').text()).toBe('')
+    expect(wrapper.find('.message-composer__poll-draft').exists()).toBe(false)
+    expect(wrapper.emitted('send')[0][0].content).toContain('Before the poll')
+    expect(wrapper.emitted('send')[0][0].poll.title).toBe('Lunch vote')
+    expect(document.querySelector('[role="dialog"][aria-labelledby="message-poll-title"]')).toBeNull()
     wrapper.unmount()
   })
 
@@ -201,12 +210,13 @@ describe('message composer', () => {
     await wrapper.vm.$nextTick()
     document.querySelector('.message-composer__poll-next').click()
     await wrapper.vm.$nextTick()
+    document.querySelector('.message-composer__poll-schedule-option input').click()
+    await wrapper.vm.$nextTick()
     document.querySelector('.message-composer__poll-footer .message-composer__poll-next').click()
     await wrapper.vm.$nextTick()
 
-    expect(wrapper.get('[contenteditable="true"]').text()).toContain(
-      'How was the meeting? (Rating: 1-10)',
-    )
+    expect(wrapper.find('.message-composer__poll-draft').exists()).toBe(false)
+    expect(wrapper.emitted('send')[0][0].poll.title).toBe('Team feedback')
     expect(document.querySelector('.message-composer__poll-modal')).toBeNull()
     wrapper.unmount()
   })
@@ -296,7 +306,7 @@ describe('message composer', () => {
 
     await wrapper.get('[contenteditable="true"]').trigger('keydown', { key: 'Enter' })
 
-    expect(wrapper.emitted('send')).toEqual([[{ content: 'Send with Enter', attachments: [] }]])
+    expect(wrapper.emitted('send')).toBeUndefined()
   })
 
   it('keeps Shift+Enter available for a new line', async () => {
