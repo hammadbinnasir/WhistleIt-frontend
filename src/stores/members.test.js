@@ -3,13 +3,17 @@ import { createPinia, setActivePinia } from 'pinia'
 
 const api = vi.hoisted(() => ({
   getMembers: vi.fn(),
+  getNotMembers: vi.fn(),
   addMember: vi.fn(),
+  addMembers: vi.fn(),
   removeMember: vi.fn(),
 }))
 
 vi.mock('@/features/shell/api/membersApi', () => ({
   getMembers: api.getMembers,
+  getNotMembers: api.getNotMembers,
   addMember: api.addMember,
+  addMembers: api.addMembers,
   removeMember: api.removeMember,
 }))
 
@@ -20,10 +24,12 @@ describe('members store', () => {
     setActivePinia(createPinia())
     vi.clearAllMocks()
     api.getMembers.mockResolvedValue([
-      { id: 'm1', name: 'Member One', status: 'online', role: 'admin' },
-      { id: 'm2', name: 'Member Two', status: 'offline', role: 'member' },
+      { userId: 'm1', name: 'Member One', status: 'online', role: 'admin' },
+      { userId: 'm2', name: 'Member Two', status: 'offline', role: 'member' },
     ])
+    api.getNotMembers.mockResolvedValue([{ userId: 'm3', name: 'Member Three' }])
     api.addMember.mockResolvedValue({ success: true })
+    api.addMembers.mockResolvedValue({ success: true })
     api.removeMember.mockResolvedValue({ success: true })
   })
 
@@ -49,13 +55,25 @@ describe('members store', () => {
     await store.fetchMembers('workspace-1', 'team-2')
     const initialCount = store.members.length
 
-    await store.addMember('workspace-1', 'team-2', ['u20'])
-    expect(api.addMember).toHaveBeenCalledWith('workspace-1', 'team-2', ['u20'])
+    await store.addMember('workspace-1', 'team-2', 'u20')
+    expect(api.addMember).toHaveBeenCalledWith('workspace-1', 'team-2', 'u20')
     expect(store.members.length).toBe(initialCount)
+    expect(api.getNotMembers).toHaveBeenCalledWith('workspace-1', 'team-2')
 
     await store.removeMember('workspace-1', 'team-2', 'u20')
     expect(api.removeMember).toHaveBeenCalledWith('workspace-1', 'team-2', 'u20')
     expect(api.getMembers).toHaveBeenCalledTimes(3)
+  })
+
+  it('refreshes current and available members after adding multiple users', async () => {
+    const store = useMembersStore()
+    await store.fetchMembers('workspace-1', 'team-1')
+
+    await store.addMembers('workspace-1', 'team-1', ['u20', 'u21'])
+
+    expect(api.addMembers).toHaveBeenCalledWith('workspace-1', 'team-1', ['u20', 'u21'])
+    expect(api.getMembers).toHaveBeenCalledTimes(2)
+    expect(api.getNotMembers).toHaveBeenCalledTimes(1)
   })
 
   it('clears members on team switch', async () => {
@@ -87,7 +105,7 @@ describe('members store', () => {
     expect(store.error).toContain('could not be found')
 
     api.addMember.mockRejectedValueOnce({ status: 422, message: 'Select a valid user.' })
-    await expect(store.addMember('workspace-1', 'team-1', ['invalid'])).rejects.toMatchObject({
+    await expect(store.addMember('workspace-1', 'team-1', 'invalid')).rejects.toMatchObject({
       status: 422,
     })
     expect(store.error).toBe('Select a valid user.')

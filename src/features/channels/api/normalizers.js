@@ -27,6 +27,7 @@ export function normalizeChannel(raw = {}) {
   }
 
   const rawPrivate = record.isPrivate ?? record.is_private
+  const rawMember = record.isMember ?? record.is_member
   const type = String(record.type ?? record.channel_type ?? '').toLowerCase()
   return {
     id: String(id),
@@ -40,7 +41,10 @@ export function normalizeChannel(raw = {}) {
           String(rawPrivate).toLowerCase() === 'true',
     isDefault: Boolean(record.isDefault ?? record.is_default),
     isArchived: Boolean(record.isArchived ?? record.is_archived),
-    isMember: record.isMember ?? record.is_member ?? true,
+    isMember:
+      rawMember === true ||
+      rawMember === 1 ||
+      String(rawMember).toLowerCase() === 'true',
     isFavorite: Boolean(record.isFavorite ?? record.is_favorite),
     isMuted: Boolean(record.isMuted ?? record.is_muted),
     isUnread: Boolean(record.isUnread ?? record.is_unread),

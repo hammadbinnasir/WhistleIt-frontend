@@ -5,7 +5,6 @@ import { useTeamsStore } from '@/stores/teams'
 import { useMembersStore } from '@/stores/members'
 import { useUiStore } from '@/stores/ui'
 import { getAuthUserId } from '@/features/auth/session'
-import { searchUsers } from '@/features/shell/api/membersApi'
 
 const teamsStore = useTeamsStore()
 const membersStore = useMembersStore()
@@ -14,31 +13,25 @@ const ui = useUiStore()
 const { activeTeam, activeTeamId, activeWorkspaceId } = storeToRefs(teamsStore)
 const {
   members,
+  notMembers,
   loading: membersLoading,
+  notMembersLoading,
   writing: membersWriting,
   error: membersError,
+  notMembersError,
   permissionDenied,
 } = storeToRefs(membersStore)
 const currentUserId = getAuthUserId()
 
 const searchMemberQuery = ref('')
-const newMemberInput = ref('')
-const isAdding = ref(false)
+const pickerOpen = ref(false)
+const pickerQuery = ref('')
+const debouncedPickerQuery = ref('')
+const selectedUserIds = ref(new Set())
 const removingUserId = ref(null)
 const actionError = ref('')
 const successNotice = ref('')
-
-const searchSuggestions = ref([])
-const isSearchingSuggestions = ref(false)
-const hoveredMember = ref(null)
-
-function showProfilePreview(member) {
-  hoveredMember.value = member
-}
-
-function hideProfilePreview() {
-  hoveredMember.value = null
-}
+let debounceTimer = null
 
 function isCurrentUser(member) {
   return (
@@ -59,70 +52,78 @@ watch(
   { immediate: true },
 )
 
+watch(pickerQuery, (query) => {
+  clearTimeout(debounceTimer)
+  debounceTimer = setTimeout(() => {
+    debouncedPickerQuery.value = query.trim().toLocaleLowerCase()
+  }, 200)
+})
+
 const filteredMembers = computed(() => {
-  if (!searchMemberQuery.value.trim()) return members.value
-  const q = searchMemberQuery.value.toLowerCase().trim()
+  const q = searchMemberQuery.value.trim().toLocaleLowerCase()
+  if (!q) return members.value
   return members.value.filter(
     (member) =>
-      (member.name ?? '').toLowerCase().includes(q) ||
-      (member.email && member.email.toLowerCase().includes(q)),
+      (member.name ?? '').toLocaleLowerCase().includes(q) ||
+      (member.email && member.email.toLocaleLowerCase().includes(q)),
   )
 })
 
-let debounceTimer = null
-async function onAddInputChange() {
-  clearTimeout(debounceTimer)
-  const q = newMemberInput.value.trim()
-  if (!q) {
-    searchSuggestions.value = []
-    return
+const eligibleUsers = computed(() =>
+  notMembers.value.filter(
+    (user) =>
+      user.userId != null &&
+      String(user.userId) !== String(currentUserId) &&
+      !members.value.some((member) => String(member.userId) === String(user.userId)),
+  ),
+)
+
+const filteredPickerUsers = computed(() => {
+  const query = debouncedPickerQuery.value
+  if (!query) return eligibleUsers.value
+  return eligibleUsers.value.filter(
+    (user) =>
+      (user.name ?? '').toLocaleLowerCase().includes(query) ||
+      (user.email ?? '').toLocaleLowerCase().includes(query),
+  )
+})
+
+async function openPicker() {
+  pickerOpen.value = true
+  pickerQuery.value = ''
+  debouncedPickerQuery.value = ''
+  selectedUserIds.value = new Set()
+  actionError.value = ''
+  if (activeWorkspaceId.value && activeTeamId.value) {
+    await membersStore.fetchNotMembers(activeWorkspaceId.value, activeTeamId.value)
   }
-
-  debounceTimer = setTimeout(async () => {
-    isSearchingSuggestions.value = true
-    try {
-      const results = await searchUsers(q, activeWorkspaceId.value)
-      // filter out existing members
-      searchSuggestions.value = results.filter(
-        (user) => !members.value.some((member) => member.userId === user.id),
-      )
-    } catch (error) {
-      actionError.value = error?.message || 'Could not search for users.'
-      searchSuggestions.value = []
-    } finally {
-      isSearchingSuggestions.value = false
-    }
-  }, 200)
 }
 
-function selectSuggestion(user) {
-  newMemberInput.value = user.name
-  searchSuggestions.value = []
-  handleAddUser(user.id)
+function toggleUserSelection(userId) {
+  const selected = new Set(selectedUserIds.value)
+  if (selected.has(userId)) selected.delete(userId)
+  else selected.add(userId)
+  selectedUserIds.value = selected
 }
 
-async function handleAddUser(userId = null) {
-  if (!userId || !activeWorkspaceId.value || !activeTeamId.value) return
+async function handleAddSelected() {
+  const userIds = [...selectedUserIds.value]
+  if (!userIds.length || !activeWorkspaceId.value || !activeTeamId.value) return
 
-  isAdding.value = true
   actionError.value = ''
   successNotice.value = ''
 
   try {
-    const response = await membersStore.addMember(activeWorkspaceId.value, activeTeamId.value, [
-      userId,
-    ])
-    if (membersStore.error) actionError.value = membersStore.error
-    else {
-      successNotice.value =
-        response?.message || `Member added to ${activeTeam.value?.name || 'team'}.`
-    }
-    newMemberInput.value = ''
-    searchSuggestions.value = []
+    const response =
+      userIds.length === 1
+        ? await membersStore.addMember(activeWorkspaceId.value, activeTeamId.value, userIds[0])
+        : await membersStore.addMembers(activeWorkspaceId.value, activeTeamId.value, userIds)
+    successNotice.value =
+      response?.message || `Member${userIds.length === 1 ? '' : 's'} added successfully.`
+    selectedUserIds.value = new Set()
+    pickerOpen.value = false
   } catch (err) {
     actionError.value = membersStore.error || err?.message || 'Could not add member.'
-  } finally {
-    isAdding.value = false
   }
 }
 
@@ -166,10 +167,12 @@ async function handleRemove(member) {
 function handleClose() {
   ui.toggleMemberManageModal()
   searchMemberQuery.value = ''
-  newMemberInput.value = ''
+  pickerOpen.value = false
+  pickerQuery.value = ''
+  selectedUserIds.value = new Set()
   actionError.value = ''
   successNotice.value = ''
-  searchSuggestions.value = []
+  clearTimeout(debounceTimer)
 }
 
 function handleKeydown(event) {
@@ -180,11 +183,16 @@ function handleKeydown(event) {
 }
 
 onMounted(() => document.addEventListener('keydown', handleKeydown))
-onBeforeUnmount(() => document.removeEventListener('keydown', handleKeydown))
+onBeforeUnmount(() => {
+  document.removeEventListener('keydown', handleKeydown)
+  clearTimeout(debounceTimer)
+})
 
 function getInitials(name) {
-  return name
-    .split(' ')
+  return String(name || 'Member')
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
     .map((w) => w[0])
     .join('')
     .toUpperCase()
@@ -245,49 +253,76 @@ function getInitials(name) {
           You do not have permission to manage this team’s members. The list is read-only.
         </p>
 
-        <!-- Add Member section -->
-        <div class="add-section">
-          <label class="section-label">Add New Member</label>
-          <div class="add-input-wrapper">
-            <input
-              v-model="newMemberInput"
-              type="text"
-              class="add-input"
-              placeholder="Enter name or email..."
-              @input="onAddInputChange"
-              @keydown.enter.prevent="handleAddUser()"
-            />
-            <button
-              type="button"
-              class="add-btn"
-              :disabled="isAdding || membersWriting"
-              @click="searchSuggestions.length ? selectSuggestion(searchSuggestions[0]) : null"
-            >
-              <span v-if="isAdding">Adding...</span>
-              <span v-else>Add Member</span>
-            </button>
-          </div>
+        <section class="add-section" aria-label="Add team members">
+          <button
+            type="button"
+            class="add-btn"
+            :disabled="membersWriting || (permissionDenied && !pickerOpen)"
+            :aria-expanded="pickerOpen"
+            @click="pickerOpen ? (pickerOpen = false) : openPicker()"
+          >
+            {{ pickerOpen ? 'Close member picker' : 'Add members' }}
+          </button>
 
-          <!-- Autocomplete Suggestions -->
-          <div v-if="searchSuggestions.length > 0" class="suggestions-dropdown">
-            <button
-              v-for="user in searchSuggestions"
-              :key="user.id"
-              type="button"
-              class="suggestion-row"
-              @click="selectSuggestion(user)"
-            >
-              <div class="suggestion-avatar">
-                {{ getInitials(user.name) }}
-              </div>
-              <div class="suggestion-meta">
-                <span class="suggestion-name">{{ user.name }}</span>
-                <span class="suggestion-email">{{ user.email }}</span>
-              </div>
-              <span class="invite-label">+ Add</span>
-            </button>
+          <div v-if="pickerOpen" class="member-picker">
+            <label class="section-label" for="member-picker-search">Search by user name</label>
+            <input
+              id="member-picker-search"
+              v-model="pickerQuery"
+              type="search"
+              class="add-input"
+              placeholder="Search by user name"
+              :disabled="notMembersLoading || permissionDenied"
+              @keydown.enter.prevent="handleAddSelected"
+            />
+            <div v-if="notMembersLoading" class="loading-state" role="status">Loading users...</div>
+            <div v-else-if="notMembersError" class="error-banner" role="alert">
+              {{ notMembersError }}
+              <button
+                type="button"
+                class="retry-members"
+                @click="membersStore.fetchNotMembers(activeWorkspaceId, activeTeamId)"
+              >
+                Retry
+              </button>
+            </div>
+            <div v-else-if="notMembers.length === 0" class="empty-state" role="status">
+              No users available to add.
+            </div>
+            <div v-else-if="filteredPickerUsers.length === 0" class="empty-state" role="status">
+              No users found
+            </div>
+            <ul v-else class="picker-list" aria-label="Available users">
+              <li v-for="user in filteredPickerUsers" :key="user.userId" class="picker-row">
+                <label class="picker-user">
+                  <input
+                    type="checkbox"
+                    :checked="selectedUserIds.has(user.userId)"
+                    :disabled="membersWriting || permissionDenied"
+                    @change="toggleUserSelection(user.userId)"
+                  />
+                  <span class="suggestion-avatar">{{ getInitials(user.name) }}</span>
+                  <span class="suggestion-meta">
+                    <span class="suggestion-name">{{ user.name }}</span>
+                    <span v-if="user.email" class="suggestion-email">{{ user.email }}</span>
+                  </span>
+                </label>
+              </li>
+            </ul>
+            <div class="picker-footer">
+              <span>{{ selectedUserIds.size }} selected</span>
+              <button
+                type="button"
+                class="add-btn"
+                :disabled="selectedUserIds.size === 0 || membersWriting || permissionDenied"
+                @click="handleAddSelected"
+              >
+                <span v-if="membersWriting">Adding...</span>
+                <span v-else>Add selected</span>
+              </button>
+            </div>
           </div>
-        </div>
+        </section>
 
         <!-- Member list header & search -->
         <div class="list-section">
@@ -320,14 +355,16 @@ function getInitials(name) {
             <ul v-else class="members-table">
               <li
                 v-for="member in filteredMembers"
-                :key="member.membershipId"
+                :key="member.userId || member.membershipId"
                 class="member-row"
-                @mouseenter="showProfilePreview(member)"
-                @mouseleave="hideProfilePreview()"
               >
                 <div class="member-user-info">
                   <div class="member-avatar">
-                    <img v-if="member.avatar" :src="member.avatar" alt="" />
+                    <img
+                      v-if="member.avatarUrl || member.avatar"
+                      :src="member.avatarUrl || member.avatar"
+                      alt=""
+                    />
                     <template v-else>{{ getInitials(member.name || 'Member') }}</template>
                     <span
                       class="status-indicator"
@@ -342,19 +379,24 @@ function getInitials(name) {
                     <span class="member-name">
                       {{ member.name || 'Member' }}<span v-if="isCurrentUser(member)"> (You)</span>
                     </span>
-                    <span class="member-email">{{ member.email || 'team-member' }}</span>
                   </div>
                 </div>
 
                 <div class="member-actions">
-                  <span class="role-badge" :class="`role-badge--${member.role}`">
+                  <span v-if="member.isCreator" class="role-badge role-badge--admin">
+                    Creator
+                  </span>
+                  <span
+                    v-else-if="member.role"
+                    class="role-badge"
+                    :class="`role-badge--${member.role}`"
+                  >
                     {{ member.role }}
                   </span>
 
                   <!-- Remove button -->
                   <button
                     v-if="
-                      member.role !== 'admin' &&
                       member.userId &&
                       String(member.userId) !== String(currentUserId) &&
                       !permissionDenied
@@ -381,44 +423,6 @@ function getInitials(name) {
                       />
                     </svg>
                   </button>
-                </div>
-
-                <div
-                  v-if="hoveredMember && hoveredMember.membershipId === member.membershipId"
-                  class="member-hover-card"
-                  aria-live="polite"
-                >
-                  <div class="member-hover-card__header">
-                    <div class="member-hover-card__avatar">
-                      {{ getInitials(member.name || 'Member') }}
-                    </div>
-                    <span
-                      class="member-hover-card__status"
-                      :class="`member-hover-card__status--${member.status ?? 'offline'}`"
-                    >
-                      {{ member.status === 'online' ? 'Online' : 'Offline' }}
-                    </span>
-                  </div>
-
-                  <div class="member-hover-card__body">
-                    <h4>{{ member.name || 'Member' }}</h4>
-                    <p>{{ member.email || 'team-member' }}</p>
-                  </div>
-
-                  <div class="member-hover-card__actions">
-                    <button
-                      type="button"
-                      class="member-hover-card__action member-hover-card__action--primary"
-                    >
-                      Message
-                    </button>
-                    <button
-                      type="button"
-                      class="member-hover-card__action member-hover-card__action--secondary"
-                    >
-                      Profile
-                    </button>
-                  </div>
                 </div>
               </li>
             </ul>
@@ -547,6 +551,67 @@ function getInitials(name) {
   flex-direction: column;
   gap: 6px;
   position: relative;
+}
+
+.member-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  padding: 10px;
+}
+
+.picker-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 180px;
+  overflow-y: auto;
+  margin: 0;
+  padding: 0;
+}
+
+.picker-row {
+  border-radius: 6px;
+}
+
+.picker-row:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.picker-user {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px;
+  cursor: pointer;
+}
+
+.picker-user input {
+  accent-color: var(--color-indigo-400);
+}
+
+.picker-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.picker-footer > span {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.retry-members {
+  margin-left: 8px;
+  border: 0;
+  background: transparent;
+  color: var(--color-indigo-300);
+  cursor: pointer;
+  text-decoration: underline;
 }
 
 .add-input-wrapper {

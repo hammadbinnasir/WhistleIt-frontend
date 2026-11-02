@@ -45,6 +45,15 @@ describe('channel API normalizers', () => {
     })
   })
 
+  it('does not assume a channel without membership data is joined', () => {
+    expect(
+      normalizeChannel({ id: 'channel-4', name: 'Design Reviews' }).isMember,
+    ).toBe(false)
+    expect(
+      normalizeChannel({ id: 'channel-5', name: 'Random', is_member: 'false' }).isMember,
+    ).toBe(false)
+  })
+
   it('rejects channel records without an ID or visible name', () => {
     expect(() => normalizeChannel({ channel_id: 'channel-3' })).toThrow(
       'A channel response is missing its ID or name.',
