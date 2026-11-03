@@ -13,7 +13,13 @@ export function asList(res) {
   const payload = body?.data ?? body
   const items = Array.isArray(payload)
     ? payload
-    : (payload?.items ?? payload?.channels ?? payload?.members ?? [])
+    : (payload?.items ??
+      payload?.channels ??
+      payload?.members ??
+      payload?.available_members ??
+      payload?.availableMembers ??
+      payload?.users ??
+      [])
   const total = Array.isArray(payload) ? payload.length : (payload?.total ?? items.length)
   return { items, total }
 }
@@ -57,7 +63,7 @@ export function normalizeChannel(raw = {}) {
 
 export function normalizeMember(raw = {}) {
   if (typeof raw === 'string' || typeof raw === 'number') {
-    return { id: String(raw), name: '', avatarUrl: '', status: 'offline' }
+    return { id: String(raw), name: '', email: '', avatarUrl: '', status: 'offline' }
   }
 
   const user = raw.user && typeof raw.user === 'object' ? raw.user : {}
@@ -73,10 +79,18 @@ export function normalizeMember(raw = {}) {
         raw.id ??
         '',
     ),
-    name: raw.name ?? user.name ?? '',
-    avatarUrl: raw.avatarUrl ?? raw.avatar_url ?? user.avatarUrl ?? user.avatar_url ?? '',
+    name: raw.name ?? raw.full_name ?? raw.fullName ?? user.name ?? user.full_name ?? '',
+    email: raw.email ?? user.email ?? '',
+    avatarUrl:
+      raw.avatarUrl ??
+      raw.avatar_url ??
+      raw.avatar ??
+      user.avatarUrl ??
+      user.avatar_url ??
+      user.avatar ??
+      '',
     status: ['online', 'away'].includes(raw.status ?? user.status)
-      ? raw.status ?? user.status
+      ? (raw.status ?? user.status)
       : 'offline',
   }
 }

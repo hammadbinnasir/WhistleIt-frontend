@@ -2,6 +2,7 @@ import { useMembersStore } from '@/stores/members'
 import { useTeamsStore } from '@/stores/teams'
 import {
   addChannelMember,
+  listAvailableMembers as listAvailableChannelMembers,
   listMembers as listChannelMembers,
   removeChannelMember,
 } from '@/features/channels/api/channels.api'
@@ -36,6 +37,21 @@ export async function listMembers(channelId = null) {
     role: member.role || 'member',
     status: member.status || 'offline',
   }))
+}
+
+export async function listAvailableMembers(channelId) {
+  if (!channelId) throw new Error('A channel ID is required to list available members.')
+  const { items } = await listAvailableChannelMembers(channelId)
+  return items
+    .filter((member) => member.id)
+    .map((member) => ({
+      id: member.id,
+      name: member.name || member.email || 'User',
+      email: member.email || '',
+      avatar: member.avatarUrl || '',
+      role: member.role || 'member',
+      status: member.status || 'offline',
+    }))
 }
 
 export async function removeMember(userId, channelId) {

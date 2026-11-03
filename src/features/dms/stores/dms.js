@@ -498,7 +498,16 @@ export const useDmStore = defineStore('dms', () => {
   function editMessage(conversationId, messageId, text) {
     const conversation = conversations.value.find((item) => item.id === conversationId)
     const message = conversation?.messages.find((item) => item.id === messageId)
-    if (!message || message.from !== meId.value || message.scheduled || !text.trim()) return false
+    if (
+      !message ||
+      message.from !== meId.value ||
+      message.scheduled ||
+      message.deleted ||
+      message.deleteScheduledAt ||
+      !text.trim()
+    ) {
+      return false
+    }
     message.text = text.trim()
     message.editedAt = new Date().toISOString()
     if (initializedCompanyId && message.id.startsWith('local-')) {
@@ -507,7 +516,7 @@ export const useDmStore = defineStore('dms', () => {
     return true
   }
 
-  function deleteMessage(conversationId, messageId) {
+  function deleteMessage(conversationId, messageId, scheduledAt = null) {
     const conversation = conversations.value.find((item) => item.id === conversationId)
     const message = conversation?.messages.find((item) => item.id === messageId)
     if (!conversation || !message || message.from !== meId.value || message.scheduled) return false
@@ -521,7 +530,7 @@ export const useDmStore = defineStore('dms', () => {
   function toggleReaction(conversationId, messageId, emoji) {
     const conversation = conversations.value.find((item) => item.id === conversationId)
     const message = conversation?.messages.find((item) => item.id === messageId)
-    if (!message || !emoji) return false
+    if (!message || message.deleted || !emoji) return false
     if (!message.reactions) message.reactions = []
 
     const userId = meId.value || 'current-user'
