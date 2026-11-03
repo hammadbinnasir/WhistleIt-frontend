@@ -68,7 +68,7 @@ export const useChannelsStore = defineStore('channels', () => {
     error.value = null
     const requestId = ++channelsRequestId
     inflight = api
-      .listMyChannels()
+      .listChannels()
       .then((list) => {
         if (requestId !== channelsRequestId) return
         channels.value = list.filter((channel) => channel.isMember && !channel.isArchived)
@@ -154,13 +154,18 @@ export const useChannelsStore = defineStore('channels', () => {
   // ---------- actions: management ----------
   async function createChannel(payload) {
     const channel = await api.createChannel(payload)
+    channel.canManage = true
     upsertChannel(channel)
     return channel
   }
 
   async function updateChannel(id, payload) {
     const channel = await api.updateChannel(id, payload)
-    const editable = { name: channel.name, description: channel.description }
+    const editable = {
+      name: channel.name,
+      description: channel.description,
+      messagePermission: channel.messagePermission,
+    }
     patch(id, editable)
     patchBrowse(id, editable)
     return getById(id) || channel

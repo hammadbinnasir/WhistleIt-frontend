@@ -28,7 +28,6 @@ const channelsStore = useChannelsStore()
 const ui = useUiStore()
 const messageStore = useMessagesStore()
 const messagesContainer = ref(null)
-const messages = ref([])
 const editingId = ref(null)
 const editDraft = ref('')
 const replyTo = ref(null)
@@ -201,16 +200,6 @@ function togglePin(message) {
 }
 
 function addMessage(payload) {
-  if (payload.poll) {
-    messages.value.push({
-      ...payload,
-      scheduledAt: null,
-      author: dms.usersById[dms.meId]?.name || 'You',
-      mine: true,
-    })
-    scrollMessagesToLatest()
-    return
-  }
   const messagePayload = replyTo.value ? { ...payload, replyTo: { ...replyTo.value } } : payload
   const sentMessage = conversation.value
     ? dms.sendMessage(conversation.value.id, messagePayload)
@@ -224,6 +213,7 @@ function addMessage(payload) {
     ui.toast('Message not sent', 'The conversation could not be found.', 'error')
     return
   }
+  if (payload.poll) sentMessage.poll = payload.poll
   if (!conversation.value && !sentMessage.scheduled) {
     ui.addPoll(sentMessage, conversationMeta.value)
     addMockMessage({
@@ -536,12 +526,28 @@ function togglePollResponse(question, questionIndex, optionIndex) {
 function submitPollResponse() {
   if (!activePoll.value) return
   const poll = activePoll.value
+  const missingRequiredResponse = poll.questions.some(
+    (question, questionIndex) =>
+      question.required &&
+      question.type === 'openEnded' &&
+      !String(pollResponses.value[questionIndex] || '').trim(),
+  )
+  if (missingRequiredResponse) return
   const existingResult = pollResults.value[poll.id] || {
     totalVotes: 0,
     questions: poll.questions.map((question) => ({ votes: Array(question.options.length).fill(0) })),
+    responses: poll.questions.map(() => []),
+  }
+  if (!existingResult.responses) {
+    existingResult.responses = poll.questions.map(() => [])
   }
   existingResult.totalVotes += 1
   poll.questions.forEach((question, questionIndex) => {
+    if (question.type === 'openEnded') {
+      const response = String(pollResponses.value[questionIndex] || '').trim()
+      if (response) existingResult.responses[questionIndex].push(response)
+      return
+    }
     if (question.multiple) {
       question.options.forEach((_, optionIndex) => {
         if (pollResponses.value[pollResponseKey(questionIndex, optionIndex)]) {
@@ -1027,7 +1033,21 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', closeActionsOn
           >
             <h3>Q{{ questionIndex + 1 }}. {{ question.text }}<b v-if="question.required"> *</b></h3>
             <template v-if="activePollMode === 'results'">
-              <div class="composer-conversation__poll-results-options">
+              <div v-if="question.type === 'openEnded'" class="composer-conversation__poll-text-results">
+                <p v-if="pollResults[activePoll.id]?.responses?.[questionIndex]?.length">
+                  Responses
+                </p>
+                <blockquote
+                  v-for="response in pollResults[activePoll.id].responses[questionIndex]"
+                  :key="response"
+                >
+                  {{ response }}
+                </blockquote>
+                <strong class="composer-conversation__poll-total-votes">
+                  Total Responses: {{ pollResults[activePoll.id]?.responses?.[questionIndex]?.length || 0 }}
+                </strong>
+              </div>
+              <div v-else class="composer-conversation__poll-results-options">
                 <div
                   v-for="(option, optionIndex) in question.options"
                   :key="option"
@@ -1036,6 +1056,12 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', closeActionsOn
                   <span>{{ option }}</span>
                   <div class="composer-conversation__poll-result-row">
                     <div class="composer-conversation__poll-result-bar">
+                      <span
+                        class="composer-conversation__poll-result-fill"
+                        :style="{
+                          width: `${pollResultFor(activePoll.id, questionIndex, optionIndex).percentage}%`,
+                        }"
+                      ></span>
                       <strong>
                         {{ pollResultFor(activePoll.id, questionIndex, optionIndex).percentage }}%
                       </strong>
@@ -1066,6 +1092,14 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', closeActionsOn
                 </label>
               </div>
             </template>
+            <textarea
+              v-else-if="question.type === 'openEnded'"
+              v-model="pollResponses[questionIndex]"
+              class="composer-conversation__poll-open-ended-input"
+              :aria-label="`Response to question ${questionIndex + 1}`"
+              :placeholder="question.required ? 'Write your response (required)' : 'Write your response (optional)'"
+              rows="4"
+            ></textarea>
             <div v-else class="composer-conversation__poll-choice-options">
               <label v-for="(option, optionIndex) in question.options" :key="option">
                 <input
@@ -1083,10 +1117,16 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', closeActionsOn
             </div>
           </div>
           <footer
-            v-if="activePollMode !== 'results'"
             class="composer-conversation__poll-response-footer"
           >
-            <button type="button" @click="submitPollResponse">Submit Response</button>
+            <button
+              v-if="activePollMode !== 'results'"
+              type="button"
+              @click="submitPollResponse"
+            >
+              Submit Response
+            </button>
+            <button type="button" class="is-close" @click="closePollResponse">Close</button>
           </footer>
         </section>
       </div>
@@ -1505,6 +1545,42 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', closeActionsOn
   padding: 20px 4px 0;
 }
 
+.composer-conversation__poll-open-ended-input {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  margin-top: 20px;
+  padding: 12px;
+  border: 1px solid #c9ccda;
+  border-radius: 4px;
+  background: #fff;
+  color: #25263a;
+  font: inherit;
+  resize: vertical;
+}
+
+.composer-conversation__poll-open-ended-input:focus {
+  border-color: #5962ff;
+  outline: 2px solid rgb(89 98 255 / 20%);
+}
+
+.composer-conversation__poll-text-results {
+  padding: 18px 4px 0;
+  color: #696d81;
+}
+
+.composer-conversation__poll-text-results p {
+  margin: 0 0 8px;
+  font-weight: 600;
+}
+
+.composer-conversation__poll-text-results blockquote {
+  margin: 8px 0;
+  padding: 10px 12px;
+  border-left: 3px solid #929bff;
+  background: #fff;
+}
+
 .composer-conversation__poll-choice-options label {
   display: flex;
   align-items: center;
@@ -1563,17 +1639,29 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', closeActionsOn
 }
 
 .composer-conversation__poll-result-bar {
+  position: relative;
   display: flex;
   min-width: 0;
   height: 24px;
   flex: 1;
   align-items: center;
   justify-content: center;
-  background: #bec3f5;
+  overflow: hidden;
+  background: #d9dcfa;
   color: #25263a;
 }
 
+.composer-conversation__poll-result-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  min-width: 0;
+  background: #5962ff;
+  transition: width 180ms ease;
+}
+
 .composer-conversation__poll-result-bar strong {
+  position: relative;
+  z-index: 1;
   font-size: 14px;
 }
 
@@ -1596,19 +1684,46 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', closeActionsOn
 
 .composer-conversation__poll-response-footer {
   display: flex;
+  gap: 12px;
   justify-content: flex-end;
+  border-top: 1px solid #d5d7e2;
   padding: 28px;
 }
 
 .composer-conversation__poll-response-footer button {
   padding: 12px 16px;
-  border: 0;
+  border: 1px solid #5962ff;
+  border-radius: 2px;
   background: #929bff;
   color: #fff;
   font: inherit;
   font-size: 16px;
   font-weight: 700;
   cursor: pointer;
+  transition:
+    background-color 120ms ease,
+    border-color 120ms ease,
+    color 120ms ease;
+}
+
+.composer-conversation__poll-response-footer button:hover,
+.composer-conversation__poll-actions button:not(.is-done):hover {
+  border-color: #27338f;
+  background: #27338f;
+  color: #fff;
+}
+
+.composer-conversation__poll-response-footer button.is-close {
+  border-color: transparent;
+  background: transparent;
+  color: #25263a;
+  text-transform: uppercase;
+}
+
+.composer-conversation__poll-response-footer button.is-close:hover {
+  border-color: #27338f;
+  background: #27338f;
+  color: #fff;
 }
 
 .composer-conversation__action-toolbar {

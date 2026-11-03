@@ -13,7 +13,7 @@ export function asList(res) {
   const payload = body?.data ?? body
   const items = Array.isArray(payload)
     ? payload
-    : (payload?.items ?? payload?.channels ?? [])
+    : (payload?.items ?? payload?.channels ?? payload?.members ?? [])
   const total = Array.isArray(payload) ? payload.length : (payload?.total ?? items.length)
   return { items, total }
 }
@@ -51,14 +51,32 @@ export function normalizeChannel(raw = {}) {
     unreadCount: Number(record.unreadCount ?? record.unread_count) || 0,
     memberCount: Number(record.memberCount ?? record.member_count) || 0,
     canManage: Boolean(record.canManage ?? record.can_manage),
+    messagePermission: record.messagePermission ?? record.message_permission ?? 'everyone',
   }
 }
 
 export function normalizeMember(raw = {}) {
+  if (typeof raw === 'string' || typeof raw === 'number') {
+    return { id: String(raw), name: '', avatarUrl: '', status: 'offline' }
+  }
+
+  const user = raw.user && typeof raw.user === 'object' ? raw.user : {}
   return {
-    id: String(raw.id),
-    name: raw.name ?? '',
-    avatarUrl: raw.avatarUrl ?? '',
-    status: ['online', 'away'].includes(raw.status) ? raw.status : 'offline',
+    id: String(
+      raw.user_id ??
+        raw.userId ??
+        user.id ??
+        user.user_id ??
+        raw.joined_by ??
+        raw.joinedBy ??
+        raw.member_id ??
+        raw.id ??
+        '',
+    ),
+    name: raw.name ?? user.name ?? '',
+    avatarUrl: raw.avatarUrl ?? raw.avatar_url ?? user.avatarUrl ?? user.avatar_url ?? '',
+    status: ['online', 'away'].includes(raw.status ?? user.status)
+      ? raw.status ?? user.status
+      : 'offline',
   }
 }

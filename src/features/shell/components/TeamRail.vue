@@ -13,6 +13,7 @@ const emit = defineEmits(['invite'])
 const {
   activeWorkspaceId,
   activeTeamId,
+  isAdmin,
   teamsOfActiveWorkspace,
   workspacesLoading,
   workspacesError,
@@ -95,11 +96,6 @@ function handleDocumentKeydown(event) {
 function openCreateTeam() {
   closeTeamActions()
   ui.toggleTeamCreateModal()
-}
-
-function openJoinTeam() {
-  closeTeamActions()
-  ui.toggleTeamJoinModal()
 }
 
 function retryLoad() {
@@ -231,11 +227,12 @@ onBeforeUnmount(() => {
         </div>
 
         <button
+          v-if="isAdmin"
           ref="teamActionsButton"
           type="button"
           class="team-rail__add"
           aria-label="Team actions"
-          title="Create or join a team"
+          title="Create a team"
           aria-haspopup="menu"
           :aria-expanded="teamActionsOpen"
           :disabled="!activeWorkspaceId"
@@ -292,7 +289,6 @@ onBeforeUnmount(() => {
         :style="{ top: `${teamActionsPosition.top}px`, left: `${teamActionsPosition.left}px` }"
       >
         <button type="button" role="menuitem" @click="openCreateTeam">Create a team</button>
-        <button type="button" role="menuitem" @click="openJoinTeam">Join a team</button>
       </div>
     </Teleport>
   </aside>

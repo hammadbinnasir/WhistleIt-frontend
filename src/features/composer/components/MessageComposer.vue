@@ -2757,6 +2757,14 @@ function handleKeydown(event) {
   cursor: pointer;
 }
 
+.message-composer__poll-footer .message-composer__poll-previous {
+  color: #70727f;
+}
+
+.message-composer__poll-footer .message-composer__poll-previous:disabled {
+  color: #a0a2ad;
+}
+
 .message-composer__poll-footer button:disabled {
   cursor: not-allowed;
 }

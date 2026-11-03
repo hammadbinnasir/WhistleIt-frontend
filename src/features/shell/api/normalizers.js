@@ -30,9 +30,14 @@ export function normalizeWorkspaces(response) {
       throw new Error('A workspace is missing its ID or name.')
     }
 
+    const rawRole = company.role ?? company.roles
+    const role = typeof rawRole === 'string' && rawRole.trim() ? rawRole.trim().toLowerCase() : null
+
     return {
       id: String(company.id),
       name,
+      role,
+      isAdmin: role === 'admin',
       initials:
         String(company.code ?? '')
           .trim()
@@ -239,6 +244,23 @@ export function normalizeMembers(response) {
   })
 }
 
+export function normalizeCompanyMembers(response) {
+  const records = unwrapResponse(response)?.companyusers?.members
+  if (!Array.isArray(records)) {
+    throw new Error('The company members response is missing data.companyusers.members.')
+  }
+
+  return records.flatMap((record) => {
+    if (record?.id == null || String(record.id).trim() === '') return []
+    return [
+      {
+        userId: String(record.id),
+        name: String(record.name ?? 'Member').trim() || 'Member',
+      },
+    ]
+  })
+}
+
 export function normalizeNotMembers(response) {
   const records = unwrapResponse(response)?.notteamusers?.members
   if (!Array.isArray(records)) {
@@ -248,7 +270,7 @@ export function normalizeNotMembers(response) {
   return records.flatMap((record) => {
     if (record?.id == null || String(record.id).trim() === '') return []
 
-    // ASSUMED: email and avatar are optional fields until verified in a non-empty live response.
+    // confirmed by backend developer: id and name suffice; email/avatar optional
     const member = {
       userId: String(record.id),
       name: String(record.name ?? 'Member').trim() || 'Member',

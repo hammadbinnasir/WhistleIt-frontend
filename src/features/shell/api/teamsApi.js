@@ -72,13 +72,6 @@ export function createTeam(payload) {
     })
 }
 
-export function joinTeam(inviteCode, workspaceId = null) {
-  // TODO: Replace with the team-join endpoint when the backend contract is available.
-  return import('./__mocks__/teams.mock').then((mock) =>
-    mock.mockJoinTeam(inviteCode, USE_SHELL_MOCKS ? null : workspaceId),
-  )
-}
-
 export function updateTeam(workspaceId, teamId, payload) {
   const path = `${getTeamsPath(workspaceId)}/${encodeURIComponent(teamId)}`
   if (USE_SHELL_MOCKS) {
