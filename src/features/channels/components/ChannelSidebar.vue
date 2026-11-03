@@ -1,7 +1,6 @@
 <script setup>
-import { computed, ref, watch } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useDmStore } from '@/features/dms/stores/dms'
-import { useTeamsStore } from '@/stores/teams'
 import { useUiStore } from '@/stores/ui'
 import { useChannelsStore } from '../store/channels.store'
 import { useChannelsUiStore } from '../store/channels.ui.store'
@@ -15,7 +14,6 @@ import ChannelDialogs from './ChannelDialogs.vue'
 import '../styles/tokens.css'
 
 const store = useChannelsStore()
-const teams = useTeamsStore()
 const dms = useDmStore()
 const appUi = useUiStore()
 const ui = useChannelsUiStore()
@@ -37,7 +35,7 @@ const shownChannels = computed(() => {
 const menuItems = computed(() => menuItemsFor(store.getById(menu.value.channelId)))
 
 // Keep the selection valid: pick the default (or first) channel when nothing is selected,
-// and recover if the selected channel no longer exists (left or deleted).
+// and recover if the selected channel no longer exists (left, archived, deleted).
 function ensureSelection() {
   if (!store.loaded) return
 
@@ -58,24 +56,7 @@ function selectChannel(id) {
   appUi.closePanel()
 }
 
-let loadedScope = null
-watch(
-  () => [teams.activeWorkspaceId, teams.activeTeamId, teams.activeTeam?.id],
-  ([companyId, teamId]) => {
-    if (!companyId || !teamId || !teams.activeTeam) {
-      if (loadedScope) store.reset()
-      loadedScope = null
-      return
-    }
-
-    const scope = `${companyId}:${teamId}`
-    if (scope === loadedScope) return
-    loadedScope = scope
-    store.reset()
-    store.fetchChannels()
-  },
-  { immediate: true },
-)
+onMounted(() => store.fetchChannels())
 watch(() => [store.loaded, store.channels.length, dms.activeId, activeId.value], ensureSelection, {
   immediate: true,
 })

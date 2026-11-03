@@ -13,13 +13,12 @@ export const useChannelsStore = defineStore('channels', () => {
 
   let inflight = null
   let browseRequestId = 0
-  let channelsRequestId = 0
-  const memberRequestIds = new Map()
 
   // ---------- getters ----------
-  // Keep the order supplied by the team API; channels without these fields remain supported.
+  // Sidebar order: favorites first, then the server order. Archived channels are hidden.
   const visibleChannels = computed(() => {
-    return channels.value.filter((channel) => channel.isMember && !channel.isArchived)
+    const active = channels.value.filter((c) => !c.isArchived)
+    return [...active.filter((c) => c.isFavorite), ...active.filter((c) => !c.isFavorite)]
   })
 
   function getById(id) {
@@ -38,6 +37,20 @@ export const useChannelsStore = defineStore('channels', () => {
     if (index !== -1) browse.value.items[index] = { ...browse.value.items[index], ...changes }
   }
 
+  // Apply a change immediately, call the API, roll back if it fails (error is re-thrown).
+  async function optimistic(id, changes, request) {
+    const channel = getById(id)
+    if (!channel) return
+    const previous = Object.fromEntries(Object.keys(changes).map((key) => [key, channel[key]]))
+    patch(id, changes)
+    try {
+      await request()
+    } catch (err) {
+      patch(id, previous)
+      throw err
+    }
+  }
+
   // ---------- actions: list ----------
   // Never rejects; check `error`. Concurrent callers share one request.
   function fetchChannels({ force = false } = {}) {
@@ -45,20 +58,16 @@ export const useChannelsStore = defineStore('channels', () => {
     if (loaded.value && !force) return Promise.resolve()
     loading.value = true
     error.value = null
-    const requestId = ++channelsRequestId
     inflight = api
       .listChannels()
       .then((list) => {
-        if (requestId !== channelsRequestId) return
-        channels.value = list.filter((channel) => channel.isMember && !channel.isArchived)
+        channels.value = list
         loaded.value = true
       })
       .catch((err) => {
-        if (requestId !== channelsRequestId) return
         error.value = err?.message || 'Failed to load channels.'
       })
       .finally(() => {
-        if (requestId !== channelsRequestId) return
         loading.value = false
         inflight = null
       })
@@ -84,42 +93,27 @@ export const useChannelsStore = defineStore('channels', () => {
 
   async function fetchMembers(id, { limit = 10 } = {}) {
     const key = String(id)
-    const requestId = (memberRequestIds.get(key) || 0) + 1
-    memberRequestIds.set(key, requestId)
     const previous = members.value[key] || { items: [], total: 0 }
     members.value[key] = { ...previous, loading: true, error: false }
     try {
       const { items, total } = await api.listMembers(key, { limit })
-      if (memberRequestIds.get(key) !== requestId) return
       members.value[key] = { items, total, loading: false, error: false }
     } catch {
-      if (memberRequestIds.get(key) !== requestId) return
       members.value[key] = { ...previous, loading: false, error: true }
     }
-  }
-
-  async function fetchChannel(id) {
-    const channel = await api.getChannel(id)
-    upsertChannel(channel)
-    return channel
   }
 
   // ---------- actions: management ----------
   async function createChannel(payload) {
     const channel = await api.createChannel(payload)
-    channel.canManage = true
     upsertChannel(channel)
     return channel
   }
 
   async function updateChannel(id, payload) {
     const channel = await api.updateChannel(id, payload)
-    const editable = {
-      name: channel.name,
-      description: channel.description,
-      messagePermission: channel.messagePermission,
-    }
-    patch(id, editable)
+    const editable = { name: channel.name, description: channel.description }
+    patch(id, editable) // only editable fields, so favorite/mute/unread flags are never overwritten
     patchBrowse(id, editable)
     return getById(id) || channel
   }
@@ -137,26 +131,32 @@ export const useChannelsStore = defineStore('channels', () => {
     patchBrowse(id, { isMember: false })
   }
 
-  async function deleteChannel(id) {
-    await api.deleteChannel(id)
+  async function archiveChannel(id) {
+    await api.archiveChannel(id)
     removeChannel(id)
     browse.value.items = browse.value.items.filter((c) => c.id !== String(id))
   }
 
-  function addChannelMember(id, targetUser) {
-    return api.addChannelMember(id, targetUser)
+  function toggleFavorite(id) {
+    const channel = getById(id)
+    if (!channel) return Promise.resolve()
+    const value = !channel.isFavorite
+    return optimistic(id, { isFavorite: value }, () => api.setFavorite(String(id), value))
   }
 
-  function removeChannelMember(id, targetUser) {
-    return api.removeChannelMember(id, targetUser)
+  function toggleMute(id) {
+    const channel = getById(id)
+    if (!channel) return Promise.resolve()
+    const value = !channel.isMuted
+    return optimistic(id, { isMuted: value }, () => api.setMuted(String(id), value))
+  }
+
+  function markUnread(id) {
+    return optimistic(id, { isUnread: true }, () => api.markUnread(String(id)))
   }
 
   // ---------- local mutations (also usable by a realtime/socket handler) ----------
   function upsertChannel(channel) {
-    if (!channel.isMember) {
-      removeChannel(channel.id)
-      return
-    }
     const index = channels.value.findIndex((c) => c.id === channel.id)
     if (index === -1) channels.value.push(channel)
     else channels.value[index] = { ...channels.value[index], ...channel }
@@ -167,9 +167,6 @@ export const useChannelsStore = defineStore('channels', () => {
   }
 
   function reset() {
-    channelsRequestId += 1
-    browseRequestId += 1
-    memberRequestIds.clear()
     channels.value = []
     members.value = {}
     browse.value = { items: [], loading: false, error: null }
@@ -191,14 +188,14 @@ export const useChannelsStore = defineStore('channels', () => {
     fetchChannels,
     fetchBrowse,
     fetchMembers,
-    fetchChannel,
     createChannel,
     updateChannel,
     joinChannel,
     leaveChannel,
-    deleteChannel,
-    addChannelMember,
-    removeChannelMember,
+    archiveChannel,
+    toggleFavorite,
+    toggleMute,
+    markUnread,
     upsertChannel,
     removeChannel,
     reset,

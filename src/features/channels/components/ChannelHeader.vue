@@ -1,13 +1,12 @@
 <script setup>
-import { computed, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useChannelsStore } from '../store/channels.store'
 import { useChannelActions } from '../composables/useChannelActions'
 import { HEADER_AVATAR_MAX } from '../constants'
 import ChIcon from './ChIcon.vue'
 import MemberAvatarStack from './MemberAvatarStack.vue'
+import ChannelContextMenu from './ChannelContextMenu.vue'
 import '../styles/tokens.css'
-import { useMembersStore } from '@/stores/members'
-import { useTeamsStore } from '@/stores/teams'
 
 // Drop this into any chat screen:  <ChannelHeader :channel-id="route.params.channelId" />
 const props = defineProps({
@@ -18,24 +17,20 @@ const props = defineProps({
 const emit = defineEmits(['members-click'])
 
 const store = useChannelsStore()
-const { run } = useChannelActions()
-const membersStore = useMembersStore()
-const teamsStore = useTeamsStore()
+const { menuItemsFor, run } = useChannelActions()
 
 const channel = computed(() => store.getById(props.channelId))
-const memberItems = computed(() =>
-  membersStore.members.map((member) => ({
-    id: member.userId || member.membershipId,
-    name: member.name || member.email || 'Team member',
-    avatarUrl: member.avatar || '',
-    status: member.status || 'offline',
-    email: member.email || '',
-  })),
+const memberState = computed(
+  () => store.members[String(props.channelId)] || { items: [], total: 0 },
 )
+const menu = ref({ open: false, x: 0, y: 0 })
+const menuItems = computed(() => menuItemsFor(channel.value))
+
 watch(
-  () => [teamsStore.activeWorkspaceId, teamsStore.activeTeamId],
-  ([workspaceId, teamId]) => {
-    if (workspaceId && teamId) membersStore.fetchMembers(workspaceId, teamId)
+  () => props.channelId,
+  (id) => {
+    if (id !== null && id !== undefined && id !== '')
+      store.fetchMembers(id, { limit: props.maxAvatars })
   },
   { immediate: true },
 )
@@ -43,11 +38,33 @@ watch(
 function toggleFavorite() {
   run('favorite', channel.value)
 }
+
+function openMenu(event) {
+  const rect = event.currentTarget.getBoundingClientRect()
+  menu.value = { open: true, x: rect.left, y: rect.bottom + 4 }
+}
+
+function onMenuSelect(key) {
+  menu.value = { ...menu.value, open: false }
+  run(key, channel.value)
+}
 </script>
 
 <template>
   <header v-if="channel" class="ch-header">
     <div class="ch-header__row">
+      <button
+        class="ch-header__star"
+        :class="{ 'ch-header__star--on': channel.isFavorite }"
+        type="button"
+        :aria-pressed="channel.isFavorite"
+        :aria-label="channel.isFavorite ? 'Remove from favorites' : 'Add to favorites'"
+        :title="channel.isFavorite ? 'Remove from favorites' : 'Add to favorites'"
+        @click="toggleFavorite"
+      >
+        <ChIcon name="star" :size="24" :filled="channel.isFavorite" />
+      </button>
+
       <h1 class="ch-header__name" :title="channel.name">
         <ChIcon v-if="channel.isPrivate" name="lock" :size="18" />
         <span>{{ channel.name }}</span>
@@ -56,14 +73,23 @@ function toggleFavorite() {
       <span class="ch-header__divider" aria-hidden="true" />
 
       <MemberAvatarStack
-        :members="memberItems"
-        :total="membersStore.memberCount || channel.memberCount"
+        :members="memberState.items"
+        :total="memberState.total || channel.memberCount"
         :max="maxAvatars"
         @click="emit('members-click')"
       />
 
       <div class="ch-header__actions">
         <slot name="actions" />
+        <button
+          class="ch-header__icon"
+          type="button"
+          aria-label="Channel options"
+          aria-haspopup="menu"
+          @click="openMenu"
+        >
+          <ChIcon name="more" :size="20" />
+        </button>
       </div>
     </div>
 
@@ -71,6 +97,14 @@ function toggleFavorite() {
       <span class="ch-header__bullet" aria-hidden="true">•</span>{{ channel.description }}
     </p>
 
+    <ChannelContextMenu
+      :open="menu.open"
+      :x="menu.x"
+      :y="menu.y"
+      :items="menuItems"
+      @select="onMenuSelect"
+      @close="menu = { ...menu, open: false }"
+    />
   </header>
   <div v-else class="ch-header ch-header--skeleton" aria-hidden="true" />
 </template>
@@ -90,6 +124,21 @@ function toggleFavorite() {
   align-items: center;
   gap: 10px;
   min-width: 0;
+}
+.ch-header__star {
+  display: grid;
+  place-items: center;
+  padding: 2px;
+  border: 0;
+  background: transparent;
+  color: var(--ch-muted);
+  cursor: pointer;
+}
+.ch-header__star:hover {
+  color: var(--ch-star);
+}
+.ch-header__star--on {
+  color: var(--ch-star);
 }
 .ch-header__name {
   display: flex;
@@ -116,6 +165,20 @@ function toggleFavorite() {
   align-items: center;
   gap: 4px;
   margin-left: auto;
+}
+.ch-header__icon {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ch-muted);
+  cursor: pointer;
+}
+.ch-header__icon:hover {
+  background: #f1f0f8;
 }
 .ch-header__desc {
   margin: 2px 0 0 36px;

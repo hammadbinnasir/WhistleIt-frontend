@@ -12,12 +12,6 @@ function createTestRouter() {
       { path: '/login', name: 'login', component: EmptyPage, meta: { guestOnly: true } },
       { path: '/signup', name: 'signup', component: EmptyPage, meta: { guestOnly: true } },
       { path: '/app', name: 'home', component: EmptyPage, meta: { requiresAuth: true } },
-      {
-        path: '/app/:workspaceId/:teamId?/:channelId?',
-        name: 'workspace-team',
-        component: EmptyPage,
-        meta: { requiresAuth: true },
-      },
     ],
   })
   installAuthGuard(router)
@@ -36,16 +30,6 @@ describe('auth route guard', () => {
 
     expect(router.currentRoute.value.name).toBe('login')
     expect(router.currentRoute.value.query.redirect).toBe('/app')
-  })
-
-  it('redirects unauthenticated users away from workspace routes', async () => {
-    const router = createTestRouter()
-    const requestedPath = '/app/workspace-1/team-2/channel-3'
-
-    await router.push(requestedPath)
-
-    expect(router.currentRoute.value.name).toBe('login')
-    expect(router.currentRoute.value.query.redirect).toBe(requestedPath)
   })
 
   it('redirects authenticated users away from login and signup pages', async () => {

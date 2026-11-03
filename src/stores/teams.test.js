@@ -4,27 +4,31 @@ import { createPinia, setActivePinia } from 'pinia'
 const api = vi.hoisted(() => ({
   getWorkspaces: vi.fn(),
   getWorkspaceTeams: vi.fn(),
+  createWorkspace: vi.fn(),
   createTeam: vi.fn(),
   updateTeam: vi.fn(),
   deleteTeam: vi.fn(),
+  joinTeam: vi.fn(),
 }))
 
 vi.mock('@/features/shell/api/workspacesApi', () => ({
   getWorkspaces: api.getWorkspaces,
   getWorkspaceTeams: api.getWorkspaceTeams,
+  createWorkspace: api.createWorkspace,
 }))
 
 vi.mock('@/features/shell/api/teamsApi', () => ({
   createTeam: api.createTeam,
   updateTeam: api.updateTeam,
   deleteTeam: api.deleteTeam,
+  joinTeam: api.joinTeam,
 }))
 
 import { useTeamsStore } from './teams'
 
 const workspaces = [
-  { id: 'workspace-1', name: 'WhistleIt', initials: 'WI', role: 'admin', isAdmin: true },
-  { id: 'workspace-2', name: 'Design', initials: 'DE', role: 'member', isAdmin: false },
+  { id: 'workspace-1', name: 'WhistleIt', initials: 'WI' },
+  { id: 'workspace-2', name: 'Design', initials: 'DE' },
 ]
 const teamsByWorkspace = {
   'workspace-1': [
@@ -45,12 +49,16 @@ describe('teams store', () => {
     vi.stubGlobal('localStorage', {
       getItem: vi.fn((key) => rememberedTeams.get(key) ?? null),
       setItem: vi.fn((key, value) => rememberedTeams.set(key, value)),
-      removeItem: vi.fn((key) => rememberedTeams.delete(key)),
     })
     api.getWorkspaces.mockResolvedValue(workspaces)
     api.getWorkspaceTeams.mockImplementation(async (workspaceId) => [
       ...(teamsByWorkspace[workspaceId] ?? []),
     ])
+    api.createWorkspace.mockImplementation(async (payload) => ({
+      id: 'workspace-3',
+      initials: payload.initials,
+      ...payload,
+    }))
     api.createTeam.mockImplementation(async (payload) => ({
       id: 'team-new',
       name: payload.name,
@@ -63,6 +71,21 @@ describe('teams store', () => {
       workspaceId,
     }))
     api.deleteTeam.mockResolvedValue({ success: true })
+    api.joinTeam.mockImplementation(async (code) => {
+      if (code === 'invalid') throw new Error('This invite code is invalid or has expired.')
+      if (code === 'team-1') {
+        return {
+          team: teamsByWorkspace['workspace-1'][0],
+          workspaceId: 'workspace-1',
+          alreadyMember: true,
+        }
+      }
+      return {
+        team: { id: 'team-5', name: 'Backend Crew', workspaceId: 'workspace-2' },
+        workspaceId: 'workspace-2',
+        alreadyMember: false,
+      }
+    })
   })
 
   afterEach(() => vi.unstubAllGlobals())
@@ -72,7 +95,6 @@ describe('teams store', () => {
     expect(store.teams).toEqual([])
     expect(store.activeTeamId).toBeNull()
     expect(store.activeTeam).toBeNull()
-    expect(store.isAdmin).toBe(false)
   })
 
   it('fetches workspaces and teams and selects the first team', async () => {
@@ -126,56 +148,14 @@ describe('teams store', () => {
     await store.fetchWorkspaces()
 
     await store.selectWorkspace('workspace-1')
-    expect(store.activeWorkspaceRole).toBe('admin')
-    expect(store.isAdmin).toBe(true)
     store.selectTeam('team-2')
     await store.selectWorkspace('workspace-2')
     expect(store.activeTeamId).toBe('team-3')
-    expect(store.activeWorkspaceRole).toBe('member')
-    expect(store.isAdmin).toBe(false)
     expect(store.teams.every((team) => team.workspaceId === 'workspace-2')).toBe(true)
 
     await store.selectWorkspace('workspace-1')
     expect(store.activeTeamId).toBe('team-2')
     expect(store.teams.every((team) => team.workspaceId === 'workspace-1')).toBe(true)
-  })
-
-  it('treats a missing workspace role as non-admin', async () => {
-    api.getWorkspaces.mockResolvedValue([{ id: 'workspace-unknown', name: 'Unknown Role' }])
-    const store = useTeamsStore()
-
-    await store.fetchWorkspaces()
-
-    expect(store.activeWorkspaceRole).toBeNull()
-    expect(store.isAdmin).toBe(false)
-  })
-
-  it('removes a departed team and remembers the next team in the workspace', async () => {
-    const store = useTeamsStore()
-    await store.fetchTeams()
-    store.selectTeam('team-1')
-
-    expect(store.removeTeamFromWorkspace('team-1')).toBe('team-2')
-
-    expect(store.teams.map((team) => team.id)).toEqual(['team-2'])
-    expect(store.activeTeamId).toBe('team-2')
-    expect(localStorage.getItem('whistleit:last-team:workspace-1')).toBe('team-2')
-  })
-
-  it('clears the last-team cache and active team when leaving the only team', async () => {
-    const store = useTeamsStore()
-    await store.fetchTeams()
-    store.teamsByWorkspaceId = {
-      'workspace-1': [teamsByWorkspace['workspace-1'][0]],
-      'workspace-2': teamsByWorkspace['workspace-2'],
-    }
-    store.selectTeam('team-1')
-
-    expect(store.removeTeamFromWorkspace('team-1')).toBeNull()
-
-    expect(store.teams).toEqual([])
-    expect(store.activeTeamId).toBeNull()
-    expect(localStorage.getItem('whistleit:last-team:workspace-1')).toBeNull()
   })
 
   it('ignores a stale team response after switching workspaces', async () => {
@@ -199,5 +179,46 @@ describe('teams store', () => {
     expect(store.activeWorkspaceId).toBe('workspace-2')
     expect(store.teams).toEqual(teamsByWorkspace['workspace-2'])
     expect(store.activeTeamId).toBe('team-3')
+  })
+
+  it('creates a workspace and selects its empty team list', async () => {
+    const store = useTeamsStore()
+    await store.fetchWorkspaces()
+
+    const workspace = await store.createWorkspace({ name: 'Research', initials: 'RE' })
+
+    expect(store.activeWorkspace).toEqual(workspace)
+    expect(store.activeTeamId).toBeNull()
+    expect(store.teamsOfActiveWorkspace).toEqual([])
+  })
+
+  it('joins a team into the workspace returned by the mock API', async () => {
+    const store = useTeamsStore()
+    await store.fetchWorkspaces()
+
+    const result = await store.joinTeam('invite-code')
+
+    expect(result.team.id).toBe('team-5')
+    expect(result.alreadyMember).toBe(false)
+    expect(store.activeWorkspaceId).toBe('workspace-2')
+    expect(store.activeTeamId).toBe('team-5')
+    expect(store.teams.filter((team) => team.id === 'team-5')).toHaveLength(1)
+  })
+
+  it('selects an existing team without duplicating it', async () => {
+    const store = useTeamsStore()
+    await store.fetchWorkspaces()
+
+    const result = await store.joinTeam('team-1')
+
+    expect(result.alreadyMember).toBe(true)
+    expect(store.activeTeamId).toBe('team-1')
+    expect(store.teams.filter((team) => team.id === 'team-1')).toHaveLength(1)
+  })
+
+  it('rejects invalid invite codes and exposes a workspace error', async () => {
+    const store = useTeamsStore()
+    await expect(store.joinTeam('invalid')).rejects.toThrow('invalid or has expired')
+    expect(store.error).toContain('invalid or has expired')
   })
 })

@@ -172,6 +172,61 @@ export async function mockDeleteTeam(workspaceId, teamId) {
   return { success: true }
 }
 
+export async function mockCreateWorkspace(payload) {
+  await delay(300)
+  const nextId =
+    Math.max(
+      0,
+      ..._workspaces.map(
+        (workspace) => Number(String(workspace.id).replace('workspace-', '')) || 0,
+      ),
+    ) + 1
+  const workspace = {
+    id: `workspace-${nextId}`,
+    name: payload.name,
+    initials: payload.initials,
+  }
+  _workspaces.push(workspace)
+  persistMockData()
+  return { ...workspace }
+}
+
+export async function mockJoinTeam(inviteCode, workspaceIdOverride = null) {
+  await delay(400)
+  const code = String(inviteCode).trim()
+  if (code.toLowerCase() === 'invalid' || code.length < 6) {
+    throw new Error('This invite code is invalid or has expired.')
+  }
+
+  const foundTeam =
+    _allTeams.find((item) => item.id === code) ??
+    _allTeams.find((item) => item.inviteCode?.toLowerCase() === code.toLowerCase())
+
+  let team = foundTeam
+    ? { ...foundTeam, workspaceId: workspaceIdOverride ?? foundTeam.workspaceId }
+    : null
+
+  if (!team) {
+    const workspaceId = workspaceIdOverride ?? _workspaces[1]?.id ?? _workspaces[0]?.id
+    if (!workspaceId) throw new Error('No workspace is available for this invite.')
+    team = {
+      id: `invite-${encodeURIComponent(code.toLowerCase())}`,
+      name: 'Joined Team',
+      initials: 'JT',
+      color: 'var(--color-indigo-500)',
+      memberCount: 1,
+      workspaceId,
+      inviteCode: code,
+    }
+    _allTeams.push(team)
+  }
+
+  const alreadyMember = _userTeams.some((item) => item.id === team.id)
+  if (!alreadyMember) _userTeams.push(team)
+  persistMockData()
+  return { team: { ...team }, workspaceId: team.workspaceId, alreadyMember }
+}
+
 export async function mockSearchTeams(query) {
   await delay(250)
   const q = query.toLowerCase()
