@@ -21,8 +21,6 @@ import {
   TeamRail,
   TeamSwitcher,
   CreateTeamModal,
-  CreateWorkspaceModal,
-  JoinTeamModal,
   HelpDrawer,
   MemberManageModal,
   InviteUsersModal,
@@ -343,20 +341,18 @@ onBeforeUnmount(() => {
       >
         <div class="max-w-lg space-y-2">
           <h1 id="workspace-empty-title" class="text-xl font-semibold text-slate-800">
-            {{
-              activeWorkspace ? `Welcome to ${activeWorkspace.name}` : 'Create your first workspace'
-            }}
+            {{ activeWorkspace ? `Welcome to ${activeWorkspace.name}` : 'Join a workspace' }}
           </h1>
           <p class="text-sm text-slate-600">
             {{
               activeWorkspace
                 ? 'This workspace does not have any teams yet.'
-                : 'Create a workspace to start organizing teams and conversations.'
+                : 'Workspaces are available by invitation. Ask an existing member to invite you.'
             }}
           </p>
         </div>
         <div class="flex flex-wrap justify-center gap-3">
-          <template v-if="activeWorkspace">
+          <template v-if="activeWorkspace && teamsStore.isAdmin">
             <button
               type="button"
               class="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600"
@@ -364,22 +360,7 @@ onBeforeUnmount(() => {
             >
               Create a team
             </button>
-            <button
-              type="button"
-              class="rounded-md border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600"
-              @click="ui.toggleTeamJoinModal()"
-            >
-              Join a team
-            </button>
           </template>
-          <button
-            v-else
-            type="button"
-            class="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600"
-            @click="ui.toggleWorkspaceCreateModal()"
-          >
-            Create a workspace
-          </button>
         </div>
       </section>
 
@@ -398,10 +379,7 @@ onBeforeUnmount(() => {
           @members-click="ui.openChannelSettings('members')"
         >
           <template #actions>
-            <ChatHeaderActions
-              :is-dm="false"
-              :conversation-id="selectedChannelId"
-            />
+            <ChatHeaderActions :is-dm="false" :conversation-id="selectedChannelId" />
           </template>
         </ChannelHeader>
 
@@ -455,10 +433,7 @@ onBeforeUnmount(() => {
               </div>
             </div>
           </div>
-          <ChatHeaderActions
-            :is-dm="true"
-            :conversation-id="activeConversation.id"
-          />
+          <ChatHeaderActions :is-dm="true" :conversation-id="activeConversation.id" />
         </header>
 
         <header
@@ -585,9 +560,7 @@ onBeforeUnmount(() => {
     </div>
 
     <!-- Shell Modals -->
-    <CreateWorkspaceModal />
     <CreateTeamModal />
-    <JoinTeamModal />
     <MemberManageModal />
     <InviteUsersModal v-if="inviteModalOpen" @close="inviteModalOpen = false" />
   </div>

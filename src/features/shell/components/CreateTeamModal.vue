@@ -67,7 +67,7 @@ onBeforeUnmount(() => document.removeEventListener('keydown', handleKeydown))
 
 <template>
   <div
-    v-if="ui.teamCreateModalOpen"
+    v-if="ui.teamCreateModalOpen && teamsStore.isAdmin"
     class="modal-backdrop"
     @click.self="handleClose"
     role="dialog"

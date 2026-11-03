@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
+import { useTeamsStore } from './teams'
 
 const api = vi.hoisted(() => ({
   getMembers: vi.fn(),
@@ -109,5 +110,55 @@ describe('members store', () => {
       status: 422,
     })
     expect(store.error).toBe('Select a valid user.')
+  })
+
+  it('leaves a team using the supplied current-user ID and removes it locally', async () => {
+    const membersStore = useMembersStore()
+    const teamsStore = useTeamsStore()
+    teamsStore.workspaces = [{ id: 'workspace-1', name: 'Workspace' }]
+    teamsStore.activeWorkspaceId = 'workspace-1'
+    teamsStore.teamsByWorkspaceId = {
+      'workspace-1': [{ id: 'team-1', name: 'Team One', workspaceId: 'workspace-1' }],
+    }
+    teamsStore.activeTeamId = 'team-1'
+    localStorage.setItem('whistleit:last-team:workspace-1', 'team-1')
+    api.removeMember.mockResolvedValue({
+      success: true,
+      message: 'You left the team successfully.',
+    })
+
+    await expect(membersStore.leaveTeam('workspace-1', 'team-1', 'self-user')).resolves.toEqual({
+      success: true,
+      message: 'You left the team successfully.',
+    })
+
+    expect(api.removeMember).toHaveBeenCalledWith('workspace-1', 'team-1', 'self-user')
+    expect(teamsStore.teams).toEqual([])
+    expect(teamsStore.activeTeamId).toBeNull()
+    expect(localStorage.getItem('whistleit:last-team:workspace-1')).toBeNull()
+  })
+
+  it.each([
+    [403, 'You cannot leave this team.'],
+    [404, 'Your team membership was not found.'],
+    [422, 'The leave request is invalid.'],
+  ])('preserves the backend message for leave errors (%i)', async (status, message) => {
+    const membersStore = useMembersStore()
+    const teamsStore = useTeamsStore()
+    teamsStore.workspaces = [{ id: 'workspace-1', name: 'Workspace' }]
+    teamsStore.activeWorkspaceId = 'workspace-1'
+    teamsStore.teamsByWorkspaceId = {
+      'workspace-1': [{ id: 'team-1', name: 'Team One', workspaceId: 'workspace-1' }],
+    }
+    teamsStore.activeTeamId = 'team-1'
+    api.removeMember.mockRejectedValue({ status, message })
+
+    await expect(
+      membersStore.leaveTeam('workspace-1', 'team-1', 'self-user'),
+    ).rejects.toMatchObject({ status, message })
+
+    expect(membersStore.error).toBe(message)
+    expect(teamsStore.teams).toHaveLength(1)
+    expect(teamsStore.activeTeamId).toBe('team-1')
   })
 })
