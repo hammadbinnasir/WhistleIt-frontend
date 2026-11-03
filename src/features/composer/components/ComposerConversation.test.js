@@ -157,6 +157,34 @@ describe('composer conversation', () => {
     wrapper.unmount()
   })
 
+  it('shows scheduled poll start and end times before participation', async () => {
+    const messages = useMessagesStore()
+    messages.messagesByChannel.general = [
+      {
+        id: 'scheduled-poll',
+        content: '',
+        author: 'You',
+        mine: true,
+        createdAt: new Date().toISOString(),
+        poll: {
+          id: 'scheduled-poll',
+          title: 'Scheduled poll',
+          scheduleStart: '2099-11-03T12:34:59',
+          scheduleClose: '2099-11-03T13:34:59',
+          questions: [],
+        },
+      },
+    ]
+    const wrapper = mount(ComposerConversation)
+
+    expect(wrapper.text()).toContain('Starts')
+    expect(wrapper.text()).toContain('Ends')
+    expect(wrapper.text()).toContain('Scheduled')
+    expect(wrapper.text()).not.toContain('Participate')
+    expect(wrapper.text()).not.toContain('View All Results')
+    wrapper.unmount()
+  })
+
   it('opens and sends messages in the selected direct message', async () => {
     const dms = useDmStore()
     await dms.init()
