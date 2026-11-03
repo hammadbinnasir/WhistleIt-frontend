@@ -1,8 +1,7 @@
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 import { dmApi } from '@/features/dms/dmApi'
-import { useMembersStore } from '@/stores/members'
-import { useTeamsStore } from '@/stores/teams'
+import { createMessageDeletionScheduler, redactMessage } from '@/features/messages/message-deletion'
 import { useActivityStore } from '@/stores/activity'
 
 let generatedId = 0
@@ -29,10 +28,7 @@ export const useDmStore = defineStore('dms', () => {
   const activeId = ref(null)
   const loading = ref(false)
   const error = ref('')
-  const detailError = ref('')
-  const detailLoading = ref(false)
-  const companyMembersLoading = ref(false)
-  const companyMembersError = ref('')
+  const deletionScheduler = createMessageDeletionScheduler(() => {})
   const usersById = computed(() => Object.fromEntries(users.value.map((user) => [user.id, user])))
   const sorted = computed(() =>
     conversations.value.slice().sort((a, b) => {
@@ -102,7 +98,13 @@ export const useDmStore = defineStore('dms', () => {
           return unique
         }, [])
         meId.value = dmApi.meId()
-        initializedCompanyId = id
+        for (const conversation of conversations.value) {
+          for (const message of conversation.messages) {
+            if (message.deleteScheduledAt && !message.deleted) {
+              deletionScheduler.schedule(`${conversation.id}:${message.id}`, message)
+            }
+          }
+        }
       })
       .catch((cause) => {
         if (version === requestVersion) error.value = errorMessage(cause)
@@ -397,11 +399,38 @@ export const useDmStore = defineStore('dms', () => {
     return true
   }
 
-  function deleteMessage(conversationId, messageId) {
+  function deleteMessage(conversationId, messageId, scheduledAt = null) {
     const conversation = conversations.value.find((item) => item.id === conversationId)
     const message = conversation?.messages.find((item) => item.id === messageId)
-    if (!conversation || !message || message.from !== meId.value || message.scheduled) return false
-    conversation.messages = conversation.messages.filter((item) => item.id !== messageId)
+    if (
+      !conversation ||
+      !message ||
+      message.from !== meId.value ||
+      message.scheduled ||
+      message.deleted
+    ) {
+      return false
+    }
+
+    const timerKey = `${conversationId}:${message.id}`
+    if (scheduledAt) {
+      const deadline = Date.parse(scheduledAt)
+      if (!Number.isFinite(deadline) || deadline <= Date.now()) return false
+      message.deleteScheduledAt = new Date(deadline).toISOString()
+      deletionScheduler.schedule(timerKey, message)
+    } else {
+      deletionScheduler.cancel(timerKey)
+      redactMessage(message)
+    }
+    return true
+  }
+
+  function cancelScheduledDelete(conversationId, messageId) {
+    const conversation = conversations.value.find((item) => item.id === conversationId)
+    const message = conversation?.messages.find((item) => item.id === messageId)
+    if (!message?.deleteScheduledAt || message.deleted) return false
+    deletionScheduler.cancel(`${conversationId}:${message.id}`)
+    delete message.deleteScheduledAt
     return true
   }
 
@@ -463,6 +492,7 @@ export const useDmStore = defineStore('dms', () => {
     sendMessage,
     editMessage,
     deleteMessage,
+    cancelScheduledDelete,
     toggleReaction,
     cancelScheduledMessage,
   }

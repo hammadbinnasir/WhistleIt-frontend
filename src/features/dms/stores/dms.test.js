@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 
 vi.mock('@/features/dms/dmApi', () => ({
@@ -36,27 +36,9 @@ function makeConversation(id, userId, messages = []) {
 }
 
 describe('dms store', () => {
-  beforeEach(() => {
-    setActivePinia(createPinia())
-    useTeamsStore().activeWorkspaceId = 'company-1'
-    vi.clearAllMocks()
-    dmApi.listDirectChannels.mockResolvedValue([
-      makeConversation('c1', 'u2', [
-        { id: 'm1', from: 'u2', text: 'Received', createdAt: '2026-01-01T10:00:00Z' },
-      ]),
-    ])
-    dmApi.listCompanyMembers.mockResolvedValue([])
-    dmApi.listTeamMembers.mockResolvedValue([])
-    dmApi.listTeamNonMembers.mockResolvedValue([])
-    dmApi.getDirectChannel.mockImplementation(async (_companyId, channelId) =>
-      makeConversation(String(channelId), channelId === 'created-channel' ? 'u3' : 'u2', [
-        { id: 'm1', from: 'u2', text: 'Received', createdAt: '2026-01-01T10:00:00Z' },
-      ]),
-    )
-    dmApi.createDirectChannel.mockImplementation(async (_companyId, payload) =>
-      makeConversation('created-channel', payload.user_id),
-    )
-  })
+  afterEach(() => vi.useRealTimers())
+
+  beforeEach(() => setActivePinia(createPinia()))
 
   it('loads live conversations using the active company ID', async () => {
     const dms = useDmStore()
@@ -234,8 +216,24 @@ describe('dms store', () => {
     expect(sent).toMatchObject({ text: 'Updated', editedAt: expect.any(String) })
     expect(dms.toggleReaction('c1', sent.id, '🎉')).toBe(true)
     expect(sent.reactions).toEqual([{ emoji: '🎉', users: [dms.meId] }])
-    expect(dms.deleteMessage('c1', sent.id)).toBe(true)
-    expect(dms.conversations[0].messages).not.toContain(sent)
+    expect(dms.deleteMessage(conversation.id, sent.id)).toBe(true)
+    expect(conversation.messages.some((message) => message.id === sent.id)).toBe(true)
+    expect(sent).toMatchObject({ deleted: true, text: '', reactions: [] })
+  })
+
+  it('executes a scheduled deletion in a direct message', async () => {
+    const dms = useDmStore()
+    await dms.init()
+    const conversation = dms.startDm('u2')
+    const sent = dms.sendMessage(conversation.id, { content: 'Delete later' })
+    vi.useFakeTimers()
+    const deadline = new Date(Date.now() + 60_000).toISOString()
+
+    expect(dms.deleteMessage(conversation.id, sent.id, deadline)).toBe(true)
+    expect(sent.deleteScheduledAt).toBe(deadline)
+    vi.advanceTimersByTime(60_000)
+
+    expect(sent).toMatchObject({ deleted: true, text: '' })
   })
 
   it('does not allow editing or deleting another user message', async () => {

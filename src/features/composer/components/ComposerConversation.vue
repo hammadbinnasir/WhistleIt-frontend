@@ -15,7 +15,8 @@ import {
 import { useUiStore } from '@/stores/ui'
 import { addMockMessage, removeMockMessage, updateMockMessage } from '@/features/search/search'
 import SetReminderModal from '@/features/search/SetReminderModal.vue'
-import UserAvatar from '@/features/dms/components/UserAvatar.vue'
+import DeleteMessageModal from './DeleteMessageModal.vue'
+import SeenByModal from './SeenByModal.vue'
 import MessageComposer from './MessageComposer.vue'
 
 const props = defineProps({
@@ -34,6 +35,8 @@ const replyTo = ref(null)
 const openMenuId = ref(null)
 const openReactionId = ref(null)
 const reminderTarget = ref(null)
+const deleteTarget = ref(null)
+const seenByTarget = ref(null)
 const forwardTarget = ref(null)
 const forwardDestinationId = ref('')
 const dmVisibleCount = ref(20)
@@ -85,6 +88,29 @@ const visibleMessages = computed(() =>
     ? allMessages.value.slice(-dmVisibleCount.value)
     : messageStore.visibleMessagesFor(channelId.value),
 )
+const seenByViewers = computed(() => {
+  const receipts = seenByTarget.value?.seenBy
+  if (!Array.isArray(receipts)) return []
+
+  const members = channelsStore.members[channelId.value]?.items || []
+  return receipts
+    .map((receipt, index) => {
+      if (receipt && typeof receipt === 'object') {
+        const name = receipt.name || receipt.displayName || receipt.fullName || receipt.email
+        if (!name) return null
+        return {
+          id: String(receipt.id ?? receipt.userId ?? index),
+          name,
+          avatarUrl: receipt.avatarUrl || '',
+        }
+      }
+
+      const id = String(receipt)
+      const member = members.find((item) => item.id === id)
+      return member || { id, name: id, avatarUrl: '' }
+    })
+    .filter(Boolean)
+})
 const renderedMessages = computed(() => {
   const currentUser = dms.usersById[dms.meId]?.name || 'You'
   let previous = null
@@ -119,6 +145,17 @@ const renderedMessages = computed(() => {
         grouped: Boolean(grouped),
         segments: messageSegments(content),
         preview: createLinkPreview(content),
+        deleteScheduledLabel: message.deleteScheduledAt
+          ? (() => {
+              const date = new Date(message.deleteScheduledAt)
+              return Number.isNaN(date.getTime())
+                ? ''
+                : new Intl.DateTimeFormat(undefined, {
+                    dateStyle: 'medium',
+                    timeStyle: 'short',
+                  }).format(date)
+            })()
+          : '',
         reply: message.replyTo
           ? typeof message.replyTo === 'object'
             ? message.replyTo
@@ -303,16 +340,29 @@ function saveEdit(message) {
 
 function deleteMessage(message) {
   openMenuId.value = null
-  if (!window.confirm('Delete this message? This cannot be undone.')) return
+  deleteTarget.value = message
+}
+
+function confirmDelete(scheduledAt) {
+  const message = deleteTarget.value
+  if (!message) return
   const deleted = conversation.value
-    ? dms.deleteMessage(conversation.value.id, message.id)
-    : messageStore.deleteMessage(channelId.value, message.id)
+    ? dms.deleteMessage(conversation.value.id, message.id, scheduledAt)
+    : messageStore.deleteMessage(channelId.value, message.id, scheduledAt)
   if (!deleted) {
-    ui.toast('Message not deleted', 'Only your unscheduled messages can be deleted.', 'error')
+    ui.toast('Message not deleted', 'Choose a future time for scheduled deletion.', 'error')
     return
   }
+  deleteTarget.value = null
   if (!conversation.value) removeMockMessage(message.id)
   if (isPinned(message)) ui.togglePinnedMessage(message, conversationMeta.value)
+}
+
+function cancelScheduledDelete(message) {
+  const cancelled = conversation.value
+    ? dms.cancelScheduledDelete(conversation.value.id, message.id)
+    : messageStore.cancelScheduledDelete(channelId.value, message.id)
+  if (cancelled) ui.toast('Scheduled deletion canceled', 'The message will remain in the conversation.')
 }
 
 async function copyMessage(message) {
@@ -635,160 +685,108 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', closeActionsOn
               class="composer-conversation__message-bubble"
               :data-poll-title="message.content?.match(/^Poll:\s*(.+)$/m)?.[1]?.trim()"
             >
-              <span v-if="message.forwardedFrom" class="composer-conversation__forwarded">
-                Forwarded from {{ message.forwardedFrom }}
-              </span>
-              <span v-if="message.important" class="composer-conversation__important">
-                IMPORTANT!
-              </span>
-            <section v-if="message.poll" class="composer-conversation__poll-card">
-              <h2>{{ message.poll.title }}</h2>
-              <div v-if="message.poll.description" class="composer-conversation__poll-description">
-                {{ message.poll.description }}
-              </div>
-              <div class="composer-conversation__poll-meta">
-                <span
-                  class="composer-conversation__poll-status"
-                  :class="{ 'is-closed': closedPolls.has(message.poll.id) }"
-                >
-                  <i
-                    class="composer-conversation__poll-status-icon"
-                    :class="closedPolls.has(message.poll.id) ? 'is-closed' : 'is-open'"
-                    aria-hidden="true"
-                  >
-                    {{ closedPolls.has(message.poll.id) ? '×' : '✓' }}
-                  </i>
-                  {{ closedPolls.has(message.poll.id) ? 'Closed' : 'Open' }}
-                </span>
-                <span class="composer-conversation__poll-meta-divider" aria-hidden="true"></span>
-                <span class="composer-conversation__poll-visibility">
-                  <i aria-hidden="true">◉</i>
-                  {{ message.poll.audience === 'anonymous' ? 'Anonymous' : 'Public' }}
-                </span>
-              </div>
-              <div class="composer-conversation__poll-actions">
-                <button
-                  v-if="
-                    !closedPolls.has(message.poll.id) &&
-                    !participatedPolls.has(message.poll.id)
-                  "
-                  type="button"
-                  @click="participateInPoll(message.poll.id)"
-                >
-                  Participate
-                </button>
-                <button
-                  v-else-if="!closedPolls.has(message.poll.id)"
-                  type="button"
-                  class="is-done"
-                  disabled
-                  aria-label="You're done"
-                >
-                  You're Done
-                </button>
-                <button type="button" @click="viewPollResults(message.poll.id)">
-                  View All Results
-                </button>
-                <button
-                  v-if="closedPolls.has(message.poll.id)"
-                  type="button"
-                  @click="exportPollResults(message.poll.id)"
-                >
-                  Export To Csv
-                </button>
-                <button
-                  v-else
-                  type="button"
-                  @click="closePoll(message.poll.id)"
-                >
-                  Close Poll
-                </button>
-              </div>
-            </section>
-
-              <div v-if="message.reply" class="composer-conversation__reply-quote">
-                <strong>{{ message.reply.author || 'Message' }}</strong>
-                <span>{{ message.reply.content ?? message.reply.text }}</span>
-              </div>
-
-              <form
-                v-if="editingId === message.id"
-                class="composer-conversation__edit-form"
-                @submit.prevent="saveEdit(message)"
-              >
-                <textarea v-model="editDraft" aria-label="Edit message" rows="2"></textarea>
-                <div>
-                  <button type="button" @click="cancelEdit">Cancel</button>
-                  <button type="submit">Save</button>
-                </div>
-              </form>
-
+              <p v-if="message.deleted" class="composer-conversation__deleted">
+                (message deleted)
+              </p>
               <template v-else>
-                <p v-if="message.content">
-                  <template v-for="(segment, index) in message.segments" :key="index">
-                    <a
-                      v-if="segment.href"
-                      :href="segment.href"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      >{{ segment.text }}</a
-                    >
-                    <template v-else>{{ segment.text }}</template>
-                  </template>
-                </p>
-                <img
-                  v-if="message.gif"
-                  class="composer-conversation__gif"
-                  :src="message.gif.url"
-                  :alt="message.gif.title"
-                />
+                <span v-if="message.forwardedFrom" class="composer-conversation__forwarded">
+                  Forwarded from {{ message.forwardedFrom }}
+                </span>
+                <span v-if="message.important" class="composer-conversation__important">
+                  IMPORTANT!
+                </span>
+
+                <div v-if="message.reply" class="composer-conversation__reply-quote">
+                  <strong>{{ message.reply.author || 'Message' }}</strong>
+                  <span>{{ message.reply.content ?? message.reply.text }}</span>
+                </div>
+
+                <form
+                  v-if="editingId === message.id"
+                  class="composer-conversation__edit-form"
+                  @submit.prevent="saveEdit(message)"
+                >
+                  <textarea v-model="editDraft" aria-label="Edit message" rows="2"></textarea>
+                  <div>
+                    <button type="button" @click="cancelEdit">Cancel</button>
+                    <button type="submit">Save</button>
+                  </div>
+                </form>
+
+                <template v-else>
+                  <p v-if="message.content">
+                    <template v-for="(segment, index) in message.segments" :key="index">
+                      <a
+                        v-if="segment.href"
+                        :href="segment.href"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        >{{ segment.text }}</a
+                      >
+                      <template v-else>{{ segment.text }}</template>
+                    </template>
+                  </p>
+                  <img
+                    v-if="message.gif"
+                    class="composer-conversation__gif"
+                    :src="message.gif.url"
+                    :alt="message.gif.title"
+                  />
+                </template>
+
+                <a
+                  v-if="message.preview && editingId !== message.id"
+                  class="composer-conversation__link-preview"
+                  :href="message.preview.href"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  <span class="composer-conversation__link-preview-host">{{
+                    message.preview.hostname
+                  }}</span>
+                  <strong>{{ message.preview.title }}</strong>
+                  <span>{{ message.preview.description }}</span>
+                  <span class="composer-conversation__link-preview-url">{{
+                    message.preview.href
+                  }}</span>
+                </a>
+
+                <span v-if="message.scheduled" class="composer-conversation__scheduled">
+                  Scheduled for {{ message.scheduledAt }} ({{ message.timeZone || 'local time' }})
+                </span>
+                <span v-if="message.deleteScheduledLabel" class="composer-conversation__scheduled">
+                  Deletion scheduled for {{ message.deleteScheduledLabel }}
+                </span>
+
+                <ul
+                  v-if="message.attachments?.length"
+                  class="composer-conversation__attachment-list"
+                >
+                  <li
+                    v-for="(file, fileIndex) in message.attachments"
+                    :key="file.id || `${file.name}-${file.size}-${fileIndex}`"
+                  >
+                    {{ file.name }}
+                  </li>
+                </ul>
+
+                <div v-if="message.reactions.length" class="composer-conversation__reactions">
+                  <button
+                    v-for="reaction in message.reactions"
+                    :key="reaction.emoji"
+                    type="button"
+                    :aria-label="`${reaction.emoji} reaction, ${reaction.users.length} people`"
+                    :aria-pressed="reaction.users.includes(dms.meId || 'current-user')"
+                    @click="toggleReaction(message, reaction.emoji)"
+                  >
+                    {{ reaction.emoji }} {{ reaction.users.length }}
+                  </button>
+                </div>
               </template>
-
-              <a
-                v-if="message.preview && editingId !== message.id"
-                class="composer-conversation__link-preview"
-                :href="message.preview.href"
-                target="_blank"
-                rel="noopener noreferrer"
-              >
-                <span class="composer-conversation__link-preview-host">{{
-                  message.preview.hostname
-                }}</span>
-                <strong>{{ message.preview.title }}</strong>
-                <span>{{ message.preview.description }}</span>
-                <span class="composer-conversation__link-preview-url">{{
-                  message.preview.href
-                }}</span>
-              </a>
-
-              <span v-if="message.scheduled" class="composer-conversation__scheduled">
-                Scheduled for {{ message.scheduledAt }} ({{ message.timeZone || 'local time' }})
-              </span>
-
-              <ul v-if="message.attachments?.length" class="composer-conversation__attachment-list">
-                <li
-                  v-for="(file, fileIndex) in message.attachments"
-                  :key="file.id || `${file.name}-${file.size}-${fileIndex}`"
-                >
-                  {{ file.name }}
-                </li>
-              </ul>
-
-              <div v-if="message.reactions.length" class="composer-conversation__reactions">
-                <button
-                  v-for="reaction in message.reactions"
-                  :key="reaction.emoji"
-                  type="button"
-                  :aria-label="`${reaction.emoji} reaction, ${reaction.users.length} people`"
-                  :aria-pressed="reaction.users.includes(dms.meId || 'current-user')"
-                  @click="toggleReaction(message, reaction.emoji)"
-                >
-                  {{ reaction.emoji }} {{ reaction.users.length }}
-                </button>
-              </div>
             </div>
 
             <div
+              v-if="!message.deleted"
               class="composer-conversation__actions"
               role="group"
               :aria-label="`Actions for ${message.author}'s message`"
@@ -924,6 +922,13 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', closeActionsOn
                   <span>Delete</span>
                   <span class="composer-conversation__shortcuts"><kbd>⌘</kbd><kbd>D</kbd></span>
                 </button>
+                <button
+                  v-if="message.deleteScheduledAt"
+                  type="button"
+                  @click="cancelScheduledDelete(message)"
+                >
+                  <span>Cancel scheduled delete</span>
+                </button>
                 <button type="button" @click="openForwardDialog(message)">
                   <svg
                     aria-hidden="true"
@@ -953,8 +958,18 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', closeActionsOn
               </div>
             </div>
 
+            <button
+              v-if="!conversation && message.mine && !message.scheduled && !message.deleted"
+              class="composer-conversation__sent-status"
+              type="button"
+              aria-label="Seen By"
+              title="Seen By"
+              @click="seenByTarget = message"
+            >
+              ✓✓
+            </button>
             <span
-              v-if="message.mine && !message.scheduled"
+              v-else-if="message.mine && !message.scheduled && !message.deleted"
               class="composer-conversation__sent-status"
               aria-label="Sent"
             >
@@ -981,156 +996,17 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', closeActionsOn
       @saved="reminderSaved"
     />
 
-    <Teleport to="body">
-      <div
-        v-if="activePoll"
-        class="composer-conversation__poll-backdrop"
-        @mousedown.self="closePollResponse"
-      >
-        <section
-          class="composer-conversation__poll-response-modal"
-          role="dialog"
-          aria-modal="true"
-          :aria-label="
-            `${activePoll.title} poll ${activePollMode === 'results' ? 'results' : 'response'}`
-          "
-        >
-          <header class="composer-conversation__poll-response-header">
-            <h2>{{ activePoll.title }}</h2>
-            <button type="button" aria-label="Close poll response" @click="closePollResponse">
-              &times;
-            </button>
-          </header>
-          <div class="composer-conversation__poll-response-summary">
-            <span>Creator: {{ activePoll.creator || 'You' }}</span>
-            <span
-              class="composer-conversation__poll-status"
-              :class="{ 'is-closed': closedPolls.has(activePoll.id) }"
-            >
-              <i
-                class="composer-conversation__poll-status-icon"
-                :class="closedPolls.has(activePoll.id) ? 'is-closed' : 'is-open'"
-                aria-hidden="true"
-              >
-                {{ closedPolls.has(activePoll.id) ? '×' : '✓' }}
-              </i>
-              {{ closedPolls.has(activePoll.id) ? 'Closed' : 'Open' }}
-            </span>
-            <span class="composer-conversation__poll-meta-divider" aria-hidden="true"></span>
-            <span class="composer-conversation__poll-visibility">
-              <i aria-hidden="true">◉</i>
-              {{ activePoll.audience === 'anonymous' ? 'Anonymous' : 'Public' }}
-            </span>
-            <strong>* Required</strong>
-          </div>
-          <p v-if="activePoll.description" class="composer-conversation__poll-response-description">
-            Description: {{ activePoll.description }}
-          </p>
-          <div
-            v-for="(question, questionIndex) in activePoll.questions"
-            :key="questionIndex"
-            class="composer-conversation__poll-response-question"
-          >
-            <h3>Q{{ questionIndex + 1 }}. {{ question.text }}<b v-if="question.required"> *</b></h3>
-            <template v-if="activePollMode === 'results'">
-              <div v-if="question.type === 'openEnded'" class="composer-conversation__poll-text-results">
-                <p v-if="pollResults[activePoll.id]?.responses?.[questionIndex]?.length">
-                  Responses
-                </p>
-                <blockquote
-                  v-for="response in pollResults[activePoll.id].responses[questionIndex]"
-                  :key="response"
-                >
-                  {{ response }}
-                </blockquote>
-                <strong class="composer-conversation__poll-total-votes">
-                  Total Responses: {{ pollResults[activePoll.id]?.responses?.[questionIndex]?.length || 0 }}
-                </strong>
-              </div>
-              <div v-else class="composer-conversation__poll-results-options">
-                <div
-                  v-for="(option, optionIndex) in question.options"
-                  :key="option"
-                  class="composer-conversation__poll-result"
-                >
-                  <span>{{ option }}</span>
-                  <div class="composer-conversation__poll-result-row">
-                    <div class="composer-conversation__poll-result-bar">
-                      <span
-                        class="composer-conversation__poll-result-fill"
-                        :style="{
-                          width: `${pollResultFor(activePoll.id, questionIndex, optionIndex).percentage}%`,
-                        }"
-                      ></span>
-                      <strong>
-                        {{ pollResultFor(activePoll.id, questionIndex, optionIndex).percentage }}%
-                      </strong>
-                    </div>
-                    <span class="composer-conversation__poll-result-votes">
-                      {{ pollResultFor(activePoll.id, questionIndex, optionIndex).votes }} VOTE
-                    </span>
-                  </div>
-                </div>
-                <strong class="composer-conversation__poll-total-votes">
-                  Total Votes: {{ pollResults[activePoll.id]?.totalVotes || 0 }}
-                </strong>
-              </div>
-            </template>
-            <template v-else-if="question.type === 'rating'">
-              <div class="composer-conversation__poll-rating-labels">
-                <span>Weak</span><span>Strong</span>
-              </div>
-              <div class="composer-conversation__poll-rating-options">
-                <label v-for="(option, optionIndex) in question.options" :key="option">
-                  <span>{{ option }}</span>
-                  <input
-                    type="radio"
-                    :name="`poll-${activePoll.id}-question-${questionIndex}`"
-                    :checked="pollResponses[questionIndex] === optionIndex"
-                    @change="togglePollResponse(question, questionIndex, optionIndex)"
-                  />
-                </label>
-              </div>
-            </template>
-            <textarea
-              v-else-if="question.type === 'openEnded'"
-              v-model="pollResponses[questionIndex]"
-              class="composer-conversation__poll-open-ended-input"
-              :aria-label="`Response to question ${questionIndex + 1}`"
-              :placeholder="question.required ? 'Write your response (required)' : 'Write your response (optional)'"
-              rows="4"
-            ></textarea>
-            <div v-else class="composer-conversation__poll-choice-options">
-              <label v-for="(option, optionIndex) in question.options" :key="option">
-                <input
-                  :type="question.multiple ? 'checkbox' : 'radio'"
-                  :name="`poll-${activePoll.id}-question-${questionIndex}`"
-                  :checked="
-                    question.multiple
-                      ? pollResponses[pollResponseKey(questionIndex, optionIndex)]
-                      : pollResponses[questionIndex] === optionIndex
-                  "
-                  @change="togglePollResponse(question, questionIndex, optionIndex)"
-                />
-                <span>{{ option }}</span>
-              </label>
-            </div>
-          </div>
-          <footer
-            class="composer-conversation__poll-response-footer"
-          >
-            <button
-              v-if="activePollMode !== 'results'"
-              type="button"
-              @click="submitPollResponse"
-            >
-              Submit Response
-            </button>
-            <button type="button" class="is-close" @click="closePollResponse">Close</button>
-          </footer>
-        </section>
-      </div>
-    </Teleport>
+    <DeleteMessageModal
+      v-if="deleteTarget"
+      @close="deleteTarget = null"
+      @confirm="confirmDelete"
+    />
+
+    <SeenByModal
+      v-if="seenByTarget"
+      :viewers="seenByViewers"
+      @close="seenByTarget = null"
+    />
 
     <div
       v-if="forwardTarget"
@@ -1934,9 +1810,18 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', closeActionsOn
   position: absolute;
   right: 8px;
   bottom: 7px;
+  padding: 0;
+  border: 0;
+  background: transparent;
   color: #afb5d1;
   font-size: 13px;
-  letter-spacing: -4px;
+  letter-spacing: 0;
+  cursor: pointer;
+}
+
+.composer-conversation__sent-status:hover,
+.composer-conversation__sent-status:focus-visible {
+  color: #6761d5;
 }
 
 .composer-conversation__important {
