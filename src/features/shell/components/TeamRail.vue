@@ -13,7 +13,6 @@ const emit = defineEmits(['invite'])
 const {
   activeWorkspaceId,
   activeTeamId,
-  isAdmin,
   teamsOfActiveWorkspace,
   workspacesLoading,
   workspacesError,
@@ -96,6 +95,11 @@ function handleDocumentKeydown(event) {
 function openCreateTeam() {
   closeTeamActions()
   ui.toggleTeamCreateModal()
+}
+
+function openJoinTeam() {
+  closeTeamActions()
+  ui.toggleTeamJoinModal()
 }
 
 function retryLoad() {
@@ -227,12 +231,11 @@ onBeforeUnmount(() => {
         </div>
 
         <button
-          v-if="isAdmin"
           ref="teamActionsButton"
           type="button"
           class="team-rail__add"
           aria-label="Team actions"
-          title="Create a team"
+          title="Create or join a team"
           aria-haspopup="menu"
           :aria-expanded="teamActionsOpen"
           :disabled="!activeWorkspaceId"
@@ -250,7 +253,7 @@ onBeforeUnmount(() => {
       <button
         type="button"
         class="team-rail__help"
-        :class="{ 'team-rail__help--active': ui.activePanel === 'help' }"
+        :class="{ 'team-rail__help--active': ui.helpModalOpen }"
         aria-label="Open help"
         @mouseenter="showRailTooltip($event, 'Help')"
         @mouseleave="hideRailTooltip"
@@ -258,16 +261,7 @@ onBeforeUnmount(() => {
         @blur="hideRailTooltip"
         @click="ui.toggleHelpModal()"
       >
-        <svg
-          class="team-rail__help-icon"
-          viewBox="0 0 24 24"
-          fill="currentColor"
-          aria-hidden="true"
-        >
-          <path
-            d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2Zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8ZM11 16h2v2h-2v-2Zm1-10c-2.21 0-4 1.79-4 4h2c0-1.1.9-2 2-2s2 .9 2 2c0 2-3 1.75-3 5h2c0-2.25 3-2.5 3-5 0-2.21-1.79-4-4-4Z"
-          />
-        </svg>
+        ?
       </button>
     </footer>
 
@@ -289,6 +283,7 @@ onBeforeUnmount(() => {
         :style="{ top: `${teamActionsPosition.top}px`, left: `${teamActionsPosition.left}px` }"
       >
         <button type="button" role="menuitem" @click="openCreateTeam">Create a team</button>
+        <button type="button" role="menuitem" @click="openJoinTeam">Join a team</button>
       </div>
     </Teleport>
   </aside>
@@ -507,13 +502,10 @@ onBeforeUnmount(() => {
 .team-rail__help {
   width: 22px;
   height: 22px;
-  background: transparent;
-}
-
-.team-rail__help-icon {
-  display: block;
-  width: 20px;
-  height: 20px;
+  border: 1px solid color-mix(in srgb, var(--color-white) 70%, transparent);
+  border-radius: 50%;
+  font-size: 12px;
+  font-weight: 700;
 }
 
 .team-rail__user {

@@ -1,84 +1,35 @@
 <script setup>
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { useDmStore } from '@/features/dms/stores/dms'
-import { useMembersStore } from '@/stores/members'
-import { useTeamsStore } from '@/stores/teams'
-import { useUiStore } from '@/stores/ui'
-import UserAvatar from './UserAvatar.vue'
+import { usePresenceStore, STATES } from '@/features/dms/stores/presence'
+import PresenceIcon from './PresenceIcon.vue'
+
+const MAX_MEMBERS = 7 // "You can add 7 more people"
 
 const emit = defineEmits(['close'])
 
 const dms = useDmStore()
-const memberStore = useMembersStore()
-const teams = useTeamsStore()
-const ui = useUiStore()
+const presence = usePresenceStore()
 
 const query = ref('')
 const selected = ref([]) // chune hue user ids
-const selectedUsers = ref({})
+const groupName = ref('')
 const highlight = ref(0)
 const input = ref(null)
-const listOpen = ref(true)
-const creating = ref(false)
-const createError = ref('')
-const memberUsers = computed(() =>
-  memberStore.members.map((user) => ({
-    ...user,
-    id: String(user.userId ?? user.id),
-    avatarUrl: user.avatarUrl ?? user.avatar ?? '',
-  })),
-)
-const userById = computed(() =>
-  Object.fromEntries([
-    ...[...dms.users, ...memberUsers.value].map((user) => [user.id, user]),
-    ...Object.entries(selectedUsers.value),
-  ]),
-)
-const availableUsers = computed(() => {
-  const usersById = new Map()
-  const candidates = [...dms.companyMembers, ...memberUsers.value, ...dms.users]
-  for (const user of candidates) {
-    if (user?.id != null && String(user.id) !== String(dms.meId)) {
-      usersById.set(String(user.id), {
-        ...usersById.get(String(user.id)),
-        ...user,
-        id: String(user.id),
-      })
-    }
-  }
-  return [...usersById.values()]
-})
+const listOpen = ref(false)
+
+const remaining = computed(() => MAX_MEMBERS - selected.value.length)
 
 const showList = computed(() => listOpen.value)
 
 const results = computed(() => {
   const q = query.value.trim().toLowerCase()
-  return availableUsers.value.filter(
-    (user) =>
-      !selected.value.includes(user.id) &&
-      [user.name, user.email]
-        .filter(Boolean)
-        .some((value) => String(value).toLowerCase().includes(q)),
+  return dms.users.filter(
+    (u) => u.id !== dms.meId && !selected.value.includes(u.id) && u.name.toLowerCase().includes(q),
   )
-})
-const currentUserMatchesQuery = computed(() => {
-  const q = query.value.trim().toLowerCase()
-  if (!q || !dms.meId) return false
-  const currentUser = [...dms.companyMembers, ...memberUsers.value, ...dms.users].find(
-    (user) => String(user.id) === String(dms.meId),
-  )
-  return [currentUser?.name, currentUser?.email]
-    .filter(Boolean)
-    .some((value) => String(value).toLowerCase().includes(q))
 })
 
-onMounted(() => {
-  input.value?.focus()
-  void dms.loadCompanyMembers()
-  if (teams.activeWorkspaceId && teams.activeTeamId) {
-    void memberStore.fetchMembers(teams.activeWorkspaceId, teams.activeTeamId)
-  }
-})
+onMounted(() => input.value?.focus())
 watch(query, (value) => {
   highlight.value = 0
   if (value.trim()) listOpen.value = true
@@ -88,15 +39,13 @@ watch(highlight, async () => {
   document.getElementById(`dm-opt-${highlight.value}`)?.scrollIntoView({ block: 'nearest' })
 })
 
-async function add(user) {
-  if (!user || selected.value.length >= 1) return
+function add(user) {
+  if (!user || remaining.value <= 0) return
   selected.value.push(user.id)
-  selectedUsers.value = { ...selectedUsers.value, [user.id]: user }
-  createError.value = ''
   query.value = '' // list dobara band ho jati hai
   listOpen.value = false
   highlight.value = 0
-  await go()
+  input.value?.focus()
 }
 function remove(id) {
   selected.value = selected.value.filter((x) => x !== id)
@@ -107,20 +56,12 @@ function toggleList() {
   if (listOpen.value) input.value?.focus()
 }
 
-async function go(userId = selected.value[0]) {
-  if (!userId || creating.value) return
-  creating.value = true
-  createError.value = ''
-  try {
-    await dms.startDm(userId)
-    ui.selectChannel(null)
-    ui.closePanel()
-    emit('close')
-  } catch (error) {
-    createError.value = error?.message || 'Could not start this direct message.'
-  } finally {
-    creating.value = false
-  }
+function go() {
+  if (!selected.value.length) return
+  if (selected.value.length === 1)
+    dms.startDm(selected.value[0]) // 1 user = DM
+  else dms.startGroup(selected.value, groupName.value) // 2+ = group DM
+  emit('close')
 }
 
 function onKeydown(e) {
@@ -133,7 +74,7 @@ function onKeydown(e) {
   } else if (e.key === 'Enter') {
     e.preventDefault()
     if (showList.value) {
-      if (results.value.length && selected.value.length < 1) add(results.value[highlight.value])
+      if (results.value.length && remaining.value > 0) add(results.value[highlight.value])
     } else {
       go()
     }
@@ -168,47 +109,24 @@ function onKeydown(e) {
 
           <h2 class="mb-8 text-center text-2xl font-semibold">Direct Messages</h2>
 
-          <p class="mb-2 text-sm text-slate-500">Select one person to start a direct message.</p>
-          <p
-            v-if="memberStore.loading || dms.companyMembersLoading"
-            class="mb-2 text-sm text-slate-500"
-            role="status"
-          >
-            Loading members…
+          <p class="mb-2 text-sm text-slate-500">
+            Use ↑↓ to browse, ↵ to select. You can add {{ remaining }} more people.
           </p>
-          <p
-            v-if="dms.companyMembersError || memberStore.error"
-            class="mb-2 text-sm text-red-600"
-            role="alert"
-          >
-            {{ dms.companyMembersError || memberStore.error }}
-          </p>
+
           <!-- Search box + dropdown -->
           <div class="relative">
             <div
               class="flex min-h-[56px] flex-wrap items-center gap-2 rounded border-2 border-slate-300 px-3 py-2 focus-within:border-indigo-500"
               @click="input?.focus()"
             >
-              <svg
-                aria-hidden="true"
-                class="h-5 w-5 shrink-0 text-slate-400"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="1.8"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-              >
-                <circle cx="10.8" cy="10.8" r="6.8" />
-                <path d="m16 16 4.2 4.2" />
-              </svg>
+              <span class="text-slate-400">🔍</span>
 
               <span
                 v-for="id in selected"
                 :key="id"
                 class="flex items-center gap-1 rounded-full bg-indigo-100 py-0.5 pl-2 pr-1 text-sm text-indigo-800"
               >
-                {{ userById[id]?.name }}
+                {{ dms.usersById[id]?.name }}
                 <button
                   type="button"
                   class="flex h-5 w-5 items-center justify-center rounded-full hover:bg-indigo-200"
@@ -229,8 +147,7 @@ function onKeydown(e) {
 
               <button
                 type="button"
-                class="inline-block px-1 text-indigo-500 transition-transform"
-                :class="{ 'rotate-180': showList }"
+                class="px-1 text-indigo-500"
                 aria-label="Show members"
                 :aria-expanded="showList"
                 @click.stop="toggleList"
@@ -251,29 +168,36 @@ function onKeydown(e) {
                   @mouseenter="highlight = i"
                   @click="add(u)"
                 >
-                  <UserAvatar :name="u.name" :user-id="u.id" :size="44" ring="border-white" />
+                  <PresenceIcon :state="presence.stateOf(u.id)" :size="28" />
                   <span class="min-w-0 flex-1">
                     <span class="block truncate">{{ u.name }}</span>
+                    <span class="block truncate text-xs text-slate-500">
+                      {{ STATES[presence.stateOf(u.id)]
+                      }}<template v-if="presence.customOf(u.id).text">
+                        · {{ presence.customOf(u.id).emoji }}
+                        {{ presence.customOf(u.id).text }}</template
+                      >
+                    </span>
                   </span>
                 </button>
               </li>
-              <li v-if="selected.length >= 1" class="px-3 py-3 text-sm text-slate-500">
-                One-to-one direct messages include one other person
-              </li>
-              <li v-else-if="currentUserMatchesQuery" class="px-3 py-3 text-sm text-slate-500">
-                That is your account. Choose another member to start a direct message.
+              <li v-if="remaining <= 0" class="px-3 py-3 text-sm text-slate-500">
+                Maximum members reached
               </li>
               <li v-else-if="!results.length" class="px-3 py-3 text-sm text-slate-500">
-                {{
-                  query.trim() ? 'No matching company members or conversations' : 'No users found'
-                }}
+                No users found
               </li>
             </ul>
           </div>
 
-          <p v-if="createError" class="mt-3 text-sm text-red-600" role="alert">
-            {{ createError }}
-          </p>
+          <!-- 2+ users chunne par group ka naam -->
+          <input
+            v-if="selected.length > 1"
+            v-model="groupName"
+            type="text"
+            placeholder="Group name (optional)"
+            class="mt-4 w-full rounded border-2 border-slate-300 px-3 py-2 outline-none focus:border-indigo-500"
+          />
         </div>
 
         <div class="flex items-center justify-end gap-3 border-t px-6 py-4">
@@ -285,10 +209,10 @@ function onKeydown(e) {
           </button>
           <button
             class="rounded bg-indigo-500 px-6 py-3 text-sm font-semibold uppercase tracking-wider text-white disabled:cursor-not-allowed disabled:bg-indigo-300"
-            :disabled="!selected.length || creating"
+            :disabled="!selected.length"
             @click="go"
           >
-            {{ creating ? 'Creating…' : 'Go' }}
+            Go
           </button>
         </div>
       </div>

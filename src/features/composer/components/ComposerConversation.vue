@@ -40,14 +40,6 @@ const seenByTarget = ref(null)
 const forwardTarget = ref(null)
 const forwardDestinationId = ref('')
 const dmVisibleCount = ref(20)
-const participatedPolls = ref(new Set())
-const activePoll = ref(null)
-const activePollMode = ref('respond')
-const pollResponses = ref({})
-const pollResults = ref({})
-const closedPolls = ref(new Set())
-const pollClock = ref(Date.now())
-let pollClockTimer = null
 
 const channelId = computed(() => String(props.conversationId || 'general'))
 const conversation = computed(() =>
@@ -128,7 +120,6 @@ const renderedMessages = computed(() => {
             ? dms.usersById[message.from]?.name || conversationLabel.value
             : message.author || currentUser
       const authorId = message.from ?? message.authorId ?? author
-      const avatarUserId = messageAvatarUserId({ ...message, author })
       const grouped =
         previous &&
         authorId === previous.authorId &&
@@ -139,7 +130,6 @@ const renderedMessages = computed(() => {
         content,
         author,
         authorId,
-        avatarUserId,
         mine: message.mine ?? message.from === dms.meId,
         showDate: !previous || !sameDay(previous.createdAt, message.createdAt),
         dateHeading: dateLabel(message.createdAt),
@@ -205,33 +195,22 @@ function isPinned(message) {
   return ui.pinnedMessages.some(
     (item) =>
       String(item.id) === String(message.id) &&
-      String(item.conversation?.id ?? '') === String(conversationMeta.value.id) &&
-      (item.conversation?.kind === 'dm' ||
-        item.conversation?.type === 'dm') ===
-        (props.conversationType === 'dm'),
+      String(item.conversation?.id ?? '') === conversationMeta.value.id,
   )
 }
 
 function messageAuthorUserId(message) {
   if (message.mine || message.from === dms.meId) return null
-  return messageAvatarUserId(message)
-}
-
-function messageAvatarUserId(message) {
   const authorId = message.from ?? message.authorId
   if (dms.usersById[authorId]) return authorId
-  return dms.users.find((user) => user.name === message.author)?.id ?? null
+  return dms.users.find((user) => user.name === message.author)?.id || null
 }
 
-async function openMessageAuthor(message) {
+function openMessageAuthor(message) {
   const userId = messageAuthorUserId(message)
   if (!userId || userId === dms.meId) return
-  try {
-    await dms.startDm(userId)
-    ui.activePanel = null
-  } catch (error) {
-    ui.toast('Direct message error', error?.message || 'Could not open this direct message.', 'error')
-  }
+  dms.startDm(userId)
+  ui.activePanel = null
 }
 
 function togglePin(message) {
@@ -252,7 +231,6 @@ function addMessage(payload) {
     ui.toast('Message not sent', 'The conversation could not be found.', 'error')
     return
   }
-  if (payload.poll) sentMessage.poll = payload.poll
   if (!conversation.value && !sentMessage.scheduled) {
     ui.addPoll(sentMessage, conversationMeta.value)
     addMockMessage({
@@ -494,199 +472,18 @@ function closeActionsOnOutsideClick(event) {
   if (!target?.closest('.composer-conversation__actions')) closeMessageActions()
 }
 
-function participateInPoll(pollId) {
-  const message = renderedMessages.value.find((item) => item.poll?.id === pollId)
-  if (!message?.poll || !isPollActive(message.poll)) return
-  activePoll.value = message.poll
-  activePollMode.value = 'respond'
-  pollResponses.value = {}
-}
-
-function closePoll(pollId) {
-  closedPolls.value = new Set([...closedPolls.value, pollId])
-}
-
-function pollStartTime(poll) {
-  return poll.scheduleStart ? Date.parse(poll.scheduleStart) : NaN
-}
-
-function pollCloseTime(poll) {
-  return poll.scheduleClose ? Date.parse(poll.scheduleClose) : NaN
-}
-
-function isPollActive(poll) {
-  const now = pollClock.value
-  const startsAt = pollStartTime(poll)
-  const closesAt = pollCloseTime(poll)
-  return (
-    !closedPolls.value.has(poll.id) &&
-    (!Number.isFinite(startsAt) || startsAt <= now) &&
-    (!Number.isFinite(closesAt) || closesAt > now)
-  )
-}
-
-function isPollClosed(poll) {
-  return closedPolls.value.has(poll.id) || (
-    Number.isFinite(pollCloseTime(poll)) && pollCloseTime(poll) <= pollClock.value
-  )
-}
-
-function isPollScheduled(poll) {
-  const startsAt = pollStartTime(poll)
-  return Number.isFinite(startsAt) && startsAt > pollClock.value
-}
-
-function pollScheduleLabel(value) {
-  const timestamp = Date.parse(value || '')
-  if (!Number.isFinite(timestamp)) return ''
-  return new Intl.DateTimeFormat('en-US', {
-    weekday: 'short',
-    month: 'short',
-    day: '2-digit',
-    year: 'numeric',
-    hour: 'numeric',
-    minute: '2-digit',
-  }).format(timestamp)
-}
-
-function exportPollResults(pollId) {
-  const message = renderedMessages.value.find((item) => item.poll?.id === pollId)
-  if (!message?.poll) return
-  const rows = ['Question,Option,Votes,Percentage']
-  message.poll.questions.forEach((question, questionIndex) => {
-    question.options.forEach((option, optionIndex) => {
-      const result = pollResultFor(pollId, questionIndex, optionIndex)
-      rows.push(
-        [
-          question.text,
-          option,
-          result.votes,
-          `${result.percentage}%`,
-        ]
-          .map((value) => `"${String(value).replaceAll('"', '""')}"`)
-          .join(','),
-      )
-    })
-  })
-  const blob = new Blob([rows.join('\n')], { type: 'text/csv;charset=utf-8' })
-  const url = URL.createObjectURL(blob)
-  const link = document.createElement('a')
-  link.href = url
-  link.download = `${message.poll.title || 'poll'}-results.csv`
-  link.click()
-  URL.revokeObjectURL(url)
-}
-
-function viewPollResults(pollId) {
-  const message = renderedMessages.value.find((item) => item.poll?.id === pollId)
-  if (!message?.poll) return
-  activePoll.value = message.poll
-  activePollMode.value = 'results'
-  pollResponses.value = {}
-}
-
-function closePollResponse() {
-  activePoll.value = null
-  activePollMode.value = 'respond'
-  pollResponses.value = {}
-}
-
-function pollResultFor(pollId, questionIndex, optionIndex) {
-  const result = pollResults.value[pollId]?.questions?.[questionIndex]
-  const votes = result?.votes?.[optionIndex] || 0
-  const totalVotes = pollResults.value[pollId]?.totalVotes || 0
-  return {
-    votes,
-    percentage: totalVotes ? Math.round((votes / totalVotes) * 100) : 0,
-  }
-}
-
-function pollResponseKey(questionIndex, optionIndex = '') {
-  return `${questionIndex}-${optionIndex}`
-}
-
-function togglePollResponse(question, questionIndex, optionIndex) {
-  if (question.multiple) {
-    const key = pollResponseKey(questionIndex, optionIndex)
-    pollResponses.value[key] = !pollResponses.value[key]
-    return
-  }
-  pollResponses.value = {
-    ...pollResponses.value,
-    [questionIndex]: optionIndex,
-  }
-}
-
-function submitPollResponse() {
-  if (!activePoll.value) return
-  const poll = activePoll.value
-  const missingRequiredResponse = poll.questions.some(
-    (question, questionIndex) =>
-      question.required &&
-      question.type === 'openEnded' &&
-      !String(pollResponses.value[questionIndex] || '').trim(),
-  )
-  if (missingRequiredResponse) return
-  const existingResult = pollResults.value[poll.id] || {
-    totalVotes: 0,
-    questions: poll.questions.map((question) => ({ votes: Array(question.options.length).fill(0) })),
-    responses: poll.questions.map(() => []),
-  }
-  if (!existingResult.responses) {
-    existingResult.responses = poll.questions.map(() => [])
-  }
-  existingResult.totalVotes += 1
-  poll.questions.forEach((question, questionIndex) => {
-    if (question.type === 'openEnded') {
-      const response = String(pollResponses.value[questionIndex] || '').trim()
-      if (response) existingResult.responses[questionIndex].push(response)
-      return
-    }
-    if (question.multiple) {
-      question.options.forEach((_, optionIndex) => {
-        if (pollResponses.value[pollResponseKey(questionIndex, optionIndex)]) {
-          existingResult.questions[questionIndex].votes[optionIndex] += 1
-        }
-      })
-      return
-    }
-    const optionIndex = pollResponses.value[questionIndex]
-    if (typeof optionIndex === 'number') {
-      existingResult.questions[questionIndex].votes[optionIndex] += 1
-    }
-  })
-  pollResults.value = { ...pollResults.value, [poll.id]: existingResult }
-  participatedPolls.value = new Set([...participatedPolls.value, activePoll.value.id])
-  closePollResponse()
-}
-
 async function scrollMessagesToLatest() {
   await nextTick()
   const container = messagesContainer.value
   if (container) container.scrollTop = container.scrollHeight
 }
 
-onMounted(() => {
-  document.addEventListener('pointerdown', closeActionsOnOutsideClick)
-  pollClockTimer = window.setInterval(() => {
-    pollClock.value = Date.now()
-  }, 1000)
-})
-onBeforeUnmount(() => {
-  document.removeEventListener('pointerdown', closeActionsOnOutsideClick)
-  if (pollClockTimer) window.clearInterval(pollClockTimer)
-})
+onMounted(() => document.addEventListener('pointerdown', closeActionsOnOutsideClick))
+onBeforeUnmount(() => document.removeEventListener('pointerdown', closeActionsOnOutsideClick))
 </script>
 
 <template>
   <section class="composer-conversation" @keydown.esc="closeMessageActions">
-    <p
-      v-if="conversation && dms.detailError"
-      class="px-4 py-2 text-sm text-red-700"
-      role="alert"
-    >
-      {{ dms.detailError }}
-    </p>
     <div ref="messagesContainer" class="composer-conversation__messages" aria-live="polite">
       <button
         v-if="hasOlderMessages"
@@ -705,16 +502,17 @@ onBeforeUnmount(() => {
         <article
           class="composer-conversation__message"
           :class="{ 'composer-conversation__message--grouped': message.grouped }"
-          :data-message-id="message.id"
         >
-          <UserAvatar
-            v-if="!message.grouped"
-            class="composer-conversation__avatar"
-            :name="message.author"
-            :size="30"
-            :user-id="message.avatarUserId"
-            ring="border-white"
-          />
+          <span v-if="!message.grouped" class="composer-conversation__avatar" aria-hidden="true">
+            {{
+              message.author
+                ?.split(/\s+/)
+                .map((part) => part[0])
+                .slice(0, 2)
+                .join('')
+                .toUpperCase()
+            }}
+          </span>
           <span v-else class="composer-conversation__avatar-spacer" aria-hidden="true"></span>
 
           <div class="composer-conversation__message-content">
@@ -747,70 +545,6 @@ onBeforeUnmount(() => {
                 <span v-if="message.important" class="composer-conversation__important">
                   IMPORTANT!
                 </span>
-
-                <section v-if="message.poll" class="composer-conversation__poll-card">
-                  <h2>{{ message.poll.title }}</h2>
-                  <div
-                    v-if="message.poll.description"
-                    class="composer-conversation__poll-description"
-                  >
-                    {{ message.poll.description }}
-                  </div>
-                  <div class="composer-conversation__poll-meta">
-                    <span
-                      class="composer-conversation__poll-status"
-                      :class="{ 'is-closed': closedPolls.has(message.poll.id) }"
-                    >
-                      <i
-                        class="composer-conversation__poll-status-icon"
-                        :class="closedPolls.has(message.poll.id) ? 'is-closed' : 'is-open'"
-                        aria-hidden="true"
-                      >
-                        {{ closedPolls.has(message.poll.id) ? '×' : '✓' }}
-                      </i>
-                      {{ closedPolls.has(message.poll.id) ? 'Closed' : 'Open' }}
-                    </span>
-                    <span class="composer-conversation__poll-meta-divider" aria-hidden="true"></span>
-                    <span class="composer-conversation__poll-visibility">
-                      <i aria-hidden="true">◉</i>
-                      {{ message.poll.audience === 'anonymous' ? 'Anonymous' : 'Public' }}
-                    </span>
-                  </div>
-                  <div class="composer-conversation__poll-actions">
-                    <button
-                      v-if="
-                        !closedPolls.has(message.poll.id) &&
-                        !participatedPolls.has(message.poll.id)
-                      "
-                      type="button"
-                      @click="participateInPoll(message.poll.id)"
-                    >
-                      Participate
-                    </button>
-                    <button
-                      v-else-if="!closedPolls.has(message.poll.id)"
-                      type="button"
-                      class="is-done"
-                      disabled
-                      aria-label="You're done"
-                    >
-                      You're Done
-                    </button>
-                    <button type="button" @click="viewPollResults(message.poll.id)">
-                      View All Results
-                    </button>
-                    <button
-                      v-if="closedPolls.has(message.poll.id)"
-                      type="button"
-                      @click="exportPollResults(message.poll.id)"
-                    >
-                      Export To Csv
-                    </button>
-                    <button v-else type="button" @click="closePoll(message.poll.id)">
-                      Close Poll
-                    </button>
-                  </div>
-                </section>
 
                 <div v-if="message.reply" class="composer-conversation__reply-quote">
                   <strong>{{ message.reply.author || 'Message' }}</strong>
@@ -1124,157 +858,6 @@ onBeforeUnmount(() => {
       @close="seenByTarget = null"
     />
 
-    <Teleport to="body">
-      <div
-        v-if="activePoll"
-        class="composer-conversation__poll-backdrop"
-        @mousedown.self="closePollResponse"
-      >
-        <section
-          class="composer-conversation__poll-response-modal"
-          role="dialog"
-          aria-modal="true"
-          :aria-label="
-            `${activePoll.title} poll ${activePollMode === 'results' ? 'results' : 'response'}`
-          "
-        >
-          <header class="composer-conversation__poll-response-header">
-            <h2>{{ activePoll.title }}</h2>
-            <button type="button" aria-label="Close poll response" @click="closePollResponse">
-              &times;
-            </button>
-          </header>
-          <div class="composer-conversation__poll-response-summary">
-            <span>Creator: {{ activePoll.creator || 'You' }}</span>
-            <span
-              class="composer-conversation__poll-status"
-              :class="{ 'is-closed': isPollClosed(activePoll) }"
-            >
-              <i
-                class="composer-conversation__poll-status-icon"
-                :class="isPollClosed(activePoll) ? 'is-closed' : isPollScheduled(activePoll) ? 'is-scheduled' : 'is-open'"
-                aria-hidden="true"
-              >
-                {{ isPollClosed(activePoll) ? '×' : isPollScheduled(activePoll) ? '◷' : '✓' }}
-              </i>
-              {{ isPollClosed(activePoll) ? 'Closed' : isPollScheduled(activePoll) ? 'Scheduled' : 'Open' }}
-            </span>
-            <span class="composer-conversation__poll-meta-divider" aria-hidden="true"></span>
-            <span class="composer-conversation__poll-visibility">
-              <i aria-hidden="true">◉</i>
-              {{ activePoll.audience === 'anonymous' ? 'Anonymous' : 'Public' }}
-            </span>
-            <strong>* Required</strong>
-          </div>
-          <p v-if="activePoll.description" class="composer-conversation__poll-response-description">
-            Description: {{ activePoll.description }}
-          </p>
-          <div
-            v-for="(question, questionIndex) in activePoll.questions"
-            :key="questionIndex"
-            class="composer-conversation__poll-response-question"
-          >
-            <h3>Q{{ questionIndex + 1 }}. {{ question.text }}<b v-if="question.required"> *</b></h3>
-            <template v-if="activePollMode === 'results'">
-              <div v-if="question.type === 'openEnded'" class="composer-conversation__poll-text-results">
-                <p v-if="pollResults[activePoll.id]?.responses?.[questionIndex]?.length">
-                  Responses
-                </p>
-                <blockquote
-                  v-for="response in pollResults[activePoll.id].responses[questionIndex]"
-                  :key="response"
-                >
-                  {{ response }}
-                </blockquote>
-                <strong class="composer-conversation__poll-total-votes">
-                  Total Responses: {{ pollResults[activePoll.id]?.responses?.[questionIndex]?.length || 0 }}
-                </strong>
-              </div>
-              <div v-else class="composer-conversation__poll-results-options">
-                <div
-                  v-for="(option, optionIndex) in question.options"
-                  :key="option"
-                  class="composer-conversation__poll-result"
-                >
-                  <span>{{ option }}</span>
-                  <div class="composer-conversation__poll-result-row">
-                    <div class="composer-conversation__poll-result-bar">
-                      <span
-                        class="composer-conversation__poll-result-fill"
-                        :style="{
-                          width: `${pollResultFor(activePoll.id, questionIndex, optionIndex).percentage}%`,
-                        }"
-                      ></span>
-                      <strong>
-                        {{ pollResultFor(activePoll.id, questionIndex, optionIndex).percentage }}%
-                      </strong>
-                    </div>
-                    <span class="composer-conversation__poll-result-votes">
-                      {{ pollResultFor(activePoll.id, questionIndex, optionIndex).votes }} VOTE
-                    </span>
-                  </div>
-                </div>
-                <strong class="composer-conversation__poll-total-votes">
-                  Total Votes: {{ pollResults[activePoll.id]?.totalVotes || 0 }}
-                </strong>
-              </div>
-            </template>
-            <template v-else-if="question.type === 'rating'">
-              <div class="composer-conversation__poll-rating-labels">
-                <span>Weak</span><span>Strong</span>
-              </div>
-              <div class="composer-conversation__poll-rating-options">
-                <label v-for="(option, optionIndex) in question.options" :key="option">
-                  <span>{{ option }}</span>
-                  <input
-                    type="radio"
-                    :name="`poll-${activePoll.id}-question-${questionIndex}`"
-                    :checked="pollResponses[questionIndex] === optionIndex"
-                    @change="togglePollResponse(question, questionIndex, optionIndex)"
-                  />
-                </label>
-              </div>
-            </template>
-            <textarea
-              v-else-if="question.type === 'openEnded'"
-              v-model="pollResponses[questionIndex]"
-              class="composer-conversation__poll-open-ended-input"
-              :aria-label="`Response to question ${questionIndex + 1}`"
-              :placeholder="question.required ? 'Write your response (required)' : 'Write your response (optional)'"
-              rows="4"
-            ></textarea>
-            <div v-else class="composer-conversation__poll-choice-options">
-              <label v-for="(option, optionIndex) in question.options" :key="option">
-                <input
-                  :type="question.multiple ? 'checkbox' : 'radio'"
-                  :name="`poll-${activePoll.id}-question-${questionIndex}`"
-                  :checked="
-                    question.multiple
-                      ? pollResponses[pollResponseKey(questionIndex, optionIndex)]
-                      : pollResponses[questionIndex] === optionIndex
-                  "
-                  @change="togglePollResponse(question, questionIndex, optionIndex)"
-                />
-                <span>{{ option }}</span>
-              </label>
-            </div>
-          </div>
-          <footer
-            class="composer-conversation__poll-response-footer"
-          >
-            <button
-              v-if="activePollMode !== 'results'"
-              type="button"
-              @click="submitPollResponse"
-            >
-              Submit Response
-            </button>
-            <button type="button" class="is-close" @click="closePollResponse">Close</button>
-          </footer>
-        </section>
-      </div>
-    </Teleport>
-
     <div
       v-if="forwardTarget"
       class="composer-conversation__forward-overlay"
@@ -1362,6 +945,16 @@ onBeforeUnmount(() => {
 .composer-conversation__avatar-spacer {
   width: 30px;
   height: 30px;
+}
+
+.composer-conversation__avatar {
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: #77c941;
+  color: #25263a;
+  font-size: 11px;
+  font-weight: 600;
 }
 
 .composer-conversation__message-content {
@@ -1504,439 +1097,6 @@ onBeforeUnmount(() => {
   right: 4px;
   display: grid;
   justify-items: end;
-}
-.composer-conversation__poll-card {
-  overflow: hidden;
-  border-left: 4px solid #1717ff;
-  background: #edeef6;
-}
-
-.composer-conversation__poll-card h2 {
-  margin: 0;
-  padding: 18px 16px 12px;
-  border-bottom: 1px solid #d5d7e2;
-  font-size: 23px;
-  font-weight: 600;
-}
-
-.composer-conversation__poll-description {
-  padding: 12px 16px 0;
-  color: #696d81;
-  font-size: 14px;
-}
-
-.composer-conversation__poll-meta {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  padding: 12px 16px 9px;
-  color: #696d81;
-  font-size: 14px;
-}
-
-.composer-conversation__poll-status,
-.composer-conversation__poll-visibility {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-}
-
-.composer-conversation__poll-status-icon {
-  display: inline-grid;
-  width: 15px;
-  height: 15px;
-  place-items: center;
-  border-radius: 3px;
-  background: #4caf50;
-  color: #fff;
-  font-size: 11px;
-  font-style: normal;
-  font-weight: 700;
-  line-height: 1;
-}
-
-.composer-conversation__poll-status-icon.is-closed {
-  background: #f04444;
-}
-
-.composer-conversation__poll-status-icon.is-scheduled {
-  background: #5962ff;
-}
-
-.composer-conversation__poll-status.is-closed {
-  color: #696d81;
-}
-
-.composer-conversation__poll-visibility i {
-  color: #696d81;
-  font-size: 16px;
-  font-style: normal;
-}
-
-.composer-conversation__poll-meta-divider {
-  width: 1px;
-  height: 18px;
-  background: #c9cbd6;
-}
-
-.composer-conversation__poll-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  padding: 0 12px 14px;
-}
-
-.composer-conversation__poll-schedule-info {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0;
-  margin: 4px 12px 14px;
-  border: 1px solid #d5d7e2;
-  border-radius: 6px;
-  background: #fff;
-  color: #25263a;
-}
-
-.composer-conversation__poll-schedule-item {
-  display: flex;
-  min-width: 220px;
-  flex: 1 1 220px;
-  align-items: center;
-  gap: 9px;
-  padding: 10px 12px;
-}
-
-.composer-conversation__poll-schedule-item + .composer-conversation__poll-schedule-item {
-  border-left: 1px solid #e1e2ea;
-}
-
-.composer-conversation__poll-schedule-icon {
-  display: inline-grid;
-  width: 24px;
-  height: 24px;
-  place-items: center;
-  border-radius: 50%;
-  background: #eef0ff;
-  color: #5962ff;
-  font-size: 15px;
-  font-weight: 700;
-}
-
-.composer-conversation__poll-schedule-item > span:last-child {
-  display: grid;
-  gap: 2px;
-  min-width: 0;
-}
-
-.composer-conversation__poll-schedule-item small {
-  color: #696d81;
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-}
-
-.composer-conversation__poll-schedule-item strong {
-  overflow: hidden;
-  color: #25263a;
-  font-size: 12px;
-  font-weight: 600;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-@media (max-width: 620px) {
-  .composer-conversation__poll-schedule-item + .composer-conversation__poll-schedule-item {
-    border-top: 1px solid #e1e2ea;
-    border-left: 0;
-  }
-}
-
-.composer-conversation__poll-actions button {
-  padding: 7px 10px;
-  border: 1px solid #5962ff;
-  border-radius: 4px;
-  background: #fff;
-  color: #5962ff;
-  font: inherit;
-  font-size: 13px;
-  font-weight: 600;
-  cursor: pointer;
-}
-
-.composer-conversation__poll-actions button.is-done {
-  border-color: #929bff;
-  background: #929bff;
-  color: #fff;
-  cursor: default;
-}
-
-.composer-conversation__poll-backdrop {
-  position: fixed;
-  z-index: 2200;
-  inset: 0;
-  display: grid;
-  place-items: center;
-  padding: 16px;
-  background: rgb(20 16 40 / 50%);
-}
-
-.composer-conversation__poll-response-modal {
-  width: min(840px, 100%);
-  max-height: min(90vh, 680px);
-  overflow: auto;
-  background: #fff;
-  box-shadow: 0 12px 40px rgb(0 0 0 / 28%);
-  color: #25263a;
-}
-
-.composer-conversation__poll-response-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 18px 28px;
-  border-bottom: 1px solid #d5d7e2;
-}
-
-.composer-conversation__poll-response-header h2 {
-  margin: 0;
-  font-size: 27px;
-  font-weight: 500;
-}
-
-.composer-conversation__poll-response-header button {
-  border: 0;
-  background: transparent;
-  color: #777;
-  font-size: 30px;
-  line-height: 1;
-  cursor: pointer;
-}
-
-.composer-conversation__poll-response-summary {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
-  padding: 16px 28px 8px;
-  color: #696d81;
-  font-size: 15px;
-}
-
-.composer-conversation__poll-response-summary strong {
-  color: #ff2e3b;
-}
-
-.composer-conversation__poll-response-description {
-  margin: 0;
-  padding: 0 28px 14px;
-  color: #696d81;
-}
-
-.composer-conversation__poll-response-question {
-  margin: 0 28px 14px;
-  padding: 0 10px 24px;
-  background: #edeef6;
-}
-
-.composer-conversation__poll-response-question h3 {
-  margin: 0;
-  padding: 15px 0;
-  border-bottom: 1px solid #d5d7e2;
-  color: #5962ff;
-  font-size: 23px;
-  font-weight: 600;
-}
-
-.composer-conversation__poll-response-question h3 b {
-  color: #ff2e3b;
-}
-
-.composer-conversation__poll-choice-options {
-  display: flex;
-  flex-direction: column;
-  gap: 15px;
-  padding: 20px 4px 0;
-}
-
-.composer-conversation__poll-open-ended-input {
-  display: block;
-  width: 100%;
-  box-sizing: border-box;
-  margin-top: 20px;
-  padding: 12px;
-  border: 1px solid #c9ccda;
-  border-radius: 4px;
-  background: #fff;
-  color: #25263a;
-  font: inherit;
-  resize: vertical;
-}
-
-.composer-conversation__poll-open-ended-input:focus {
-  border-color: #5962ff;
-  outline: 2px solid rgb(89 98 255 / 20%);
-}
-
-.composer-conversation__poll-text-results {
-  padding: 18px 4px 0;
-  color: #696d81;
-}
-
-.composer-conversation__poll-text-results p {
-  margin: 0 0 8px;
-  font-weight: 600;
-}
-
-.composer-conversation__poll-text-results blockquote {
-  margin: 8px 0;
-  padding: 10px 12px;
-  border-left: 3px solid #929bff;
-  background: #fff;
-}
-
-.composer-conversation__poll-choice-options label {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  color: #696d81;
-  font-size: 17px;
-}
-
-.composer-conversation__poll-choice-options input,
-.composer-conversation__poll-rating-options input {
-  width: 20px;
-  height: 20px;
-  accent-color: #5962ff;
-}
-
-.composer-conversation__poll-rating-labels {
-  display: flex;
-  justify-content: space-between;
-  padding: 32px 0 24px;
-  color: #696d81;
-  font-size: 16px;
-}
-
-.composer-conversation__poll-rating-options {
-  display: flex;
-  justify-content: space-evenly;
-  gap: 12px;
-}
-
-.composer-conversation__poll-rating-options label {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 10px;
-  font-size: 18px;
-}
-
-.composer-conversation__poll-results-options {
-  display: flex;
-  flex-direction: column;
-  gap: 18px;
-  padding: 18px 4px 0;
-}
-
-.composer-conversation__poll-result > span {
-  display: block;
-  margin-bottom: 5px;
-  color: #696d81;
-  font-size: 16px;
-}
-
-.composer-conversation__poll-result-row {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-}
-
-.composer-conversation__poll-result-bar {
-  position: relative;
-  display: flex;
-  min-width: 0;
-  height: 24px;
-  flex: 1;
-  align-items: center;
-  justify-content: center;
-  overflow: hidden;
-  background: #d9dcfa;
-  color: #25263a;
-}
-
-.composer-conversation__poll-result-fill {
-  position: absolute;
-  inset: 0 auto 0 0;
-  min-width: 0;
-  background: #5962ff;
-  transition: width 180ms ease;
-}
-
-.composer-conversation__poll-result-bar strong {
-  position: relative;
-  z-index: 1;
-  font-size: 14px;
-}
-
-.composer-conversation__poll-result-votes {
-  min-width: 68px;
-  padding: 6px 8px;
-  border: 1px solid #5962ff;
-  border-radius: 4px;
-  color: #5962ff;
-  font-size: 12px;
-  text-align: center;
-}
-
-.composer-conversation__poll-total-votes {
-  display: block;
-  padding-top: 2px;
-  color: #696d81;
-  font-size: 14px;
-}
-
-.composer-conversation__poll-response-footer {
-  display: flex;
-  gap: 12px;
-  justify-content: flex-end;
-  border-top: 1px solid #d5d7e2;
-  padding: 28px;
-}
-
-.composer-conversation__poll-response-footer button {
-  padding: 12px 16px;
-  border: 1px solid #5962ff;
-  border-radius: 2px;
-  background: #929bff;
-  color: #fff;
-  font: inherit;
-  font-size: 16px;
-  font-weight: 700;
-  cursor: pointer;
-  transition:
-    background-color 120ms ease,
-    border-color 120ms ease,
-    color 120ms ease;
-}
-
-.composer-conversation__poll-response-footer button:hover,
-.composer-conversation__poll-actions button:not(.is-done):hover {
-  border-color: #27338f;
-  background: #27338f;
-  color: #fff;
-}
-
-.composer-conversation__poll-response-footer button.is-close {
-  border-color: transparent;
-  background: transparent;
-  color: #25263a;
-  text-transform: uppercase;
-}
-
-.composer-conversation__poll-response-footer button.is-close:hover {
-  border-color: #27338f;
-  background: #27338f;
-  color: #fff;
 }
 
 .composer-conversation__action-toolbar {

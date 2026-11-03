@@ -4,7 +4,6 @@ import ChIcon from './ChIcon.vue'
 defineProps({
   channel: { type: Object, required: true },
   active: { type: Boolean, default: false },
-  joining: { type: Boolean, default: false },
 })
 const emit = defineEmits(['select', 'menu'])
 </script>
@@ -28,14 +27,20 @@ const emit = defineEmits(['select', 'menu'])
     >
       <ChIcon :name="channel.isPrivate ? 'lock' : 'globe'" :size="18" />
       <span class="ch-item__name">{{ channel.name }}</span>
-      <span v-if="!channel.isMember" class="ch-item__join">
-        {{ joining ? 'Joining…' : 'Join' }}
-      </span>
       <ChIcon v-if="channel.isFavorite" class="ch-item__favorite" name="star" :size="15" filled />
       <ChIcon v-if="channel.isMuted" name="bell-off" :size="14" />
       <span v-else-if="channel.unreadCount > 0" class="ch-item__badge">
         {{ channel.unreadCount > 99 ? '99+' : channel.unreadCount }}
       </span>
+    </button>
+    <button
+      class="ch-item__more"
+      type="button"
+      :aria-label="`Options for ${channel.name}`"
+      aria-haspopup="menu"
+      @click.stop="emit('menu', $event)"
+    >
+      <ChIcon name="more" :size="16" />
     </button>
   </li>
 </template>
@@ -92,11 +97,6 @@ const emit = defineEmits(['select', 'menu'])
 }
 .ch-item__favorite {
   color: #fbbf24;
-}
-.ch-item__join {
-  flex: 0 0 auto;
-  font-size: 12px;
-  font-weight: 600;
 }
 .ch-item__badge {
   min-width: 20px;

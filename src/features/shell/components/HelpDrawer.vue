@@ -132,7 +132,7 @@ onBeforeUnmount(() => {
 <template>
   <div class="help-drawer flex h-full w-full flex-col bg-white">
     <!-- Header -->
-    <header class="flex h-12 shrink-0 items-center justify-between border-b border-slate-200 px-4">
+    <header class="flex h-14 shrink-0 items-center justify-between border-b border-slate-200 px-5">
       <div class="flex items-center gap-2">
         <button
           v-if="activePage"
@@ -231,12 +231,12 @@ onBeforeUnmount(() => {
     </header>
 
     <!-- Body -->
-    <div ref="bodyEl" class="flex-1 overflow-y-auto px-4 py-4">
+    <div ref="bodyEl" class="flex-1 overflow-y-auto px-5 py-4">
       <!-- A topic page or What's New -->
       <HelpArticlePage v-if="activePage" :page="activePage" />
 
       <!-- Overview (default) -->
-      <div v-else class="space-y-4">
+      <div v-else class="space-y-5">
         <!-- 1. Find answers quickly: searches every article title -->
         <div>
           <label for="help-search" class="mb-1.5 block text-xs font-medium text-slate-500">
@@ -308,7 +308,7 @@ onBeforeUnmount(() => {
             @focusin="isCarouselFocused = true"
             @focusout="handleCarouselFocusOut"
           >
-            <div class="px-4 pt-3 pb-2.5">
+            <div class="px-4 pt-3.5 pb-2.5">
               <h3 class="text-sm font-bold text-slate-800">{{ currentSlide.title }}</h3>
               <p class="mt-0.5 text-xs text-slate-500">{{ currentSlide.subtitle }}</p>
             </div>
@@ -369,13 +369,13 @@ onBeforeUnmount(() => {
 
         <!-- 3. Explore help topics -->
         <div class="space-y-2">
-          <p class="mb-2 text-xs font-medium text-slate-500">Explore help topics</p>
+          <p class="mb-2.5 text-xs font-medium text-slate-500">Explore help topics</p>
 
           <button
             v-for="page in helpPages"
             :key="page.id"
             type="button"
-            class="flex w-full cursor-pointer items-center gap-3 rounded-lg border border-slate-200/90 bg-white p-2.5 text-left transition-all hover:border-indigo-300 hover:bg-indigo-50/20 hover:shadow-xs"
+            class="flex w-full cursor-pointer items-center gap-3.5 rounded-xl border border-slate-200/90 bg-white p-3 text-left transition-all hover:border-indigo-300 hover:bg-indigo-50/20 hover:shadow-xs"
             @click="openPage(page.id)"
           >
             <span

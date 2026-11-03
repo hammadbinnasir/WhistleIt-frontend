@@ -7,7 +7,6 @@ import { useChannelsStore } from '@/features/channels'
 import { useDmStore } from '@/features/dms/stores/dms'
 import { useMessagesStore } from '@/features/messages/messages'
 import { useRemindersStore } from '@/features/search/reminders'
-import { useTeamsStore } from '@/stores/teams'
 import { useUiStore } from '@/stores/ui'
 
 const emojiPickerProps = vi.hoisted(() => vi.fn())
@@ -38,7 +37,6 @@ describe('composer conversation', () => {
   beforeEach(() => {
     localStorage.clear()
     setActivePinia(createPinia())
-    useTeamsStore().activeWorkspaceId = 'company-1'
   })
 
   async function sendMessage(wrapper, content) {
@@ -77,116 +75,6 @@ describe('composer conversation', () => {
     expect(wrapper.get('[aria-label="Seen By"]').text()).toBe('✓✓')
   })
 
-  it('shows a sent poll in the conversation', async () => {
-    const wrapper = mount(ComposerConversation)
-    const composer = wrapper.findComponent(MessageComposer)
-
-    await composer.get('button[aria-label="Insert poll"]').trigger('click')
-
-    const titleInput = document.querySelector('#poll-title-input')
-    titleInput.value = 'Lunch vote'
-    titleInput.dispatchEvent(new Event('input', { bubbles: true }))
-    const questionInput = document.querySelector('#poll-question-0')
-    questionInput.value = 'What should we order?'
-    questionInput.dispatchEvent(new Event('input', { bubbles: true }))
-    const options = document.querySelectorAll('.message-composer__poll-option input')
-    options[0].value = 'Pizza'
-    options[0].dispatchEvent(new Event('input', { bubbles: true }))
-    options[1].value = 'Salad'
-    options[1].dispatchEvent(new Event('input', { bubbles: true }))
-
-    document.querySelector('.message-composer__poll-next').click()
-    await nextTick()
-    document.querySelector('.message-composer__poll-next').click()
-    await nextTick()
-    document.querySelector('.message-composer__poll-schedule-option input').click()
-    await nextTick()
-    document.querySelector('.message-composer__poll-footer .message-composer__poll-next').click()
-    await nextTick()
-
-    expect(wrapper.get('.composer-conversation__poll-card').text()).toContain('Lunch vote')
-    expect(useMessagesStore().messagesFor('general').at(-1).poll.questions[0].text).toBe(
-      'What should we order?',
-    )
-  })
-
-  it('accepts and displays an open-ended poll response', async () => {
-    const wrapper = mount(ComposerConversation)
-    const composer = wrapper.findComponent(MessageComposer)
-    composer.vm.$emit('send', {
-      content: '',
-      attachments: [],
-      poll: {
-        id: 'open-ended-poll',
-        title: 'Open feedback',
-        questions: [
-          {
-            text: 'What should we improve?',
-            type: 'openEnded',
-            required: true,
-            multiple: false,
-            options: [],
-          },
-        ],
-      },
-    })
-    await nextTick()
-
-    await wrapper.get('.composer-conversation__poll-actions button').trigger('click')
-    await nextTick()
-    const response = document.querySelector('textarea[aria-label="Response to question 1"]')
-    expect(response).not.toBeNull()
-    response.value = 'Improve documentation'
-    response.dispatchEvent(new Event('input', { bubbles: true }))
-    await nextTick()
-    document.querySelector('.composer-conversation__poll-response-footer button').click()
-    await nextTick()
-
-    expect(wrapper.text()).toContain("You're Done")
-    await wrapper
-      .findAll('button')
-      .find((button) => button.text().includes('View All Results'))
-      .trigger('click')
-    await nextTick()
-    expect(document.body.textContent).toContain('Improve documentation')
-    const closeButton = document.querySelector(
-      '.composer-conversation__poll-response-footer .is-close',
-    )
-    expect(closeButton).not.toBeNull()
-    closeButton.click()
-    await nextTick()
-    expect(document.querySelector('.composer-conversation__poll-response-modal')).toBeNull()
-    wrapper.unmount()
-  })
-
-  it('shows scheduled poll start and end times before participation', async () => {
-    const messages = useMessagesStore()
-    messages.messagesByChannel.general = [
-      {
-        id: 'scheduled-poll',
-        content: '',
-        author: 'You',
-        mine: true,
-        createdAt: new Date().toISOString(),
-        poll: {
-          id: 'scheduled-poll',
-          title: 'Scheduled poll',
-          scheduleStart: '2099-11-03T12:34:59',
-          scheduleClose: '2099-11-03T13:34:59',
-          questions: [],
-        },
-      },
-    ]
-    const wrapper = mount(ComposerConversation)
-
-    expect(wrapper.text()).toContain('Starts')
-    expect(wrapper.text()).toContain('Ends')
-    expect(wrapper.text()).toContain('Scheduled')
-    expect(wrapper.text()).not.toContain('Participate')
-    expect(wrapper.text()).not.toContain('View All Results')
-    wrapper.unmount()
-  })
-
   it('opens and sends messages in the selected direct message', async () => {
     const dms = useDmStore()
     await dms.init()
@@ -196,9 +84,6 @@ describe('composer conversation', () => {
     })
 
     expect(wrapper.text()).toContain('Project ideas bhej di hain')
-    expect(wrapper.get('.composer-conversation__avatar').text()).toContain('MN')
-    expect(wrapper.find('.composer-conversation__avatar img').exists()).toBe(false)
-    expect(wrapper.text()).toContain('Muniba Naseer')
 
     const editor = wrapper.get('[contenteditable="true"]')
     editor.element.textContent = 'Reply from the composer'

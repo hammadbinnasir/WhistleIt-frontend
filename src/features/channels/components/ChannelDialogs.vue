@@ -51,9 +51,9 @@ async function runConfirm() {
   confirmError.value = ''
   try {
     if (type === 'leave') await store.leaveChannel(channel.id)
-    else await store.deleteChannel(channel.id)
+    else await store.archiveChannel(channel.id)
     ui.closeConfirm()
-    ui.notify(type === 'leave' ? `You left ${channel.name}` : `${channel.name} deleted`, 'success')
+    ui.notify(type === 'leave' ? `You left ${channel.name}` : `${channel.name} archived`, 'success')
 
     // If the user was looking at that channel, move them somewhere valid.
     // (the sidebar's ensureSelection() then picks a valid channel automatically)

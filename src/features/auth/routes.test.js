@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest'
 import { invitationRoutes } from './routes'
 
 describe('invitation routes', () => {
-  it('redirects legacy email links to the invitation login page with the token', async () => {
+  it('redirects legacy email links to the invitation signup page with the token', async () => {
     const router = createRouter({
       history: createMemoryHistory(),
       routes: invitationRoutes,
@@ -12,7 +12,7 @@ describe('invitation routes', () => {
 
     await router.push(`/sendinvitation${token}`)
 
-    expect(router.currentRoute.value.name).toBe('invitation-login')
+    expect(router.currentRoute.value.name).toBe('invitation-register')
     expect(router.currentRoute.value.params.token).toBe(token)
   })
 
@@ -24,7 +24,7 @@ describe('invitation routes', () => {
 
     await router.push('/sendinvitationinvite-token?email=sam%40example.com')
 
-    expect(router.currentRoute.value.name).toBe('invitation-login')
+    expect(router.currentRoute.value.name).toBe('invitation-register')
     expect(router.currentRoute.value.params.token).toBe('invite-token')
     expect(router.currentRoute.value.query.email).toBe('sam@example.com')
   })

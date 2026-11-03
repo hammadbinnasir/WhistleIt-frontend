@@ -12,7 +12,6 @@ import UserAvatar from './UserAvatar.vue'
 import MessageComposer from '@/features/composer/components/MessageComposer.vue'
 
 const tabs = [
-  { id: 'notifications', label: 'All Activity' },
   { id: 'recent-dms', label: 'Recent DMs' },
   { id: 'recent-messages', label: 'Recent Messages' },
   { id: 'scheduled', label: 'Scheduled Messages' },
@@ -31,9 +30,8 @@ const channels = useChannelsStore()
 const teams = useTeamsStore()
 const emit = defineEmits(['open-conversation', 'open-user-chat'])
 
-const activeTab = ref('notifications')
+const activeTab = ref('recent-dms')
 const tabPage = ref(0)
-const notificationFilter = ref('all')
 const allWorkflowsExpanded = ref(true)
 const workflowSearch = ref('')
 const workflowTemplate = ref(null)
@@ -53,17 +51,12 @@ onMounted(() => {
 })
 
 const recentDms = computed(() =>
-  dms.conversations
+  dms.sorted
     .filter((conversation) => conversation.type === 'dm')
-    .flatMap((conversation) =>
-      conversation.messages
-        .filter((message) => !message.scheduled && !message.threadId && message.from !== dms.meId)
-        .map((message) => ({ conversation, message })),
-    )
-    .sort(
-      (a, b) =>
-        new Date(b.message.createdAt).getTime() - new Date(a.message.createdAt).getTime(),
-    ),
+    .map((conversation) => ({
+      conversation,
+      message: conversation.messages.at(-1),
+    })),
 )
 
 const recentMessages = computed(() => {
@@ -140,17 +133,9 @@ const upcomingReminders = computed(() =>
 
 const mentions = computed(() => activity.sorted.filter((item) => item.type === 'mention'))
 const unreadMentionCount = computed(() => mentions.value.filter((item) => !item.read).length)
-const notificationItems = computed(() => {
-  if (notificationFilter.value === 'unread') return activity.sorted.filter((item) => !item.read)
-  if (notificationFilter.value === 'mentions')
-    return activity.sorted.filter((item) => item.type === 'mention')
-  return activity.sorted
-})
-const visibleTabs = computed(() => (tabPage.value === 0 ? tabs.slice(0, 5) : tabs.slice(3)))
+const visibleTabs = computed(() => (tabPage.value === 0 ? tabs.slice(0, 5) : tabs.slice(2)))
 const activeTabIsEmpty = computed(() => {
   switch (activeTab.value) {
-    case 'notifications':
-      return activity.loaded && !activity.loading && !activity.error && !notificationItems.value.length
     case 'recent-dms':
       return !dms.loading && !dms.error && !recentDms.value.length
     case 'recent-messages':
@@ -207,13 +192,9 @@ function authorName(message, conversation) {
 
 function authorUserId(message) {
   if (message.mine || message.from === dms.meId) return null
-  return messageAvatarUserId(message)
-}
-
-function messageAvatarUserId(message) {
   const authorId = message.from ?? message.authorId
   if (dms.usersById[authorId]) return authorId
-  return dms.users.find((user) => user.name === message.author)?.id ?? null
+  return dms.users.find((user) => user.name === message.author)?.id || null
 }
 
 function openAuthorChat(message) {
@@ -306,7 +287,7 @@ function selectTab(tabId) {
   activeTab.value = tabId
 }
 
-function openNotification(item) {
+function openMention(item) {
   activity.setRead(item.id, true)
   if (item.conversationType === 'channel') {
     openActivityConversation({ id: item.conversationId, type: 'channel' })
@@ -455,7 +436,7 @@ function saveWorkflow() {
     </p>
 
     <div
-      v-if="activeTab === 'mentions' || activeTab === 'notifications'"
+      v-if="activeTab === 'mentions'"
       class="flex shrink-0 justify-end gap-2 border-b border-slate-100 px-5 py-2"
     >
       <button
@@ -469,81 +450,6 @@ function saveWorkflow() {
 
     <div class="flex min-h-0 flex-1">
       <div class="min-h-0 min-w-0 flex-1 overflow-y-auto">
-        <div v-if="activeTab === 'notifications'" class="space-y-4 p-5">
-          <div class="flex flex-wrap gap-2" role="group" aria-label="Activity filters">
-            <button
-              v-for="filter in [
-                { id: 'all', label: 'All' },
-                { id: 'unread', label: 'Unread' },
-                { id: 'mentions', label: 'Mentions' },
-              ]"
-              :key="filter.id"
-              type="button"
-              class="rounded-full border px-3 py-1 text-sm"
-              :class="
-                notificationFilter === filter.id
-                  ? 'border-indigo-500 bg-indigo-50 text-indigo-700'
-                  : 'border-slate-200 text-slate-600 hover:bg-slate-50'
-              "
-              :aria-pressed="notificationFilter === filter.id"
-              @click="notificationFilter = filter.id"
-            >
-              {{ filter.label }}
-            </button>
-          </div>
-          <article
-            v-for="item in notificationItems"
-            :key="item.id"
-            class="rounded-xl border border-slate-200"
-            :class="item.read ? '' : 'bg-indigo-50/50'"
-          >
-            <button
-              type="button"
-              class="flex w-full items-center gap-3 p-4 text-left"
-              :aria-label="`Open activity: ${item.title}`"
-              @click="openNotification(item)"
-            >
-              <span
-                class="grid h-10 w-10 shrink-0 place-items-center rounded-full"
-                :class="
-                  item.type === 'mention'
-                    ? 'bg-indigo-100 font-bold text-indigo-700'
-                    : 'bg-slate-100 text-slate-600'
-                "
-                aria-hidden="true"
-              >
-                <template v-if="item.type === 'mention'">@</template>
-                <svg
-                  v-else
-                  class="h-5 w-5"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="1.7"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                >
-                  <path d="M20 11.5a7.5 7.5 0 0 1-7.5 7.5H6l-3 2v-6a7.5 7.5 0 1 1 17-3.5Z" />
-                </svg>
-              </span>
-              <span class="min-w-0 flex-1">
-                <span class="flex items-start justify-between gap-3">
-                  <strong class="truncate">{{ item.title }}</strong>
-                  <time class="shrink-0 text-xs text-slate-500">{{
-                    pinnedDate(item.createdAt)
-                  }}</time>
-                </span>
-                <span class="mt-1 block break-words text-sm text-slate-700">{{ item.body }}</span>
-              </span>
-              <span
-                v-if="!item.read"
-                class="h-2.5 w-2.5 shrink-0 rounded-full bg-blue-500"
-                aria-label="Unread"
-              />
-            </button>
-          </article>
-        </div>
-
         <div
           v-if="activeTabIsEmpty"
           class="flex min-h-full items-center justify-center px-6 text-center"
@@ -558,23 +464,11 @@ function saveWorkflow() {
         <div v-else-if="activeTab === 'recent-dms'" class="space-y-4 p-5">
           <article
             v-for="{ conversation, message } in recentDms"
-            :key="`${conversation.id}-${message.id}`"
-            class="flex flex-col justify-between gap-3 rounded-xl border border-slate-200 p-4"
+            :key="conversation.id"
+            class="rounded-xl border border-slate-200 p-4"
           >
-            <div class="flex items-center gap-2 text-sm text-slate-600">
-              <svg
-                aria-hidden="true"
-                class="h-4 w-4 shrink-0 text-indigo-300"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="1.6"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-              >
-                <circle cx="12" cy="8" r="3.5" />
-                <path d="M5 20a7 7 0 0 1 14 0" />
-              </svg>
+            <div class="mb-3 flex items-center gap-2 text-sm text-slate-600">
+              <span class="text-indigo-300" aria-hidden="true">♙</span>
               <button
                 type="button"
                 class="text-left hover:text-indigo-600 hover:underline"
@@ -583,27 +477,29 @@ function saveWorkflow() {
               >
                 {{ titleOf(conversation) }}
               </button>
-              <time class="ml-auto text-xs text-slate-500">{{ pinnedDate(message.createdAt) }}</time>
+              <time class="ml-auto text-xs text-slate-500">{{
+                formatDate(message?.createdAt)
+              }}</time>
             </div>
             <div class="flex items-center gap-3">
-              <UserAvatar
-                :name="authorName(message, conversation)"
-                :size="48"
-                :user-id="message.from"
-              />
+              <span
+                class="grid h-12 w-12 shrink-0 place-items-center rounded-md bg-violet-600 font-semibold text-white"
+              >
+                {{ initials(titleOf(conversation)) }}
+              </span>
               <div class="min-w-0 flex-1">
                 <button
                   type="button"
                   class="block max-w-full truncate text-left font-semibold hover:text-indigo-600 hover:underline"
-                  :aria-label="`Open direct message with ${authorName(message, conversation)}`"
+                  :aria-label="`Open direct message with ${titleOf(conversation)}`"
                   @click="openActivityConversation(conversation)"
                 >
-                  {{ authorName(message, conversation) }}
+                  {{ titleOf(conversation) }}
                 </button>
-                <p class="break-words text-slate-700">{{ displayMessage(message) }}</p>
+                <p class="break-words text-slate-700">
+                  {{ message ? displayMessage(message) : 'No messages yet.' }}
+                </p>
               </div>
-            </div>
-            <div class="flex justify-end">
               <button
                 type="button"
                 class="rounded border border-slate-400 px-3 py-1 text-xs font-semibold hover:bg-slate-50"
@@ -611,7 +507,7 @@ function saveWorkflow() {
               >
                 Reply
               </button>
-              </div>
+            </div>
           </article>
         </div>
 
@@ -636,12 +532,15 @@ function saveWorkflow() {
               }}</time>
             </div>
             <div class="flex items-center gap-3">
-              <UserAvatar
-                :name="authorName(message, conversation)"
-                :size="48"
-                :user-id="messageAvatarUserId(message)"
-                ring="border-white"
-              />
+              <span
+                class="grid h-12 w-12 shrink-0 place-items-center rounded-md bg-emerald-500 font-semibold text-white"
+              >
+                {{
+                  initials(
+                    dms.usersById[message.from]?.name || message.author || titleOf(conversation),
+                  )
+                }}
+              </span>
               <div class="min-w-0 flex-1">
                 <button
                   v-if="authorUserId(message)"
@@ -754,12 +653,7 @@ function saveWorkflow() {
               </button>
             </div>
             <div class="flex flex-col gap-2.5 sm:flex-row sm:items-start">
-              <UserAvatar
-                :name="authorName(message, conversation)"
-                :size="36"
-                :user-id="messageAvatarUserId(message)"
-                ring="border-white"
-              />
+              <UserAvatar :name="authorName(message, conversation)" :size="36" />
               <div class="min-w-0 flex-1">
                 <button
                   v-if="authorUserId(message)"
@@ -848,7 +742,7 @@ function saveWorkflow() {
             >
               @
             </span>
-            <button type="button" class="min-w-0 flex-1 text-left" @click="openNotification(item)">
+            <button type="button" class="min-w-0 flex-1 text-left" @click="openMention(item)">
               <strong class="block truncate">{{ item.title }}</strong>
               <span class="block break-words text-slate-700">{{ item.body }}</span>
               <time class="mt-1 block text-xs text-slate-500">{{
@@ -865,7 +759,7 @@ function saveWorkflow() {
           </article>
         </div>
 
-        <div v-else-if="activeTab === 'workflows'" class="space-y-8 p-6">
+        <div v-else class="space-y-8 p-6">
           <section>
             <h2 class="mb-4 text-center text-xl font-bold">Workflow Templates</h2>
             <div class="mx-auto grid max-w-4xl gap-4 md:grid-cols-2">

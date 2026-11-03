@@ -18,7 +18,7 @@ function closeHelp() {
       @click.self="closeHelp"
     >
       <aside
-        class="h-full w-full max-w-[432px] bg-white shadow-2xl"
+        class="h-full w-full max-w-[480px] bg-white shadow-2xl"
         role="dialog"
         aria-modal="true"
         aria-label="Help and resources"

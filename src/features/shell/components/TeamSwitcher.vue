@@ -3,9 +3,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useRouter } from 'vue-router'
 import { useTeamsStore } from '@/stores/teams'
-import { useMembersStore } from '@/stores/members'
 import { useUiStore } from '@/stores/ui'
-import { getAuthUserId } from '@/features/auth/session'
 import EditTeamModal from './EditTeamModal.vue'
 
 const props = defineProps({
@@ -17,15 +15,12 @@ const props = defineProps({
 
 const emit = defineEmits(['close'])
 const teamsStore = useTeamsStore()
-const membersStore = useMembersStore()
 const ui = useUiStore()
 const router = useRouter()
-const currentUserId = getAuthUserId()
 const root = ref(null)
 const searchInput = ref(null)
 const editTeamOpen = ref(false)
 const deletingTeam = ref(false)
-const leavingTeam = ref(false)
 const { teamsOfActiveWorkspace, activeTeamId, activeWorkspaceId, activeTeam } =
   storeToRefs(teamsStore)
 const searchFilter = ref('')
@@ -71,37 +66,6 @@ async function deleteActiveTeam() {
     ui.toast('Unable to delete team', error?.message || 'Please try again.', 'error')
   } finally {
     deletingTeam.value = false
-  }
-}
-
-async function leaveActiveTeam() {
-  const team = activeTeam.value
-  if (!team || leavingTeam.value) return
-  if (!window.confirm(`You will lose access to this team. Leave "${team.name}"?`)) return
-
-  const workspaceId = activeWorkspaceId.value
-  leavingTeam.value = true
-  emit('close')
-  try {
-    const response = await membersStore.leaveTeam(workspaceId, team.id, currentUserId)
-    const nextTeamId = teamsStore.activeTeamId
-    ui.toast('Left team', response?.message || 'You left the team.', 'success')
-    if (nextTeamId) {
-      await router.push({
-        name: 'workspace-team',
-        params: { workspaceId, teamId: nextTeamId },
-      })
-    } else {
-      await router.push({ path: `/app/${encodeURIComponent(workspaceId)}` })
-    }
-  } catch (error) {
-    ui.toast(
-      'Unable to leave team',
-      membersStore.error || error?.message || 'Please try again.',
-      'error',
-    )
-  } finally {
-    leavingTeam.value = false
   }
 }
 
@@ -167,23 +131,15 @@ onBeforeUnmount(() => {
     </div>
 
     <div class="team-switcher__actions">
-      <button
-        v-if="teamsStore.isAdmin"
-        type="button"
-        @click="closeAndRun(ui.toggleTeamCreateModal)"
-      >
-        Create a team
-      </button>
+      <button type="button" @click="closeAndRun(ui.toggleTeamCreateModal)">Create a team</button>
+      <button type="button" @click="closeAndRun(ui.toggleTeamJoinModal)">Join a Team</button>
       <button type="button" @click="closeAndRun(ui.toggleMemberManageModal)">Manage Members</button>
-      <template v-if="activeTeam && teamsStore.isAdmin">
+      <template v-if="activeTeam">
         <button type="button" @click="openEditTeam">Edit team</button>
         <button type="button" :disabled="deletingTeam" @click="deleteActiveTeam">
           {{ deletingTeam ? 'Deleting…' : 'Delete team' }}
         </button>
       </template>
-      <button v-if="activeTeam" type="button" :disabled="leavingTeam" @click="leaveActiveTeam">
-        {{ leavingTeam ? 'Leaving…' : 'Leave team' }}
-      </button>
     </div>
   </div>
   <EditTeamModal :is-open="editTeamOpen" :team="activeTeam" @close="editTeamOpen = false" />

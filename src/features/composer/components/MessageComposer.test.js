@@ -128,14 +128,6 @@ describe('message composer', () => {
     const questionInput = document.querySelector('#poll-question-0')
     questionInput.value = 'What should we order?'
     questionInput.dispatchEvent(new Event('input', { bubbles: true }))
-    document.querySelectorAll('.message-composer__poll-option input')[0].value = 'Pizza'
-    document.querySelectorAll('.message-composer__poll-option input')[0].dispatchEvent(
-      new Event('input', { bubbles: true }),
-    )
-    document.querySelectorAll('.message-composer__poll-option input')[1].value = 'Salad'
-    document.querySelectorAll('.message-composer__poll-option input')[1].dispatchEvent(
-      new Event('input', { bubbles: true }),
-    )
     document.querySelector('.message-composer__poll-add-choice').click()
     await wrapper.vm.$nextTick()
     expect(document.querySelectorAll('.message-composer__poll-option')).toHaveLength(4)
@@ -147,16 +139,15 @@ describe('message composer', () => {
     )
     document.querySelector('.message-composer__poll-next').click()
     await wrapper.vm.$nextTick()
-    document.querySelector('.message-composer__poll-schedule-option input').click()
-    await wrapper.vm.$nextTick()
     document.querySelector('.message-composer__poll-footer .message-composer__poll-next').click()
     await wrapper.vm.$nextTick()
 
-    expect(wrapper.get('[contenteditable="true"]').text()).toBe('')
-    expect(wrapper.find('.message-composer__poll-draft').exists()).toBe(false)
-    expect(wrapper.emitted('send')[0][0].content).toContain('Before the poll')
-    expect(wrapper.emitted('send')[0][0].poll.title).toBe('Lunch vote')
-    expect(document.querySelector('[role="dialog"][aria-labelledby="message-poll-title"]')).toBeNull()
+    expect(wrapper.get('[contenteditable="true"]').text()).toContain('Before the poll')
+    expect(wrapper.get('[contenteditable="true"]').text()).toContain('Poll: Lunch vote')
+    expect(wrapper.get('[contenteditable="true"]').text()).toContain('What should we order?')
+    expect(
+      document.querySelector('[role="dialog"][aria-labelledby="message-poll-title"]'),
+    ).toBeNull()
     wrapper.unmount()
   })
 
@@ -210,111 +201,13 @@ describe('message composer', () => {
     await wrapper.vm.$nextTick()
     document.querySelector('.message-composer__poll-next').click()
     await wrapper.vm.$nextTick()
-    document.querySelector('.message-composer__poll-schedule-option input').click()
-    await wrapper.vm.$nextTick()
     document.querySelector('.message-composer__poll-footer .message-composer__poll-next').click()
     await wrapper.vm.$nextTick()
 
-    expect(wrapper.find('.message-composer__poll-draft').exists()).toBe(false)
-    expect(wrapper.emitted('send')[0][0].poll.title).toBe('Team feedback')
+    expect(wrapper.get('[contenteditable="true"]').text()).toContain(
+      'How was the meeting? (Rating: 1-10)',
+    )
     expect(document.querySelector('.message-composer__poll-modal')).toBeNull()
-    wrapper.unmount()
-  })
-
-  it('allows a poll scheduled to start later', async () => {
-    const wrapper = mount(MessageComposer, { attachTo: document.body })
-    await wrapper.get('button[aria-label="Insert poll"]').trigger('click')
-
-    document.querySelector('#poll-title-input').value = 'Scheduled poll'
-    document.querySelector('#poll-title-input').dispatchEvent(new Event('input', { bubbles: true }))
-    document.querySelector('#poll-question-0').value = 'What time works?'
-    document
-      .querySelector('#poll-question-0')
-      .dispatchEvent(new Event('input', { bubbles: true }))
-    document.querySelector('.message-composer__poll-option input').value = 'Morning'
-    document
-      .querySelector('.message-composer__poll-option input')
-      .dispatchEvent(new Event('input', { bubbles: true }))
-    document.querySelectorAll('.message-composer__poll-option input')[1].value = 'Evening'
-    document
-      .querySelectorAll('.message-composer__poll-option input')[1]
-      .dispatchEvent(new Event('input', { bubbles: true }))
-    document.querySelector('.message-composer__poll-next').click()
-    await wrapper.vm.$nextTick()
-    document.querySelector('.message-composer__poll-next').click()
-    await wrapper.vm.$nextTick()
-    const scheduleOptions = document.querySelectorAll('.message-composer__poll-schedule-option input')
-    scheduleOptions[1].click()
-    await wrapper.vm.$nextTick()
-    document.querySelector('.message-composer__poll-footer .message-composer__poll-next').click()
-    await wrapper.vm.$nextTick()
-
-    expect(wrapper.emitted('send')[0][0].poll.scheduleStart).toBeTruthy()
-    expect(wrapper.emitted('send')[0][0].poll.startNow).toBe(false)
-    wrapper.unmount()
-  })
-
-  it('enables Create Poll when start and end schedules are set without Start now', async () => {
-    const wrapper = mount(MessageComposer, { attachTo: document.body })
-    await wrapper.get('button[aria-label="Insert poll"]').trigger('click')
-
-    document.querySelector('#poll-title-input').value = 'Timed poll'
-    document.querySelector('#poll-title-input').dispatchEvent(new Event('input', { bubbles: true }))
-    document.querySelector('#poll-question-0').value = 'Choose a time'
-    document
-      .querySelector('#poll-question-0')
-      .dispatchEvent(new Event('input', { bubbles: true }))
-    const options = document.querySelectorAll('.message-composer__poll-option input')
-    options[0].value = 'Morning'
-    options[0].dispatchEvent(new Event('input', { bubbles: true }))
-    options[1].value = 'Evening'
-    options[1].dispatchEvent(new Event('input', { bubbles: true }))
-    document.querySelector('.message-composer__poll-next').click()
-    await wrapper.vm.$nextTick()
-    document.querySelector('.message-composer__poll-next').click()
-    await wrapper.vm.$nextTick()
-
-    const scheduleOptions = document.querySelectorAll('.message-composer__poll-schedule-option input')
-    scheduleOptions[1].click()
-    scheduleOptions[2].click()
-    await wrapper.vm.$nextTick()
-
-    expect(document.querySelector('.message-composer__poll-footer .message-composer__poll-next').disabled).toBe(
-      false,
-    )
-    wrapper.unmount()
-  })
-
-  it('moves between poll steps with the Previous button', async () => {
-    const wrapper = mount(MessageComposer, { attachTo: document.body })
-    await wrapper.get('button[aria-label="Insert poll"]').trigger('click')
-
-    const previous = document.querySelector('.message-composer__poll-previous')
-    expect(previous.disabled).toBe(true)
-
-    const titleInput = document.querySelector('#poll-title-input')
-    titleInput.value = 'Step navigation'
-    titleInput.dispatchEvent(new Event('input', { bubbles: true }))
-    document.querySelector('#poll-type-0').click()
-    await wrapper.vm.$nextTick()
-    document.querySelector('[role="option"]:first-child').click()
-    await wrapper.vm.$nextTick()
-    const questionInput = document.querySelector('#poll-question-0')
-    questionInput.value = 'Which option?'
-    questionInput.dispatchEvent(new Event('input', { bubbles: true }))
-    await wrapper.vm.$nextTick()
-
-    document.querySelector('.message-composer__poll-next').click()
-    await wrapper.vm.$nextTick()
-    expect(document.querySelector('.message-composer__poll-placeholder h3').textContent).toBe(
-      'Configure your poll',
-    )
-    expect(previous.disabled).toBe(false)
-
-    previous.click()
-    await wrapper.vm.$nextTick()
-    expect(document.querySelector('#poll-title-input').value).toBe('Step navigation')
-    expect(document.querySelector('#poll-question-0').value).toBe('Which option?')
     wrapper.unmount()
   })
 
@@ -397,18 +290,13 @@ describe('message composer', () => {
     expect(wrapper.emitted('send')).toBeUndefined()
   })
 
-  it('sends the message and clears the editor when Enter is pressed', async () => {
+  it('sends the message when Enter is pressed', async () => {
     const wrapper = mount(MessageComposer)
-    const input = setEditorText(wrapper, 'Send with Enter')
+    setEditorText(wrapper, 'Send with Enter')
 
     await wrapper.get('[contenteditable="true"]').trigger('keydown', { key: 'Enter' })
 
-<<<<<<< Updated upstream
-    expect(wrapper.emitted('send')).toBeUndefined()
-=======
     expect(wrapper.emitted('send')).toEqual([[{ content: 'Send with Enter', attachments: [] }]])
-    expect(input.element.textContent).toBe('')
->>>>>>> Stashed changes
   })
 
   it('keeps Shift+Enter available for a new line', async () => {
@@ -421,22 +309,6 @@ describe('message composer', () => {
       bubbles: true,
       cancelable: true,
     })
-    wrapper.get('[contenteditable="true"]').element.dispatchEvent(event)
-
-    expect(event.defaultPrevented).toBe(false)
-    expect(wrapper.emitted('send')).toBeUndefined()
-  })
-
-  it('does not send Enter while an input method composition is active', async () => {
-    const wrapper = mount(MessageComposer)
-    setEditorText(wrapper, 'Composing a message')
-    const event = new KeyboardEvent('keydown', {
-      key: 'Enter',
-      isComposing: true,
-      bubbles: true,
-      cancelable: true,
-    })
-
     wrapper.get('[contenteditable="true"]').element.dispatchEvent(event)
 
     expect(event.defaultPrevented).toBe(false)

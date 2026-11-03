@@ -5,7 +5,6 @@ import {
   deleteUserCustomStatus,
   getUserProfile,
   getUserSettings,
-  updateUserProfile,
   updateUserPassword,
   updateUserStatus,
   uploadUserAvatar,
@@ -175,15 +174,12 @@ function hydrate(data = {}) {
 async function loadUserProfile() {
   const response = await getUserProfile(requireUserId())
   const data = getUserProfileData(response)
-  const jobResponsibilities = data?.jobResponsibilities ?? data?.job_responsibilities
   const profileFields = {
     fullName: data?.fullName ?? data?.full_name ?? data?.name,
     alias: data?.alias ?? data?.display_name,
     twoFactor: data?.twoFactor ?? data?.two_factor,
     designation: data?.designation ?? data?.title,
-    jobResponsibilities: Array.isArray(jobResponsibilities)
-      ? jobResponsibilities.join('\n')
-      : jobResponsibilities,
+    jobResponsibilities: data?.jobResponsibilities ?? data?.job_responsibilities,
     photoUrl: [data?.photoUrl, data?.photo_url, data?.avatar_url]
       .filter((url) => typeof url === 'string' && url)
       .map(normalizeAvatarUrl)[0],
@@ -242,28 +238,7 @@ async function clearCustomStatus() {
  * { profile, photo: File|null, removePhoto, preferences, security, password }
  */
 async function saveSettings({ profile, photo, removePhoto, preferences, security, password }) {
-  if (profile) {
-    const jobResponsibilities = Array.isArray(profile.jobResponsibilities)
-      ? profile.jobResponsibilities
-      : typeof profile.jobResponsibilities === 'string'
-        ? profile.jobResponsibilities
-            .split(/\r?\n/)
-            .map((responsibility) => responsibility.trim())
-            .filter(Boolean)
-        : []
-    const profilePayload = {
-      name: profile.fullName,
-      display_name: profile.alias,
-      two_factor: profile.twoFactor,
-      title: profile.designation,
-      job_responsibilities: jobResponsibilities,
-    }
-    await updateUserProfile(requireUserId(), profilePayload)
-    Object.assign(state.profile, {
-      ...profile,
-      jobResponsibilities: jobResponsibilities.join('\n'),
-    })
-  }
+  if (profile) Object.assign(state.profile, profile)
 
   if (password) await updateUserPassword(requireUserId(), password)
 

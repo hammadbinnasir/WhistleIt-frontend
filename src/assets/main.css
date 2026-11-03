@@ -96,8 +96,8 @@ a {
 
 .auth-page--forgot-password .auth-heading p {
   margin: 12px 0 32px;
-  color: #111a31;
-  font-size: 22px;
+  color: #999;
+  font-size: 16px;
   line-height: 1.4;
 }
 
@@ -245,10 +245,6 @@ a {
   font-size: inherit;
 }
 
-.login-options .text-link {
-  font-size: 16px;
-}
-
 .text-link:hover,
 .auth-switch a:hover {
   text-decoration: underline;
@@ -365,7 +361,7 @@ a {
   min-height: 49px;
   margin-top: 7px;
   background: #5962ff;
-  font-size: 22px;
+  font-size: 20px;
 }
 
 .auth-page--signup .submit-button:hover {
@@ -375,7 +371,7 @@ a {
 
 .auth-page--signup .auth-switch {
   margin-top: 17px;
-  font-size: 16px;
+  font-size: 14px;
 }
 
 .auth-page--signup .form-feedback {
@@ -393,6 +389,7 @@ a {
   inset: 0;
   width: 100%;
   height: 100%;
+  object-fit: cover;
   object-position: center;
 }
 
@@ -481,8 +478,7 @@ a {
 
   .auth-page--forgot-password .auth-heading p {
     margin: 12px 0 30px;
-    color: #111a31;
-    font-size: 22px;
+    font-size: 16px;
   }
 
   .auth-page--forgot-password .auth-form {
@@ -540,7 +536,7 @@ a {
     width: 100%;
     min-height: 55px;
     margin-top: 20px;
-    font-size: 22px;
+    font-size: 21px;
   }
 
   .auth-switch {
@@ -548,7 +544,7 @@ a {
   }
 
   .auth-page--signup .auth-switch {
-    font-size: 16px;
+    font-size: 14px;
   }
 
   .auth-art {
@@ -564,297 +560,5 @@ a {
 
   .login-options {
     font-size: 14px;
-  }
-}
-
-.auth-page {
-  isolation: isolate;
-  grid-template-columns: minmax(0, 1.04fr) minmax(0, 0.96fr);
-  min-height: 100vh;
-  min-height: 100svh;
-  background:
-    radial-gradient(ellipse at 18% 78%, rgb(255 190 116 / 38%), transparent 43%),
-    radial-gradient(ellipse at 68% 14%, rgb(173 160 255 / 52%), transparent 49%),
-    linear-gradient(125deg, #dceaff 0%, #e8e1ff 52%, #d8d6ff 100%);
-  color: #17213a;
-  font-family: Inter, 'Segoe UI', Arial, sans-serif;
-}
-
-.auth-panel {
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  padding: clamp(32px, 6vw, 88px);
-  background: transparent;
-}
-
-.brand {
-  position: absolute;
-  top: 0;
-  left: 0;
-  display: inline-flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 0;
-  width: 80px;
-  height: 50.5px;
-  margin: 48px 0 0 16px;
-  color: #101010;
-  font-size: 13px;
-  font-weight: 800;
-  letter-spacing: 0;
-}
-
-.brand-mark {
-  width: 80px;
-  height: 51px;
-}
-
-.auth-content,
-.auth-page--signup .auth-content,
-.auth-page--forgot-password .auth-content {
-  width: min(100%, 440px);
-  margin: 20px auto;
-}
-
-.auth-heading h1 {
-  color: #111a31;
-  font-size: clamp(38px, 4vw, 52px);
-  font-weight: 750;
-  letter-spacing: -1.8px;
-  line-height: 1.08;
-}
-
-.auth-heading h1.auth-heading__title--login {
-  font-size: 32px;
-}
-
-.auth-heading p {
-  margin: 12px 0 30px;
-  color: #66718a;
-  font-size: 16px;
-  line-height: 1.55;
-}
-
-.auth-heading p.auth-heading__description--login {
-  color: #000000de;
-  font-size: 22px;
-}
-
-.auth-heading p.auth-heading__description--signup {
-  color: #111a31;
-  font-size: 22px;
-}
-
-.auth-form,
-.auth-page--signup .auth-form {
-  gap: 16px;
-}
-
-.auth-form > input,
-.password-field input,
-.auth-page--signup .auth-form > input,
-.auth-page--signup .password-field input {
-  height: 58px;
-  padding: 0 17px;
-  border: 1px solid #e1e5ef;
-  border-radius: 14px;
-  background: #fbfcff;
-  color: #17213a;
-  font-size: 16px;
-  transition:
-    border-color 160ms ease,
-    background-color 160ms ease,
-    box-shadow 160ms ease;
-}
-
-.auth-page--signup .password-field input,
-.password-field input {
-  padding-right: 54px;
-}
-
-.auth-form > input::placeholder,
-.password-field input::placeholder {
-  color: #9aa4b8;
-}
-
-.auth-form > input:focus,
-.password-field input:focus {
-  border-color: #7772f5;
-  outline: none;
-  background: #fff;
-  box-shadow: 0 0 0 4px rgb(119 114 245 / 13%);
-}
-
-.password-toggle {
-  right: 12px;
-  color: #77819a;
-}
-
-.password-toggle:hover {
-  background: #f0efff;
-  color: #5d58dc;
-}
-
-.login-options {
-  margin-top: 1px;
-  color: #46516a;
-  font-size: 14px;
-}
-
-.remember-row,
-.terms-row {
-  gap: 9px;
-}
-
-.remember-row {
-  font-size: 16px;
-}
-
-.remember-row input,
-.terms-row input {
-  width: 18px;
-  height: 18px;
-  accent-color: #625df0;
-}
-
-.text-link,
-.auth-switch a {
-  color: #5c57dc;
-  font-weight: 650;
-}
-
-.submit-button,
-.auth-page--signup .submit-button,
-.auth-page--forgot-password .submit-button {
-  width: 100%;
-  min-height: 56px;
-  margin: 12px 0 0;
-  border: 0;
-  border-radius: 14px;
-  background: linear-gradient(105deg, #716cf2 0%, #5550d7 100%);
-  box-shadow: 0 9px 20px rgb(89 83 219 / 22%);
-  color: #fff;
-  font-size: 17px;
-  font-weight: 700;
-  letter-spacing: 0;
-  transition:
-    box-shadow 160ms ease,
-    filter 160ms ease,
-    transform 160ms ease;
-}
-
-.submit-button.submit-button--login {
-  font-size: 20px;
-}
-
-.submit-button:hover,
-.auth-page--signup .submit-button:hover,
-.auth-page--forgot-password .submit-button:hover {
-  transform: translateY(-1px);
-  background: linear-gradient(105deg, #716cf2 0%, #5550d7 100%);
-  box-shadow: 0 12px 24px rgb(89 83 219 / 28%);
-  filter: saturate(1.08);
-}
-
-.auth-switch,
-.auth-page--signup .auth-switch,
-.auth-page--forgot-password .auth-switch {
-  margin: 22px 0 0;
-  color: #68728a;
-  font-size: 14px;
-}
-
-.auth-switch__prompt {
-  color: #000000de;
-  font-family: Roboto, sans-serif;
-  font-size: 16px;
-}
-
-.auth-switch__signup-link {
-  font-size: 16px;
-}
-
-.auth-page--forgot-password .auth-switch {
-  font-size: 16px;
-}
-
-.auth-art {
-  min-height: 100vh;
-  min-height: 100svh;
-  background: transparent;
-}
-
-.auth-background {
-  object-fit: fill;
-  object-position: center;
-}
-
-.form-feedback {
-  font-size: 14px;
-}
-
-.terms-row {
-  justify-content: flex-start;
-  color: #111a31;
-  font-size: 16px;
-}
-
-.terms-row a {
-  color: #5c57dc;
-}
-
-@media (max-width: 760px) {
-  .auth-page {
-    display: block;
-    min-height: 100vh;
-    min-height: 100svh;
-    overflow: auto;
-  }
-
-  .auth-panel {
-    min-height: 100vh;
-    min-height: 100svh;
-    padding: 100px clamp(24px, 8vw, 64px) 40px;
-  }
-
-  .brand,
-  .auth-page--forgot-password .brand {
-    top: 0;
-    left: 0;
-    margin: 48px 0 0 16px;
-  }
-
-  .auth-content,
-  .auth-page--signup .auth-content,
-  .auth-page--forgot-password .auth-content {
-    width: min(100%, 440px);
-    margin: auto;
-  }
-
-  .auth-art {
-    display: none;
-  }
-
-  .auth-heading h1,
-  .auth-page--signup .auth-heading h1,
-  .auth-page--forgot-password .auth-heading h1 {
-    font-size: clamp(36px, 9vw, 48px);
-  }
-
-  .auth-heading h1.auth-heading__title--login {
-    font-size: 32px;
-  }
-
-  .auth-heading p,
-  .auth-page--forgot-password .auth-heading p {
-    margin-bottom: 26px;
-    font-size: 15px;
-  }
-
-  .auth-page--forgot-password .auth-heading p {
-    color: #111a31;
-    font-size: 22px;
   }
 }

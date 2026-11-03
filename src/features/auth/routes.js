@@ -14,7 +14,7 @@ export const invitationRoutes = [
   {
     path: '/sendinvitation:token',
     redirect: (to) => ({
-      name: 'invitation-login',
+      name: 'invitation-register',
       params: { token: to.params.token },
       query: to.query,
     }),
