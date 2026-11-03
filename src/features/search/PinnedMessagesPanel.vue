@@ -115,9 +115,6 @@ async function jumpToMessage(message) {
                 <span class="truncate font-semibold text-slate-900">
                   {{ message.author || message.sender || 'You' }}
                 </span>
-                <span class="truncate text-xs text-slate-500">
-                  {{ message.conversation?.name || '' }}
-                </span>
                 <time class="shrink-0 text-xs text-slate-500">
                   {{ formatTime(message.createdAt || message.time) }}
                 </time>

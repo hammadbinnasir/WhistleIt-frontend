@@ -31,7 +31,7 @@ describe('channel API routes', () => {
     getAuthUserId.mockReturnValue(null)
   })
 
-  it('treats channels from the joined-channel list as joined when membership is omitted', async () => {
+  it('preserves explicit membership status from list and browse responses', async () => {
     http.mockResolvedValue({
       items: [
         { id: 'channel-3', name: 'Engineering', is_member: true },
@@ -46,8 +46,137 @@ describe('channel API routes', () => {
       ['channel-4', false],
     ])
 
-    await browseChannels('eng')
+    const browseResults = await browseChannels('eng')
     expect(http).toHaveBeenLastCalledWith(collectionPath, { params: { q: 'eng' } })
+    expect(browseResults.map(({ id, isMember }) => [id, isMember])).toEqual([
+      ['channel-3', true],
+      ['channel-4', false],
+    ])
+  })
+
+  it('resolves membership in browse results when the response omits it', async () => {
+    getAuthUserId.mockReturnValue('user-42')
+    http.mockImplementation(async (path) => {
+      if (path === collectionPath) {
+        return {
+          success: true,
+          data: {
+            channels: [
+              { id: 'channel-3', name: 'Engineering' },
+              { id: 'channel-4', name: 'Design Reviews' },
+            ],
+          },
+        }
+      }
+      if (path === `${collectionPath}/channel-3/members`) {
+        return { success: true, data: { members: ['user-42'], total: 1 } }
+      }
+      if (path === `${collectionPath}/channel-4/members`) {
+        return { success: true, data: { members: ['user-99'], total: 1 } }
+      }
+      throw new Error(`Unexpected request: ${path}`)
+    })
+
+    const channels = await browseChannels()
+
+    expect(channels.map(({ id, isMember }) => [id, isMember])).toEqual([
+      ['channel-3', true],
+      ['channel-4', false],
+    ])
+  })
+
+  it('surfaces missing membership data when the signed-in user ID is unavailable', async () => {
+    http.mockResolvedValue({
+      channels: [{ id: 'channel-3', name: 'Engineering' }],
+    })
+
+    await expect(listChannels()).rejects.toThrow(
+      'The channel response does not include membership and the signed-in user ID is unavailable.',
+    )
+  })
+
+  it('resolves missing membership from the current user in channel members', async () => {
+    getAuthUserId.mockReturnValue('user-42')
+    http.mockImplementation(async (path) => {
+      if (path === collectionPath) {
+        return {
+          items: [
+            { id: 'channel-3', name: 'Engineering' },
+            { id: 'channel-4', name: 'Design Reviews', is_member: false },
+          ],
+        }
+      }
+      if (path === `${collectionPath}/channel-3/members`) {
+        return {
+          success: true,
+          data: { members: [{ user_id: 'user-42' }], total: 1 },
+        }
+      }
+      throw new Error(`Unexpected request: ${path}`)
+    })
+
+    const channels = await listChannels()
+
+    expect(channels.map(({ id, isMember }) => [id, isMember])).toEqual([
+      ['channel-3', true],
+      ['channel-4', false],
+    ])
+    expect(http).toHaveBeenCalledTimes(2)
+  })
+
+  it('matches the user ID rather than a membership record ID', async () => {
+    getAuthUserId.mockReturnValue('user-42')
+    http.mockImplementation(async (path) => {
+      if (path === collectionPath) {
+        return { channels: [{ id: 'channel-3', name: 'Engineering' }] }
+      }
+      if (path === `${collectionPath}/channel-3/members`) {
+        return {
+          success: true,
+          data: {
+            members: [{ id: 'membership-7', user_id: 'user-42' }],
+            total: 1,
+          },
+        }
+      }
+      throw new Error(`Unexpected request: ${path}`)
+    })
+
+    await expect(listChannels()).resolves.toMatchObject([{ id: 'channel-3', isMember: true }])
+  })
+
+  it('recognizes the backend channel member response with joined_by', async () => {
+    getAuthUserId.mockReturnValue('user-42')
+    http.mockImplementation(async (path) => {
+      if (path === collectionPath) {
+        return {
+          success: true,
+          data: {
+            channels: [{ id: 'channel-3', name: 'Engineering' }],
+          },
+        }
+      }
+      if (path === `${collectionPath}/channel-3/members`) {
+        return {
+          success: true,
+          data: {
+            members: [
+              {
+                id: 'membership-1',
+                channel_id: 'channel-3',
+                added_by: 'other-user',
+                joined_by: 'user-42',
+                deleted_at: null,
+              },
+            ],
+            total: 1,
+          },
+        }
+      }
+      throw new Error(`Unexpected request: ${path}`)
+    })
+
+    await expect(listChannels()).resolves.toMatchObject([{ id: 'channel-3', isMember: true }])
   })
 
   it('uses the channel resource routes for get, create, update, and delete', async () => {

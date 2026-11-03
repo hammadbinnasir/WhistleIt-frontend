@@ -19,7 +19,7 @@ API root. There is no in-memory channel data source.
 | Add member     | `POST /v1/{company}/teams/{team}/channels/{channel}/members` with `{ user_id }` |
 | Join           | `POST /v1/{company}/teams/{team}/channels/{channel}/join` |
 | Remove member  | `DELETE /v1/{company}/teams/{team}/channels/{channel}/members/{targetUser}` |
-| Leave          | `DELETE /v1/{company}/teams/{team}/channels/{channel}/leave` |
+| Leave          | `DELETE /v1/{company}/teams/{team}/channels/{channel}/leave`   |
 
 Non-2xx responses should include `{ "message": "human readable text" }`; the
 client surfaces that message. Favorite, mute, unread, and archive actions are

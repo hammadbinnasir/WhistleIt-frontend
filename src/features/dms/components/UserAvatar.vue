@@ -6,7 +6,6 @@ import PresenceDot from './PresenceDot.vue'
 const props = defineProps({
   name: { type: String, required: true },
   size: { type: Number, default: 32 },
-  avatarUrl: { type: String, default: null },
   userId: { type: String, default: null }, // dene par online dot dikhega
   ring: { type: String, default: 'border-slate-900' },
 })
@@ -29,14 +28,7 @@ const color = computed(() => {
 
 <template>
   <div class="relative shrink-0" :style="{ width: size + 'px', height: size + 'px' }">
-    <img
-      v-if="avatarUrl"
-      :src="avatarUrl"
-      :alt="name"
-      class="h-full w-full rounded-md object-cover"
-    />
     <div
-      v-else
       class="flex h-full w-full items-center justify-center rounded-md font-semibold text-white"
       :style="{ background: color, fontSize: size * 0.4 + 'px' }"
     >

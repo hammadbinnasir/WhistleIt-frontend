@@ -15,7 +15,7 @@ function channelsPath(channelId) {
 
 export async function listChannels() {
   const res = await http(channelsPath())
-  return asList(res).items.map(normalizeChannel)
+  return resolveChannelMembership(asList(res).items)
 }
 
 export async function browseChannels(query = '') {
