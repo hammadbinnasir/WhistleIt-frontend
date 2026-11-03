@@ -32,27 +32,10 @@ export function normalizeChannel(raw = {}) {
 }
 
 export function normalizeMember(raw = {}) {
-  if (typeof raw === 'string' || typeof raw === 'number') {
-    return { id: String(raw), name: '', avatarUrl: '', status: 'offline' }
-  }
-
-  const user = raw.user && typeof raw.user === 'object' ? raw.user : {}
   return {
-    id: String(
-      raw.user_id ??
-        raw.userId ??
-        user.id ??
-        user.user_id ??
-        raw.joined_by ??
-        raw.joinedBy ??
-        raw.member_id ??
-        raw.id ??
-        '',
-    ),
-    name: raw.name ?? user.name ?? '',
-    avatarUrl: raw.avatarUrl ?? raw.avatar_url ?? user.avatarUrl ?? user.avatar_url ?? '',
-    status: ['online', 'away'].includes(raw.status ?? user.status)
-      ? raw.status ?? user.status
-      : 'offline',
+    id: String(raw.id),
+    name: raw.name ?? '',
+    avatarUrl: raw.avatarUrl ?? '',
+    status: ['online', 'away'].includes(raw.status) ? raw.status : 'offline',
   }
 }
