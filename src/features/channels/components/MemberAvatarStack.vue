@@ -100,7 +100,7 @@ function setHovered(member) {
   margin-left: -8px;
   border: 2px solid var(--ch-surface);
   border-radius: 50%;
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 600;
   color: #fff;
   box-sizing: border-box;

@@ -217,10 +217,7 @@ const logOut = () => {
         :size="avatarSize"
       />
       <span id="user-avatar-tooltip" class="avatar-tooltip" role="tooltip">
-        <span class="avatar-tooltip-name">{{ avatarTitle }}</span>
-        <span v-if="state.profile.designation" class="avatar-tooltip-title">
-          {{ state.profile.designation }}
-        </span>
+        {{ avatarTitle }}
       </span>
     </button>
 
@@ -322,9 +319,9 @@ const logOut = () => {
   border-radius: 4px;
   background: #55545d;
   color: #fff;
-  font-size: 16px;
+  font-size: 12px;
   font-weight: 500;
-  line-height: 22px;
+  line-height: 16px;
   white-space: nowrap;
   box-shadow: 0 2px 6px rgb(0 0 0 / 20%);
   opacity: 0;
@@ -335,11 +332,6 @@ const logOut = () => {
     opacity 0.12s ease,
     transform 0.12s ease,
     visibility 0s linear 0.12s;
-}
-
-.avatar-tooltip-name,
-.avatar-tooltip-title {
-  display: block;
 }
 
 .avatar-btn:hover .avatar-tooltip,

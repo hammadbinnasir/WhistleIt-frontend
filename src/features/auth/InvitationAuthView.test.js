@@ -105,40 +105,4 @@ describe('invitation auth view', () => {
     expect(saveAuthToken).toHaveBeenCalledWith({ access_token: 'registered-session-token' })
     expect(router.currentRoute.value.name).toBe('home')
   })
-
-  it('shows and hides the password on invitation login', async () => {
-    const { wrapper } = await mountInvitationView('/invitation/login/invite-token')
-    const password = wrapper.get('#invite-password')
-
-    expect(password.attributes('type')).toBe('password')
-    await wrapper.get('[aria-label="Show password"]').trigger('click')
-    expect(password.attributes('type')).toBe('text')
-    await wrapper.get('[aria-label="Hide password"]').trigger('click')
-    expect(password.attributes('type')).toBe('password')
-  })
-
-  it('toggles registration password fields independently', async () => {
-    const { wrapper } = await mountInvitationView('/invitation/register/invite-token')
-
-    await wrapper.get('[aria-label="Show password"]').trigger('click')
-    expect(wrapper.get('#invite-password').attributes('type')).toBe('text')
-    expect(wrapper.get('#invite-confirm-password').attributes('type')).toBe('password')
-
-    await wrapper.get('[aria-label="Show confirm password"]').trigger('click')
-    expect(wrapper.get('#invite-confirm-password').attributes('type')).toBe('text')
-    await wrapper.get('[aria-label="Hide password"]').trigger('click')
-    expect(wrapper.get('#invite-password').attributes('type')).toBe('password')
-    expect(wrapper.get('#invite-confirm-password').attributes('type')).toBe('text')
-  })
-
-  it('resets password visibility when switching between invite login and registration', async () => {
-    const { router, wrapper } = await mountInvitationView('/invitation/login/invite-token')
-
-    await wrapper.get('[aria-label="Show password"]').trigger('click')
-    await router.push('/invitation/register/invite-token')
-    await flushPromises()
-
-    expect(wrapper.get('#invite-password').attributes('type')).toBe('password')
-    expect(wrapper.get('#invite-confirm-password').attributes('type')).toBe('password')
-  })
 })

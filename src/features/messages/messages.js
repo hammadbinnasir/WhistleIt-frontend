@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { useActivityStore } from '@/stores/activity'
+import { createMessageDeletionScheduler, redactMessage } from './message-deletion'
 
 const STORAGE_KEY = 'whistleit:channel-messages'
 const PAGE_SIZE = 20
@@ -23,6 +24,7 @@ function loadMessages() {
 export const useMessagesStore = defineStore('messages', () => {
   const messagesByChannel = ref(loadMessages())
   const visibleCounts = ref({})
+  const deletionScheduler = createMessageDeletionScheduler(() => persist())
 
   function messagesFor(channelId) {
     return messagesByChannel.value[String(channelId)] || []
@@ -43,6 +45,16 @@ export const useMessagesStore = defineStore('messages', () => {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(messagesByChannel.value))
     } catch (error) {
       console.error('Unable to save messages to browser storage:', error)
+    }
+  }
+
+  function restoreScheduledDeletions() {
+    for (const [channelId, messages] of Object.entries(messagesByChannel.value)) {
+      for (const message of messages) {
+        if (message.deleteScheduledAt && !message.deleted) {
+          deletionScheduler.schedule(`${channelId}:${message.id}`, message)
+        }
+      }
     }
   }
 
@@ -99,11 +111,31 @@ export const useMessagesStore = defineStore('messages', () => {
     return true
   }
 
-  function deleteMessage(channelId, messageId) {
+  function deleteMessage(channelId, messageId, scheduledAt = null) {
     const key = String(channelId)
     const message = messagesFor(key).find((item) => item.id === messageId)
-    if (!message || !message.mine || message.scheduled) return false
-    messagesByChannel.value[key] = messagesFor(key).filter((item) => item.id !== messageId)
+    if (!message || !message.mine || message.scheduled || message.deleted) return false
+
+    const timerKey = `${key}:${message.id}`
+    if (scheduledAt) {
+      const deadline = Date.parse(scheduledAt)
+      if (!Number.isFinite(deadline) || deadline <= Date.now()) return false
+      message.deleteScheduledAt = new Date(deadline).toISOString()
+      deletionScheduler.schedule(timerKey, message)
+    } else {
+      deletionScheduler.cancel(timerKey)
+      redactMessage(message)
+    }
+    persist()
+    return true
+  }
+
+  function cancelScheduledDelete(channelId, messageId) {
+    const key = String(channelId)
+    const message = messagesFor(key).find((item) => item.id === messageId)
+    if (!message?.deleteScheduledAt || message.deleted) return false
+    deletionScheduler.cancel(`${key}:${message.id}`)
+    delete message.deleteScheduledAt
     persist()
     return true
   }
@@ -136,6 +168,8 @@ export const useMessagesStore = defineStore('messages', () => {
     return true
   }
 
+  restoreScheduledDeletions()
+
   return {
     messagesByChannel,
     visibleCounts,
@@ -146,6 +180,7 @@ export const useMessagesStore = defineStore('messages', () => {
     sendMessage,
     editMessage,
     deleteMessage,
+    cancelScheduledDelete,
     toggleReaction,
     cancelScheduledMessage,
   }

@@ -12,11 +12,9 @@ const props = defineProps({
 
 const BADGE_COLORS = { dark: 'bg-[#1f1d3d]', indigo: 'bg-[#3f51b5]' }
 
-const headingClass = computed(() => (props.page.large ? 'text-base' : 'text-lg'))
+const headingClass = computed(() => (props.page.large ? 'text-xl' : 'text-lg'))
 const bodyClass = computed(() =>
-  props.page.large
-    ? 'text-sm leading-[21px] text-slate-700'
-    : 'text-[15px] leading-6 text-slate-700',
+  props.page.large ? 'text-base leading-7 text-slate-700' : 'text-[15px] leading-6 text-slate-700',
 )
 
 function headingText(section, index) {
@@ -29,7 +27,7 @@ function mediaFor(section) {
 </script>
 
 <template>
-  <div class="space-y-5 pb-4">
+  <div class="space-y-6 pb-4">
     <h3 v-if="page.heading" class="text-center text-xl font-bold text-slate-900">
       {{ page.heading }}
     </h3>
@@ -53,7 +51,7 @@ function mediaFor(section) {
 
       <p v-if="section.text" :class="bodyClass">{{ section.text }}</p>
 
-      <ul v-if="section.bullets" class="list-disc space-y-2 pl-6" :class="bodyClass">
+      <ul v-if="section.bullets" class="list-disc space-y-3 pl-6" :class="bodyClass">
         <li v-for="(bullet, i) in section.bullets" :key="i">{{ bullet }}</li>
       </ul>
 

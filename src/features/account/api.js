@@ -6,10 +6,6 @@ export function getUserProfile(userId) {
   return http(userPath(userId, '/profile'))
 }
 
-export function updateUserProfile(userId, profile) {
-  return http(userPath(userId, '/profile'), { method: 'PATCH', body: profile })
-}
-
 export function getUserSettings(userId) {
   return http(userPath(userId, '/settings'))
 }

@@ -16,12 +16,14 @@ export const useUiStore = defineStore('ui', () => {
   let nextToastId = 0
 
   // modal visibility flags
+  const helpModalOpen = ref(false)
+  const workspaceCreateModalOpen = ref(false)
   const teamCreateModalOpen = ref(false)
+  const teamJoinModalOpen = ref(false)
   const memberManageModalOpen = ref(false)
 
   // getters
   const hasSelection = computed(() => selectedChannelId.value !== null)
-  const helpModalOpen = computed(() => activePanel.value === 'help')
 
   // actions
   function selectChannel(id) {
@@ -62,18 +64,9 @@ export const useUiStore = defineStore('ui', () => {
   function togglePinnedMessage(message, conversation) {
     const id = String(message.id)
     const conversationId = String(conversation?.id ?? message.conversation?.id ?? '')
-    const conversationKind =
-      conversation?.kind === 'dm' || conversation?.type === 'dm' ? 'dm' : 'channel'
-    const existingIndex = pinnedMessages.value.findIndex((item) => {
-      const itemConversation = item.conversation || {}
-      const itemKind =
-        itemConversation.kind === 'dm' || itemConversation.type === 'dm' ? 'dm' : 'channel'
-      return (
-        String(item.id) === id &&
-        String(itemConversation.id ?? '') === conversationId &&
-        itemKind === conversationKind
-      )
-    })
+    const existingIndex = pinnedMessages.value.findIndex(
+      (item) => String(item.id) === id && String(item.conversation?.id ?? '') === conversationId,
+    )
     if (existingIndex !== -1) {
       pinnedMessages.value.splice(existingIndex, 1)
       return false
@@ -95,10 +88,16 @@ export const useUiStore = defineStore('ui', () => {
 
   // modal & drawer toggles
   function toggleHelpModal() {
-    openPanel('help')
+    helpModalOpen.value = !helpModalOpen.value
+  }
+  function toggleWorkspaceCreateModal() {
+    workspaceCreateModalOpen.value = !workspaceCreateModalOpen.value
   }
   function toggleTeamCreateModal() {
     teamCreateModalOpen.value = !teamCreateModalOpen.value
+  }
+  function toggleTeamJoinModal() {
+    teamJoinModalOpen.value = !teamJoinModalOpen.value
   }
   function toggleMemberManageModal() {
     memberManageModalOpen.value = !memberManageModalOpen.value
@@ -125,10 +124,14 @@ export const useUiStore = defineStore('ui', () => {
     dismissToast,
     toggleSidebar,
     helpModalOpen,
+    workspaceCreateModalOpen,
     teamCreateModalOpen,
+    teamJoinModalOpen,
     memberManageModalOpen,
     toggleHelpModal,
+    toggleWorkspaceCreateModal,
     toggleTeamCreateModal,
+    toggleTeamJoinModal,
     toggleMemberManageModal,
   }
 })

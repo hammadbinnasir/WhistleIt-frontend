@@ -63,9 +63,17 @@ describe('ui store', () => {
     ui.toggleHelpModal()
     expect(ui.helpModalOpen).toBe(true)
 
+    expect(ui.workspaceCreateModalOpen).toBe(false)
+    ui.toggleWorkspaceCreateModal()
+    expect(ui.workspaceCreateModalOpen).toBe(true)
+
     expect(ui.teamCreateModalOpen).toBe(false)
     ui.toggleTeamCreateModal()
     expect(ui.teamCreateModalOpen).toBe(true)
+
+    expect(ui.teamJoinModalOpen).toBe(false)
+    ui.toggleTeamJoinModal()
+    expect(ui.teamJoinModalOpen).toBe(true)
 
     expect(ui.memberManageModalOpen).toBe(false)
     ui.toggleMemberManageModal()

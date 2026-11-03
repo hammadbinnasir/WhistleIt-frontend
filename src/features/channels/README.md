@@ -1,37 +1,70 @@
-# Channels
+# Channels module (11 list, 12 management, 13 header)
 
-The Channels feature loads and updates channel data through the backend API. It
-uses the active company and team from `useTeamsStore()` to build requests under
-`/v1/{company}/teams/{team}/channels`. Set `VITE_API_BASE_URL` to the backend
-API root. There is no in-memory channel data source.
+Everything lives in ONE new folder: `src/modules/channels/`.
 
-## API requests
+## Assumptions
 
-| Action         | Request |
-| -------------- | ------- |
-| List channels  | `GET /v1/{company}/teams/{team}/channels` |
-| Browse/search  | `GET /v1/{company}/teams/{team}/channels?q={query}` |
-| Create         | `POST /v1/{company}/teams/{team}/channels` with `{ name, description, type }` |
-| Get            | `GET /v1/{company}/teams/{team}/channels/{channel}` |
-| Update         | `PATCH /v1/{company}/teams/{team}/channels/{channel}` with `{ name, description }` |
-| Delete         | `DELETE /v1/{company}/teams/{team}/channels/{channel}` |
-| List members   | `GET /v1/{company}/teams/{team}/channels/{channel}/members` |
-| Add member     | `POST /v1/{company}/teams/{team}/channels/{channel}/members` with `{ user_id }` |
-| Join           | `POST /v1/{company}/teams/{team}/channels/{channel}/join` |
-| Remove member  | `DELETE /v1/{company}/teams/{team}/channels/{channel}/members/{targetUser}` |
-| Leave          | `DELETE /v1/{company}/teams/{team}/channels/{channel}/leave`   |
+Vue 3 (`<script setup>`), Pinia, Vite, Tailwind in the app shell, the `@` alias, and the shared `src/stores/ui.js`
+store (`selectedChannelId`, `selectChannel(id)`). No vue-router is needed: the selected channel lives in that store.
+The module touches that store in ONE file only: `composables/useActiveChannel.js`.
 
-Non-2xx responses should include `{ "message": "human readable text" }`; the
-client surfaces that message. Favorite, mute, unread, and archive actions are
-not shown because no matching endpoints were included in the supplied API
-contract.
+## 1. Copy the folder
 
-## Behavior
+Copy `channels/` to `src/modules/channels/`.
 
-- The sidebar shows up to 6 channels and keeps the active channel visible.
-- "More channels" opens the search and join dialog.
-- Default channels cannot be left or deleted.
-- Channel creation chooses public or private visibility; editing does not
-  change visibility.
-- A socket owner can update real-time state with
-  `useChannelsStore().upsertChannel` and `removeChannel`.
+## 2. Adjust the layout file (the one you pasted, probably `src/App.vue`)
+
+Replace it with the provided `App.vue`. The changes are:
+
+- import `ChannelSidebar` and `ChannelHeader` from `@/modules/channels`
+- the demo `channels` array and hand-made list are replaced by `<ChannelSidebar />`
+- the `<h2>` channel title is replaced by `<ChannelHeader :channel-id="selectedChannelId">` (the "Hide sidebar" button moves into its `#actions` slot)
+- the sidebar uses `v-show` instead of `v-if`, because the Channels dialogs live inside `<ChannelSidebar />` and must stay mounted
+  This file is shared, so tell the owner of the layout before changing it.
+
+## 3. Pinia and env
+
+`main.js` must already have `app.use(createPinia())`. Create/extend `.env.development`:
+
+```
+VITE_API_BASE_URL=/api
+VITE_CHANNELS_USE_MOCK=true     # fake in-memory backend; set to false (or delete) when real APIs exist
+```
+
+Messages mount in the empty `<section>` of `App.vue` (owned by the messages teammate).
+
+## Going live when the backend is ready
+
+1. Set `VITE_CHANNELS_USE_MOCK=false`.
+2. Adapt `api/http.js` (`getAuthHeaders`, or swap in your existing axios instance).
+3. Adjust field names ONLY in `api/normalizers.js` and endpoint paths ONLY in `api/channels.api.js`.
+
+## Proposed API contract (send this to the backend team)
+
+Channel object (camelCase):
+`{ id, name, description, isPrivate, isDefault, isArchived, isMember, isFavorite, isMuted, isUnread, unreadCount, memberCount, canManage }`
+`isFavorite/isMuted/isUnread/unreadCount` are per-user. `canManage` = current user may edit/archive.
+
+| Action                          | Request                                             | Response                                              |
+| ------------------------------- | --------------------------------------------------- | ----------------------------------------------------- |
+| My channels (sidebar)           | `GET /channels?joined=true`                         | `[channel]` or `{ items: [channel] }`                 |
+| Browse / search (More channels) | `GET /channels/browse?q=`                           | list of public channels + private ones the user is in |
+| Create                          | `POST /channels` `{ name, description, isPrivate }` | channel (409 + `{message}` if the name exists)        |
+| Edit                            | `PATCH /channels/:id` `{ name, description }`       | channel                                               |
+| Join                            | `POST /channels/:id/join`                           | channel                                               |
+| Leave                           | `POST /channels/:id/leave`                          | 204 (403 for default channels)                        |
+| Archive                         | `POST /channels/:id/archive`                        | 204 (403 for default channels)                        |
+| Favorite / unfavorite           | `PUT` / `DELETE /channels/:id/favorite`             | 204                                                   |
+| Mute / unmute                   | `PUT` / `DELETE /channels/:id/mute`                 | 204                                                   |
+| Mark as unread                  | `POST /channels/:id/unread`                         | 204                                                   |
+| Members (header stack)          | `GET /channels/:id/members?limit=10`                | `{ items: [{ id, name, avatarUrl, status: online      | away | offline }], total }` |
+
+Errors: non-2xx with JSON `{ "message": "human readable text" }`; the UI shows `message` to the user.
+
+## Design decisions you can change in one place
+
+- Sidebar shows 6 channels (`SIDEBAR_MAX_VISIBLE`), the active one is always visible; favorites are pinned on top. "More channels" opens a search/join dialog.
+- Default channels (e.g. Announcements) can't be left or archived; edit/archive only appear when `canManage` is true.
+- Channel visibility (public/private) is chosen at creation and locked afterwards (edit form disables the toggle).
+- Real-time (new channel, member joined): the socket owner can call `useChannelsStore().upsertChannel / removeChannel`.
+- Colors are `--ch-*` variables in `styles/tokens.css`.
