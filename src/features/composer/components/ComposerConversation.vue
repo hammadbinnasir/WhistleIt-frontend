@@ -4,6 +4,7 @@ import EmojiPicker from 'vue3-emoji-picker'
 import 'vue3-emoji-picker/css'
 import { useChannelsStore } from '@/features/channels'
 import { useDmStore } from '@/features/dms/stores/dms'
+import { getAuthUser } from '@/features/auth/session'
 import { useMessagesStore } from '@/features/messages/messages'
 import {
   createLinkPreview,
@@ -44,6 +45,9 @@ const pollResults = ref({})
 const closedPolls = ref(new Set())
 
 const channelId = computed(() => String(props.conversationId || 'general'))
+const currentUserName = computed(
+  () => dms.usersById[dms.meId]?.name || getAuthUser()?.fullName || 'You',
+)
 const conversation = computed(() =>
   props.conversationType === 'dm'
     ? dms.conversations.find((item) => item.id === String(props.conversationId)) || null
@@ -85,7 +89,7 @@ const visibleMessages = computed(() =>
     : messageStore.visibleMessagesFor(channelId.value),
 )
 const renderedMessages = computed(() => {
-  const currentUser = dms.usersById[dms.meId]?.name || 'You'
+  const currentUser = currentUserName.value
   let previous = null
 
   return [...visibleMessages.value]
@@ -195,7 +199,7 @@ function addMessage(payload) {
     : messageStore.sendMessage(
         channelId.value,
         messagePayload,
-        dms.usersById[dms.meId]?.name || 'You',
+        currentUserName.value,
         conversationMeta.value.name,
       )
   if (!sentMessage) {
@@ -222,7 +226,7 @@ function addScheduledMessage(message) {
     : messageStore.sendMessage(
         channelId.value,
         message,
-        dms.usersById[dms.meId]?.name || 'You',
+        currentUserName.value,
         conversationMeta.value.name,
       )
   if (!scheduledMessage) {
@@ -239,7 +243,7 @@ function addGif(gif) {
     : messageStore.sendMessage(
         channelId.value,
         message,
-        dms.usersById[dms.meId]?.name || 'You',
+        currentUserName.value,
         conversationMeta.value.name,
       )
   if (!sentMessage) {
@@ -392,7 +396,7 @@ function forwardMessage() {
       : messageStore.sendMessage(
           destination.id,
           payload,
-          dms.usersById[dms.meId]?.name || 'You',
+          currentUserName.value,
           destination.name.replace(/^#/, ''),
         )
 
