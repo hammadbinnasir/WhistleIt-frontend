@@ -1,10 +1,8 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 import { useDmStore } from './dms'
 
 describe('dms store', () => {
-  afterEach(() => vi.useRealTimers())
-
   beforeEach(() => setActivePinia(createPinia()))
 
   it('loads conversations and users from the DMs API', async () => {
@@ -71,23 +69,7 @@ describe('dms store', () => {
     expect(dms.toggleReaction(conversation.id, sent.id, '🎉')).toBe(true)
     expect(sent.reactions).toEqual([{ emoji: '🎉', users: [dms.meId] }])
     expect(dms.deleteMessage(conversation.id, sent.id)).toBe(true)
-    expect(conversation.messages.some((message) => message.id === sent.id)).toBe(true)
-    expect(sent).toMatchObject({ deleted: true, text: '', reactions: [] })
-  })
-
-  it('executes a scheduled deletion in a direct message', async () => {
-    const dms = useDmStore()
-    await dms.init()
-    const conversation = dms.startDm('u2')
-    const sent = dms.sendMessage(conversation.id, { content: 'Delete later' })
-    vi.useFakeTimers()
-    const deadline = new Date(Date.now() + 60_000).toISOString()
-
-    expect(dms.deleteMessage(conversation.id, sent.id, deadline)).toBe(true)
-    expect(sent.deleteScheduledAt).toBe(deadline)
-    vi.advanceTimersByTime(60_000)
-
-    expect(sent).toMatchObject({ deleted: true, text: '' })
+    expect(conversation.messages).not.toContain(sent)
   })
 
   it('does not allow editing or deleting another user message', async () => {

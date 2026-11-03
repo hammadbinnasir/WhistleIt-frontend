@@ -1,11 +1,9 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 import { useMessagesStore } from './messages'
 import { useActivityStore } from '@/stores/activity'
 
 describe('channel messages store', () => {
-  afterEach(() => vi.useRealTimers())
-
   beforeEach(() => {
     localStorage.clear()
     setActivePinia(createPinia())
@@ -23,31 +21,7 @@ describe('channel messages store', () => {
     expect(JSON.parse(localStorage.getItem('whistleit:channel-messages')).general).toHaveLength(1)
 
     expect(messages.deleteMessage('general', sent.id)).toBe(true)
-    expect(messages.messagesFor('general')).toHaveLength(1)
-    expect(messages.messagesFor('general')[0]).toMatchObject({
-      deleted: true,
-      content: '',
-      deletedAt: expect.any(String),
-    })
-  })
-
-  it('schedules, cancels, and executes a deletion', () => {
-    vi.useFakeTimers()
-    const messages = useMessagesStore()
-    const sent = messages.sendMessage('general', { content: 'Delete later' }, 'You')
-    const firstDeadline = new Date(Date.now() + 60_000).toISOString()
-
-    expect(messages.deleteMessage('general', sent.id, firstDeadline)).toBe(true)
-    expect(sent.deleteScheduledAt).toBe(firstDeadline)
-    expect(messages.cancelScheduledDelete('general', sent.id)).toBe(true)
-    expect(sent.deleteScheduledAt).toBeUndefined()
-
-    const finalDeadline = new Date(Date.now() + 60_000).toISOString()
-    expect(messages.deleteMessage('general', sent.id, finalDeadline)).toBe(true)
-    vi.advanceTimersByTime(60_000)
-
-    expect(sent).toMatchObject({ deleted: true, content: '' })
-    expect(sent.deleteScheduledAt).toBeUndefined()
+    expect(messages.messagesFor('general')).toHaveLength(0)
   })
 
   it('restores message history from browser storage', () => {

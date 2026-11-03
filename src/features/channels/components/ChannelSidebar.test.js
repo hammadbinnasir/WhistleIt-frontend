@@ -14,7 +14,13 @@ describe('ChannelSidebar', () => {
   it('keeps the channel unselected while a direct message is open', async () => {
     const channels = useChannelsStore()
     channels.channels = [
-      { id: 'channel-1', name: 'Announcements', isDefault: true, isFavorite: false },
+      {
+        id: 'channel-1',
+        name: 'Announcements',
+        isDefault: true,
+        isFavorite: false,
+        isMember: true,
+      },
     ]
     channels.loaded = true
 
@@ -36,7 +42,15 @@ describe('ChannelSidebar', () => {
 
   it('closes the activity panel when a channel is selected', async () => {
     const channels = useChannelsStore()
-    channels.channels = [{ id: 'frontend', name: 'Frontend', isDefault: true, isFavorite: false }]
+    channels.channels = [
+      {
+        id: 'frontend',
+        name: 'Frontend',
+        isDefault: true,
+        isFavorite: false,
+        isMember: true,
+      },
+    ]
     channels.loaded = true
     const dms = useDmStore()
     const ui = useUiStore()

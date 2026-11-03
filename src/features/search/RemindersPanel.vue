@@ -1,6 +1,6 @@
 <script setup>
 // Right-side "Reminders" drawer. Shows every reminder set on a message.
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import { useRemindersStore } from './reminders'
 import { useUiStore } from '@/stores/ui'
 
@@ -8,6 +8,8 @@ const store = useRemindersStore()
 const ui = useUiStore()
 const editingId = ref(null)
 const editText = ref('')
+const deletedExpanded = ref(true)
+const hasDeleted = computed(() => store.deletedItems.length > 0)
 
 const fmt = (iso) => {
   const d = new Date(iso)
@@ -32,31 +34,47 @@ const saveEdit = (r) => {
 
 <template>
   <aside class="flex h-full w-full flex-col border-l border-slate-200 bg-white">
-    <header class="flex items-center justify-between border-b border-slate-200 px-5 py-4">
-      <h2 class="text-lg text-slate-700">Reminders</h2>
+    <header class="flex h-14 shrink-0 items-center justify-between border-b border-slate-200 px-5">
+      <h2 class="text-xl text-slate-700">Reminders</h2>
       <button
-        class="flex h-7 w-7 cursor-pointer items-center justify-center rounded-full bg-indigo-50 text-slate-600"
+        class="flex h-8 w-8 cursor-pointer items-center justify-center text-slate-600 hover:text-slate-900"
         aria-label="Close"
         @click="ui.closePanel()"
       >
-        ✕
+        <svg
+          class="h-5 w-5"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.75"
+          stroke-linecap="round"
+          aria-hidden="true"
+        >
+          <path d="M5 5l14 14M19 5 5 19" />
+        </svg>
       </button>
     </header>
 
-    <div v-if="!store.sorted.length" class="flex flex-1 flex-col items-center justify-center px-8">
+    <div
+      v-if="!store.sorted.length && !hasDeleted"
+      class="flex flex-1 flex-col items-center justify-center px-8"
+    >
       <svg
         viewBox="0 0 220 220"
-        class="mb-10 h-56 w-56 text-slate-200"
+        class="mb-10 h-48 w-48 text-slate-200"
         fill="none"
         stroke="currentColor"
         stroke-linecap="round"
-        stroke-width="10"
+        stroke-linejoin="round"
+        stroke-width="7"
         aria-hidden="true"
       >
-        <circle cx="110" cy="120" r="75" />
-        <path d="M110 75v48l40 24M50 35 28 55M170 35l22 20" />
+        <path d="M86 24h48M110 24v18" />
+        <path d="M64 50 49 36M156 50l15-14" />
+        <circle cx="110" cy="123" r="67" />
+        <path d="M110 79v45l37 22" />
       </svg>
-      <ul class="list-disc space-y-2 self-start pl-6 text-lg text-slate-500">
+      <ul class="list-disc space-y-2 self-start pl-7 text-base leading-7 text-slate-500">
         <li>There are no reminder messages yet.</li>
         <li>Here you can find all reminder messages.</li>
       </ul>
@@ -66,7 +84,7 @@ const saveEdit = (r) => {
         v-for="r in store.sorted"
         :key="r.id"
         class="relative border-l-4 bg-slate-50 p-3"
-        :class="r.fired ? 'border-amber-400' : 'border-blue-500'"
+        :class="r.fired ? 'border-amber-400' : 'border-red-500'"
       >
         <button
           class="absolute right-2 top-2 text-slate-400 hover:text-slate-600"
@@ -102,6 +120,44 @@ const saveEdit = (r) => {
           Delete Reminder
         </button>
       </div>
+
+      <section v-if="hasDeleted" class="px-0 pt-1">
+        <button
+          type="button"
+          class="flex h-12 w-full items-center justify-between border-b border-slate-100 text-left text-base font-medium text-slate-800"
+          @click="deletedExpanded = !deletedExpanded"
+        >
+          <span>Deleted Reminders</span>
+          <svg
+            class="h-4 w-4 shrink-0 transition-transform duration-150"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.8"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            :class="{ 'rotate-180': !deletedExpanded }"
+            aria-hidden="true"
+          >
+            <path d="m5 15 7-7 7 7" />
+          </svg>
+        </button>
+        <div v-if="deletedExpanded" class="space-y-3">
+          <div
+            v-for="r in store.deletedItems"
+            :key="r.id"
+            class="border-l-4 border-red-500 bg-slate-50 px-4 py-4"
+          >
+            <p class="text-sm font-bold text-slate-900">
+              In {{ r.conversationType === 'dm' ? 'conversation with' : 'channel' }}
+              <span class="font-normal text-blue-500">@{{ r.conversationName }}</span>
+            </p>
+            <p class="mt-2 text-sm font-bold text-slate-900">Message:</p>
+            <p class="mt-1 break-words text-sm text-slate-800">{{ r.text }}</p>
+            <p class="mt-3 text-xs text-slate-500">{{ fmt(r.deletedAt || r.remindAt) }}</p>
+          </div>
+        </div>
+      </section>
     </div>
   </aside>
 </template>
