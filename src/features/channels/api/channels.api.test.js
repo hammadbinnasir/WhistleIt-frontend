@@ -9,10 +9,12 @@ import {
   getChannel,
   joinChannel,
   leaveChannel,
+  listAvailableMembers,
   listChannels,
   listMembers,
   removeChannelMember,
   updateChannel,
+  
 } from './channels.api'
 
 vi.mock('./http', () => ({ http: vi.fn() }))
@@ -223,5 +225,31 @@ describe('channel API routes', () => {
 
     await removeChannelMember('channel-3', 'user-4')
     expect(http).toHaveBeenLastCalledWith(`${channelPath}/members/user-4`, { method: 'DELETE' })
+  })
+
+  it('loads and normalizes channel available members', async () => {
+    http.mockResolvedValue({
+      success: true,
+      data: {
+        available_members: [
+          { user_id: 'user-8', full_name: 'Avery Jones', email: 'avery@example.com' },
+        ],
+        total: 1,
+      },
+    })
+
+    await expect(listAvailableMembers('channel-3')).resolves.toEqual({
+      items: [
+        {
+          id: 'user-8',
+          name: 'Avery Jones',
+          email: 'avery@example.com',
+          avatarUrl: '',
+          status: 'offline',
+        },
+      ],
+      total: 1,
+    })
+    expect(http).toHaveBeenLastCalledWith(`${channelPath}/available-members`)
   })
 })

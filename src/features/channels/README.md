@@ -16,6 +16,7 @@ API root. There is no in-memory channel data source.
 | Update         | `PATCH /v1/{company}/teams/{team}/channels/{channel}` with `{ name, description }` |
 | Delete         | `DELETE /v1/{company}/teams/{team}/channels/{channel}` |
 | List members   | `GET /v1/{company}/teams/{team}/channels/{channel}/members` |
+| Available members | `GET /v1/{company}/teams/{team}/channels/{channel}/available-members` |
 | Add member     | `POST /v1/{company}/teams/{team}/channels/{channel}/members` with `{ user_id }` |
 | Join           | `POST /v1/{company}/teams/{team}/channels/{channel}/join` |
 | Remove member  | `DELETE /v1/{company}/teams/{team}/channels/{channel}/members/{targetUser}` |

@@ -2,9 +2,13 @@
 // Channel Settings modal: Settings | Members | Integrations | About
 import { ref, computed, onMounted, watch } from 'vue'
 import { useUiStore } from '@/stores/ui'
-import { listMembers, removeMember, addMember, getWebhookUrl } from './members'
-import { getWorkspaceMembers } from '@/features/shell/api/membersApi'
-import { useTeamsStore } from '@/stores/teams'
+import {
+  listMembers,
+  listAvailableMembers,
+  removeMember,
+  addMember,
+  getWebhookUrl,
+} from './members'
 
 const props = defineProps({
   // { id, name, description, createdBy, muted, favourite }
@@ -20,7 +24,6 @@ const emit = defineEmits([
   'save-details',
 ])
 const ui = useUiStore()
-const teamsStore = useTeamsStore()
 
 const tab = ref(ui.channelSettingsTab)
 const members = ref([])
@@ -126,7 +129,10 @@ onMounted(async () => {
 
 async function openAdd() {
   adding.value = !adding.value
-  if (adding.value) onAddSearch()
+  if (adding.value) {
+    dropdownOpen.value = true
+    onAddSearch()
+  }
 }
 function closeAdd() {
   adding.value = false
@@ -138,17 +144,17 @@ async function onAddSearch() {
   loadingAddOptions.value = true
   addOptionsError.value = ''
   try {
-    const workspaceMembers = await getWorkspaceMembers(teamsStore.activeWorkspaceId)
+    const availableMembers = await listAvailableMembers(props.channel.id)
     const query = addQuery.value.trim().toLowerCase()
-    addOptions.value = workspaceMembers.filter((user) => {
-      if (!query) return true
-      return `${user.name} ${user.email}`.toLowerCase().includes(query)
-    }).filter(
-      (user) => !members.value.some((member) => String(member.id) === String(user.id)),
-    )
+    addOptions.value = availableMembers
+      .filter((user) => {
+        if (!query) return true
+        return `${user.name} ${user.email}`.toLowerCase().includes(query)
+      })
+      .filter((user) => !members.value.some((member) => String(member.id) === String(user.id)))
   } catch (error) {
     addOptions.value = []
-    addOptionsError.value = error?.message || 'Unable to load workspace members.'
+    addOptionsError.value = error?.message || 'Unable to load available channel members.'
   } finally {
     loadingAddOptions.value = false
   }
@@ -562,10 +568,12 @@ const showSample = ref(false)
                   <button
                     type="button"
                     class="absolute right-2 top-1/2 grid h-8 w-8 -translate-y-1/2 cursor-pointer place-items-center rounded text-sm text-indigo-500 hover:bg-indigo-50"
-                    aria-label="Show API members"
+                    aria-label="Show available members"
                     @click.stop="toggleDropdown"
                   >
-                    <span :class="dropdownOpen ? '-rotate-180' : ''" class="transition-transform">▼</span>
+                    <span :class="dropdownOpen ? '-rotate-180' : ''" class="transition-transform"
+                      >▼</span
+                    >
                   </button>
                 </label>
 
@@ -585,7 +593,7 @@ const showSample = ref(false)
                   v-else-if="dropdownOpen && !addOptions.length"
                   class="mt-2 rounded border border-slate-200 px-4 py-3 text-center text-sm text-slate-500"
                 >
-                  No available workspace members
+                  No available members
                 </div>
                 <div
                   v-else-if="dropdownOpen && addOptions.length"
