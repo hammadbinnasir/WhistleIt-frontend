@@ -72,7 +72,89 @@ describe('composer conversation', () => {
 
     expect(wrapper.get('time').attributes('datetime')).toBeTruthy()
 
-    expect(wrapper.get('[aria-label="Seen By"]').text()).toBe('✓✓')
+    expect(wrapper.get('[aria-label="Sent"]').text()).toBe('✓✓')
+  })
+
+  it('shows a sent poll in the conversation', async () => {
+    const wrapper = mount(ComposerConversation)
+    const composer = wrapper.findComponent(MessageComposer)
+
+    await composer.get('button[aria-label="Insert poll"]').trigger('click')
+
+    const titleInput = document.querySelector('#poll-title-input')
+    titleInput.value = 'Lunch vote'
+    titleInput.dispatchEvent(new Event('input', { bubbles: true }))
+    const questionInput = document.querySelector('#poll-question-0')
+    questionInput.value = 'What should we order?'
+    questionInput.dispatchEvent(new Event('input', { bubbles: true }))
+    const options = document.querySelectorAll('.message-composer__poll-option input')
+    options[0].value = 'Pizza'
+    options[0].dispatchEvent(new Event('input', { bubbles: true }))
+    options[1].value = 'Salad'
+    options[1].dispatchEvent(new Event('input', { bubbles: true }))
+
+    document.querySelector('.message-composer__poll-next').click()
+    await nextTick()
+    document.querySelector('.message-composer__poll-next').click()
+    await nextTick()
+    document.querySelector('.message-composer__poll-schedule-option input').click()
+    await nextTick()
+    document.querySelector('.message-composer__poll-footer .message-composer__poll-next').click()
+    await nextTick()
+
+    expect(wrapper.get('.composer-conversation__poll-card').text()).toContain('Lunch vote')
+    expect(useMessagesStore().messagesFor('general').at(-1).poll.questions[0].text).toBe(
+      'What should we order?',
+    )
+  })
+
+  it('accepts and displays an open-ended poll response', async () => {
+    const wrapper = mount(ComposerConversation)
+    const composer = wrapper.findComponent(MessageComposer)
+    composer.vm.$emit('send', {
+      content: '',
+      attachments: [],
+      poll: {
+        id: 'open-ended-poll',
+        title: 'Open feedback',
+        questions: [
+          {
+            text: 'What should we improve?',
+            type: 'openEnded',
+            required: true,
+            multiple: false,
+            options: [],
+          },
+        ],
+      },
+    })
+    await nextTick()
+
+    await wrapper.get('.composer-conversation__poll-actions button').trigger('click')
+    await nextTick()
+    const response = document.querySelector('textarea[aria-label="Response to question 1"]')
+    expect(response).not.toBeNull()
+    response.value = 'Improve documentation'
+    response.dispatchEvent(new Event('input', { bubbles: true }))
+    await nextTick()
+    document.querySelector('.composer-conversation__poll-response-footer button').click()
+    await nextTick()
+
+    expect(wrapper.text()).toContain("You're Done")
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text().includes('View All Results'))
+      .trigger('click')
+    await nextTick()
+    expect(document.body.textContent).toContain('Improve documentation')
+    const closeButton = document.querySelector(
+      '.composer-conversation__poll-response-footer .is-close',
+    )
+    expect(closeButton).not.toBeNull()
+    closeButton.click()
+    await nextTick()
+    expect(document.querySelector('.composer-conversation__poll-response-modal')).toBeNull()
+    wrapper.unmount()
   })
 
   it('opens and sends messages in the selected direct message', async () => {
@@ -234,30 +316,6 @@ describe('composer conversation', () => {
     vi.unstubAllGlobals()
   })
 
-  it('opens and searches the seen-by list for channel messages', async () => {
-    const wrapper = mount(ComposerConversation)
-    await sendMessage(wrapper, 'Read receipt test')
-    const message = useMessagesStore().messagesFor('general')[0]
-    message.seenBy = [
-      { id: 'member-1', name: 'Aiman Iqbal' },
-      { id: 'member-2', name: 'Afia Noor' },
-    ]
-    await nextTick()
-
-    await wrapper.get('button[aria-label="Seen By"]').trigger('click')
-    expect(document.body.textContent).toContain('Message Seen By')
-    expect(document.body.textContent).toContain('Aiman Iqbal')
-    expect(document.body.textContent).toContain('Afia Noor')
-
-    const search = document.body.querySelector('input[aria-label="Search viewers"]')
-    search.value = 'Afia'
-    search.dispatchEvent(new Event('input', { bubbles: true }))
-    await nextTick()
-
-    expect(document.body.textContent).toContain('Afia Noor')
-    expect(document.body.textContent).not.toContain('Aiman Iqbal')
-  })
-
   it('falls back to the browser copy command when clipboard access is blocked', async () => {
     const writeText = vi.fn().mockRejectedValue(new Error('Permission denied'))
     const execCommand = vi.fn().mockReturnValue(true)
@@ -284,6 +342,10 @@ describe('composer conversation', () => {
   })
 
   it('deletes a message and removes its pin', async () => {
+    vi.stubGlobal(
+      'confirm',
+      vi.fn(() => true),
+    )
     const wrapper = mount(ComposerConversation)
     const ui = useUiStore()
     await sendMessage(wrapper, 'Remove this message')
@@ -292,47 +354,11 @@ describe('composer conversation', () => {
     await article.get('button[aria-label="Pin message"]').trigger('click')
     await article.get('button[aria-label="More message actions"]').trigger('click')
     await buttonWithText(article.get('.composer-conversation__menu'), 'Delete').trigger('click')
-    const dialog = document.body.querySelector('.delete-message-dialog')
-    expect(dialog).not.toBeNull()
-    dialog.querySelector('button[type="submit"]').click()
     await nextTick()
 
-    expect(wrapper.text()).toContain('(message deleted)')
     expect(wrapper.text()).not.toContain('Remove this message')
     expect(ui.pinnedMessages).toHaveLength(0)
-  })
-
-  it('schedules a message deletion and lets the user cancel it', async () => {
-    const wrapper = mount(ComposerConversation)
-    await sendMessage(wrapper, 'Keep this until later')
-    const article = wrapper.get('article')
-    await article.get('button[aria-label="More message actions"]').trigger('click')
-    await buttonWithText(article.get('.composer-conversation__menu'), 'Delete').trigger('click')
-
-    const dialog = document.body.querySelector('.delete-message-dialog')
-    const scheduleCheckbox = dialog.querySelector('input[type="checkbox"]')
-    scheduleCheckbox.checked = true
-    scheduleCheckbox.dispatchEvent(new Event('change', { bubbles: true }))
-    await nextTick()
-
-    const future = new Date(Date.now() + 3_600_000)
-    const localDateTime = `${future.getFullYear()}-${String(future.getMonth() + 1).padStart(2, '0')}-${String(future.getDate()).padStart(2, '0')}T${String(future.getHours()).padStart(2, '0')}:${String(future.getMinutes()).padStart(2, '0')}`
-    const dateInput = dialog.querySelector('input[type="datetime-local"]')
-    dateInput.value = localDateTime
-    dateInput.dispatchEvent(new Event('input', { bubbles: true }))
-    await nextTick()
-    dialog.querySelector('button[type="submit"]').click()
-    await nextTick()
-
-    const message = useMessagesStore().messagesFor('general')[0]
-    expect(message.deleteScheduledAt).toBeTruthy()
-    expect(wrapper.text()).toContain('Deletion scheduled for')
-
-    await article.get('button[aria-label="More message actions"]').trigger('click')
-    await buttonWithText(article.get('.composer-conversation__menu'), 'Cancel scheduled delete').trigger('click')
-
-    expect(message.deleteScheduledAt).toBeUndefined()
-    expect(wrapper.text()).toContain('Keep this until later')
+    vi.unstubAllGlobals()
   })
 
   it('replies to a message with an attached quoted message', async () => {

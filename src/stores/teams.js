@@ -3,14 +3,9 @@ import { computed, ref } from 'vue'
 import {
   createTeam as apiCreateTeam,
   deleteTeam as apiDeleteTeam,
-  joinTeam as apiJoinTeam,
   updateTeam as apiUpdateTeam,
 } from '@/features/shell/api/teamsApi'
-import {
-  createWorkspace as apiCreateWorkspace,
-  getWorkspaces,
-  getWorkspaceTeams,
-} from '@/features/shell/api/workspacesApi'
+import { getWorkspaces, getWorkspaceTeams } from '@/features/shell/api/workspacesApi'
 
 const LAST_TEAM_KEY = 'whistleit:last-team'
 
@@ -41,6 +36,8 @@ export const useTeamsStore = defineStore('teams', () => {
         (workspace) => String(workspace.id) === String(activeWorkspaceId.value),
       ) ?? null,
   )
+  const activeWorkspaceRole = computed(() => activeWorkspace.value?.role ?? null)
+  const isAdmin = computed(() => activeWorkspaceRole.value === 'admin')
   const teamsOfActiveWorkspace = computed(
     () => teamsByWorkspaceId.value[activeWorkspaceId.value] ?? [],
   )
@@ -88,6 +85,42 @@ export const useTeamsStore = defineStore('teams', () => {
     const rememberedTeam = workspaceTeams.find((team) => String(team.id) === rememberedId)
     activeTeamId.value = rememberedTeam?.id ?? workspaceTeams[0]?.id ?? null
     if (activeTeamId.value) rememberTeam(workspaceId, activeTeamId.value)
+  }
+
+  function removeTeamFromWorkspace(teamId, workspaceId = activeWorkspaceId.value) {
+    if (!workspaceId) return null
+
+    const workspaceTeams = teamsByWorkspaceId.value[workspaceId] ?? []
+    const removedIndex = workspaceTeams.findIndex((team) => String(team.id) === String(teamId))
+    const remainingTeams = workspaceTeams.filter((team) => String(team.id) !== String(teamId))
+    const isActiveTeam = String(activeTeamId.value) === String(teamId)
+    const rememberedId = readLastTeamId(workspaceId)
+    const shouldUpdateRememberedTeam = isActiveTeam || String(rememberedId) === String(teamId)
+
+    teamsByWorkspaceId.value = {
+      ...teamsByWorkspaceId.value,
+      [workspaceId]: remainingTeams,
+    }
+
+    if (isActiveTeam) {
+      const nextTeamIndex = Math.min(Math.max(removedIndex, 0), remainingTeams.length - 1)
+      activeTeamId.value = remainingTeams[nextTeamIndex]?.id ?? null
+    }
+
+    if (shouldUpdateRememberedTeam) {
+      const nextTeamId = isActiveTeam ? activeTeamId.value : remainingTeams[0]?.id
+      if (nextTeamId) {
+        rememberTeam(workspaceId, nextTeamId)
+      } else {
+        try {
+          localStorage.removeItem(`${LAST_TEAM_KEY}:${workspaceId}`)
+        } catch (storageError) {
+          console.warn('Could not clear the last active team from local storage:', storageError)
+        }
+      }
+    }
+
+    return activeTeamId.value
   }
 
   async function fetchWorkspaces() {
@@ -169,29 +202,6 @@ export const useTeamsStore = defineStore('teams', () => {
     return activeWorkspace.value
   }
 
-  async function createWorkspace(payload) {
-    actionLoading.value = true
-    actionError.value = null
-    try {
-      const workspace = await apiCreateWorkspace(payload)
-      if (!workspace?.id || !workspace.name) {
-        throw new Error('The workspace response is missing required fields.')
-      }
-      if (!workspaces.value.some((item) => String(item.id) === String(workspace.id))) {
-        workspaces.value = [...workspaces.value, workspace]
-      }
-      teamsByWorkspaceId.value = { ...teamsByWorkspaceId.value, [workspace.id]: [] }
-      activeWorkspaceId.value = workspace.id
-      activeTeamId.value = null
-      return workspace
-    } catch (err) {
-      actionError.value = err?.message ?? 'Failed to create workspace.'
-      throw err
-    } finally {
-      actionLoading.value = false
-    }
-  }
-
   function selectTeam(id) {
     const selected = teams.value.find((team) => String(team.id) === String(id))
     if (!selected) return false
@@ -258,64 +268,9 @@ export const useTeamsStore = defineStore('teams', () => {
     actionError.value = null
     try {
       await apiDeleteTeam(workspaceId, teamId)
-      const workspaceTeams = (teamsByWorkspaceId.value[workspaceId] ?? []).filter(
-        (team) => String(team.id) !== String(teamId),
-      )
-      teamsByWorkspaceId.value = {
-        ...teamsByWorkspaceId.value,
-        [workspaceId]: workspaceTeams,
-      }
-      if (String(activeTeamId.value) === String(teamId)) selectAvailableTeam(workspaceId)
+      removeTeamFromWorkspace(teamId, workspaceId)
     } catch (err) {
       actionError.value = err?.message ?? 'Failed to delete team.'
-      throw err
-    } finally {
-      actionLoading.value = false
-    }
-  }
-
-  async function joinTeam(inviteCode) {
-    actionLoading.value = true
-    actionError.value = null
-    try {
-      if (!workspaces.value.length) await fetchWorkspaces()
-      if (!workspaces.value.length) {
-        throw new Error(workspacesError.value || 'A workspace is required to join a team.')
-      }
-      const response = await apiJoinTeam(inviteCode, activeWorkspaceId.value)
-      const team = response.team
-      const workspaceId = response.workspaceId ?? team?.workspaceId
-      if (!team?.id || !workspaceId) {
-        throw new Error('The invite response is missing its team or workspace.')
-      }
-      if (!workspaces.value.some((workspace) => String(workspace.id) === String(workspaceId))) {
-        await fetchWorkspaces()
-      }
-      if (!workspaces.value.some((workspace) => String(workspace.id) === String(workspaceId))) {
-        throw new Error('The joined team belongs to an unavailable workspace.')
-      }
-      if (
-        String(workspaceId) !== String(activeWorkspaceId.value) ||
-        !Object.prototype.hasOwnProperty.call(teamsByWorkspaceId.value, workspaceId)
-      ) {
-        await selectWorkspace(workspaceId)
-      }
-
-      const workspaceTeams = teamsByWorkspaceId.value[workspaceId] ?? []
-      const existingTeam = workspaceTeams.find((item) => String(item.id) === String(team.id))
-      if (!existingTeam) {
-        teamsByWorkspaceId.value = {
-          ...teamsByWorkspaceId.value,
-          [workspaceId]: [...workspaceTeams, { ...team, workspaceId }],
-        }
-      }
-      selectTeam(team.id)
-      return {
-        team: existingTeam ?? { ...team, workspaceId },
-        alreadyMember: Boolean(response.alreadyMember || existingTeam),
-      }
-    } catch (err) {
-      actionError.value = err?.message ?? 'Failed to join team.'
       throw err
     } finally {
       actionLoading.value = false
@@ -357,19 +312,20 @@ export const useTeamsStore = defineStore('teams', () => {
     searchResults,
     searchLoading,
     activeWorkspace,
+    activeWorkspaceRole,
+    isAdmin,
     activeTeam,
     teamsOfActiveWorkspace,
     filteredTeams,
     fetchWorkspaces,
     fetchTeams,
     selectWorkspace,
-    createWorkspace,
     selectTeam,
     switchTeam,
     createTeam,
     updateTeam,
     deleteTeam,
-    joinTeam,
+    removeTeamFromWorkspace,
     searchAvailableTeams,
     clearSearch,
   }

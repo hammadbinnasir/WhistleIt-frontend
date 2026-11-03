@@ -1,15 +1,20 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
+import { useTeamsStore } from './teams'
 
 const api = vi.hoisted(() => ({
   getMembers: vi.fn(),
+  getNotMembers: vi.fn(),
   addMember: vi.fn(),
+  addMembers: vi.fn(),
   removeMember: vi.fn(),
 }))
 
 vi.mock('@/features/shell/api/membersApi', () => ({
   getMembers: api.getMembers,
+  getNotMembers: api.getNotMembers,
   addMember: api.addMember,
+  addMembers: api.addMembers,
   removeMember: api.removeMember,
 }))
 
@@ -20,15 +25,12 @@ describe('members store', () => {
     setActivePinia(createPinia())
     vi.clearAllMocks()
     api.getMembers.mockResolvedValue([
-      { id: 'm1', name: 'Member One', status: 'online', role: 'admin' },
-      { id: 'm2', name: 'Member Two', status: 'offline', role: 'member' },
+      { userId: 'm1', name: 'Member One', status: 'online', role: 'admin' },
+      { userId: 'm2', name: 'Member Two', status: 'offline', role: 'member' },
     ])
-    api.addMember.mockImplementation(async (teamId, userId) => ({
-      id: `${teamId}-${userId}`,
-      name: 'Added Member',
-      status: 'offline',
-      role: 'member',
-    }))
+    api.getNotMembers.mockResolvedValue([{ userId: 'm3', name: 'Member Three' }])
+    api.addMember.mockResolvedValue({ success: true })
+    api.addMembers.mockResolvedValue({ success: true })
     api.removeMember.mockResolvedValue({ success: true })
   })
 
@@ -41,7 +43,7 @@ describe('members store', () => {
 
   it('fetches members for a team and calculates online/offline', async () => {
     const store = useMembersStore()
-    await store.fetchMembers('team-1')
+    await store.fetchMembers('workspace-1', 'team-1')
 
     expect(store.members.length).toBeGreaterThan(0)
     expect(store.memberCount).toBe(store.members.length)
@@ -51,26 +53,112 @@ describe('members store', () => {
 
   it('adds and removes a member', async () => {
     const store = useMembersStore()
-    await store.fetchMembers('team-2')
+    await store.fetchMembers('workspace-1', 'team-2')
     const initialCount = store.members.length
 
-    // Add member
-    const added = await store.addMember('team-2', 'u20')
-    expect(store.members.length).toBe(initialCount + 1)
-    expect(store.members.some((m) => m.id === added.id)).toBe(true)
-
-    // Remove member
-    await store.removeMember('team-2', added.id)
+    await store.addMember('workspace-1', 'team-2', 'u20')
+    expect(api.addMember).toHaveBeenCalledWith('workspace-1', 'team-2', 'u20')
     expect(store.members.length).toBe(initialCount)
-    expect(store.members.some((m) => m.id === added.id)).toBe(false)
+    expect(api.getNotMembers).toHaveBeenCalledWith('workspace-1', 'team-2')
+
+    await store.removeMember('workspace-1', 'team-2', 'u20')
+    expect(api.removeMember).toHaveBeenCalledWith('workspace-1', 'team-2', 'u20')
+    expect(api.getMembers).toHaveBeenCalledTimes(3)
+  })
+
+  it('refreshes current and available members after adding multiple users', async () => {
+    const store = useMembersStore()
+    await store.fetchMembers('workspace-1', 'team-1')
+
+    await store.addMembers('workspace-1', 'team-1', ['u20', 'u21'])
+
+    expect(api.addMembers).toHaveBeenCalledWith('workspace-1', 'team-1', ['u20', 'u21'])
+    expect(api.getMembers).toHaveBeenCalledTimes(2)
+    expect(api.getNotMembers).toHaveBeenCalledTimes(1)
   })
 
   it('clears members on team switch', async () => {
     const store = useMembersStore()
-    await store.fetchMembers('team-1')
+    await store.fetchMembers('workspace-1', 'team-1')
     expect(store.members.length).toBeGreaterThan(0)
 
     store.clearMembers()
     expect(store.members).toEqual([])
+  })
+
+  it('maps a forbidden write to a read-only permission state', async () => {
+    const store = useMembersStore()
+    api.removeMember.mockRejectedValue({ status: 403, message: 'forbidden' })
+
+    await expect(store.removeMember('workspace-1', 'team-1', 'user-2')).rejects.toMatchObject({
+      status: 403,
+    })
+    expect(store.permissionDenied).toBe(true)
+    expect(store.error).toContain('do not have permission')
+  })
+
+  it('maps missing teams and invalid write payloads to actionable messages', async () => {
+    const store = useMembersStore()
+    api.removeMember.mockRejectedValueOnce({ status: 404, message: 'Not found' })
+    await expect(store.removeMember('workspace-1', 'team-1', 'user-2')).rejects.toMatchObject({
+      status: 404,
+    })
+    expect(store.error).toContain('could not be found')
+
+    api.addMember.mockRejectedValueOnce({ status: 422, message: 'Select a valid user.' })
+    await expect(store.addMember('workspace-1', 'team-1', 'invalid')).rejects.toMatchObject({
+      status: 422,
+    })
+    expect(store.error).toBe('Select a valid user.')
+  })
+
+  it('leaves a team using the supplied current-user ID and removes it locally', async () => {
+    const membersStore = useMembersStore()
+    const teamsStore = useTeamsStore()
+    teamsStore.workspaces = [{ id: 'workspace-1', name: 'Workspace' }]
+    teamsStore.activeWorkspaceId = 'workspace-1'
+    teamsStore.teamsByWorkspaceId = {
+      'workspace-1': [{ id: 'team-1', name: 'Team One', workspaceId: 'workspace-1' }],
+    }
+    teamsStore.activeTeamId = 'team-1'
+    localStorage.setItem('whistleit:last-team:workspace-1', 'team-1')
+    api.removeMember.mockResolvedValue({
+      success: true,
+      message: 'You left the team successfully.',
+    })
+
+    await expect(membersStore.leaveTeam('workspace-1', 'team-1', 'self-user')).resolves.toEqual({
+      success: true,
+      message: 'You left the team successfully.',
+    })
+
+    expect(api.removeMember).toHaveBeenCalledWith('workspace-1', 'team-1', 'self-user')
+    expect(teamsStore.teams).toEqual([])
+    expect(teamsStore.activeTeamId).toBeNull()
+    expect(localStorage.getItem('whistleit:last-team:workspace-1')).toBeNull()
+  })
+
+  it.each([
+    [403, 'You cannot leave this team.'],
+    [404, 'Your team membership was not found.'],
+    [422, 'The leave request is invalid.'],
+  ])('preserves the backend message for leave errors (%i)', async (status, message) => {
+    const membersStore = useMembersStore()
+    const teamsStore = useTeamsStore()
+    teamsStore.workspaces = [{ id: 'workspace-1', name: 'Workspace' }]
+    teamsStore.activeWorkspaceId = 'workspace-1'
+    teamsStore.teamsByWorkspaceId = {
+      'workspace-1': [{ id: 'team-1', name: 'Team One', workspaceId: 'workspace-1' }],
+    }
+    teamsStore.activeTeamId = 'team-1'
+    api.removeMember.mockRejectedValue({ status, message })
+
+    await expect(
+      membersStore.leaveTeam('workspace-1', 'team-1', 'self-user'),
+    ).rejects.toMatchObject({ status, message })
+
+    expect(membersStore.error).toBe(message)
+    expect(teamsStore.teams).toHaveLength(1)
+    expect(teamsStore.activeTeamId).toBe('team-1')
   })
 })
