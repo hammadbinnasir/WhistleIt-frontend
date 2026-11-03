@@ -221,6 +221,39 @@ describe('message composer', () => {
     wrapper.unmount()
   })
 
+  it('moves between poll steps with the Previous button', async () => {
+    const wrapper = mount(MessageComposer, { attachTo: document.body })
+    await wrapper.get('button[aria-label="Insert poll"]').trigger('click')
+
+    const previous = document.querySelector('.message-composer__poll-previous')
+    expect(previous.disabled).toBe(true)
+
+    const titleInput = document.querySelector('#poll-title-input')
+    titleInput.value = 'Step navigation'
+    titleInput.dispatchEvent(new Event('input', { bubbles: true }))
+    document.querySelector('#poll-type-0').click()
+    await wrapper.vm.$nextTick()
+    document.querySelector('[role="option"]:first-child').click()
+    await wrapper.vm.$nextTick()
+    const questionInput = document.querySelector('#poll-question-0')
+    questionInput.value = 'Which option?'
+    questionInput.dispatchEvent(new Event('input', { bubbles: true }))
+    await wrapper.vm.$nextTick()
+
+    document.querySelector('.message-composer__poll-next').click()
+    await wrapper.vm.$nextTick()
+    expect(document.querySelector('.message-composer__poll-placeholder h3').textContent).toBe(
+      'Configure your poll',
+    )
+    expect(previous.disabled).toBe(false)
+
+    previous.click()
+    await wrapper.vm.$nextTick()
+    expect(document.querySelector('#poll-title-input').value).toBe('Step navigation')
+    expect(document.querySelector('#poll-question-0').value).toBe('Which option?')
+    wrapper.unmount()
+  })
+
   it('keeps Configure and Schedule locked until required poll fields are filled', async () => {
     const wrapper = mount(MessageComposer, { attachTo: document.body })
     await wrapper.get('button[aria-label="Insert poll"]').trigger('click')
