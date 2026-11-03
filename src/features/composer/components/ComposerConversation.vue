@@ -696,6 +696,70 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', closeActionsOn
                   IMPORTANT!
                 </span>
 
+                <section v-if="message.poll" class="composer-conversation__poll-card">
+                  <h2>{{ message.poll.title }}</h2>
+                  <div
+                    v-if="message.poll.description"
+                    class="composer-conversation__poll-description"
+                  >
+                    {{ message.poll.description }}
+                  </div>
+                  <div class="composer-conversation__poll-meta">
+                    <span
+                      class="composer-conversation__poll-status"
+                      :class="{ 'is-closed': closedPolls.has(message.poll.id) }"
+                    >
+                      <i
+                        class="composer-conversation__poll-status-icon"
+                        :class="closedPolls.has(message.poll.id) ? 'is-closed' : 'is-open'"
+                        aria-hidden="true"
+                      >
+                        {{ closedPolls.has(message.poll.id) ? '×' : '✓' }}
+                      </i>
+                      {{ closedPolls.has(message.poll.id) ? 'Closed' : 'Open' }}
+                    </span>
+                    <span class="composer-conversation__poll-meta-divider" aria-hidden="true"></span>
+                    <span class="composer-conversation__poll-visibility">
+                      <i aria-hidden="true">◉</i>
+                      {{ message.poll.audience === 'anonymous' ? 'Anonymous' : 'Public' }}
+                    </span>
+                  </div>
+                  <div class="composer-conversation__poll-actions">
+                    <button
+                      v-if="
+                        !closedPolls.has(message.poll.id) &&
+                        !participatedPolls.has(message.poll.id)
+                      "
+                      type="button"
+                      @click="participateInPoll(message.poll.id)"
+                    >
+                      Participate
+                    </button>
+                    <button
+                      v-else-if="!closedPolls.has(message.poll.id)"
+                      type="button"
+                      class="is-done"
+                      disabled
+                      aria-label="You're done"
+                    >
+                      You're Done
+                    </button>
+                    <button type="button" @click="viewPollResults(message.poll.id)">
+                      View All Results
+                    </button>
+                    <button
+                      v-if="closedPolls.has(message.poll.id)"
+                      type="button"
+                      @click="exportPollResults(message.poll.id)"
+                    >
+                      Export To Csv
+                    </button>
+                    <button v-else type="button" @click="closePoll(message.poll.id)">
+                      Close Poll
+                    </button>
+                  </div>
+                </section>
+
                 <div v-if="message.reply" class="composer-conversation__reply-quote">
                   <strong>{{ message.reply.author || 'Message' }}</strong>
                   <span>{{ message.reply.content ?? message.reply.text }}</span>
@@ -1007,6 +1071,157 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', closeActionsOn
       :viewers="seenByViewers"
       @close="seenByTarget = null"
     />
+
+    <Teleport to="body">
+      <div
+        v-if="activePoll"
+        class="composer-conversation__poll-backdrop"
+        @mousedown.self="closePollResponse"
+      >
+        <section
+          class="composer-conversation__poll-response-modal"
+          role="dialog"
+          aria-modal="true"
+          :aria-label="
+            `${activePoll.title} poll ${activePollMode === 'results' ? 'results' : 'response'}`
+          "
+        >
+          <header class="composer-conversation__poll-response-header">
+            <h2>{{ activePoll.title }}</h2>
+            <button type="button" aria-label="Close poll response" @click="closePollResponse">
+              &times;
+            </button>
+          </header>
+          <div class="composer-conversation__poll-response-summary">
+            <span>Creator: {{ activePoll.creator || 'You' }}</span>
+            <span
+              class="composer-conversation__poll-status"
+              :class="{ 'is-closed': closedPolls.has(activePoll.id) }"
+            >
+              <i
+                class="composer-conversation__poll-status-icon"
+                :class="closedPolls.has(activePoll.id) ? 'is-closed' : 'is-open'"
+                aria-hidden="true"
+              >
+                {{ closedPolls.has(activePoll.id) ? '×' : '✓' }}
+              </i>
+              {{ closedPolls.has(activePoll.id) ? 'Closed' : 'Open' }}
+            </span>
+            <span class="composer-conversation__poll-meta-divider" aria-hidden="true"></span>
+            <span class="composer-conversation__poll-visibility">
+              <i aria-hidden="true">◉</i>
+              {{ activePoll.audience === 'anonymous' ? 'Anonymous' : 'Public' }}
+            </span>
+            <strong>* Required</strong>
+          </div>
+          <p v-if="activePoll.description" class="composer-conversation__poll-response-description">
+            Description: {{ activePoll.description }}
+          </p>
+          <div
+            v-for="(question, questionIndex) in activePoll.questions"
+            :key="questionIndex"
+            class="composer-conversation__poll-response-question"
+          >
+            <h3>Q{{ questionIndex + 1 }}. {{ question.text }}<b v-if="question.required"> *</b></h3>
+            <template v-if="activePollMode === 'results'">
+              <div v-if="question.type === 'openEnded'" class="composer-conversation__poll-text-results">
+                <p v-if="pollResults[activePoll.id]?.responses?.[questionIndex]?.length">
+                  Responses
+                </p>
+                <blockquote
+                  v-for="response in pollResults[activePoll.id].responses[questionIndex]"
+                  :key="response"
+                >
+                  {{ response }}
+                </blockquote>
+                <strong class="composer-conversation__poll-total-votes">
+                  Total Responses: {{ pollResults[activePoll.id]?.responses?.[questionIndex]?.length || 0 }}
+                </strong>
+              </div>
+              <div v-else class="composer-conversation__poll-results-options">
+                <div
+                  v-for="(option, optionIndex) in question.options"
+                  :key="option"
+                  class="composer-conversation__poll-result"
+                >
+                  <span>{{ option }}</span>
+                  <div class="composer-conversation__poll-result-row">
+                    <div class="composer-conversation__poll-result-bar">
+                      <span
+                        class="composer-conversation__poll-result-fill"
+                        :style="{
+                          width: `${pollResultFor(activePoll.id, questionIndex, optionIndex).percentage}%`,
+                        }"
+                      ></span>
+                      <strong>
+                        {{ pollResultFor(activePoll.id, questionIndex, optionIndex).percentage }}%
+                      </strong>
+                    </div>
+                    <span class="composer-conversation__poll-result-votes">
+                      {{ pollResultFor(activePoll.id, questionIndex, optionIndex).votes }} VOTE
+                    </span>
+                  </div>
+                </div>
+                <strong class="composer-conversation__poll-total-votes">
+                  Total Votes: {{ pollResults[activePoll.id]?.totalVotes || 0 }}
+                </strong>
+              </div>
+            </template>
+            <template v-else-if="question.type === 'rating'">
+              <div class="composer-conversation__poll-rating-labels">
+                <span>Weak</span><span>Strong</span>
+              </div>
+              <div class="composer-conversation__poll-rating-options">
+                <label v-for="(option, optionIndex) in question.options" :key="option">
+                  <span>{{ option }}</span>
+                  <input
+                    type="radio"
+                    :name="`poll-${activePoll.id}-question-${questionIndex}`"
+                    :checked="pollResponses[questionIndex] === optionIndex"
+                    @change="togglePollResponse(question, questionIndex, optionIndex)"
+                  />
+                </label>
+              </div>
+            </template>
+            <textarea
+              v-else-if="question.type === 'openEnded'"
+              v-model="pollResponses[questionIndex]"
+              class="composer-conversation__poll-open-ended-input"
+              :aria-label="`Response to question ${questionIndex + 1}`"
+              :placeholder="question.required ? 'Write your response (required)' : 'Write your response (optional)'"
+              rows="4"
+            ></textarea>
+            <div v-else class="composer-conversation__poll-choice-options">
+              <label v-for="(option, optionIndex) in question.options" :key="option">
+                <input
+                  :type="question.multiple ? 'checkbox' : 'radio'"
+                  :name="`poll-${activePoll.id}-question-${questionIndex}`"
+                  :checked="
+                    question.multiple
+                      ? pollResponses[pollResponseKey(questionIndex, optionIndex)]
+                      : pollResponses[questionIndex] === optionIndex
+                  "
+                  @change="togglePollResponse(question, questionIndex, optionIndex)"
+                />
+                <span>{{ option }}</span>
+              </label>
+            </div>
+          </div>
+          <footer
+            class="composer-conversation__poll-response-footer"
+          >
+            <button
+              v-if="activePollMode !== 'results'"
+              type="button"
+              @click="submitPollResponse"
+            >
+              Submit Response
+            </button>
+            <button type="button" class="is-close" @click="closePollResponse">Close</button>
+          </footer>
+        </section>
+      </div>
+    </Teleport>
 
     <div
       v-if="forwardTarget"

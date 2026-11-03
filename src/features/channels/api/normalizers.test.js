@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest'
+<<<<<<< Updated upstream
 import { asList, asObject, normalizeChannel, normalizeMember } from './normalizers'
+=======
+import { asList, asObject, normalizeChannel } from './normalizers'
+>>>>>>> Stashed changes
 
 describe('channel API normalizers', () => {
   it('accepts a channels collection and snake_case backend fields', () => {
@@ -54,6 +58,7 @@ describe('channel API normalizers', () => {
     ).toBe(false)
   })
 
+<<<<<<< Updated upstream
   it('normalizes member IDs returned as user_id', () => {
     expect(normalizeMember({ user_id: 'user-42' }).id).toBe('user-42')
   })
@@ -73,6 +78,8 @@ describe('channel API normalizers', () => {
     ).toBe('user-42')
   })
 
+=======
+>>>>>>> Stashed changes
   it('rejects channel records without an ID or visible name', () => {
     expect(() => normalizeChannel({ channel_id: 'channel-3' })).toThrow(
       'A channel response is missing its ID or name.',
