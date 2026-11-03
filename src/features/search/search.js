@@ -126,14 +126,5 @@ export async function searchFiles(p) {
   }
 }
 export async function searchUsers(q) {
-  await wait(100)
-  const users = [
-    { id: 'u1', name: 'Ansar Fareed' },
-    { id: 'u3', name: 'Hammad Bin Nasir' },
-    { id: 'u4', name: 'Muhammad Ahmad Imran' },
-    { id: 'u5', name: 'Aiman Iqbal' },
-    { id: 'u7', name: 'Waqar Khaliq Sial' },
-    { id: 'u9', name: 'Salman Zahoor' },
-  ]
-  return users.filter((u) => u.name.toLowerCase().includes((q || '').toLowerCase()))
+  return []
 }

@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import {
   normalizeMembers,
+  normalizeCompanyMembers,
+  normalizeNotMembers,
   normalizeTeamDetail,
   normalizeTeams,
   normalizeWorkspaces,
@@ -14,15 +16,46 @@ describe('shell API normalizers', () => {
         data: {
           user: {
             companies: [
-              { id: 12, name: 'Research Workspace' },
-              { id: 'acme', name: 'Acme', code: 'AC' },
+              { id: 12, name: 'Research Workspace', roles: 'admin' },
+              { id: 'acme', name: 'Acme', code: 'AC', roles: 'member' },
             ],
           },
         },
       }),
     ).toEqual([
-      { id: '12', name: 'Research Workspace', initials: 'RE' },
-      { id: 'acme', name: 'Acme', initials: 'AC' },
+      { id: '12', name: 'Research Workspace', role: 'admin', isAdmin: true, initials: 'RE' },
+      { id: 'acme', name: 'Acme', role: 'member', isAdmin: false, initials: 'AC' },
+    ])
+  })
+
+  it('treats missing or unknown workspace roles as non-admin', () => {
+    expect(
+      normalizeWorkspaces({
+        success: true,
+        data: {
+          user: {
+            companies: [
+              { id: 'missing-role', name: 'Missing Role' },
+              { id: 'unknown-role', name: 'Unknown Role', roles: 'owner' },
+            ],
+          },
+        },
+      }),
+    ).toEqual([
+      {
+        id: 'missing-role',
+        name: 'Missing Role',
+        role: null,
+        isAdmin: false,
+        initials: 'MI',
+      },
+      {
+        id: 'unknown-role',
+        name: 'Unknown Role',
+        role: 'owner',
+        isAdmin: false,
+        initials: 'UN',
+      },
     ])
   })
 
@@ -48,20 +81,92 @@ describe('shell API normalizers', () => {
     expect(normalizeTeamDetail({ success: true, data: { team: record } }, 7).id).toBe('8')
   })
 
-  it('normalizes member list records without inventing user profile fields', () => {
+  it('normalizes the new teamusers shape using member IDs as user IDs', () => {
     expect(
       normalizeMembers({
         success: true,
-        data: { members: [{ id: 'membership-1', role: 'member', joined_by: 'user-2' }] },
+        data: {
+          teamusers: {
+            creator_id: 'user-creator',
+            members: [
+              { id: 'user-creator', name: 'Creator Name' },
+              { id: 'user-member', name: 'Member Name' },
+            ],
+          },
+        },
+      }),
+    ).toEqual([
+      { userId: 'user-creator', name: 'Creator Name', isCreator: true },
+      { userId: 'user-member', name: 'Member Name', isCreator: false },
+    ])
+  })
+
+  it('normalizes company members using the live companyusers.members shape', () => {
+    expect(
+      normalizeCompanyMembers({
+        success: true,
+        data: {
+          companyusers: {
+            members: [{ id: 'user-company', name: 'Company Member' }, { name: 'Missing ID' }],
+          },
+        },
+      }),
+    ).toEqual([{ userId: 'user-company', name: 'Company Member' }])
+  })
+
+  it('keeps the legacy shape and gets user ID from joined_by, not membership ID', () => {
+    expect(
+      normalizeMembers({
+        success: true,
+        data: {
+          members: [
+            {
+              id: 'membership-1',
+              joined_by: 'user-2',
+              role: 'member',
+              joined_date: '2026-10-28',
+            },
+          ],
+        },
       }),
     ).toEqual([
       {
-        id: 'membership-1',
-        name: 'Member',
-        email: '',
+        userId: 'user-2',
+        membershipId: 'membership-1',
         role: 'member',
+        joinedDate: '2026-10-28',
         status: 'offline',
-        avatar: null,
+        isCreator: false,
+      },
+    ])
+  })
+
+  it('normalizes notmembers records and skips entries without a usable id', () => {
+    // confirmed by backend developer: id and name suffice; email/avatar optional
+    expect(
+      normalizeNotMembers({
+        success: true,
+        data: {
+          notteamusers: {
+            members: [
+              {
+                id: 'user-available',
+                name: 'Available User',
+                email: 'available@example.test',
+                avatar: '/avatar.png',
+              },
+              { id: '  ', name: 'Invalid User' },
+              { name: 'Missing ID' },
+            ],
+          },
+        },
+      }),
+    ).toEqual([
+      {
+        userId: 'user-available',
+        name: 'Available User',
+        email: 'available@example.test',
+        avatarUrl: '/avatar.png',
       },
     ])
   })
