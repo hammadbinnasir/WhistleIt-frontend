@@ -1,6 +1,6 @@
 import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
-import { dmApi } from '@/features/dms/dmApi'
+import { NOTIFICATIONS } from './activity.mockData'
 
 const WORKFLOWS_KEY = 'whistleit:activity-workflows'
 let generatedId = 0
@@ -38,8 +38,8 @@ export const useActivityStore = defineStore('activity', () => {
 
     loading.value = true
     error.value = ''
-    initialization = dmApi
-      .notifications()
+    initialization = Promise.resolve()
+      .then(() => structuredClone(NOTIFICATIONS))
       .then((notifications) => {
         const existing = new Map(items.value.map((item) => [item.id, item]))
         items.value = notifications.map((item) => existing.get(item.id) || item)

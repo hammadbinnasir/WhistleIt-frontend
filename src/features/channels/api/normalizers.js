@@ -13,7 +13,7 @@ export function asList(res) {
   const payload = body?.data ?? body
   const items = Array.isArray(payload)
     ? payload
-    : (payload?.items ?? payload?.channels ?? payload?.members ?? [])
+    : (payload?.items ?? payload?.channels ?? [])
   const total = Array.isArray(payload) ? payload.length : (payload?.total ?? items.length)
   return { items, total }
 }

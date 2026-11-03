@@ -7,6 +7,7 @@ import { useChannelsStore } from '@/features/channels'
 import { useDmStore } from '@/features/dms/stores/dms'
 import { useMessagesStore } from '@/features/messages/messages'
 import { useRemindersStore } from '@/features/search/reminders'
+import { useTeamsStore } from '@/stores/teams'
 import { useUiStore } from '@/stores/ui'
 
 const emojiPickerProps = vi.hoisted(() => vi.fn())
@@ -37,6 +38,7 @@ describe('composer conversation', () => {
   beforeEach(() => {
     localStorage.clear()
     setActivePinia(createPinia())
+    useTeamsStore().activeWorkspaceId = 'company-1'
   })
 
   async function sendMessage(wrapper, content) {
@@ -72,7 +74,7 @@ describe('composer conversation', () => {
 
     expect(wrapper.get('time').attributes('datetime')).toBeTruthy()
 
-    expect(wrapper.get('[aria-label="Sent"]').text()).toBe('✓✓')
+    expect(wrapper.get('[aria-label="Seen By"]').text()).toBe('✓✓')
   })
 
   it('shows a sent poll in the conversation', async () => {
@@ -194,6 +196,9 @@ describe('composer conversation', () => {
     })
 
     expect(wrapper.text()).toContain('Project ideas bhej di hain')
+    expect(wrapper.get('.composer-conversation__avatar').text()).toContain('MN')
+    expect(wrapper.find('.composer-conversation__avatar img').exists()).toBe(false)
+    expect(wrapper.text()).toContain('Muniba Naseer')
 
     const editor = wrapper.get('[contenteditable="true"]')
     editor.element.textContent = 'Reply from the composer'
@@ -344,6 +349,30 @@ describe('composer conversation', () => {
     vi.unstubAllGlobals()
   })
 
+  it('opens and searches the seen-by list for channel messages', async () => {
+    const wrapper = mount(ComposerConversation)
+    await sendMessage(wrapper, 'Read receipt test')
+    const message = useMessagesStore().messagesFor('general')[0]
+    message.seenBy = [
+      { id: 'member-1', name: 'Aiman Iqbal' },
+      { id: 'member-2', name: 'Afia Noor' },
+    ]
+    await nextTick()
+
+    await wrapper.get('button[aria-label="Seen By"]').trigger('click')
+    expect(document.body.textContent).toContain('Message Seen By')
+    expect(document.body.textContent).toContain('Aiman Iqbal')
+    expect(document.body.textContent).toContain('Afia Noor')
+
+    const search = document.body.querySelector('input[aria-label="Search viewers"]')
+    search.value = 'Afia'
+    search.dispatchEvent(new Event('input', { bubbles: true }))
+    await nextTick()
+
+    expect(document.body.textContent).toContain('Afia Noor')
+    expect(document.body.textContent).not.toContain('Aiman Iqbal')
+  })
+
   it('falls back to the browser copy command when clipboard access is blocked', async () => {
     const writeText = vi.fn().mockRejectedValue(new Error('Permission denied'))
     const execCommand = vi.fn().mockReturnValue(true)
@@ -370,10 +399,6 @@ describe('composer conversation', () => {
   })
 
   it('deletes a message and removes its pin', async () => {
-    vi.stubGlobal(
-      'confirm',
-      vi.fn(() => true),
-    )
     const wrapper = mount(ComposerConversation)
     const ui = useUiStore()
     await sendMessage(wrapper, 'Remove this message')
@@ -382,11 +407,47 @@ describe('composer conversation', () => {
     await article.get('button[aria-label="Pin message"]').trigger('click')
     await article.get('button[aria-label="More message actions"]').trigger('click')
     await buttonWithText(article.get('.composer-conversation__menu'), 'Delete').trigger('click')
+    const dialog = document.body.querySelector('.delete-message-dialog')
+    expect(dialog).not.toBeNull()
+    dialog.querySelector('button[type="submit"]').click()
     await nextTick()
 
+    expect(wrapper.text()).toContain('(message deleted)')
     expect(wrapper.text()).not.toContain('Remove this message')
     expect(ui.pinnedMessages).toHaveLength(0)
-    vi.unstubAllGlobals()
+  })
+
+  it('schedules a message deletion and lets the user cancel it', async () => {
+    const wrapper = mount(ComposerConversation)
+    await sendMessage(wrapper, 'Keep this until later')
+    const article = wrapper.get('article')
+    await article.get('button[aria-label="More message actions"]').trigger('click')
+    await buttonWithText(article.get('.composer-conversation__menu'), 'Delete').trigger('click')
+
+    const dialog = document.body.querySelector('.delete-message-dialog')
+    const scheduleCheckbox = dialog.querySelector('input[type="checkbox"]')
+    scheduleCheckbox.checked = true
+    scheduleCheckbox.dispatchEvent(new Event('change', { bubbles: true }))
+    await nextTick()
+
+    const future = new Date(Date.now() + 3_600_000)
+    const localDateTime = `${future.getFullYear()}-${String(future.getMonth() + 1).padStart(2, '0')}-${String(future.getDate()).padStart(2, '0')}T${String(future.getHours()).padStart(2, '0')}:${String(future.getMinutes()).padStart(2, '0')}`
+    const dateInput = dialog.querySelector('input[type="datetime-local"]')
+    dateInput.value = localDateTime
+    dateInput.dispatchEvent(new Event('input', { bubbles: true }))
+    await nextTick()
+    dialog.querySelector('button[type="submit"]').click()
+    await nextTick()
+
+    const message = useMessagesStore().messagesFor('general')[0]
+    expect(message.deleteScheduledAt).toBeTruthy()
+    expect(wrapper.text()).toContain('Deletion scheduled for')
+
+    await article.get('button[aria-label="More message actions"]').trigger('click')
+    await buttonWithText(article.get('.composer-conversation__menu'), 'Cancel scheduled delete').trigger('click')
+
+    expect(message.deleteScheduledAt).toBeUndefined()
+    expect(wrapper.text()).toContain('Keep this until later')
   })
 
   it('replies to a message with an attached quoted message', async () => {

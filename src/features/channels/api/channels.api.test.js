@@ -31,7 +31,7 @@ describe('channel API routes', () => {
     getAuthUserId.mockReturnValue(null)
   })
 
-  it('preserves explicit membership status from list and browse responses', async () => {
+  it('treats channels from the joined-channel list as joined when membership is omitted', async () => {
     http.mockResolvedValue({
       items: [
         { id: 'channel-3', name: 'Engineering', is_member: true },
@@ -46,48 +46,8 @@ describe('channel API routes', () => {
       ['channel-4', false],
     ])
 
-    const browseResults = await browseChannels('eng')
-    expect(http).toHaveBeenLastCalledWith(collectionPath, { params: { q: 'eng' } })
-    expect(browseResults.map(({ id, isMember }) => [id, isMember])).toEqual([
-      ['channel-3', true],
-      ['channel-4', false],
-    ])
-  })
-
-  it('resolves membership in browse results when the response omits it', async () => {
-    getAuthUserId.mockReturnValue('user-42')
-    http.mockImplementation(async (path) => {
-      if (path === collectionPath) {
-        return {
-          success: true,
-          data: {
-            channels: [
-              { id: 'channel-3', name: 'Engineering' },
-              { id: 'channel-4', name: 'Design Reviews' },
-            ],
-          },
-        }
-      }
-      if (path === `${collectionPath}/channel-3/members`) {
-        return { success: true, data: { members: ['user-42'], total: 1 } }
-      }
-      if (path === `${collectionPath}/channel-4/members`) {
-        return { success: true, data: { members: ['user-99'], total: 1 } }
-      }
-      throw new Error(`Unexpected request: ${path}`)
-    })
-
-    const channels = await browseChannels()
-
-    expect(channels.map(({ id, isMember }) => [id, isMember])).toEqual([
-      ['channel-3', true],
-      ['channel-4', false],
-    ])
-  })
-
-  it('surfaces missing membership data when the signed-in user ID is unavailable', async () => {
     http.mockResolvedValue({
-      channels: [{ id: 'channel-3', name: 'Engineering' }],
+      items: [{ id: 'channel-3', name: 'Engineering' }],
     })
 
     await expect(listChannels()).rejects.toThrow(
@@ -177,6 +137,14 @@ describe('channel API routes', () => {
     })
 
     await expect(listChannels()).resolves.toMatchObject([{ id: 'channel-3', isMember: true }])
+  })
+
+  it('uses the browse route and marks browsed channels as non-members', async () => {
+    http.mockResolvedValue({ items: [{ id: 'channel-3', name: 'Engineering' }] })
+
+    const browsed = await browseChannels('eng')
+    expect(http).toHaveBeenLastCalledWith(collectionPath, { params: { q: 'eng' } })
+    expect(browsed[0].isMember).toBe(false)
   })
 
   it('uses the channel resource routes for get, create, update, and delete', async () => {

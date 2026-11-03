@@ -171,6 +171,86 @@ describe('shell API normalizers', () => {
     ])
   })
 
+  it('keeps the user ID and profile from nested team member records', () => {
+    expect(
+      normalizeMembers({
+        success: true,
+        data: {
+          members: [
+            {
+              id: 'membership-1',
+              user: { id: 'user-1', full_name: 'Alex Member', email: 'alex@example.com' },
+            },
+          ],
+        },
+      }),
+    ).toEqual([
+      {
+        id: 'membership-1',
+        userId: 'user-1',
+        name: 'Alex Member',
+        email: 'alex@example.com',
+        role: 'member',
+        status: 'offline',
+        avatar: null,
+      },
+    ])
+  })
+
+  it('normalizes member lists returned as arrays or under users/items keys', () => {
+    const member = { id: 'user-1', full_name: 'Alex Member' }
+    expect(normalizeMembers({ success: true, data: [member] })).toMatchObject([
+      { id: 'user-1', name: 'Alex Member' },
+    ])
+    expect(normalizeMembers({ success: true, data: { users: [member] } })).toMatchObject([
+      { id: 'user-1', name: 'Alex Member' },
+    ])
+    expect(normalizeMembers({ success: true, data: { items: [member] } })).toMatchObject([
+      { id: 'user-1', name: 'Alex Member' },
+    ])
+  })
+
+  it('normalizes company members in nested and company-specific response shapes', () => {
+    const member = { user_id: 'user-1', full_name: 'Alex Member' }
+    expect(
+      normalizeMembers({
+        success: true,
+        data: { company_members: [member] },
+      }),
+    ).toMatchObject([{ id: 'user-1', userId: 'user-1', name: 'Alex Member' }])
+    expect(
+      normalizeMembers({
+        success: true,
+        data: { company: { members: [member] } },
+      }),
+    ).toMatchObject([{ id: 'user-1', userId: 'user-1', name: 'Alex Member' }])
+    expect(
+      normalizeMembers({
+        success: true,
+        data: { data: [member] },
+      }),
+    ).toMatchObject([{ id: 'user-1', userId: 'user-1', name: 'Alex Member' }])
+  })
+
+  it('normalizes company member profiles using username and member ID fields', () => {
+    expect(
+      normalizeMembers({
+        success: true,
+        data: {
+          company: {
+            users: [{ member_id: 'user-2', user_name: 'Muniba Khan' }],
+          },
+        },
+      }),
+    ).toMatchObject([{ id: 'user-2', userId: 'user-2', name: 'Muniba Khan' }])
+    expect(
+      normalizeMembers({
+        success: true,
+        data: { payload: [{ id: 'user-3', display_name: 'Taha Jawad' }] },
+      }),
+    ).toMatchObject([{ id: 'user-3', name: 'Taha Jawad' }])
+  })
+
   it('surfaces a backend error envelope message', () => {
     expect(() =>
       normalizeWorkspaces({
