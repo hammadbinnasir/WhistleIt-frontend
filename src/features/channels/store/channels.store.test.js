@@ -5,7 +5,7 @@ import { useChannelsStore } from './channels.store'
 
 vi.mock('../api', () => ({
   default: {
-    listMyChannels: vi.fn(),
+    listChannels: vi.fn(),
     browseChannels: vi.fn(),
   },
 }))
@@ -13,12 +13,12 @@ vi.mock('../api', () => ({
 describe('channels store membership visibility', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
-    api.listMyChannels.mockReset()
+    api.listChannels.mockReset()
     api.browseChannels.mockReset()
   })
 
   it('keeps only joined channels in the main channel list', async () => {
-    api.listMyChannels.mockResolvedValue([
+    api.listChannels.mockResolvedValue([
       { id: 'joined', isMember: true, isArchived: false },
       { id: 'not-joined', isMember: false, isArchived: false },
       { id: 'archived', isMember: true, isArchived: true },
@@ -32,7 +32,7 @@ describe('channels store membership visibility', () => {
   })
 
   it('uses browse membership status instead of inferring it from the main list', async () => {
-    api.listMyChannels.mockResolvedValue([
+    api.listChannels.mockResolvedValue([
       { id: 'joined', isMember: true, isArchived: false },
     ])
     api.browseChannels.mockResolvedValue([

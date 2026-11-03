@@ -1,3 +1,4 @@
+import { getAuthUserId } from '@/features/auth/session'
 import { useTeamsStore } from '@/stores/teams'
 import { http } from './http'
 import { asList, asObject, normalizeChannel, normalizeMember } from './normalizers'
@@ -12,14 +13,38 @@ function channelsPath(channelId) {
   return channelId == null ? base : `${base}/${encodeURIComponent(channelId)}`
 }
 
-export async function listMyChannels() {
+export async function listChannels() {
   const res = await http(channelsPath())
-  return asList(res).items.map(normalizeChannel)
+  return resolveChannelMembership(asList(res).items)
 }
 
 export async function browseChannels(query = '') {
   const res = await http(channelsPath(), { params: { q: query } })
-  return asList(res).items.map(normalizeChannel)
+  return resolveChannelMembership(asList(res).items)
+}
+
+async function resolveChannelMembership(records) {
+  const userId = getAuthUserId()
+  return Promise.all(
+    records.map(async (record) => {
+      const channel = normalizeChannel(record)
+      const source = record?.channel ?? record
+      if (source.isMember != null || source.is_member != null) return channel
+      if (!userId) {
+        throw new Error(
+          'The channel response does not include membership and the signed-in user ID is unavailable.',
+        )
+      }
+
+      const { items, total } = await listMembers(channel.id, { limit: 100 })
+      const completeMembers =
+        total > items.length ? (await listMembers(channel.id, { limit: total })).items : items
+      return {
+        ...channel,
+        isMember: completeMembers.some((member) => member.id === String(userId)),
+      }
+    }),
+  )
 }
 
 export async function getChannel(id) {

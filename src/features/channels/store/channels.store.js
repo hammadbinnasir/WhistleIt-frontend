@@ -47,7 +47,7 @@ export const useChannelsStore = defineStore('channels', () => {
     error.value = null
     const requestId = ++channelsRequestId
     inflight = api
-      .listMyChannels()
+      .listChannels()
       .then((list) => {
         if (requestId !== channelsRequestId) return
         channels.value = list.filter((channel) => channel.isMember && !channel.isArchived)
