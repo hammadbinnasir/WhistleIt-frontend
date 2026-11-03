@@ -3,6 +3,7 @@ import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { useActivityStore } from '@/stores/activity'
 import { useDmStore } from '@/features/dms/stores/dms'
+import { useTeamsStore } from '@/stores/teams'
 import { useMessagesStore } from '@/features/messages/messages'
 import { useUiStore } from '@/stores/ui'
 import { useRemindersStore } from '@/features/search/reminders'
@@ -48,7 +49,10 @@ function mountActivityFeed() {
 }
 
 describe('ActivityFeed', () => {
-  beforeEach(() => setActivePinia(createPinia()))
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    useTeamsStore().activeWorkspaceId = 'company-1'
+  })
 
   it('keeps activity tab labels on one line', () => {
     const wrapper = mountActivityFeed()
@@ -58,14 +62,40 @@ describe('ActivityFeed', () => {
     wrapper.unmount()
   })
 
+  it('loads local activity without requiring a notifications API', async () => {
+    const wrapper = mountActivityFeed()
+
+    await vi.waitFor(() => {
+      expect(wrapper.text()).toContain('Muniba Naseer')
+    })
+    expect(wrapper.find('[role="alert"]').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('Loading activity…')
+
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text() === 'Recent DMs')
+      .trigger('click')
+    expect(wrapper.text()).toContain('Recent DMs')
+    expect(wrapper.text()).toContain('Muniba Naseer')
+    wrapper.unmount()
+  })
+
   it('opens a reply thread and sends a message from Recent DMs', async () => {
     const dms = useDmStore()
     const ui = useUiStore()
     ui.activePanel = 'activity'
     const wrapper = mountActivityFeed()
     await dms.init()
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text() === 'Recent DMs')
+      .trigger('click')
 
     expect(wrapper.text()).toContain('Muniba Naseer')
+    expect(wrapper.findAll('article')).toHaveLength(21)
+    expect(wrapper.findAll('article').some((article) => article.text().includes('Earlier:'))).toBe(
+      true,
+    )
     await wrapper
       .findAll('button')
       .find((button) => button.text() === 'Reply')
@@ -89,6 +119,38 @@ describe('ActivityFeed', () => {
     expect(
       wrapper.findAll('button').some((button) => ['Pin', 'Unpin'].includes(button.text().trim())),
     ).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('filters All Activity and opens an unread DM notification', async () => {
+    const dms = useDmStore()
+    const activity = useActivityStore()
+    const ui = useUiStore()
+    await Promise.all([dms.init(), activity.init()])
+    ui.activePanel = 'activity'
+    const wrapper = mountActivityFeed()
+
+    expect(wrapper.findAll('article')).toHaveLength(activity.sorted.length)
+    await wrapper.get('[aria-label="Activity filters"]')
+      .findAll('button')[1]
+      .trigger('click')
+    expect(wrapper.findAll('article')).toHaveLength(
+      activity.sorted.filter((item) => !item.read).length,
+    )
+
+    await wrapper.get('[aria-label="Activity filters"]')
+      .findAll('button')[2]
+      .trigger('click')
+    expect(wrapper.findAll('article')).toHaveLength(0)
+
+    await wrapper.get('[aria-label="Activity filters"]')
+      .findAll('button')[0]
+      .trigger('click')
+    await wrapper.get('button[aria-label="Open activity: Muniba Naseer"]').trigger('click')
+
+    expect(activity.items.find((item) => item.id === 'n1').read).toBe(true)
+    expect(dms.activeId).toBe('c1')
+    expect(ui.activePanel).toBeNull()
     wrapper.unmount()
   })
 
@@ -144,6 +206,10 @@ describe('ActivityFeed', () => {
     ui.activePanel = 'activity'
     const wrapper = mountActivityFeed()
 
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text() === 'Recent DMs')
+      .trigger('click')
     await wrapper.get('[aria-label="Open direct message with Muniba Naseer"]').trigger('click')
 
     expect(dms.activeId).toBe('c1')
@@ -227,6 +293,7 @@ describe('ActivityFeed', () => {
       remindAt: new Date(Date.now() + 86_400_000).toISOString(),
     })
     const wrapper = mount(ActivityFeed)
+    await wrapper.get('button[aria-label="Scroll tabs right"]').trigger('click')
     await wrapper
       .findAll('button')
       .find((button) => button.text() === 'Upcoming Reminders')
@@ -401,7 +468,14 @@ describe('ActivityFeed', () => {
   it('creates and toggles a workflow from a template', async () => {
     const channels = useChannelsStore()
     channels.channels = [
-      { id: 'channel-1', name: 'General', isDefault: true, isFavorite: false, isArchived: false },
+      {
+        id: 'channel-1',
+        name: 'General',
+        isMember: true,
+        isDefault: true,
+        isFavorite: false,
+        isArchived: false,
+      },
     ]
     const activity = useActivityStore()
     const wrapper = mount(ActivityFeed)
@@ -460,7 +534,7 @@ describe('ActivityFeed', () => {
     ui.activePanel = 'activity'
     const wrapper = mount(ActivityFeed)
     const nav = wrapper.get('nav[aria-label="Activity views"]')
-    expect(nav.text()).toContain('Upcoming Reminders')
+    expect(nav.text()).toContain('Recent Messages')
     expect(nav.text()).not.toContain('All Mentions')
     expect(nav.text()).not.toContain('Workflows')
     expect(nav.findAll('button')).toHaveLength(5)
@@ -468,14 +542,14 @@ describe('ActivityFeed', () => {
     await wrapper.get('button[aria-label="Scroll tabs right"]').trigger('click')
     expect(nav.text()).toContain('All Mentions')
     expect(nav.text()).toContain('Workflows')
-    expect(nav.text()).not.toContain('Recent DMs')
+    expect(nav.text()).not.toContain('All Activity')
     expect(nav.findAll('button')).toHaveLength(5)
     expect(
       wrapper.get('button[aria-label="Scroll tabs right"]').attributes('disabled'),
     ).toBeDefined()
 
     await wrapper.get('button[aria-label="Scroll tabs left"]').trigger('click')
-    expect(nav.text()).toContain('Recent DMs')
+    expect(nav.text()).toContain('All Activity')
     expect(nav.text()).not.toContain('Workflows')
     expect(
       wrapper.get('button[aria-label="Scroll tabs left"]').attributes('disabled'),
