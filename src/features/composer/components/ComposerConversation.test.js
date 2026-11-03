@@ -147,6 +147,13 @@ describe('composer conversation', () => {
       .trigger('click')
     await nextTick()
     expect(document.body.textContent).toContain('Improve documentation')
+    const closeButton = document.querySelector(
+      '.composer-conversation__poll-response-footer .is-close',
+    )
+    expect(closeButton).not.toBeNull()
+    closeButton.click()
+    await nextTick()
+    expect(document.querySelector('.composer-conversation__poll-response-modal')).toBeNull()
     wrapper.unmount()
   })
 

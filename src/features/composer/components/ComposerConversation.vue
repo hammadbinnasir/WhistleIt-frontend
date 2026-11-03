@@ -1040,6 +1040,12 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', closeActionsOn
                   <span>{{ option }}</span>
                   <div class="composer-conversation__poll-result-row">
                     <div class="composer-conversation__poll-result-bar">
+                      <span
+                        class="composer-conversation__poll-result-fill"
+                        :style="{
+                          width: `${pollResultFor(activePoll.id, questionIndex, optionIndex).percentage}%`,
+                        }"
+                      ></span>
                       <strong>
                         {{ pollResultFor(activePoll.id, questionIndex, optionIndex).percentage }}%
                       </strong>
@@ -1095,10 +1101,16 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', closeActionsOn
             </div>
           </div>
           <footer
-            v-if="activePollMode !== 'results'"
             class="composer-conversation__poll-response-footer"
           >
-            <button type="button" @click="submitPollResponse">Submit Response</button>
+            <button
+              v-if="activePollMode !== 'results'"
+              type="button"
+              @click="submitPollResponse"
+            >
+              Submit Response
+            </button>
+            <button type="button" class="is-close" @click="closePollResponse">Close</button>
           </footer>
         </section>
       </div>
@@ -1621,17 +1633,29 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', closeActionsOn
 }
 
 .composer-conversation__poll-result-bar {
+  position: relative;
   display: flex;
   min-width: 0;
   height: 24px;
   flex: 1;
   align-items: center;
   justify-content: center;
-  background: #bec3f5;
+  overflow: hidden;
+  background: #d9dcfa;
   color: #25263a;
 }
 
+.composer-conversation__poll-result-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  min-width: 0;
+  background: #5962ff;
+  transition: width 180ms ease;
+}
+
 .composer-conversation__poll-result-bar strong {
+  position: relative;
+  z-index: 1;
   font-size: 14px;
 }
 
@@ -1654,19 +1678,46 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', closeActionsOn
 
 .composer-conversation__poll-response-footer {
   display: flex;
+  gap: 12px;
   justify-content: flex-end;
+  border-top: 1px solid #d5d7e2;
   padding: 28px;
 }
 
 .composer-conversation__poll-response-footer button {
   padding: 12px 16px;
-  border: 0;
+  border: 1px solid #5962ff;
+  border-radius: 2px;
   background: #929bff;
   color: #fff;
   font: inherit;
   font-size: 16px;
   font-weight: 700;
   cursor: pointer;
+  transition:
+    background-color 120ms ease,
+    border-color 120ms ease,
+    color 120ms ease;
+}
+
+.composer-conversation__poll-response-footer button:hover,
+.composer-conversation__poll-actions button:not(.is-done):hover {
+  border-color: #27338f;
+  background: #27338f;
+  color: #fff;
+}
+
+.composer-conversation__poll-response-footer button.is-close {
+  border-color: transparent;
+  background: transparent;
+  color: #25263a;
+  text-transform: uppercase;
+}
+
+.composer-conversation__poll-response-footer button.is-close:hover {
+  border-color: #27338f;
+  background: #27338f;
+  color: #fff;
 }
 
 .composer-conversation__action-toolbar {
