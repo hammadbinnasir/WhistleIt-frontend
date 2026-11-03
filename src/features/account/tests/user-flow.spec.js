@@ -553,7 +553,7 @@ describe('account settings modal', () => {
     expect(url).toContain('/v1/users/test-user/profile')
     expect(options.method).toBe('PATCH')
     expect(JSON.parse(options.body)).toEqual({
-      full_name: 'Sara Khan',
+      name: 'Sara Khan',
       display_name: '',
       two_factor: 'inactive',
       title: 'Engineer',
