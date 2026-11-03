@@ -1,6 +1,7 @@
 <script setup>
 import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
 import { storeToRefs } from 'pinia'
+import { useRouter } from 'vue-router'
 import { useTeamsStore } from '@/stores/teams'
 import { useMembersStore } from '@/stores/members'
 import { useUiStore } from '@/stores/ui'
@@ -9,8 +10,9 @@ import { getAuthUserId } from '@/features/auth/session'
 const teamsStore = useTeamsStore()
 const membersStore = useMembersStore()
 const ui = useUiStore()
+const router = useRouter()
 
-const { activeTeam, activeTeamId, activeWorkspaceId } = storeToRefs(teamsStore)
+const { activeTeam, activeTeamId, activeWorkspaceId, isAdmin } = storeToRefs(teamsStore)
 const {
   members,
   notMembers,
@@ -62,11 +64,7 @@ watch(pickerQuery, (query) => {
 const filteredMembers = computed(() => {
   const q = searchMemberQuery.value.trim().toLocaleLowerCase()
   if (!q) return members.value
-  return members.value.filter(
-    (member) =>
-      (member.name ?? '').toLocaleLowerCase().includes(q) ||
-      (member.email && member.email.toLocaleLowerCase().includes(q)),
-  )
+  return members.value.filter((member) => (member.name ?? '').toLocaleLowerCase().includes(q))
 })
 
 const eligibleUsers = computed(() =>
@@ -81,11 +79,7 @@ const eligibleUsers = computed(() =>
 const filteredPickerUsers = computed(() => {
   const query = debouncedPickerQuery.value
   if (!query) return eligibleUsers.value
-  return eligibleUsers.value.filter(
-    (user) =>
-      (user.name ?? '').toLocaleLowerCase().includes(query) ||
-      (user.email ?? '').toLocaleLowerCase().includes(query),
-  )
+  return eligibleUsers.value.filter((user) => (user.name ?? '').toLocaleLowerCase().includes(query))
 })
 
 async function openPicker() {
@@ -161,6 +155,32 @@ async function handleRemove(member) {
     actionError.value = membersStore.error || err?.message || 'Failed to remove member.'
   } finally {
     removingUserId.value = null
+  }
+}
+
+async function handleLeaveTeam() {
+  const team = activeTeam.value
+  if (!team || !activeWorkspaceId.value || !activeTeamId.value || membersWriting.value) return
+  if (!window.confirm(`You will lose access to this team. Leave "${team.name}"?`)) return
+
+  const workspaceId = activeWorkspaceId.value
+  actionError.value = ''
+  successNotice.value = ''
+  try {
+    const response = await membersStore.leaveTeam(workspaceId, team.id, currentUserId)
+    const nextTeamId = teamsStore.activeTeamId
+    handleClose()
+    ui.toast('Left team', response?.message || 'You left the team.', 'success')
+    if (nextTeamId) {
+      await router.push({
+        name: 'workspace-team',
+        params: { workspaceId, teamId: nextTeamId },
+      })
+    } else {
+      await router.push({ path: `/app/${encodeURIComponent(workspaceId)}` })
+    }
+  } catch (error) {
+    actionError.value = membersStore.error || error?.message || 'Could not leave this team.'
   }
 }
 
@@ -255,6 +275,7 @@ function getInitials(name) {
 
         <section class="add-section" aria-label="Add team members">
           <button
+            v-if="isAdmin"
             type="button"
             class="add-btn"
             :disabled="membersWriting || (permissionDenied && !pickerOpen)"
@@ -264,7 +285,7 @@ function getInitials(name) {
             {{ pickerOpen ? 'Close member picker' : 'Add members' }}
           </button>
 
-          <div v-if="pickerOpen" class="member-picker">
+          <div v-if="pickerOpen && isAdmin" class="member-picker">
             <label class="section-label" for="member-picker-search">Search by user name</label>
             <input
               id="member-picker-search"
@@ -383,6 +404,15 @@ function getInitials(name) {
                 </div>
 
                 <div class="member-actions">
+                  <button
+                    v-if="isCurrentUser(member)"
+                    type="button"
+                    class="leave-btn"
+                    :disabled="membersWriting"
+                    @click="handleLeaveTeam"
+                  >
+                    Leave team
+                  </button>
                   <span v-if="member.isCreator" class="role-badge role-badge--admin">
                     Creator
                   </span>
@@ -397,6 +427,7 @@ function getInitials(name) {
                   <!-- Remove button -->
                   <button
                     v-if="
+                      isAdmin &&
                       member.userId &&
                       String(member.userId) !== String(currentUserId) &&
                       !permissionDenied
@@ -964,6 +995,22 @@ function getInitials(name) {
   display: flex;
   align-items: center;
   transition: all 0.15s ease;
+}
+.leave-btn {
+  border: 0;
+  border-radius: 4px;
+  padding: 4px 6px;
+  background: transparent;
+  color: #c4b5fd;
+  cursor: pointer;
+  font-size: 11px;
+}
+.leave-btn:hover:not(:disabled) {
+  background: rgba(124, 58, 237, 0.2);
+}
+.leave-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 .remove-btn:hover:not(:disabled) {
   color: #ef4444;
