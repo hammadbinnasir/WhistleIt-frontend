@@ -1,7 +1,12 @@
 import { apiRequest } from '@/lib/api/client'
 import { USE_SHELL_MOCKS } from './config'
 import { getCompanyIdForTeam } from './teamsApi'
-import { normalizeDeleteResult, normalizeMembers, normalizeNotMembers } from './normalizers'
+import {
+  normalizeCompanyMembers,
+  normalizeDeleteResult,
+  normalizeMembers,
+  normalizeNotMembers,
+} from './normalizers'
 
 function getMembersPath(workspaceId, teamId) {
   const resolvedTeamId = teamId ?? workspaceId
@@ -28,6 +33,17 @@ export function getMembers(workspaceId, teamId = null) {
     })
   }
   return apiRequest(getMembersPath(workspaceId, teamId)).then(normalizeMembers)
+}
+
+export function getCompanyMembers(workspaceId) {
+  if (!workspaceId) throw new Error('A workspace ID is required to load its members.')
+  if (USE_SHELL_MOCKS) {
+    return Promise.reject(new Error('Company member data is not available in the shell mocks.'))
+  }
+  // No pagination; confirmed by the backend developer.
+  return apiRequest(`/company/${encodeURIComponent(workspaceId)}/members`).then(
+    normalizeCompanyMembers,
+  )
 }
 
 export function getNotMembers(workspaceId, teamId) {

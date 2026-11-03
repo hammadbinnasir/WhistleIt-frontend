@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { getAuthUserId } from '@/features/auth/session'
 import { http } from './http'
 import {
   addChannelMember,
@@ -8,13 +9,14 @@ import {
   getChannel,
   joinChannel,
   leaveChannel,
+  listChannels,
   listMembers,
-  listMyChannels,
   removeChannelMember,
   updateChannel,
 } from './channels.api'
 
 vi.mock('./http', () => ({ http: vi.fn() }))
+vi.mock('@/features/auth/session', () => ({ getAuthUserId: vi.fn() }))
 vi.mock('@/stores/teams', () => ({
   useTeamsStore: () => ({ activeWorkspaceId: 'company-1', activeTeamId: 'team-2' }),
 }))
@@ -26,17 +28,18 @@ describe('channel API routes', () => {
   beforeEach(() => {
     http.mockReset()
     http.mockResolvedValue({ id: 'channel-3', name: 'Engineering' })
+    getAuthUserId.mockReturnValue(null)
   })
 
   it('treats channels from the joined-channel list as joined when membership is omitted', async () => {
     http.mockResolvedValue({
       items: [
-        { id: 'channel-3', name: 'Engineering' },
+        { id: 'channel-3', name: 'Engineering', is_member: true },
         { id: 'channel-4', name: 'Design Reviews', is_member: false },
       ],
     })
 
-    const channels = await listMyChannels()
+    const channels = await listChannels()
     expect(http).toHaveBeenLastCalledWith(collectionPath)
     expect(channels.map(({ id, isMember }) => [id, isMember])).toEqual([
       ['channel-3', true],

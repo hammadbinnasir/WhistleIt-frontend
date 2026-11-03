@@ -11,6 +11,17 @@ import { getCompanyIdForTeam } from '@/features/shell/api/teamsApi'
 import { useTeamsStore } from './teams'
 
 function messageForError(error, operation) {
+  if (operation === 'leave team') {
+    if (error?.status === 403) {
+      return error.message || 'You are not allowed to leave this team.'
+    }
+    if (error?.status === 404) {
+      return error.message || 'This team or your membership could not be found.'
+    }
+    if (error?.status === 422) {
+      return error.message || 'The request to leave this team was invalid.'
+    }
+  }
   if (error?.status === 403 && ['add members', 'load users'].includes(operation)) {
     return "You don't have permission to add members."
   }
@@ -159,6 +170,23 @@ export const useMembersStore = defineStore('members', () => {
     }
   }
 
+  async function leaveTeam(workspaceId, teamId, userId) {
+    writing.value = true
+    error.value = null
+    try {
+      const response = await apiRemoveMember(workspaceId, teamId, userId)
+      const teamsStore = useTeamsStore()
+      teamsStore.removeTeamFromWorkspace(teamId, workspaceId)
+      clearMembers()
+      return response
+    } catch (requestError) {
+      error.value = messageForError(requestError, 'leave team')
+      throw requestError
+    } finally {
+      writing.value = false
+    }
+  }
+
   function clearMembers() {
     fetchVersion += 1
     notMembersFetchVersion += 1
@@ -189,6 +217,7 @@ export const useMembersStore = defineStore('members', () => {
     addMember,
     addMembers,
     removeMember,
+    leaveTeam,
     clearMembers,
   }
 })

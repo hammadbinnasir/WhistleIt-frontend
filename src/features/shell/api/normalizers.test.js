@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   normalizeMembers,
+  normalizeCompanyMembers,
   normalizeNotMembers,
   normalizeTeamDetail,
   normalizeTeams,
@@ -15,15 +16,46 @@ describe('shell API normalizers', () => {
         data: {
           user: {
             companies: [
-              { id: 12, name: 'Research Workspace' },
-              { id: 'acme', name: 'Acme', code: 'AC' },
+              { id: 12, name: 'Research Workspace', roles: 'admin' },
+              { id: 'acme', name: 'Acme', code: 'AC', roles: 'member' },
             ],
           },
         },
       }),
     ).toEqual([
-      { id: '12', name: 'Research Workspace', initials: 'RE' },
-      { id: 'acme', name: 'Acme', initials: 'AC' },
+      { id: '12', name: 'Research Workspace', role: 'admin', isAdmin: true, initials: 'RE' },
+      { id: 'acme', name: 'Acme', role: 'member', isAdmin: false, initials: 'AC' },
+    ])
+  })
+
+  it('treats missing or unknown workspace roles as non-admin', () => {
+    expect(
+      normalizeWorkspaces({
+        success: true,
+        data: {
+          user: {
+            companies: [
+              { id: 'missing-role', name: 'Missing Role' },
+              { id: 'unknown-role', name: 'Unknown Role', roles: 'owner' },
+            ],
+          },
+        },
+      }),
+    ).toEqual([
+      {
+        id: 'missing-role',
+        name: 'Missing Role',
+        role: null,
+        isAdmin: false,
+        initials: 'MI',
+      },
+      {
+        id: 'unknown-role',
+        name: 'Unknown Role',
+        role: 'owner',
+        isAdmin: false,
+        initials: 'UN',
+      },
     ])
   })
 
@@ -69,6 +101,19 @@ describe('shell API normalizers', () => {
     ])
   })
 
+  it('normalizes company members using the live companyusers.members shape', () => {
+    expect(
+      normalizeCompanyMembers({
+        success: true,
+        data: {
+          companyusers: {
+            members: [{ id: 'user-company', name: 'Company Member' }, { name: 'Missing ID' }],
+          },
+        },
+      }),
+    ).toEqual([{ userId: 'user-company', name: 'Company Member' }])
+  })
+
   it('keeps the legacy shape and gets user ID from joined_by, not membership ID', () => {
     expect(
       normalizeMembers({
@@ -97,7 +142,7 @@ describe('shell API normalizers', () => {
   })
 
   it('normalizes notmembers records and skips entries without a usable id', () => {
-    // ASSUMED: id/name are inferred from the confirmed members shape; email/avatar are optional and unverified.
+    // confirmed by backend developer: id and name suffice; email/avatar optional
     expect(
       normalizeNotMembers({
         success: true,
