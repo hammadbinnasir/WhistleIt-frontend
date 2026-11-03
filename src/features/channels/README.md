@@ -1,8 +1,11 @@
-# Channels module (11 list, 12 management, 13 header)
+# Channels
 
-Everything lives in ONE new folder: `src/modules/channels/`.
+The Channels feature loads and updates channel data through the backend API. It
+uses the active company and team from `useTeamsStore()` to build requests under
+`/v1/{company}/teams/{team}/channels`. Set `VITE_API_BASE_URL` to the backend
+API root. There is no in-memory channel data source.
 
-## Assumptions
+## API requests
 
 Vue 3 (`<script setup>`), Pinia, Vite, Tailwind in the app shell, the `@` alias, and the shared `src/stores/ui.js`
 store (`selectedChannelId`, `selectChannel(id)`). No vue-router is needed: the selected channel lives in that store.
@@ -61,7 +64,7 @@ Channel object (camelCase):
 
 Errors: non-2xx with JSON `{ "message": "human readable text" }`; the UI shows `message` to the user.
 
-## Design decisions you can change in one place
+## Behavior
 
 - Sidebar shows 6 channels (`SIDEBAR_MAX_VISIBLE`), the active one is always visible; favorites are pinned on top. "More channels" opens a search/join dialog.
 - Default channels (e.g. Announcements) can't be left or archived; edit/archive only appear when `canManage` is true.

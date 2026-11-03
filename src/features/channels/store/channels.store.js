@@ -59,7 +59,7 @@ export const useChannelsStore = defineStore('channels', () => {
     loading.value = true
     error.value = null
     inflight = api
-      .listMyChannels()
+      .listChannels()
       .then((list) => {
         channels.value = list
         loaded.value = true
