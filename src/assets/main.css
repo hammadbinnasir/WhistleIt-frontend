@@ -96,8 +96,8 @@ a {
 
 .auth-page--forgot-password .auth-heading p {
   margin: 12px 0 32px;
-  color: #999;
-  font-size: 16px;
+  color: #111a31;
+  font-size: 22px;
   line-height: 1.4;
 }
 
@@ -245,6 +245,10 @@ a {
   font-size: inherit;
 }
 
+.login-options .text-link {
+  font-size: 16px;
+}
+
 .text-link:hover,
 .auth-switch a:hover {
   text-decoration: underline;
@@ -361,7 +365,7 @@ a {
   min-height: 49px;
   margin-top: 7px;
   background: #5962ff;
-  font-size: 20px;
+  font-size: 22px;
 }
 
 .auth-page--signup .submit-button:hover {
@@ -371,7 +375,7 @@ a {
 
 .auth-page--signup .auth-switch {
   margin-top: 17px;
-  font-size: 14px;
+  font-size: 16px;
 }
 
 .auth-page--signup .form-feedback {
@@ -477,7 +481,8 @@ a {
 
   .auth-page--forgot-password .auth-heading p {
     margin: 12px 0 30px;
-    font-size: 16px;
+    color: #111a31;
+    font-size: 22px;
   }
 
   .auth-page--forgot-password .auth-form {
@@ -535,7 +540,7 @@ a {
     width: 100%;
     min-height: 55px;
     margin-top: 20px;
-    font-size: 21px;
+    font-size: 22px;
   }
 
   .auth-switch {
@@ -543,7 +548,7 @@ a {
   }
 
   .auth-page--signup .auth-switch {
-    font-size: 14px;
+    font-size: 16px;
   }
 
   .auth-art {
@@ -585,21 +590,25 @@ a {
 
 .brand {
   position: absolute;
-  top: clamp(30px, 5vh, 52px);
-  left: clamp(32px, 6vw, 88px);
+  top: 0;
+  left: 0;
+  display: inline-flex;
   flex-direction: column;
   align-items: center;
-  gap: 2px;
+  justify-content: center;
+  gap: 0;
+  width: 80px;
+  height: 50.5px;
+  margin: 48px 0 0 16px;
   color: #101010;
-  font-size: 16px;
+  font-size: 13px;
   font-weight: 800;
   letter-spacing: 0;
 }
 
 .brand-mark {
-  width: 44px;
-  height: 36px;
-  color: #5416d7;
+  width: 80px;
+  height: 51px;
 }
 
 .auth-content,
@@ -617,11 +626,25 @@ a {
   line-height: 1.08;
 }
 
+.auth-heading h1.auth-heading__title--login {
+  font-size: 32px;
+}
+
 .auth-heading p {
   margin: 12px 0 30px;
   color: #66718a;
   font-size: 16px;
   line-height: 1.55;
+}
+
+.auth-heading p.auth-heading__description--login {
+  color: #000000de;
+  font-size: 22px;
+}
+
+.auth-heading p.auth-heading__description--signup {
+  color: #111a31;
+  font-size: 22px;
 }
 
 .auth-form,
@@ -685,6 +708,10 @@ a {
   gap: 9px;
 }
 
+.remember-row {
+  font-size: 16px;
+}
+
 .remember-row input,
 .terms-row input {
   width: 18px;
@@ -718,6 +745,10 @@ a {
     transform 160ms ease;
 }
 
+.submit-button.submit-button--login {
+  font-size: 20px;
+}
+
 .submit-button:hover,
 .auth-page--signup .submit-button:hover,
 .auth-page--forgot-password .submit-button:hover {
@@ -733,6 +764,20 @@ a {
   margin: 22px 0 0;
   color: #68728a;
   font-size: 14px;
+}
+
+.auth-switch__prompt {
+  color: #000000de;
+  font-family: Roboto, sans-serif;
+  font-size: 16px;
+}
+
+.auth-switch__signup-link {
+  font-size: 16px;
+}
+
+.auth-page--forgot-password .auth-switch {
+  font-size: 16px;
 }
 
 .auth-art {
@@ -752,8 +797,8 @@ a {
 
 .terms-row {
   justify-content: flex-start;
-  color: #59647c;
-  font-size: 13px;
+  color: #111a31;
+  font-size: 16px;
 }
 
 .terms-row a {
@@ -776,8 +821,9 @@ a {
 
   .brand,
   .auth-page--forgot-password .brand {
-    top: 28px;
-    left: clamp(24px, 8vw, 64px);
+    top: 0;
+    left: 0;
+    margin: 48px 0 0 16px;
   }
 
   .auth-content,
@@ -797,9 +843,18 @@ a {
     font-size: clamp(36px, 9vw, 48px);
   }
 
+  .auth-heading h1.auth-heading__title--login {
+    font-size: 32px;
+  }
+
   .auth-heading p,
   .auth-page--forgot-password .auth-heading p {
     margin-bottom: 26px;
     font-size: 15px;
+  }
+
+  .auth-page--forgot-password .auth-heading p {
+    color: #111a31;
+    font-size: 22px;
   }
 }
