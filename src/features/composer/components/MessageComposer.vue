@@ -875,7 +875,9 @@ function handleMediaAction(action, payload) {
 }
 
 function handleKeydown(event) {
-  if (event.key === 'Enter') return
+  if (event.key !== 'Enter' || event.shiftKey || event.isComposing) return
+  event.preventDefault()
+  sendMessage()
 }
 </script>
 

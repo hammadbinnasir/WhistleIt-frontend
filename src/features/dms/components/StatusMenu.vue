@@ -1,45 +1,18 @@
 <script setup>
 import { computed, ref } from 'vue'
 import { useDmStore } from '@/features/dms/stores/dms'
-import { usePresenceStore, STATES } from '@/stores/presence'
+import { usePresenceStore, STATES } from '@/features/dms/stores/presence'
 import UserAvatar from './UserAvatar.vue'
 
 const dms = useDmStore()
 const presence = usePresenceStore()
 
 const open = ref(false)
-const emoji = ref('')
-const text = ref('')
 
 const me = computed(() => dms.usersById[dms.meId])
-const quick = [
-  { emoji: '💻', text: 'Coding' },
-  { emoji: '🍔', text: 'Lunch' },
-  { emoji: '📅', text: 'In a meeting' },
-  { emoji: '🌴', text: 'On leave' },
-]
 
 function toggle() {
   open.value = !open.value
-  if (open.value) {
-    const c = presence.customOf(dms.meId)
-    emoji.value = c.emoji
-    text.value = c.text
-  }
-}
-function pickQuick(q) {
-  emoji.value = q.emoji
-  text.value = q.text
-}
-function save() {
-  presence.setMyStatus(emoji.value, text.value)
-  open.value = false
-}
-function clear() {
-  presence.clearMyStatus()
-  emoji.value = ''
-  text.value = ''
-  open.value = false
 }
 </script>
 
@@ -72,41 +45,6 @@ function clear() {
         </button>
       </div>
 
-      <!-- Custom status -->
-      <div class="flex flex-wrap gap-1">
-        <button
-          v-for="q in quick"
-          :key="q.text"
-          class="rounded-full bg-slate-700 px-2 py-0.5 text-xs text-slate-200 hover:bg-slate-600"
-          @click="pickQuick(q)"
-        >
-          {{ q.emoji }} {{ q.text }}
-        </button>
-      </div>
-
-      <div class="flex gap-2">
-        <input
-          v-model="emoji"
-          maxlength="2"
-          placeholder="😀"
-          class="w-10 rounded bg-slate-700 px-2 py-1 text-center text-white outline-none"
-        />
-        <input
-          v-model="text"
-          placeholder="Status likhein…"
-          class="min-w-0 flex-1 rounded bg-slate-700 px-2 py-1 text-white placeholder-slate-400 outline-none"
-        />
-      </div>
-
-      <div class="flex justify-between">
-        <button class="text-xs text-slate-300 underline" @click="clear">Clear status</button>
-        <button
-          class="rounded bg-indigo-500 px-3 py-1 text-xs font-semibold text-white"
-          @click="save"
-        >
-          Save
-        </button>
-      </div>
     </div>
   </div>
 </template>

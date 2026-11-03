@@ -28,7 +28,7 @@ describe('channel API routes', () => {
     http.mockResolvedValue({ id: 'channel-3', name: 'Engineering' })
   })
 
-  it('preserves explicit membership status from list and browse responses', async () => {
+  it('treats channels from the joined-channel list as joined when membership is omitted', async () => {
     http.mockResolvedValue({
       items: [
         { id: 'channel-3', name: 'Engineering' },
@@ -39,12 +39,16 @@ describe('channel API routes', () => {
     const channels = await listMyChannels()
     expect(http).toHaveBeenLastCalledWith(collectionPath)
     expect(channels.map(({ id, isMember }) => [id, isMember])).toEqual([
-      ['channel-3', false],
+      ['channel-3', true],
       ['channel-4', false],
     ])
 
-    await browseChannels('eng')
+    http.mockResolvedValue({
+      items: [{ id: 'channel-3', name: 'Engineering' }],
+    })
+    const browsed = await browseChannels('eng')
     expect(http).toHaveBeenLastCalledWith(collectionPath, { params: { q: 'eng' } })
+    expect(browsed[0].isMember).toBe(false)
   })
 
   it('uses the channel resource routes for get, create, update, and delete', async () => {
