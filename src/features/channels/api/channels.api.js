@@ -39,10 +39,10 @@ export async function createChannel({ name, description, isPrivate }) {
   })
 }
 
-export async function updateChannel(id, { name, description }) {
+export async function updateChannel(id, { name, description, messagePermission }) {
   const res = await http(channelsPath(id), {
     method: 'PATCH',
-    body: { name, description },
+    body: { name, description, message_permission: messagePermission },
   })
   return normalizeChannel(asObject(res))
 }
