@@ -18,7 +18,7 @@ const mk = (id, name, extra = {}) => ({
   isUnread: false,
   unreadCount: 0,
   memberCount: 232,
-  canManage: true,
+  canManage: false,
   ...extra,
 })
 
@@ -87,18 +87,23 @@ export async function createChannel({ name, description, isPrivate, type }) {
     description,
     isPrivate: isPrivate ?? type === 'private',
     memberCount: 1,
+    canManage: true,
   })
   db.push(channel)
   return normalizeChannel(channel)
 }
 
-export async function updateChannel(id, { name, description }) {
+export async function updateChannel(id, { name, description, messagePermission }) {
   await delay()
   const channel = find(id)
   if (db.some((c) => c.id !== channel.id && c.name.toLowerCase() === name.toLowerCase())) {
     throw new ApiError('A channel with this name already exists.', { status: 409 })
   }
-  Object.assign(channel, { name, description })
+  Object.assign(channel, {
+    name,
+    description,
+    ...(messagePermission ? { messagePermission } : {}),
+  })
   return normalizeChannel(channel)
 }
 

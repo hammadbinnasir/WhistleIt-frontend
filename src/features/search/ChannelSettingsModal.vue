@@ -1,6 +1,6 @@
 <script setup>
 // Channel Settings modal: Settings | Members | Integrations | About
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { useUiStore } from '@/stores/ui'
 import { listMembers, removeMember, addMember, getWebhookUrl } from './members'
 import { getWorkspaceMembers } from '@/features/shell/api/membersApi'
@@ -10,7 +10,15 @@ const props = defineProps({
   // { id, name, description, createdBy, muted, favourite }
   channel: { type: Object, required: true },
 })
-const emit = defineEmits(['toggle-mute', 'toggle-favourite', 'show-polls', 'left'])
+const emit = defineEmits([
+  'toggle-mute',
+  'toggle-favourite',
+  'show-polls',
+  'left',
+  'save-message-permission',
+  'archive',
+  'save-details',
+])
 const ui = useUiStore()
 const teamsStore = useTeamsStore()
 
@@ -28,7 +36,68 @@ const addOptionsError = ref('')
 const addMemberError = ref('')
 const webhookUrl = ref('')
 const copied = ref(false)
+const connectionCopied = ref(false)
 const confirmLeave = ref(false)
+const showMessagePermissions = ref(false)
+const confirmArchive = ref(false)
+const confirmConnectionUpdate = ref(false)
+const connectionUrl = ref('')
+const editingDetails = ref(false)
+const draftName = ref('')
+const draftDescription = ref('')
+const messagePermission = ref('everyone')
+const selectedMessagePermission = ref('everyone')
+
+const permissionStorageKey = computed(() => `channel-message-permission:${props.channel.id}`)
+
+function createConnectionUrl() {
+  return `https://app.whistleit.io/guestChannel/${props.channel.id}/U2F${props.channel.id}`
+}
+
+connectionUrl.value = createConnectionUrl()
+
+watch(
+  permissionStorageKey,
+  () => loadMessagePermission(),
+  { immediate: true },
+)
+
+function loadMessagePermission() {
+  const saved = localStorage.getItem(permissionStorageKey.value)
+  if (['everyone', 'admins', 'specific'].includes(saved)) messagePermission.value = saved
+  selectedMessagePermission.value = messagePermission.value
+}
+
+function openMessagePermissions() {
+  selectedMessagePermission.value = messagePermission.value
+  showMessagePermissions.value = true
+}
+
+function saveMessagePermissions() {
+  messagePermission.value = selectedMessagePermission.value
+  localStorage.setItem(permissionStorageKey.value, messagePermission.value)
+  emit('save-message-permission', messagePermission.value)
+  showMessagePermissions.value = false
+}
+
+function startEditingDetails() {
+  draftName.value = props.channel.name
+  draftDescription.value = props.channel.description || ''
+  editingDetails.value = true
+}
+
+function cancelEditingDetails() {
+  editingDetails.value = false
+  draftName.value = props.channel.name
+  draftDescription.value = props.channel.description || ''
+}
+
+function saveDetails() {
+  const name = draftName.value.trim()
+  if (!name) return
+  emit('save-details', { name, description: draftDescription.value.trim() })
+  editingDetails.value = false
+}
 
 const colors = ['bg-orange-500', 'bg-green-500', 'bg-purple-600', 'bg-blue-600', 'bg-pink-500']
 const colorFor = (id) =>
@@ -51,6 +120,8 @@ async function refresh() {
 onMounted(async () => {
   await refresh()
   webhookUrl.value = await getWebhookUrl(props.channel.id)
+  connectionUrl.value =
+    localStorage.getItem(`channel-connection-url:${props.channel.id}`) || createConnectionUrl()
 })
 
 async function openAdd() {
@@ -133,6 +204,23 @@ async function copy() {
     console.error('Unable to copy webhook URL:', error)
   }
 }
+
+async function copyConnectionUrl() {
+  try {
+    await navigator.clipboard.writeText(connectionUrl.value)
+    connectionCopied.value = true
+    setTimeout(() => (connectionCopied.value = false), 1500)
+  } catch (error) {
+    console.error('Unable to copy connection URL:', error)
+  }
+}
+
+function updateConnectionUrl() {
+  const token = Math.random().toString(36).slice(2, 10).toUpperCase()
+  connectionUrl.value = `https://app.whistleit.io/guestChannel/${props.channel.id}/${token}`
+  localStorage.setItem(`channel-connection-url:${props.channel.id}`, connectionUrl.value)
+  confirmConnectionUpdate.value = false
+}
 function leave() {
   emit('left')
 }
@@ -146,6 +234,134 @@ const showSample = ref(false)
     class="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
     @click.self="ui.closeChannelSettings()"
   >
+    <div
+      v-if="confirmConnectionUpdate"
+      class="fixed inset-0 z-[80] flex items-center justify-center bg-slate-900/40 p-4"
+      @click.self="confirmConnectionUpdate = false"
+    >
+      <section
+        class="w-[520px] max-w-full rounded-lg bg-white px-8 py-7 text-center shadow-2xl"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="update-connection-title"
+      >
+        <div class="mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-full bg-red-50 text-red-500">
+          <span class="text-4xl font-bold leading-none">i</span>
+        </div>
+        <h3 id="update-connection-title" class="text-xl font-bold text-slate-700">
+          Update Connection URL
+        </h3>
+        <p class="mt-7 text-base text-slate-600">
+          Are you sure you want to update this channel's connection URL?
+        </p>
+        <div class="mt-8 flex justify-end gap-4">
+          <button
+            type="button"
+            class="cursor-pointer rounded border border-slate-300 px-7 py-2.5 font-semibold uppercase text-slate-600 hover:bg-slate-50"
+            @click="confirmConnectionUpdate = false"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            class="cursor-pointer rounded bg-red-500 px-7 py-2.5 font-semibold uppercase text-white hover:bg-red-600"
+            @click="updateConnectionUrl"
+          >
+            Update
+          </button>
+        </div>
+      </section>
+    </div>
+    <div
+      v-if="confirmArchive"
+      class="fixed inset-0 z-[80] flex items-center justify-center bg-slate-900/40 p-4"
+      @click.self="confirmArchive = false"
+    >
+      <section
+        class="w-[520px] max-w-full rounded-lg bg-white px-8 py-7 text-center shadow-2xl"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="archive-channel-title"
+      >
+        <div class="mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-full bg-red-50 text-red-500">
+          <span class="text-4xl font-bold leading-none">i</span>
+        </div>
+        <h3 id="archive-channel-title" class="text-xl font-bold text-slate-700">
+          Archive Channel
+        </h3>
+        <p class="mt-7 text-base text-slate-600">
+          Are you sure you want to archive this Channel?
+        </p>
+        <div class="mt-8 flex justify-end gap-4">
+          <button
+            type="button"
+            class="cursor-pointer rounded border border-slate-300 px-7 py-2.5 font-semibold uppercase text-slate-600 hover:bg-slate-50"
+            @click="confirmArchive = false"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            class="cursor-pointer rounded bg-red-500 px-7 py-2.5 font-semibold uppercase text-white hover:bg-red-600"
+            @click="emit('archive')"
+          >
+            Archive
+          </button>
+        </div>
+      </section>
+    </div>
+    <div
+      v-if="showMessagePermissions"
+      class="fixed inset-0 z-[70] flex items-center justify-center bg-slate-900/40 p-4"
+      @click.self="showMessagePermissions = false"
+    >
+      <section class="w-[520px] max-w-full overflow-hidden rounded-md bg-white shadow-2xl">
+        <header class="relative px-6 py-5 text-center">
+          <button
+            type="button"
+            class="absolute right-5 top-5 cursor-pointer text-xl leading-none text-slate-600"
+            aria-label="Close message permissions"
+            @click="showMessagePermissions = false"
+          >
+            &times;
+          </button>
+          <h3 class="text-xl font-semibold text-slate-700">Message Permissions</h3>
+        </header>
+        <div class="border-t border-slate-200 px-10 py-8">
+          <p class="mb-5 font-semibold text-slate-700">
+            Who can send and reply to messages in this channel?
+          </p>
+          <label class="flex cursor-pointer items-center gap-4 py-2 text-slate-700">
+            <input v-model="selectedMessagePermission" type="radio" value="everyone" />
+            Everyone
+          </label>
+          <label class="flex cursor-pointer items-center gap-4 py-3 text-slate-700">
+            <input v-model="selectedMessagePermission" type="radio" value="admins" />
+            Admin Only
+          </label>
+          <label class="flex cursor-pointer items-center gap-4 py-2 text-slate-700">
+            <input v-model="selectedMessagePermission" type="radio" value="specific" />
+            Allow Specific Members
+          </label>
+        </div>
+        <footer class="flex justify-end gap-3 border-t border-slate-200 px-6 py-4">
+          <button
+            type="button"
+            class="cursor-pointer px-5 py-2 font-semibold uppercase text-slate-700"
+            @click="showMessagePermissions = false"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            class="cursor-pointer rounded bg-indigo-500 px-5 py-2 font-semibold uppercase text-white"
+            @click="saveMessagePermissions"
+          >
+            Save
+          </button>
+        </footer>
+      </section>
+    </div>
     <div
       class="relative max-h-[85vh] w-[560px] max-w-[95vw] overflow-hidden rounded-lg bg-white shadow-xl"
     >
@@ -226,6 +442,48 @@ const showSample = ref(false)
               easily
             </p>
           </div>
+          <div v-if="channel.canManage" class="rounded border border-slate-300 p-3">
+            <h3 class="font-bold text-slate-700">Connection URL</h3>
+            <p class="mt-1 text-sm text-slate-500">
+              Provide this url to anyone around the globe who wants to communicate.
+            </p>
+            <div class="mt-3 flex gap-2">
+              <input
+                :value="connectionUrl"
+                readonly
+                class="min-w-0 flex-1 rounded border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700"
+              />
+              <button
+                type="button"
+                class="w-9 shrink-0 cursor-pointer rounded border border-indigo-300 text-indigo-500 hover:bg-indigo-50"
+                :aria-label="connectionCopied ? 'Copied' : 'Copy connection URL'"
+                @click="copyConnectionUrl"
+              >
+                <i :class="connectionCopied ? 'fa-solid fa-check' : 'fa-solid fa-copy'" aria-hidden="true"></i>
+              </button>
+              <button
+                type="button"
+                class="cursor-pointer rounded bg-indigo-500 px-3 py-2 text-sm font-semibold text-white"
+                @click="confirmConnectionUpdate = true"
+              >
+                Update
+              </button>
+            </div>
+          </div>
+          <div v-if="channel.canManage" class="rounded border border-slate-300 p-3">
+            <h3 class="font-bold text-slate-700">Message Permissions</h3>
+            <p class="mt-1 text-sm text-slate-500">
+              Control who can send and reply to messages in this channel. By default everyone can
+              send messages in channel
+            </p>
+            <button
+              type="button"
+              class="mt-3 cursor-pointer rounded bg-indigo-500 px-4 py-2 text-sm font-semibold text-white"
+              @click="openMessagePermissions"
+            >
+              Update
+            </button>
+          </div>
           <div class="rounded border border-slate-300 p-3">
             <h3 class="font-bold text-slate-700">Polls</h3>
             <p class="mt-1 text-sm text-slate-500">
@@ -236,6 +494,16 @@ const showSample = ref(false)
               @click="emit('show-polls')"
             >
               History
+            </button>
+          </div>
+          <div v-if="channel.canManage" class="rounded border border-slate-300 p-3">
+            <button
+              type="button"
+              class="flex cursor-pointer items-center gap-2 font-bold text-red-500"
+              @click="confirmArchive = true"
+            >
+              <i class="fa-solid fa-box-archive" aria-hidden="true"></i>
+              ARCHIVE CHANNEL
             </button>
           </div>
         </div>
@@ -423,12 +691,74 @@ const showSample = ref(false)
 
         <!-- About -->
         <div v-else class="rounded border border-slate-300">
-          <div class="border-b border-slate-200 p-3">
-            <p class="font-bold text-slate-700">Name</p>
+          <template v-if="editingDetails && channel.canManage">
+            <div class="space-y-4 p-3">
+              <label class="block text-sm font-bold text-slate-700">
+                Name
+                <input
+                  v-model="draftName"
+                  class="mt-1 w-full rounded border border-slate-300 px-3 py-2 font-normal text-slate-700 outline-none focus:border-indigo-500"
+                />
+              </label>
+              <label class="block text-sm font-bold text-slate-700">
+                Description
+                <textarea
+                  v-model="draftDescription"
+                  rows="3"
+                  class="mt-1 w-full resize-y rounded border border-slate-300 px-3 py-2 font-normal text-slate-700 outline-none focus:border-indigo-500"
+                ></textarea>
+              </label>
+              <div class="flex justify-end gap-2">
+                <button
+                  type="button"
+                  class="cursor-pointer rounded px-3 py-2 text-sm font-semibold text-slate-600"
+                  @click="cancelEditingDetails"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  class="cursor-pointer rounded bg-indigo-500 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-indigo-300"
+                  :disabled="!draftName.trim()"
+                  @click="saveDetails"
+                >
+                  Save
+                </button>
+              </div>
+            </div>
+          </template>
+          <div
+            v-if="!editingDetails"
+            class="border-b border-slate-200 p-3"
+          >
+            <div class="flex items-center justify-between">
+              <p class="font-bold text-slate-700">Name</p>
+              <button
+                v-if="channel.canManage"
+                type="button"
+                class="cursor-pointer text-sm font-semibold text-blue-600 underline"
+                @click="startEditingDetails"
+              >
+                Edit
+              </button>
+            </div>
             <p class="text-sm text-slate-500">{{ channel.name }}</p>
           </div>
-          <div class="border-b border-slate-200 p-3">
-            <p class="font-bold text-slate-700">Description</p>
+          <div
+            v-if="!editingDetails"
+            class="border-b border-slate-200 p-3"
+          >
+            <div class="flex items-center justify-between">
+              <p class="font-bold text-slate-700">Description</p>
+              <button
+                v-if="channel.canManage"
+                type="button"
+                class="cursor-pointer text-sm font-semibold text-blue-600 underline"
+                @click="startEditingDetails"
+              >
+                Edit
+              </button>
+            </div>
             <p class="text-sm text-slate-500">
               {{ channel.description || 'Add channel description' }}
             </p>
