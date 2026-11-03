@@ -153,39 +153,39 @@ async function toggleChannelFavorite() {
   } catch (error) {
     ui.toast('Unable to update favorite setting', error?.message || 'Please try again.', 'error')
   }
+}
 
-  async function archiveSelectedChannel() {
-    if (!selectedChannel.value) return
-    try {
-      await channelsStore.deleteChannel(selectedChannel.value.id)
-      ui.closeChannelSettings()
-      ui.selectChannel(null)
-    } catch (error) {
-      ui.toast('Unable to archive channel', error?.message || 'Please try again.', 'error')
-    }
+async function archiveSelectedChannel() {
+  if (!selectedChannel.value) return
+  try {
+    await channelsStore.deleteChannel(selectedChannel.value.id)
+    ui.closeChannelSettings()
+    ui.selectChannel(null)
+  } catch (error) {
+    ui.toast('Unable to archive channel', error?.message || 'Please try again.', 'error')
+  }
+}
 
-    async function saveChannelMessagePermission(permission) {
-      if (!selectedChannel.value) return
-      try {
-        await channelsStore.updateChannel(selectedChannel.value.id, {
-          name: selectedChannel.value.name,
-          description: selectedChannel.value.description,
-          messagePermission: permission,
-        })
-      } catch (error) {
-        ui.toast('Unable to save permissions', error?.message || 'Please try again.', 'error')
-      }
+async function saveChannelMessagePermission(permission) {
+  if (!selectedChannel.value) return
+  try {
+    await channelsStore.updateChannel(selectedChannel.value.id, {
+      name: selectedChannel.value.name,
+      description: selectedChannel.value.description,
+      messagePermission: permission,
+    })
+  } catch (error) {
+    ui.toast('Unable to save permissions', error?.message || 'Please try again.', 'error')
+  }
+}
 
-      async function saveChannelDetails(details) {
-        if (!selectedChannel.value) return
-        try {
-          await channelsStore.updateChannel(selectedChannel.value.id, details)
-          ui.toast('Channel updated', 'Name and description were saved.', 'success')
-        } catch (error) {
-          ui.toast('Unable to update channel', error?.message || 'Please try again.', 'error')
-        }
-      }
-    }
+async function saveChannelDetails(details) {
+  if (!selectedChannel.value) return
+  try {
+    await channelsStore.updateChannel(selectedChannel.value.id, details)
+    ui.toast('Channel updated', 'Name and description were saved.', 'success')
+  } catch (error) {
+    ui.toast('Unable to update channel', error?.message || 'Please try again.', 'error')
   }
 }
 

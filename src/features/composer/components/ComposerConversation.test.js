@@ -341,13 +341,10 @@ describe('composer conversation', () => {
     vi.unstubAllGlobals()
   })
 
-  it('deletes a message and removes its pin', async () => {
-    vi.stubGlobal(
-      'confirm',
-      vi.fn(() => true),
-    )
+  it('confirms deletion, keeps the deleted message visible, and removes its pin', async () => {
     const wrapper = mount(ComposerConversation)
     const ui = useUiStore()
+    const messages = useMessagesStore()
     await sendMessage(wrapper, 'Remove this message')
     const article = wrapper.get('article')
 
@@ -356,9 +353,87 @@ describe('composer conversation', () => {
     await buttonWithText(article.get('.composer-conversation__menu'), 'Delete').trigger('click')
     await nextTick()
 
+    expect(document.querySelector('.composer-conversation__delete-dialog')?.textContent).toContain(
+      'Are you sure you want to delete this Message?',
+    )
+    document.querySelector('.composer-conversation__delete-footer .is-delete').click()
+    await nextTick()
+
     expect(wrapper.text()).not.toContain('Remove this message')
+    expect(wrapper.text()).toContain('(message deleted)')
+    expect(messages.messagesFor('general').at(-1).deleted).toBe(true)
     expect(ui.pinnedMessages).toHaveLength(0)
-    vi.unstubAllGlobals()
+    wrapper.unmount()
+  })
+
+  it('replaces quoted content when its original message is deleted', async () => {
+    const wrapper = mount(ComposerConversation)
+    await sendMessage(wrapper, 'Original message text')
+    const originalArticle = wrapper.findAll('article')[0]
+
+    await originalArticle.get('button[aria-label="More message actions"]').trigger('click')
+    await buttonWithText(originalArticle.get('.composer-conversation__menu'), 'Reply').trigger(
+      'click',
+    )
+    await sendMessage(wrapper, 'Reply to original')
+
+    const originalMenu = wrapper.findAll('article')[0]
+    await originalMenu.get('button[aria-label="More message actions"]').trigger('click')
+    await buttonWithText(originalMenu.get('.composer-conversation__menu'), 'Delete').trigger(
+      'click',
+    )
+    await nextTick()
+    document.querySelector('.composer-conversation__delete-footer .is-delete').click()
+    await nextTick()
+
+    const replyArticle = wrapper
+      .findAll('article')
+      .find((article) => article.text().includes('Reply to original'))
+    expect(replyArticle.get('.composer-conversation__reply-quote').text()).toContain(
+      '(message deleted)',
+    )
+    expect(replyArticle.text()).not.toContain('Original message text')
+    wrapper.unmount()
+  })
+
+  it('schedules a message deletion for the selected date and time', async () => {
+    vi.useFakeTimers()
+    try {
+      vi.setSystemTime(new Date('2026-11-03T12:00:00.000Z'))
+      const wrapper = mount(ComposerConversation)
+      const messages = useMessagesStore()
+      await sendMessage(wrapper, 'Delete this later')
+      const article = wrapper.get('article')
+
+      await article.get('button[aria-label="More message actions"]').trigger('click')
+      await buttonWithText(article.get('.composer-conversation__menu'), 'Delete').trigger('click')
+      await nextTick()
+      document.querySelector('.composer-conversation__schedule-delete input').click()
+      await nextTick()
+
+      const deleteAt = new Date(Date.now() + 120_000)
+      const localDeleteAt = new Date(deleteAt.getTime() - deleteAt.getTimezoneOffset() * 60_000)
+        .toISOString()
+        .slice(0, 16)
+      const dateInput = document.querySelector('.composer-conversation__delete-date input')
+      dateInput.value = localDeleteAt
+      dateInput.dispatchEvent(new Event('input', { bubbles: true }))
+      dateInput.dispatchEvent(new Event('change', { bubbles: true }))
+      await nextTick()
+
+      document.querySelector('.composer-conversation__delete-footer .is-delete').click()
+      await nextTick()
+      expect(wrapper.text()).toContain('Delete this later')
+      expect(messages.messagesFor('general').at(-1).deleteScheduledAt).toBe(deleteAt.toISOString())
+
+      await vi.advanceTimersByTimeAsync(120_000)
+      await nextTick()
+      expect(wrapper.text()).toContain('(message deleted)')
+      expect(wrapper.text()).not.toContain('Delete this later')
+      wrapper.unmount()
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('replies to a message with an attached quoted message', async () => {
