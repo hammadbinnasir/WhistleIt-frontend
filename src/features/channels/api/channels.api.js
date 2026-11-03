@@ -91,6 +91,12 @@ export async function listMembers(id, { limit = 10 } = {}) {
   return { items: items.map(normalizeMember), total }
 }
 
+export async function listAvailableMembers(id) {
+  const res = await http(`${channelsPath(id)}/available-members`)
+  const { items, total } = asList(res)
+  return { items: items.map(normalizeMember), total }
+}
+
 export async function addChannelMember(id, targetUser) {
   const res = await http(`${channelsPath(id)}/members`, {
     method: 'POST',
