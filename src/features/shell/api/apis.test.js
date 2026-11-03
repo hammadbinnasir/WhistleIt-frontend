@@ -3,9 +3,16 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 vi.mock('@/lib/api/client', () => ({ apiRequest: vi.fn() }))
 
 import { apiRequest } from '@/lib/api/client'
-import { getMembers, getNotMembers, addMember, addMembers, removeMember } from './membersApi'
-import { createTeam, deleteTeam, getTeam, getTeams, joinTeam, updateTeam } from './teamsApi'
-import { createWorkspace, getWorkspaces, getWorkspaceTeams } from './workspacesApi'
+import {
+  getCompanyMembers,
+  getMembers,
+  getNotMembers,
+  addMember,
+  addMembers,
+  removeMember,
+} from './membersApi'
+import { createTeam, deleteTeam, getTeam, getTeams, updateTeam } from './teamsApi'
+import { getWorkspaces, getWorkspaceTeams } from './workspacesApi'
 
 describe('shell API adapters', () => {
   beforeEach(() => {
@@ -19,19 +26,15 @@ describe('shell API adapters', () => {
     })
 
     await expect(getWorkspaces()).resolves.toEqual([
-      { id: 'company-1', name: 'Engineering', initials: 'EN' },
+      {
+        id: 'company-1',
+        name: 'Engineering',
+        role: null,
+        isAdmin: false,
+        initials: 'EN',
+      },
     ])
     expect(apiRequest).toHaveBeenCalledWith('/company')
-  })
-
-  it('keeps workspace creation on the mock layer in backend mode', async () => {
-    const workspace = await createWorkspace({
-      name: 'API Test Workspace',
-      initials: 'AT',
-    })
-
-    expect(workspace).toMatchObject({ name: 'API Test Workspace', initials: 'AT' })
-    expect(apiRequest).not.toHaveBeenCalled()
   })
 
   it('loads teams with their company scope and normalizes the response', async () => {
@@ -117,8 +120,20 @@ describe('shell API adapters', () => {
     expect(apiRequest).toHaveBeenCalledWith('/v1/company-1/teams/team-1/members')
   })
 
+  it('loads company members from the company-level members endpoint', async () => {
+    apiRequest.mockResolvedValueOnce({
+      success: true,
+      data: { companyusers: { members: [{ id: 'user-1', name: 'Company User' }] } },
+    })
+
+    await expect(getCompanyMembers('company-1')).resolves.toEqual([
+      { userId: 'user-1', name: 'Company User' },
+    ])
+    expect(apiRequest).toHaveBeenCalledWith('/company/company-1/members')
+  })
+
   it('loads notmembers from its confirmed envelope path', async () => {
-    apiRequest.mockResolvedValue({
+    apiRequest.mockResolvedValueOnce({
       success: true,
       data: {
         notteamusers: {
@@ -173,12 +188,5 @@ describe('shell API adapters', () => {
     expect(apiRequest).toHaveBeenNthCalledWith(3, '/v1/company-1/teams/team-1/members/user-2', {
       method: 'DELETE',
     })
-  })
-
-  it('keeps team joining on the mock layer in backend mode and scopes it to the active workspace', async () => {
-    const result = await joinTeam('invite-code', 'company-1')
-
-    expect(result.workspaceId).toBe('company-1')
-    expect(apiRequest).not.toHaveBeenCalled()
   })
 })

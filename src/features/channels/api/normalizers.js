@@ -51,6 +51,7 @@ export function normalizeChannel(raw = {}) {
     unreadCount: Number(record.unreadCount ?? record.unread_count) || 0,
     memberCount: Number(record.memberCount ?? record.member_count) || 0,
     canManage: Boolean(record.canManage ?? record.can_manage),
+    messagePermission: record.messagePermission ?? record.message_permission ?? 'everyone',
   }
 }
 
