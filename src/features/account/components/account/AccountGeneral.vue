@@ -10,11 +10,28 @@ const defaults = {
   alias: '',
   twoFactor: 'inactive',
   designation: '',
-  jobResponsibilities: '',
+  jobResponsibilities: [],
 }
 
+const normalizeResponsibilities = (value) =>
+  Array.isArray(value)
+    ? value.filter((item) => typeof item === 'string')
+    : typeof value === 'string'
+      ? value
+          .split(/\r?\n/)
+          .map((item) => item.trim())
+          .filter(Boolean)
+      : []
+
 const general = reactive(
-  Object.fromEntries(Object.keys(defaults).map((k) => [k, props.profile[k] ?? defaults[k]])),
+  Object.fromEntries(
+    Object.keys(defaults).map((key) => [
+      key,
+      key === 'jobResponsibilities'
+        ? normalizeResponsibilities(props.profile[key] ?? defaults[key])
+        : (props.profile[key] ?? defaults[key]),
+    ]),
+  ),
 )
 
 const fields = [
@@ -52,6 +69,9 @@ const MAX_PHOTO_BYTES = 2 * 1024 * 1024
 const ALLOWED_TYPES = ['image/jpeg', 'image/gif', 'image/png']
 
 const fileInput = ref(null)
+const responsibilityInput = ref('')
+const responsibilityInputEl = ref(null)
+const responsibilitiesFocused = ref(false)
 const photoFile = ref(null)
 const photoUrl = ref(props.profile.photoUrl || '')
 const photoError = ref('')
@@ -95,17 +115,46 @@ onBeforeUnmount(revokePreview)
 /* ---------- validation ---------- */
 const submitted = ref(false)
 
-const errors = computed(() =>
-  submitted.value && !general.fullName.trim() ? { fullName: 'Required.' } : {},
-)
+const getJobResponsibilities = () => general.jobResponsibilities
+
+const errors = computed(() => {
+  if (!submitted.value) return {}
+  const validationErrors = {}
+  if (!general.fullName.trim()) validationErrors.fullName = 'Required.'
+  return validationErrors
+})
+
+const addJobResponsibility = () => {
+  const responsibility = responsibilityInput.value.trim()
+  if (!responsibility) return
+  if (general.jobResponsibilities.length >= 5) return
+  if (
+    general.jobResponsibilities.some(
+      (item) => item.toLocaleLowerCase() === responsibility.toLocaleLowerCase(),
+    )
+  ) {
+    responsibilityInput.value = ''
+    return
+  }
+  general.jobResponsibilities.push(responsibility)
+  responsibilityInput.value = ''
+}
+
+const removeJobResponsibility = (index) => {
+  general.jobResponsibilities.splice(index, 1)
+}
 
 const validate = () => {
   submitted.value = true
-  return !errors.value.fullName
+  return Object.keys(errors.value).length === 0
 }
 
 const getValues = () => ({
-  profile: { ...general, fullName: general.fullName.trim() },
+  profile: {
+    ...general,
+    fullName: general.fullName.trim(),
+    jobResponsibilities: getJobResponsibilities(),
+  },
   photo: photoFile.value,
   removePhoto: photoRemoved.value,
   photoAction: photoFile.value ? 'added' : photoRemoved.value ? 'removed' : null,
@@ -147,7 +196,10 @@ defineExpose({ validate, getValues })
         v-for="field in fields"
         :key="field.key"
         class="field"
-        :class="{ invalid: errors[field.key] }"
+        :class="{
+          invalid: errors[field.key],
+          'multiline-field': field.key === 'jobResponsibilities',
+        }"
       >
         <template v-if="field.type === 'select'">
           <select v-model="general[field.key]" class="control select">
@@ -159,6 +211,47 @@ defineExpose({ validate, getValues })
           <svg class="caret" viewBox="0 0 24 24" fill="currentColor">
             <path d="M7 10l5 5 5-5z" />
           </svg>
+        </template>
+        <template v-else-if="field.key === 'jobResponsibilities'">
+          <div
+            class="responsibilities-control"
+            :class="{ focused: responsibilitiesFocused }"
+            @click="responsibilityInputEl?.focus()"
+          >
+            <label class="float-label always">{{ field.label }}</label>
+            <span
+              v-for="(responsibility, index) in general.jobResponsibilities"
+              :key="`${responsibility}-${index}`"
+              class="responsibility-chip"
+            >
+              {{ responsibility }}
+              <button
+                type="button"
+                :aria-label="`Remove ${responsibility}`"
+                @click.stop="removeJobResponsibility(index)"
+              >
+                ×
+              </button>
+            </span>
+            <input
+              ref="responsibilityInputEl"
+              v-model="responsibilityInput"
+              class="responsibility-input"
+              name="job-responsibility-entry"
+              type="search"
+              :placeholder="general.jobResponsibilities.length ? '' : field.placeholder"
+              :disabled="general.jobResponsibilities.length >= 5"
+              :readonly="!responsibilitiesFocused"
+              autocomplete="new-password"
+              aria-describedby="job-responsibilities-hint"
+              @focus="responsibilitiesFocused = true"
+              @blur="responsibilitiesFocused = false"
+              @keydown.enter.prevent.stop="addJobResponsibility"
+            />
+          </div>
+          <span id="job-responsibilities-hint" class="field-hint">
+            Press enter to add (Maximum 5 allowed)
+          </span>
         </template>
         <template v-else>
           <input
@@ -291,6 +384,93 @@ defineExpose({ validate, getValues })
 }
 .control:focus {
   border-color: #5559f4;
+}
+
+.responsibilities-control {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-height: 70px;
+  box-sizing: border-box;
+  padding: 18px 18px 10px;
+  background: #fff;
+  border: 1px solid #a5a6b0;
+  border-radius: 4px;
+  cursor: text;
+}
+
+.responsibilities-control.focused {
+  border: 2px solid #5559f4;
+  padding: 17px 17px 9px;
+}
+
+.responsibilities-control .float-label {
+  top: -8px;
+  left: 10px;
+  color: #676879;
+}
+
+.responsibilities-control.focused .float-label {
+  color: #5559f4;
+}
+
+.responsibility-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 30px;
+  padding: 0 6px 0 14px;
+  border-radius: 18px;
+  background: #e3e3e3;
+  color: #303030;
+  font-size: 14px;
+  white-space: nowrap;
+}
+
+.responsibility-chip button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: #777;
+  color: #fff;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.responsibility-input {
+  flex: 1 1 100px;
+  min-width: 80px;
+  height: 30px;
+  padding: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: #1f1f2e;
+  font: inherit;
+}
+
+.responsibility-input:disabled {
+  display: none;
+}
+
+.field-hint {
+  display: block;
+  margin: 6px 0 0 14px;
+  color: #676879;
+  font-size: 12px;
+}
+
+.field.multiline-field .field-error {
+  position: static;
+  display: block;
+  margin: 6px 0 0 14px;
 }
 
 .field.invalid .control {

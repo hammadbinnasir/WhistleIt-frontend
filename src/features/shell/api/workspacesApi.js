@@ -10,11 +10,6 @@ export function getWorkspaces() {
   return apiRequest('/company').then(normalizeWorkspaces)
 }
 
-export function createWorkspace(payload) {
-  // TODO: Replace with the workspace creation endpoint when the backend contract is available.
-  return import('./__mocks__/teams.mock').then((mock) => mock.mockCreateWorkspace(payload))
-}
-
 export function getWorkspaceTeams(workspaceId) {
   if (!workspaceId) {
     throw new Error('A workspace ID is required to load its teams.')

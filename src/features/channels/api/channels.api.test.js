@@ -1,5 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+<<<<<<< Updated upstream
 import { getAuthUserId } from '@/features/auth/session'
+=======
+>>>>>>> Stashed changes
 import { http } from './http'
 import {
   addChannelMember,
@@ -9,14 +12,22 @@ import {
   getChannel,
   joinChannel,
   leaveChannel,
+<<<<<<< Updated upstream
   listChannels,
   listMembers,
+=======
+  listMembers,
+  listMyChannels,
+>>>>>>> Stashed changes
   removeChannelMember,
   updateChannel,
 } from './channels.api'
 
 vi.mock('./http', () => ({ http: vi.fn() }))
+<<<<<<< Updated upstream
 vi.mock('@/features/auth/session', () => ({ getAuthUserId: vi.fn() }))
+=======
+>>>>>>> Stashed changes
 vi.mock('@/stores/teams', () => ({
   useTeamsStore: () => ({ activeWorkspaceId: 'company-1', activeTeamId: 'team-2' }),
 }))
@@ -28,17 +39,25 @@ describe('channel API routes', () => {
   beforeEach(() => {
     http.mockReset()
     http.mockResolvedValue({ id: 'channel-3', name: 'Engineering' })
+<<<<<<< Updated upstream
     getAuthUserId.mockReturnValue(null)
+=======
+>>>>>>> Stashed changes
   })
 
   it('preserves explicit membership status from list and browse responses', async () => {
     http.mockResolvedValue({
       items: [
+<<<<<<< Updated upstream
         { id: 'channel-3', name: 'Engineering', is_member: true },
+=======
+        { id: 'channel-3', name: 'Engineering' },
+>>>>>>> Stashed changes
         { id: 'channel-4', name: 'Design Reviews', is_member: false },
       ],
     })
 
+<<<<<<< Updated upstream
     const channels = await listChannels()
     expect(http).toHaveBeenLastCalledWith(collectionPath)
     expect(channels.map(({ id, isMember }) => [id, isMember])).toEqual([
@@ -177,6 +196,17 @@ describe('channel API routes', () => {
     })
 
     await expect(listChannels()).resolves.toMatchObject([{ id: 'channel-3', isMember: true }])
+=======
+    const channels = await listMyChannels()
+    expect(http).toHaveBeenLastCalledWith(collectionPath)
+    expect(channels.map(({ id, isMember }) => [id, isMember])).toEqual([
+      ['channel-3', false],
+      ['channel-4', false],
+    ])
+
+    await browseChannels('eng')
+    expect(http).toHaveBeenLastCalledWith(collectionPath, { params: { q: 'eng' } })
+>>>>>>> Stashed changes
   })
 
   it('uses the channel resource routes for get, create, update, and delete', async () => {

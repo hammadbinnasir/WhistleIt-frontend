@@ -11,6 +11,8 @@ const fullName = ref('')
 const email = ref('')
 const password = ref('')
 const confirmPassword = ref('')
+const showPassword = ref(false)
+const showConfirmPassword = ref(false)
 const acceptedTerms = ref(false)
 const feedback = ref('')
 const feedbackIsSuccess = ref(false)
@@ -47,6 +49,8 @@ watch(
     fullName.value = ''
     password.value = ''
     confirmPassword.value = ''
+    showPassword.value = false
+    showConfirmPassword.value = false
     acceptedTerms.value = false
     feedback.value = ''
     feedbackIsSuccess.value = false
@@ -206,17 +210,56 @@ async function submitForm() {
           <label for="invite-password" class="mb-1.5 block text-sm font-medium text-slate-700">
             {{ isLogin ? 'Password' : 'Create password' }}
           </label>
-          <input
-            id="invite-password"
-            v-model="password"
-            name="password"
-            type="password"
-            :autocomplete="isLogin ? 'current-password' : 'new-password'"
-            :placeholder="isLogin ? 'Password' : 'At least 8 characters'"
-            minlength="8"
-            required
-            class="w-full rounded-lg border border-slate-300 px-3.5 py-3 text-sm outline-none transition focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100"
-          />
+          <div class="relative">
+            <input
+              id="invite-password"
+              v-model="password"
+              name="password"
+              :type="showPassword ? 'text' : 'password'"
+              :autocomplete="isLogin ? 'current-password' : 'new-password'"
+              :placeholder="isLogin ? 'Password' : 'At least 8 characters'"
+              minlength="8"
+              required
+              class="w-full rounded-lg border border-slate-300 px-3.5 py-3 pr-12 text-sm outline-none transition focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100"
+            />
+            <button
+              class="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-700"
+              type="button"
+              :aria-label="showPassword ? 'Hide password' : 'Show password'"
+              :aria-pressed="showPassword"
+              @click="showPassword = !showPassword"
+            >
+              <svg class="h-5 w-5" viewBox="0 0 24 24" aria-hidden="true">
+                <template v-if="showPassword">
+                  <path
+                    d="M2 12s3.3-7 10-7 10 7 10 7-3.3 7-10 7S2 12 2 12Z"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    stroke-width="1.8"
+                  />
+                  <circle
+                    cx="12"
+                    cy="12"
+                    r="3"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="1.8"
+                  />
+                </template>
+                <path
+                  v-else
+                  d="M3 3 21 21M10.6 10.6a2 2 0 0 0 2.8 2.8M9.9 5.2A10.8 10.8 0 0 1 12 5c5.2 0 8.5 5.2 8.5 7s-1.2 3.2-3.1 4.5M6.2 6.2C3.7 7.7 2 10.5 2 12c0 1.8 3.3 7 10 7 1 0 1.9-.2 2.8-.5"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="1.8"
+                />
+              </svg>
+            </button>
+          </div>
         </div>
 
         <div v-if="!isLogin">
@@ -226,17 +269,56 @@ async function submitForm() {
           >
             Confirm password
           </label>
-          <input
-            id="invite-confirm-password"
-            v-model="confirmPassword"
-            name="password_confirmation"
-            type="password"
-            autocomplete="new-password"
-            placeholder="Re-enter your password"
-            minlength="8"
-            required
-            class="w-full rounded-lg border border-slate-300 px-3.5 py-3 text-sm outline-none transition focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100"
-          />
+          <div class="relative">
+            <input
+              id="invite-confirm-password"
+              v-model="confirmPassword"
+              name="password_confirmation"
+              :type="showConfirmPassword ? 'text' : 'password'"
+              autocomplete="new-password"
+              placeholder="Re-enter your password"
+              minlength="8"
+              required
+              class="w-full rounded-lg border border-slate-300 px-3.5 py-3 pr-12 text-sm outline-none transition focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100"
+            />
+            <button
+              class="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-700"
+              type="button"
+              :aria-label="showConfirmPassword ? 'Hide confirm password' : 'Show confirm password'"
+              :aria-pressed="showConfirmPassword"
+              @click="showConfirmPassword = !showConfirmPassword"
+            >
+              <svg class="h-5 w-5" viewBox="0 0 24 24" aria-hidden="true">
+                <template v-if="showConfirmPassword">
+                  <path
+                    d="M2 12s3.3-7 10-7 10 7 10 7-3.3 7-10 7S2 12 2 12Z"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    stroke-width="1.8"
+                  />
+                  <circle
+                    cx="12"
+                    cy="12"
+                    r="3"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="1.8"
+                  />
+                </template>
+                <path
+                  v-else
+                  d="M3 3 21 21M10.6 10.6a2 2 0 0 0 2.8 2.8M9.9 5.2A10.8 10.8 0 0 1 12 5c5.2 0 8.5 5.2 8.5 7s-1.2 3.2-3.1 4.5M6.2 6.2C3.7 7.7 2 10.5 2 12c0 1.8 3.3 7 10 7 1 0 1.9-.2 2.8-.5"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="1.8"
+                />
+              </svg>
+            </button>
+          </div>
         </div>
 
         <label v-if="!isLogin" class="flex items-start gap-2 text-xs leading-5 text-slate-600">
