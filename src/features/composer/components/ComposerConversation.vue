@@ -46,8 +46,6 @@ const activePollMode = ref('respond')
 const pollResponses = ref({})
 const pollResults = ref({})
 const closedPolls = ref(new Set())
-const pollClock = ref(Date.now())
-let pollClockTimer = null
 
 const channelId = computed(() => String(props.conversationId || 'general'))
 const conversation = computed(() =>
@@ -485,8 +483,9 @@ function closeActionsOnOutsideClick(event) {
 }
 
 function participateInPoll(pollId) {
+  if (closedPolls.value.has(pollId)) return
   const message = renderedMessages.value.find((item) => item.poll?.id === pollId)
-  if (!message?.poll || !isPollActive(message.poll)) return
+  if (!message?.poll) return
   activePoll.value = message.poll
   activePollMode.value = 'respond'
   pollResponses.value = {}
@@ -494,49 +493,6 @@ function participateInPoll(pollId) {
 
 function closePoll(pollId) {
   closedPolls.value = new Set([...closedPolls.value, pollId])
-}
-
-function pollStartTime(poll) {
-  return poll.scheduleStart ? Date.parse(poll.scheduleStart) : NaN
-}
-
-function pollCloseTime(poll) {
-  return poll.scheduleClose ? Date.parse(poll.scheduleClose) : NaN
-}
-
-function isPollActive(poll) {
-  const now = pollClock.value
-  const startsAt = pollStartTime(poll)
-  const closesAt = pollCloseTime(poll)
-  return (
-    !closedPolls.value.has(poll.id) &&
-    (!Number.isFinite(startsAt) || startsAt <= now) &&
-    (!Number.isFinite(closesAt) || closesAt > now)
-  )
-}
-
-function isPollClosed(poll) {
-  return closedPolls.value.has(poll.id) || (
-    Number.isFinite(pollCloseTime(poll)) && pollCloseTime(poll) <= pollClock.value
-  )
-}
-
-function isPollScheduled(poll) {
-  const startsAt = pollStartTime(poll)
-  return Number.isFinite(startsAt) && startsAt > pollClock.value
-}
-
-function pollScheduleLabel(value) {
-  const timestamp = Date.parse(value || '')
-  if (!Number.isFinite(timestamp)) return ''
-  return new Intl.DateTimeFormat('en-US', {
-    weekday: 'short',
-    month: 'short',
-    day: '2-digit',
-    year: 'numeric',
-    hour: 'numeric',
-    minute: '2-digit',
-  }).format(timestamp)
 }
 
 function exportPollResults(pollId) {
@@ -656,16 +612,8 @@ async function scrollMessagesToLatest() {
   if (container) container.scrollTop = container.scrollHeight
 }
 
-onMounted(() => {
-  document.addEventListener('pointerdown', closeActionsOnOutsideClick)
-  pollClockTimer = window.setInterval(() => {
-    pollClock.value = Date.now()
-  }, 1000)
-})
-onBeforeUnmount(() => {
-  document.removeEventListener('pointerdown', closeActionsOnOutsideClick)
-  if (pollClockTimer) window.clearInterval(pollClockTimer)
-})
+onMounted(() => document.addEventListener('pointerdown', closeActionsOnOutsideClick))
+onBeforeUnmount(() => document.removeEventListener('pointerdown', closeActionsOnOutsideClick))
 </script>
 
 <template>
@@ -1133,16 +1081,16 @@ onBeforeUnmount(() => {
             <span>Creator: {{ activePoll.creator || 'You' }}</span>
             <span
               class="composer-conversation__poll-status"
-              :class="{ 'is-closed': isPollClosed(activePoll) }"
+              :class="{ 'is-closed': closedPolls.has(activePoll.id) }"
             >
               <i
                 class="composer-conversation__poll-status-icon"
-                :class="isPollClosed(activePoll) ? 'is-closed' : isPollScheduled(activePoll) ? 'is-scheduled' : 'is-open'"
+                :class="closedPolls.has(activePoll.id) ? 'is-closed' : 'is-open'"
                 aria-hidden="true"
               >
-                {{ isPollClosed(activePoll) ? '×' : isPollScheduled(activePoll) ? '◷' : '✓' }}
+                {{ closedPolls.has(activePoll.id) ? '×' : '✓' }}
               </i>
-              {{ isPollClosed(activePoll) ? 'Closed' : isPollScheduled(activePoll) ? 'Scheduled' : 'Open' }}
+              {{ closedPolls.has(activePoll.id) ? 'Closed' : 'Open' }}
             </span>
             <span class="composer-conversation__poll-meta-divider" aria-hidden="true"></span>
             <span class="composer-conversation__poll-visibility">
@@ -1554,10 +1502,6 @@ onBeforeUnmount(() => {
   background: #f04444;
 }
 
-.composer-conversation__poll-status-icon.is-scheduled {
-  background: #5962ff;
-}
-
 .composer-conversation__poll-status.is-closed {
   color: #696d81;
 }
@@ -1579,72 +1523,6 @@ onBeforeUnmount(() => {
   flex-wrap: wrap;
   gap: 8px;
   padding: 0 12px 14px;
-}
-
-.composer-conversation__poll-schedule-info {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0;
-  margin: 4px 12px 14px;
-  border: 1px solid #d5d7e2;
-  border-radius: 6px;
-  background: #fff;
-  color: #25263a;
-}
-
-.composer-conversation__poll-schedule-item {
-  display: flex;
-  min-width: 220px;
-  flex: 1 1 220px;
-  align-items: center;
-  gap: 9px;
-  padding: 10px 12px;
-}
-
-.composer-conversation__poll-schedule-item + .composer-conversation__poll-schedule-item {
-  border-left: 1px solid #e1e2ea;
-}
-
-.composer-conversation__poll-schedule-icon {
-  display: inline-grid;
-  width: 24px;
-  height: 24px;
-  place-items: center;
-  border-radius: 50%;
-  background: #eef0ff;
-  color: #5962ff;
-  font-size: 15px;
-  font-weight: 700;
-}
-
-.composer-conversation__poll-schedule-item > span:last-child {
-  display: grid;
-  gap: 2px;
-  min-width: 0;
-}
-
-.composer-conversation__poll-schedule-item small {
-  color: #696d81;
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-}
-
-.composer-conversation__poll-schedule-item strong {
-  overflow: hidden;
-  color: #25263a;
-  font-size: 12px;
-  font-weight: 600;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-@media (max-width: 620px) {
-  .composer-conversation__poll-schedule-item + .composer-conversation__poll-schedule-item {
-    border-top: 1px solid #e1e2ea;
-    border-left: 0;
-  }
 }
 
 .composer-conversation__poll-actions button {
