@@ -3,18 +3,28 @@ import { createPinia, setActivePinia } from 'pinia'
 import { nextTick } from 'vue'
 import { shallowMount } from '@vue/test-utils'
 import { useDmStore } from '@/features/dms/stores/dms'
+import { useTeamsStore } from '@/stores/teams'
 import { useUiStore } from '@/stores/ui'
 import { useChannelsStore } from '../store/channels.store'
 import ChannelSidebar from './ChannelSidebar.vue'
 import ChannelListItem from './ChannelListItem.vue'
 
 describe('ChannelSidebar', () => {
-  beforeEach(() => setActivePinia(createPinia()))
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    useTeamsStore().activeWorkspaceId = 'company-1'
+  })
 
   it('keeps the channel unselected while a direct message is open', async () => {
     const channels = useChannelsStore()
     channels.channels = [
-      { id: 'channel-1', name: 'Announcements', isDefault: true, isFavorite: false },
+      {
+        id: 'channel-1',
+        name: 'Announcements',
+        isDefault: true,
+        isFavorite: false,
+        isMember: true,
+      },
     ]
     channels.loaded = true
 
@@ -36,7 +46,15 @@ describe('ChannelSidebar', () => {
 
   it('closes the activity panel when a channel is selected', async () => {
     const channels = useChannelsStore()
-    channels.channels = [{ id: 'frontend', name: 'Frontend', isDefault: true, isFavorite: false }]
+    channels.channels = [
+      {
+        id: 'frontend',
+        name: 'Frontend',
+        isDefault: true,
+        isFavorite: false,
+        isMember: true,
+      },
+    ]
     channels.loaded = true
     const dms = useDmStore()
     const ui = useUiStore()
@@ -49,5 +67,20 @@ describe('ChannelSidebar', () => {
     expect(ui.selectedChannelId).toBe('frontend')
     expect(ui.activePanel).toBeNull()
     expect(dms.activeId).toBeNull()
+  })
+
+  it('shows every available channel, including channels beyond the previous sidebar limit', async () => {
+    const channels = useChannelsStore()
+    channels.loaded = true
+    channels.directory.items = Array.from({ length: 8 }, (_, index) => ({
+      id: `channel-${index + 1}`,
+      name: `Channel ${index + 1}`,
+      isMember: index === 0,
+      isArchived: false,
+    }))
+    const wrapper = shallowMount(ChannelSidebar)
+
+    expect(wrapper.findAllComponents(ChannelListItem)).toHaveLength(8)
+    expect(wrapper.findAllComponents(ChannelListItem)[1].props('channel').isMember).toBe(false)
   })
 })

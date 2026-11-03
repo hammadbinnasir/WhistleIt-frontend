@@ -20,6 +20,7 @@ const customScheduleDate = ref('')
 const customScheduleTime = ref('')
 const scheduleClock = ref(new Date())
 const pollOpen = ref(false)
+const pollDraft = ref(null)
 const pollStep = ref(0)
 const pollTitle = ref('')
 const pollDescription = ref('')
@@ -28,8 +29,17 @@ const pollQuestionFocused = ref([false])
 const openPollQuestionType = ref(null)
 const pollValidationErrors = ref({ title: false, questions: [], choices: [] })
 const pollStepNames = ['Create', 'Configure', 'Schedule']
+const pollAudience = ref('public')
+const pollResultsVisibility = ref('private')
+const pollStartNow = ref(false)
+const pollScheduleStart = ref(false)
+const pollScheduleClose = ref(false)
+const pollStartDate = ref('')
+const pollStartTime = ref('')
+const pollCloseDate = ref('')
+const pollCloseTime = ref('')
 const attachments = ref([])
-const messageIsReady = computed(() => content.value.trim().length > 0)
+const messageIsReady = computed(() => content.value.trim().length > 0 || Boolean(pollDraft.value))
 const scheduleIsReady = computed(() => messageIsReady.value || attachments.value.length > 0)
 const scheduleTimeZone = 'Asia/Karachi'
 let savedSelectionRange = null
@@ -42,7 +52,7 @@ function createPollQuestion() {
     ratingType: '1-5',
     required: true,
     multiple: false,
-    options: ['option 1', 'option 2', 'option 3'],
+    options: ['', '', ''],
   }
 }
 
@@ -56,6 +66,7 @@ const pollIsReady = computed(
           question.options.filter((option) => option.trim()).length >= 2),
     ),
 )
+const pollCanBeCreated = computed(() => pollIsReady.value && pollStartNow.value)
 
 onBeforeUnmount(() => clearTimeout(scheduleErrorTimer))
 
@@ -262,6 +273,12 @@ function nodeToMarkdown(node) {
 
 function syncContent() {
   if (!editor.value) return
+  if (!editor.value.textContent?.trim()) {
+    editor.value.innerHTML = ''
+    content.value = ''
+    saveSelection(true)
+    return
+  }
   content.value = [...editor.value.childNodes].map(nodeToMarkdown).join('').replace(/\n+$/, '')
   saveSelection(true)
 }
@@ -626,6 +643,7 @@ function sendMessage() {
   emit('send', {
     content: content.value.trim(),
     attachments: [...attachments.value],
+    ...(pollDraft.value ? { poll: pollDraft.value } : {}),
     ...(important.value ? { important: true } : {}),
   })
   content.value = ''
@@ -636,6 +654,7 @@ function sendMessage() {
   important.value = false
   savedSelectionRange = null
   attachments.value = []
+  pollDraft.value = null
 }
 
 function scheduleMessage() {
@@ -683,8 +702,31 @@ function openPoll() {
   pollQuestionFocused.value = [false]
   openPollQuestionType.value = null
   pollStep.value = 0
+  const now = new Date()
+  const date = formatPollDate(now)
+  const time = formatPollTime(now)
+  pollAudience.value = 'public'
+  pollResultsVisibility.value = 'private'
+  pollStartNow.value = false
+  pollScheduleStart.value = false
+  pollScheduleClose.value = false
+  pollStartDate.value = date
+  pollStartTime.value = time
+  pollCloseDate.value = date
+  pollCloseTime.value = time
   pollValidationErrors.value = { title: false, questions: [true], choices: [false] }
   pollOpen.value = true
+}
+
+function formatPollDate(date) {
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
+function formatPollTime(date) {
+  return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`
 }
 
 function closePoll() {
@@ -711,6 +753,12 @@ function goToPollStep(step) {
 }
 
 function addPollQuestion() {
+  if (
+    pollQuestions.value.length >= 20 ||
+    pollQuestions.value.some((question) => !['choice', 'rating'].includes(question.type))
+  ) {
+    return
+  }
   pollQuestions.value.push(createPollQuestion())
   pollQuestionFocused.value.push(false)
 }
@@ -724,6 +772,12 @@ function pollQuestionTypeLabel(type) {
 }
 
 function setPollQuestionType(question, type, questionIndex) {
+  if (type === 'rating') {
+    pollQuestions.value = [question]
+    pollQuestionFocused.value = [pollQuestionFocused.value[questionIndex] || false]
+    pollValidationErrors.value.questions = [pollValidationErrors.value.questions[questionIndex] || false]
+    pollValidationErrors.value.choices = [false]
+  }
   question.type = type
   question.options =
     type === 'rating'
@@ -731,7 +785,7 @@ function setPollQuestionType(question, type, questionIndex) {
           String(index + 1),
         )
       : type === 'choice'
-        ? ['option 1', 'option 2', 'option 3']
+        ? ['', '', '']
         : []
   question.multiple = false
   openPollQuestionType.value = null
@@ -760,7 +814,7 @@ function removePollChoice(question, index) {
 }
 
 function createPollDraft() {
-  if (!pollIsReady.value) {
+  if (!pollCanBeCreated.value) {
     pollValidationErrors.value = {
       title: !pollTitle.value.trim(),
       questions: pollQuestions.value.map((question) => question.required && !question.text.trim()),
@@ -773,30 +827,30 @@ function createPollDraft() {
     pollStep.value = 0
     return
   }
-  const questionText = pollQuestions.value
-    .map((question) => {
-      const options =
-        question.type === 'choice' || question.type === 'rating'
-          ? question.options
-              .map((option) => option.trim())
-              .filter(Boolean)
-              .map((option) => `• ${option}`)
-          : []
-      const questionLabel =
-        question.type === 'rating'
-          ? `${question.text.trim()} (Rating: ${question.ratingType})`
-          : question.type === 'openEnded'
-            ? `${question.text.trim()} (Open Ended)`
-            : question.text.trim()
-      return [questionLabel, ...options].join('\n')
-    })
-    .join('\n\n')
-  const pollText = [`Poll: ${pollTitle.value.trim()}`, pollDescription.value.trim(), questionText]
-    .filter(Boolean)
-    .join('\n\n')
-  const prefix = content.value.trim() ? '\n\n' : ''
-  insertAtSelection(`${prefix}${pollText}`)
+  pollDraft.value = {
+    id: `poll-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    title: pollTitle.value.trim(),
+    description: pollDescription.value.trim(),
+    questions: pollQuestions.value.map((question) => ({
+      text: question.text.trim(),
+      type: question.type,
+      ratingType: question.ratingType,
+      required: question.required,
+      multiple: question.multiple,
+      options: question.options.map((option) => option.trim()).filter(Boolean),
+    })),
+    audience: pollAudience.value,
+    resultsVisibility: pollResultsVisibility.value,
+    startNow: pollStartNow.value,
+    scheduleStart: pollScheduleStart.value
+      ? `${pollStartDate.value}T${pollStartTime.value}`
+      : '',
+    scheduleClose: pollScheduleClose.value
+      ? `${pollCloseDate.value}T${pollCloseTime.value}`
+      : '',
+  }
   closePoll()
+  sendMessage()
 }
 
 function handleFilesSelected(files) {
@@ -821,10 +875,9 @@ function handleMediaAction(action, payload) {
 }
 
 function handleKeydown(event) {
-  if (event.key === 'Enter' && !event.shiftKey) {
-    event.preventDefault()
-    sendMessage()
-  }
+  if (event.key !== 'Enter' || event.shiftKey || event.isComposing) return
+  event.preventDefault()
+  sendMessage()
 }
 </script>
 
@@ -833,6 +886,11 @@ function handleKeydown(event) {
     <div class="message-composer__input-row">
       <div class="message-composer__editor-area">
         <span v-if="important" class="message-composer__important">IMPORTANT!</span>
+        <article v-if="pollDraft" class="message-composer__poll-draft" aria-label="Poll draft">
+          <strong>{{ pollDraft.title }}</strong>
+          <span v-if="pollDraft.description">{{ pollDraft.description }}</span>
+          <small>{{ pollDraft.questions.length }} question{{ pollDraft.questions.length === 1 ? '' : 's' }}</small>
+        </article>
         <label class="sr-only" for="message-composer-input">Message</label>
         <div
           id="message-composer-input"
@@ -1329,6 +1387,9 @@ function handleKeydown(event) {
                         !question.options[optionIndex].trim(),
                     }"
                     type="text"
+                    :placeholder="
+                      question.type === 'choice' ? `Option ${optionIndex + 1}` : undefined
+                    "
                     :aria-label="`Question ${questionIndex + 1} option ${optionIndex + 1}`"
                   />
                   <button
@@ -1359,6 +1420,10 @@ function handleKeydown(event) {
               </div>
             </section>
             <button
+              v-if="
+                pollQuestions.length < 20 &&
+                pollQuestions.every((question) => ['choice', 'rating'].includes(question.type))
+              "
               class="message-composer__poll-add-question"
               type="button"
               @click="addPollQuestion"
@@ -1366,23 +1431,89 @@ function handleKeydown(event) {
               Add Another Question
             </button>
           </template>
-          <div v-else-if="pollStep === 1" class="message-composer__poll-placeholder">
-            <h3>Configure your poll</h3>
-            <p>Review your questions and choices before creating the poll.</p>
-            <ul>
-              <li v-for="(question, index) in pollQuestions" :key="index">
-                {{
-                  question.text
-                    ? `${question.text} (${question.type === 'openEnded' ? 'Open Ended' : question.type === 'rating' ? `Rating ${question.ratingType}` : 'Choice'})`
-                    : `Question ${index + 1}`
-                }}
-              </li>
-            </ul>
-          </div>
-          <div v-else class="message-composer__poll-placeholder">
-            <h3>Schedule your poll</h3>
-            <p>Your poll will be added to the message composer as a draft.</p>
-          </div>
+          <section
+            v-else-if="pollStep === 1"
+            class="message-composer__poll-configure message-composer__poll-placeholder"
+          >
+            <h3 class="sr-only">Configure your poll</h3>
+            <h3>Configuration Settings</h3>
+            <div class="message-composer__poll-setting">
+              <div>
+                <strong>Audience Responses</strong>
+                <span>Choose the Visibility of Response from Audience</span>
+              </div>
+              <div class="message-composer__poll-radio-group">
+                <label>
+                  <input v-model="pollAudience" type="radio" value="public" />
+                  <span>Public</span>
+                </label>
+                <label>
+                  <input v-model="pollAudience" type="radio" value="anonymous" />
+                  <span>Anonymous</span>
+                </label>
+              </div>
+            </div>
+            <div class="message-composer__poll-setting">
+              <div>
+                <strong>Results Visibility</strong>
+                <span>Choose who can see result of the poll</span>
+              </div>
+              <div class="message-composer__poll-radio-group">
+                <label>
+                  <input v-model="pollResultsVisibility" type="radio" value="private" />
+                  <span>Visible to you only</span>
+                </label>
+                <label>
+                  <input v-model="pollResultsVisibility" type="radio" value="after-close" />
+                  <span>Everyone After Close</span>
+                </label>
+                <label>
+                  <input v-model="pollResultsVisibility" type="radio" value="realtime" />
+                  <span>Everyone in Real Time</span>
+                </label>
+              </div>
+            </div>
+          </section>
+          <section v-else class="message-composer__poll-schedule">
+            <h3>Schedule Settings</h3>
+            <label class="message-composer__poll-schedule-option">
+              <input v-model="pollStartNow" type="checkbox" />
+              <span><strong>Start this poll now</strong><small>Send Desktop Notifications</small></span>
+            </label>
+            <div class="message-composer__poll-schedule-divider"></div>
+            <label class="message-composer__poll-schedule-option">
+              <input v-model="pollScheduleStart" type="checkbox" />
+              <span><strong>Schedule Poll to Start</strong></span>
+            </label>
+            <div class="message-composer__poll-date-fields" :class="{ 'is-disabled': !pollScheduleStart }">
+              <label>
+                <span>Select date</span>
+                <input v-model="pollStartDate" type="date" :disabled="!pollScheduleStart" />
+              </label>
+              <label>
+                <span>Select time</span>
+                <input v-model="pollStartTime" type="time" :disabled="!pollScheduleStart" />
+              </label>
+            </div>
+            <div class="message-composer__poll-schedule-divider"></div>
+            <label class="message-composer__poll-schedule-option">
+              <input v-model="pollScheduleClose" type="checkbox" />
+              <span>
+                <strong>Schedule Poll to Close</strong>
+                <small>If you don't want to close the poll manually schedule it to be closed.</small>
+              </span>
+            </label>
+            <div class="message-composer__poll-date-fields" :class="{ 'is-disabled': !pollScheduleClose }">
+              <label>
+                <span>Select date</span>
+                <input v-model="pollCloseDate" type="date" :disabled="!pollScheduleClose" />
+              </label>
+              <label>
+                <span>Select time</span>
+                <input v-model="pollCloseTime" type="time" :disabled="!pollScheduleClose" />
+              </label>
+            </div>
+          </section>
         </div>
         <footer class="message-composer__poll-footer">
           <button
@@ -1405,8 +1536,8 @@ function handleKeydown(event) {
             v-else
             type="button"
             class="message-composer__poll-next"
-            :disabled="!pollIsReady"
-            @click="createPollDraft"
+            :disabled="!pollCanBeCreated"
+            @click.prevent="createPollDraft"
           >
             Create Poll
           </button>
@@ -1455,6 +1586,27 @@ function handleKeydown(event) {
   font: inherit;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+}
+
+.message-composer__poll-draft {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin: 0 8px 8px;
+  padding: 10px 12px;
+  border-left: 4px solid #1717ff;
+  background: #edeef6;
+  color: #25263a;
+}
+
+.message-composer__poll-draft strong {
+  font-size: 15px;
+}
+
+.message-composer__poll-draft span,
+.message-composer__poll-draft small {
+  color: #696d81;
+  font-size: 12px;
 }
 
 .message-composer__important {
@@ -1536,7 +1688,7 @@ function handleKeydown(event) {
 
 .message-composer__primary-actions {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 4px;
   padding: 5px 7px;
 }
@@ -2455,6 +2607,131 @@ function handleKeydown(event) {
   font-size: 14px;
 }
 
+.message-composer__poll-configure h3,
+.message-composer__poll-schedule h3 {
+  margin: 0 0 42px;
+  color: #5962ff;
+  font-size: 21px;
+}
+
+.message-composer__poll-setting {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 1fr;
+  gap: 20px;
+  margin-bottom: 65px;
+}
+
+.message-composer__poll-setting > div:first-child {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.message-composer__poll-setting strong {
+  color: #34364b;
+  font-size: 16px;
+}
+
+.message-composer__poll-setting span {
+  color: #7d7f89;
+  font-size: 13px;
+}
+
+.message-composer__poll-radio-group {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.message-composer__poll-radio-group label {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: #34364b;
+  font-size: 15px;
+}
+
+.message-composer__poll-radio-group input {
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  accent-color: #5962ff;
+}
+
+.message-composer__poll-schedule h3 {
+  margin-bottom: 26px;
+}
+
+.message-composer__poll-schedule-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  color: #34364b;
+}
+
+.message-composer__poll-schedule-option > input {
+  width: 20px;
+  height: 20px;
+  margin: 2px 0 0;
+  accent-color: #5962ff;
+}
+
+.message-composer__poll-schedule-option > span {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.message-composer__poll-schedule-option strong {
+  font-size: 15px;
+}
+
+.message-composer__poll-schedule-option small {
+  color: #7d7f89;
+  font-size: 12px;
+}
+
+.message-composer__poll-schedule-divider {
+  height: 1px;
+  margin: 28px 0 25px;
+  background: #dedede;
+}
+
+.message-composer__poll-date-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 54px;
+  margin: 38px 35px 0;
+}
+
+.message-composer__poll-date-fields label {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  color: #5962ff;
+  font-size: 12px;
+}
+
+.message-composer__poll-date-fields input {
+  min-width: 0;
+  padding: 5px 0 8px;
+  border: 0;
+  border-bottom: 1px solid #8b8b8b;
+  background: transparent;
+  color: #34364b;
+  font: inherit;
+  font-size: 15px;
+}
+
+.message-composer__poll-date-fields input:focus {
+  border-bottom: 2px solid #5962ff;
+  outline: none;
+}
+
+.message-composer__poll-date-fields.is-disabled {
+  opacity: 0.65;
+}
+
 .message-composer__poll-footer {
   display: flex;
   min-height: 58px;
@@ -2478,6 +2755,14 @@ function handleKeydown(event) {
   font-weight: 600;
   letter-spacing: 0.05em;
   cursor: pointer;
+}
+
+.message-composer__poll-footer .message-composer__poll-previous {
+  color: #70727f;
+}
+
+.message-composer__poll-footer .message-composer__poll-previous:disabled {
+  color: #a0a2ad;
 }
 
 .message-composer__poll-footer button:disabled {

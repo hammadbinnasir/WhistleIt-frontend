@@ -46,7 +46,7 @@ describe('http', () => {
     await http('/logout', { method: 'POST' })
 
     const [url, options] = fetchMock.mock.calls[0]
-    expect(url).toBe('http://10.0.105.90:8000/api/logout')
+    expect(url).toBe('http://localhost:3000/api/logout')
     expect(options.method).toBe('POST')
     expect(options.headers.Authorization).toBe('Bearer session-token')
   })

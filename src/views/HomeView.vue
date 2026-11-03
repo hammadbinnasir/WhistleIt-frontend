@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useRouter } from 'vue-router'
 
@@ -9,7 +9,7 @@ import { useTeamsStore } from '@/stores/teams'
 import { useMembersStore } from '@/stores/members'
 import { useChannelsStore } from '@/features/channels'
 import { useDmStore } from '@/features/dms/stores/dms'
-import { usePresenceStore, STATES } from '@/features/dms/stores/presence'
+import { usePresenceStore } from '@/features/dms/stores/presence'
 import { useActivityStore } from '@/stores/activity'
 import { useRemindersStore } from '@/features/search/reminders'
 import { useUserStore, UserModule } from '@/features/account'
@@ -21,9 +21,7 @@ import {
   TeamRail,
   TeamSwitcher,
   CreateTeamModal,
-  CreateWorkspaceModal,
-  JoinTeamModal,
-  HelpModal,
+  HelpDrawer,
   MemberManageModal,
   InviteUsersModal,
 } from '@/features/shell'
@@ -125,6 +123,7 @@ const selectedChannel = computed(() => {
     createdBy: ch.createdBy || 'Team Member',
     muted: ch.isMuted || false,
     favourite: ch.isFavorite || false,
+    canManage: Boolean(ch.canManage),
   }
 })
 
@@ -154,6 +153,40 @@ async function toggleChannelFavorite() {
   } catch (error) {
     ui.toast('Unable to update favorite setting', error?.message || 'Please try again.', 'error')
   }
+
+  async function archiveSelectedChannel() {
+    if (!selectedChannel.value) return
+    try {
+      await channelsStore.deleteChannel(selectedChannel.value.id)
+      ui.closeChannelSettings()
+      ui.selectChannel(null)
+    } catch (error) {
+      ui.toast('Unable to archive channel', error?.message || 'Please try again.', 'error')
+    }
+
+    async function saveChannelMessagePermission(permission) {
+      if (!selectedChannel.value) return
+      try {
+        await channelsStore.updateChannel(selectedChannel.value.id, {
+          name: selectedChannel.value.name,
+          description: selectedChannel.value.description,
+          messagePermission: permission,
+        })
+      } catch (error) {
+        ui.toast('Unable to save permissions', error?.message || 'Please try again.', 'error')
+      }
+
+      async function saveChannelDetails(details) {
+        if (!selectedChannel.value) return
+        try {
+          await channelsStore.updateChannel(selectedChannel.value.id, details)
+          ui.toast('Channel updated', 'Name and description were saved.', 'success')
+        } catch (error) {
+          ui.toast('Unable to update channel', error?.message || 'Please try again.', 'error')
+        }
+      }
+    }
+  }
 }
 
 async function logout() {
@@ -182,11 +215,15 @@ function openActivityConversation({ id, type }) {
   ui.closePanel()
 }
 
-function openActivityUserChat(userId) {
+async function openActivityUserChat(userId) {
   if (userId === dms.meId) return
-  dms.startDm(userId)
-  ui.selectChannel(null)
-  ui.closePanel()
+  try {
+    await dms.startDm(userId)
+    ui.selectChannel(null)
+    ui.closePanel()
+  } catch (error) {
+    ui.toast('Direct message error', error?.message || 'Could not open this direct message.', 'error')
+  }
 }
 
 onMounted(async () => {
@@ -197,6 +234,13 @@ onMounted(async () => {
   }
   remindersStore.startWatcher()
 })
+
+watch(
+  () => teamsStore.activeWorkspaceId,
+  (companyId) => {
+    if (companyId != null) void dms.init(companyId)
+  },
+)
 
 onBeforeUnmount(() => {
   remindersStore.stopWatcher()
@@ -308,20 +352,18 @@ onBeforeUnmount(() => {
       >
         <div class="max-w-lg space-y-2">
           <h1 id="workspace-empty-title" class="text-xl font-semibold text-slate-800">
-            {{
-              activeWorkspace ? `Welcome to ${activeWorkspace.name}` : 'Create your first workspace'
-            }}
+            {{ activeWorkspace ? `Welcome to ${activeWorkspace.name}` : 'Join a workspace' }}
           </h1>
           <p class="text-sm text-slate-600">
             {{
               activeWorkspace
                 ? 'This workspace does not have any teams yet.'
-                : 'Create a workspace to start organizing teams and conversations.'
+                : 'Workspaces are available by invitation. Ask an existing member to invite you.'
             }}
           </p>
         </div>
         <div class="flex flex-wrap justify-center gap-3">
-          <template v-if="activeWorkspace">
+          <template v-if="activeWorkspace && teamsStore.isAdmin">
             <button
               type="button"
               class="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600"
@@ -329,22 +371,7 @@ onBeforeUnmount(() => {
             >
               Create a team
             </button>
-            <button
-              type="button"
-              class="rounded-md border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600"
-              @click="ui.toggleTeamJoinModal()"
-            >
-              Join a team
-            </button>
           </template>
-          <button
-            v-else
-            type="button"
-            class="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600"
-            @click="ui.toggleWorkspaceCreateModal()"
-          >
-            Create a workspace
-          </button>
         </div>
       </section>
 
@@ -363,7 +390,7 @@ onBeforeUnmount(() => {
           @members-click="ui.openChannelSettings('members')"
         >
           <template #actions>
-            <ChatHeaderActions :is-dm="false" />
+            <ChatHeaderActions :is-dm="false" :conversation-id="selectedChannelId" />
           </template>
         </ChannelHeader>
 
@@ -376,11 +403,12 @@ onBeforeUnmount(() => {
               <button
                 v-if="activeConversationPartnerId"
                 type="button"
-                class="shrink-0 rounded p-0.5 transition-colors hover:bg-slate-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-indigo-500"
+                class="shrink-0 rounded p-0.5 transition-colors hover:bg-slate-100 hover:text-indigo-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-indigo-500"
                 :class="activeConversationIsFavorite ? 'text-indigo-500' : 'text-slate-400'"
                 :aria-label="
                   activeConversationIsFavorite ? 'Remove from favorites' : 'Add to favorites'
                 "
+                :title="activeConversationIsFavorite ? 'Remove from Favorites' : 'Add to Favorites'"
                 :aria-pressed="activeConversationIsFavorite"
                 @click="dms.toggleFavorite(activeConversation.id)"
               >
@@ -406,10 +434,10 @@ onBeforeUnmount(() => {
                 <p
                   v-if="activeConversationPartnerId && !presence.loading && !presence.error"
                   class="flex items-center gap-1.5 text-xs text-slate-500"
-                  :aria-label="STATES[activeConversationPresence]"
+                  :aria-label="presence.labelOf(activeConversationPartnerId)"
                 >
                   <PresenceDot :state="activeConversationPresence" :size="9" ring="border-white" />
-                  {{ STATES[activeConversationPresence] }}
+                  {{ presence.labelOf(activeConversationPartnerId) }}
                 </p>
                 <p v-else class="text-xs text-slate-500">
                   {{ activeConversationPartnerId ? 'Direct message' : 'Group direct message' }}
@@ -417,7 +445,7 @@ onBeforeUnmount(() => {
               </div>
             </div>
           </div>
-          <ChatHeaderActions :is-dm="true" />
+          <ChatHeaderActions :is-dm="true" :conversation-id="activeConversation.id" />
         </header>
 
         <header
@@ -433,7 +461,7 @@ onBeforeUnmount(() => {
             </button>
             <h2 class="text-sm font-semibold text-slate-700">Select a channel</h2>
           </div>
-          <ChatHeaderActions :is-dm="true" />
+          <ChatHeaderActions :is-dm="true" conversation-id="" />
         </header>
 
         <!-- Chat area with composer & optional side panel -->
@@ -445,13 +473,22 @@ onBeforeUnmount(() => {
             />
           </section>
 
-          <!-- Side Drawer: Reminders or Search -->
+          <!-- Side Drawer: Reminders, Search, and other conversation panels -->
           <aside
-            v-if="ui.activePanel"
-            class="min-h-0 w-full shrink-0 border-l border-slate-200 bg-white md:w-[min(450px,40vw)] shadow-lg"
+            v-if="ui.activePanel && ui.activePanel !== 'help'"
+            class="min-h-0 w-full shrink-0 border-l border-slate-200 bg-white shadow-lg"
+            :class="
+              ['reminders', 'pinned', 'poll-history'].includes(ui.activePanel)
+                ? 'md:w-[min(400px,35vw)]'
+                : 'md:w-[min(480px,40vw)]'
+            "
           >
             <RemindersPanel v-if="ui.activePanel === 'reminders'" />
-            <PinnedMessagesPanel v-else-if="ui.activePanel === 'pinned'" />
+            <PinnedMessagesPanel
+              v-else-if="ui.activePanel === 'pinned'"
+              :conversation-id="activeConversation?.id || selectedChannelId || ''"
+              :conversation-type="activeConversation ? 'dm' : 'channel'"
+            />
             <PollHistoryPanel v-else-if="ui.activePanel === 'poll-history'" />
             <SearchPage
               v-else-if="ui.activePanel === 'search'"
@@ -462,6 +499,14 @@ onBeforeUnmount(() => {
       </template>
     </main>
 
+    <aside
+      v-if="ui.activePanel === 'help'"
+      class="h-full w-[min(432px,40vw)] shrink-0 border-l border-slate-200 bg-white shadow-lg"
+      aria-label="Help panel"
+    >
+      <HelpDrawer />
+    </aside>
+
     <!-- Channel Settings Modal -->
     <ChannelSettingsModal
       v-if="ui.channelSettingsOpen && selectedChannel"
@@ -470,6 +515,9 @@ onBeforeUnmount(() => {
       @toggle-favourite="toggleChannelFavorite"
       @show-polls="ui.openPanel('poll-history')"
       @left="ui.selectChannel(null)"
+      @archive="archiveSelectedChannel"
+      @save-message-permission="saveChannelMessagePermission"
+      @save-details="saveChannelDetails"
       @close="ui.channelSettingsOpen = false"
     />
 
@@ -524,10 +572,7 @@ onBeforeUnmount(() => {
     </div>
 
     <!-- Shell Modals -->
-    <CreateWorkspaceModal />
     <CreateTeamModal />
-    <JoinTeamModal />
-    <HelpModal />
     <MemberManageModal />
     <InviteUsersModal v-if="inviteModalOpen" @close="inviteModalOpen = false" />
   </div>

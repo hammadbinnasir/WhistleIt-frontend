@@ -18,7 +18,6 @@ const partnerId = computed(() =>
   props.conversation.type === 'dm' ? dms.partnerId(props.conversation) : null,
 )
 const state = computed(() => (partnerId.value ? presence.stateOf(partnerId.value) : null))
-const custom = computed(() => (partnerId.value ? presence.customOf(partnerId.value) : null))
 const tooltip = computed(() =>
   partnerId.value
     ? presence.labelOf(partnerId.value)
@@ -50,7 +49,6 @@ const tooltip = computed(() =>
 
       <!-- Emoji + unread badge: hover par ya selected hone par chhup jate hain -->
       <span v-if="!active" class="flex items-center gap-2 group-hover:hidden">
-        <span v-if="custom?.emoji" class="text-sm">{{ custom.emoji }}</span>
         <span
           v-if="conversation.unreadCount"
           class="rounded-full bg-red-500 px-1.5 text-xs font-semibold text-white"

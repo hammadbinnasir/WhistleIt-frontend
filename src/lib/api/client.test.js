@@ -28,7 +28,8 @@ describe('shared API client', () => {
     })
 
     expect(result).toEqual({ success: true, data: { id: 1 } })
-    const [, options] = fetchMock.mock.calls[0]
+    const [url, options] = fetchMock.mock.calls[0]
+    expect(url).toBe('/api/company')
     expect(options).toMatchObject({
       method: 'POST',
       body: JSON.stringify({ name: 'Example' }),
@@ -76,6 +77,25 @@ describe('shared API client', () => {
     await expect(apiRequest('/company')).rejects.toMatchObject({
       status: 502,
       message: 'Bad Gateway',
+    })
+  })
+
+  it('surfaces backend field validation details', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 422,
+      statusText: 'Unprocessable Entity',
+      json: async () => ({
+        detail: [
+          { loc: ['body', 'user_id'], msg: 'Field required', type: 'missing' },
+        ],
+      }),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(apiRequest('/v1/company-1/direct-channels')).rejects.toMatchObject({
+      status: 422,
+      message: 'user_id: Field required',
     })
   })
 })

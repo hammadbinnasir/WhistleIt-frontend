@@ -23,6 +23,13 @@ const setValue = async (el, value) => {
   await flushPromises()
 }
 
+const addResponsibility = async (value) => {
+  const input = $('.responsibility-input')
+  await setValue(input, value)
+  input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+  await flushPromises()
+}
+
 const openMenu = () => click($('.avatar-btn'))
 const openStatusMenu = async () => {
   await openMenu()
@@ -74,7 +81,8 @@ describe('avatar and user menu', () => {
     expect($('.avatar-btn')).toBeTruthy()
     expect($('.initials').textContent).toBe('HH')
     expect($('.badge.online')).toBeTruthy()
-    expect($('.avatar-tooltip').textContent.trim()).toBe('Hammad Haider')
+    expect($('.avatar-tooltip-name').textContent.trim()).toBe('Hammad Haider')
+    expect($('.avatar-tooltip-title')).toBeNull()
     expect($('.avatar-btn').getAttribute('aria-describedby')).toBe('user-avatar-tooltip')
     expect($('[role=menu]')).toBeNull()
   })
@@ -495,10 +503,19 @@ describe('account settings modal', () => {
 
   it('contains the new Job Responsibilities field after Designation', async () => {
     await openSettings()
-    const inputs = $$('#settings-panel-general input[type=text]').map((i) => i.placeholder)
-    expect(inputs.indexOf('Enter Job Responsibilities')).toBe(
-      inputs.indexOf('Enter Designation') + 1,
+    const fields = $$('#settings-panel-general input[type=text], #settings-panel-general input[type=search]')
+    const placeholders = fields.map((field) => field.placeholder)
+    expect(placeholders.indexOf('Enter Job Responsibilities')).toBe(
+      placeholders.indexOf('Enter Designation') + 1,
     )
+    expect($('.field-hint').textContent.trim()).toBe('Press enter to add (Maximum 5 allowed)')
+    expect($('.responsibility-input').name).toBe('job-responsibility-entry')
+    expect($('.responsibility-input').autocomplete).toBe('new-password')
+    expect($('.responsibility-input').readOnly).toBe(true)
+    expect($('.responsibility-input').value).toBe('')
+    await $('.responsibility-input').focus()
+    await flushPromises()
+    expect($('.responsibility-input').readOnly).toBe(false)
   })
 
   it('contains the workspace switching section after left click', async () => {
@@ -521,16 +538,62 @@ describe('account settings modal', () => {
     await openSettings()
     await setValue($('input[placeholder="Full name"]'), 'Sara Khan')
     await setValue($('input[placeholder="Enter Designation"]'), 'Engineer')
-    await setValue($('input[placeholder="Enter Job Responsibilities"]'), 'Build things')
+    await addResponsibility('Build things')
+    await addResponsibility('Support team')
     $('input[placeholder="Old Password"]').dispatchEvent(new Event('blur'))
     await click(byText('SAVE'))
 
     expect($('[role=dialog]')).toBeNull()
     expect(store.state.profile.fullName).toBe('Sara Khan')
     expect(store.state.profile.designation).toBe('Engineer')
-    expect(store.state.profile.jobResponsibilities).toBe('Build things')
+    expect(store.state.profile.jobResponsibilities).toBe('Build things\nSupport team')
     expect($('.initials').textContent).toBe('SK')
     expect(wrapper.emitted('settings-saved')).toHaveLength(1)
+    const [url, options] = fetch.mock.calls.find(([, request]) => request.method === 'PATCH')
+    expect(url).toContain('/v1/users/test-user/profile')
+    expect(options.method).toBe('PATCH')
+    expect(JSON.parse(options.body)).toEqual({
+      name: 'Sara Khan',
+      display_name: '',
+      two_factor: 'inactive',
+      title: 'Engineer',
+      job_responsibilities: ['Build things', 'Support team'],
+    })
+  })
+
+  it('adds responsibilities as removable chips and limits the list to five', async () => {
+    await openSettings()
+    for (const item of ['One', 'Two', 'Three', 'Four', 'Five']) {
+      await addResponsibility(item)
+    }
+
+    expect($$('.responsibility-chip')).toHaveLength(5)
+    expect(
+      $$('.responsibility-chip').map((chip) => chip.textContent.replace('×', '').trim()),
+    ).toEqual(['One', 'Two', 'Three', 'Four', 'Five'])
+    expect($('.responsibility-input').disabled).toBe(true)
+    expect($('.field-error')).toBeNull()
+    await click($('button[aria-label="Remove One"]'))
+    expect($$('.responsibility-chip')).toHaveLength(4)
+    expect($('.responsibility-input').disabled).toBe(false)
+  })
+
+  it('does not update profile state or close settings when profile save fails', async () => {
+    await openSettings()
+    await setValue($('input[placeholder="Full name"]'), 'Unsaved Name')
+    fetch.mockResolvedValueOnce({
+      ok: false,
+      status: 422,
+      statusText: 'Unprocessable Entity',
+      json: async () => ({ message: 'Profile update failed' }),
+    })
+
+    await click(byText('SAVE'))
+
+    expect($('[role=dialog]')).toBeTruthy()
+    expect(store.state.profile.fullName).toBe('Hammad Haider')
+    expect(wrapper.emitted('settings-saved')).toBeUndefined()
+    expect(wrapper.emitted('error')[0][0].message).toContain('Profile update failed')
   })
 
   it('saves preferences without validating or redirecting to unrelated tabs', async () => {
@@ -756,6 +819,7 @@ describe('account settings modal', () => {
           name: 'Saved User',
           display_name: 'saved',
           title: 'Engineer',
+          job_responsibilities: ['Design systems', 'Build things'],
           avatar_url: 'http://10.0.105.90:8000//api//v1//avatars//avatars//test-user//saved.png',
           presence: 'away',
           custom_status: 'Working remotely',
@@ -772,6 +836,7 @@ describe('account settings modal', () => {
     expect(store.state.profile.fullName).toBe('Saved User')
     expect(store.state.profile.alias).toBe('saved')
     expect(store.state.profile.designation).toBe('Engineer')
+    expect(store.state.profile.jobResponsibilities).toBe('Design systems\nBuild things')
     expect(store.state.profile.photoUrl).toBe(
       'http://10.0.105.90:8000/api/v1/avatars/avatars/test-user/saved.png',
     )
@@ -780,7 +845,8 @@ describe('account settings modal', () => {
     expect($('.avatar-btn img').getAttribute('src')).toBe(
       'http://10.0.105.90:8000/api/v1/avatars/avatars/test-user/saved.png',
     )
-    expect($('.avatar-tooltip').textContent.trim()).toBe('Saved User')
+    expect($('.avatar-tooltip-name').textContent.trim()).toBe('Saved User')
+    expect($('.avatar-tooltip-title').textContent.trim()).toBe('Engineer')
   })
 
   it('requests the user profile automatically when the account module mounts', () => {
