@@ -88,79 +88,15 @@ export function normalizeTeamDetail(response, workspaceId) {
 export function normalizeMembers(response) {
   const data = unwrapResponse(response)
   const teamusers = data?.teamusers
-  const listKeys = new Set([
-    'members',
-    'company_members',
-    'companymembers',
-    'company_users',
-    'companyusers',
-    'team_members',
-    'teammembers',
-    'users',
-    'items',
-    'results',
-    'member_list',
-    'memberlist',
-    'user_list',
-    'userlist',
-    'member_records',
-    'records',
-    'data',
-    'result',
-  ])
-  const findRecords = (value, visited = new Set()) => {
-    if (Array.isArray(value)) return value
-    if (!value || typeof value !== 'object' || visited.has(value)) return null
-    visited.add(value)
-
-    for (const [key, nested] of Object.entries(value)) {
-      if (listKeys.has(key.replace(/([a-z])([A-Z])/g, '$1_$2').toLowerCase())) {
-        if (Array.isArray(nested)) return nested
-        const nestedRecords =
-          nested && typeof nested === 'object' ? findRecords(nested, visited) : null
-        if (nestedRecords) return nestedRecords
-      }
-    }
-
-    for (const [key, nested] of Object.entries(value)) {
-      if (
-        !listKeys.has(key.replace(/([a-z])([A-Z])/g, '$1_$2').toLowerCase()) &&
-        nested &&
-        typeof nested === 'object' &&
-        !Array.isArray(nested)
-      ) {
-        const nestedRecords = findRecords(nested, visited)
-        if (nestedRecords) return nestedRecords
-      }
-    }
-    return null
-  }
-  const findAnyArray = (value, visited = new Set()) => {
-    if (!value || typeof value !== 'object' || visited.has(value)) return null
-    visited.add(value)
-    for (const nested of Object.values(value)) {
-      if (Array.isArray(nested)) return nested
-    }
-    for (const nested of Object.values(value)) {
-      if (nested && typeof nested === 'object') {
-        const records = findAnyArray(nested, visited)
-        if (records) return records
-      }
-    }
-    return null
-  }
-  const records =
-    (Array.isArray(teamusers?.members) && teamusers.members) ||
-    findRecords(data) ||
-    findAnyArray(data)
+  const records = Array.isArray(teamusers?.members) ? teamusers.members : data?.members
   if (!Array.isArray(records)) {
-    throw new Error('The members response does not contain a member list.')
+    throw new Error('The members response is missing data.teamusers.members or data.members.')
   }
 
   return records.map((record) => {
+    if (record?.id == null) throw new Error('A member record is missing its ID.')
+    const user = record.user && typeof record.user === 'object' ? record.user : {}
     if (Array.isArray(teamusers?.members)) {
-      if (record?.id == null) throw new Error('A member record is missing its ID.')
-      const user = record.user && typeof record.user === 'object' ? record.user : {}
       const userId = String(record.id)
       const member = {
         userId,
@@ -172,75 +108,23 @@ export function normalizeMembers(response) {
       return member
     }
 
-    const user = record?.user ?? record?.member ?? record?.profile ?? record
-    const id =
-      record?.id ??
-      record?.user_id ??
-      record?.userId ??
-      record?.member_id ??
-      record?.memberId ??
-      user?.id ??
-      user?.user_id ??
-      user?.userId ??
-      user?.member_id ??
-      user?.memberId
-    if (id == null) throw new Error('A member record is missing its ID.')
-    const userId =
-      record?.joined_by ??
-      record?.user_id ??
-      record?.userId ??
-      record?.member_id ??
-      record?.memberId ??
-      user?.user_id ??
-      user?.userId ??
-      user?.member_id ??
-      user?.memberId ??
-      (user !== record ? user?.id : undefined)
-    if (
-      record?.joined_by != null &&
-      user === record &&
-      record.name == null &&
-      record.email == null &&
-      record.avatar == null &&
-      record.avatar_url == null
-    ) {
-      const normalized = {
-        userId: String(record.joined_by),
-        membershipId: String(record.id),
-        status: 'offline',
-        isCreator: false,
-      }
-      if (record.role != null) normalized.role = String(record.role)
-      if (record.joined_date != null) normalized.joinedDate = String(record.joined_date)
-      return normalized
+    const normalized = {
+      userId: String(user.id ?? record.user_id ?? record.joined_by ?? record.id),
+      membershipId: String(record.id),
+      status: 'offline',
+      isCreator: false,
     }
-    const name =
-      user?.name ??
-      user?.full_name ??
-      user?.fullName ??
-      user?.display_name ??
-      user?.displayName ??
-      user?.username ??
-      user?.user_name ??
-      user?.userName ??
-      [user?.first_name ?? user?.firstName, user?.last_name ?? user?.lastName]
-        .filter(Boolean)
-        .join(' ')
-    return {
-      id: String(id),
-      ...(userId == null ? {} : { userId: String(userId) }),
-      name: String(name ?? '').trim() || 'Member',
-      email: String(user?.email ?? user?.email_address ?? ''),
-      role: String(record.role ?? 'member'),
-      status: ['online', 'away'].includes(user?.status) ? user.status : 'offline',
-      avatar:
-        user?.avatar_url ??
-        user?.avatarUrl ??
-        user?.profile_picture ??
-        user?.profilePicture ??
-        user?.avatar ??
-        null,
-    }
+
+    if (record.role != null) normalized.role = String(record.role)
+    if (record.joined_date != null) normalized.joinedDate = String(record.joined_date)
+    const name = record.name ?? user.name ?? user.full_name ?? user.display_name
+    const email = record.email ?? user.email
+    const avatar = record.avatar ?? record.avatar_url ?? user.avatar ?? user.avatar_url
+    if (typeof name === 'string' && name.trim()) normalized.name = name.trim()
+    if (typeof email === 'string' && email.trim()) normalized.email = email.trim()
+    if (typeof avatar === 'string' && avatar.trim()) normalized.avatar = avatar.trim()
+
+    return normalized
   })
 }
 

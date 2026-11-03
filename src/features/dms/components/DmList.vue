@@ -2,14 +2,12 @@
 import { onMounted, ref } from 'vue'
 import { useDmStore } from '@/features/dms/stores/dms'
 import { usePresenceStore } from '@/features/dms/stores/presence'
-import { useTeamsStore } from '@/stores/teams'
 import { useUiStore } from '@/stores/ui'
 import DmListItem from './DmListItem.vue'
 import NewDmPanel from './NewDmPanel.vue'
 
 const dms = useDmStore()
 const presence = usePresenceStore()
-const teams = useTeamsStore()
 const ui = useUiStore()
 const open = ref(true)
 const panelOpen = ref(false)
@@ -18,11 +16,6 @@ function openConversation(conversationId) {
   if (!dms.openConversation(conversationId)) return
   ui.selectChannel(null)
   ui.closePanel()
-}
-
-function openNewMessage() {
-  panelOpen.value = true
-  void dms.loadCompanyMembers(teams.activeWorkspaceId, { force: true })
 }
 
 onMounted(() => {
@@ -53,7 +46,7 @@ onMounted(() => {
       <button
         class="text-3xl leading-none hover:text-indigo-300"
         title="New message"
-        @click="openNewMessage"
+        @click="panelOpen = true"
       >
         +
       </button>
@@ -66,7 +59,7 @@ onMounted(() => {
 
       <p v-else-if="dms.error" class="px-4 py-1.5 text-sm text-slate-400">
         {{ dms.error }}
-        <button class="underline" @click="dms.init(null, { force: true })">Retry</button>
+        <button class="underline" @click="dms.init()">Retry</button>
       </p>
 
       <DmListItem

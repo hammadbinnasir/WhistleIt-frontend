@@ -10,32 +10,16 @@ export const useChannelsStore = defineStore('channels', () => {
   const error = ref(null)
   const members = ref({}) // { [channelId]: { items, total, loading, error } }
   const browse = ref({ items: [], loading: false, error: null })
-  const directory = ref({ items: [], loading: false, error: null })
 
   let inflight = null
   let browseRequestId = 0
-  let directoryRequestId = 0
   let channelsRequestId = 0
-  let directoryRequest = null
   const memberRequestIds = new Map()
 
   // ---------- getters ----------
   // Keep the order supplied by the team API; channels without these fields remain supported.
   const visibleChannels = computed(() => {
     return channels.value.filter((channel) => channel.isMember && !channel.isArchived)
-  })
-  const allChannels = computed(() => {
-    const combined = new Map(
-      directory.value.items
-        .filter((channel) => !channel.isArchived)
-        .map((channel) => [channel.id, channel]),
-    )
-    for (const channel of channels.value) {
-      if (!channel.isArchived) {
-        combined.set(channel.id, { ...combined.get(channel.id), ...channel, isMember: true })
-      }
-    }
-    return [...combined.values()]
   })
 
   function getById(id) {
@@ -52,11 +36,6 @@ export const useChannelsStore = defineStore('channels', () => {
   function patchBrowse(id, changes) {
     const index = browse.value.items.findIndex((c) => c.id === String(id))
     if (index !== -1) browse.value.items[index] = { ...browse.value.items[index], ...changes }
-  }
-
-  function patchDirectory(id, changes) {
-    const index = directory.value.items.findIndex((c) => c.id === String(id))
-    if (index !== -1) directory.value.items[index] = { ...directory.value.items[index], ...changes }
   }
 
   // ---------- actions: list ----------
@@ -101,32 +80,6 @@ export const useChannelsStore = defineStore('channels', () => {
         error: err?.message || 'Failed to load channels.',
       }
     }
-  }
-
-  function fetchDirectory({ force = false } = {}) {
-    if (directoryRequest) return directoryRequest
-    if (directory.value.items.length && !force) return Promise.resolve()
-
-    const requestId = ++directoryRequestId
-    directory.value = { ...directory.value, loading: true, error: null }
-    directoryRequest = api
-      .browseChannels('')
-      .then((items) => {
-        if (requestId !== directoryRequestId) return
-        directory.value = { items, loading: false, error: null }
-      })
-      .catch((err) => {
-        if (requestId !== directoryRequestId) return
-        directory.value = {
-          ...directory.value,
-          loading: false,
-          error: err?.message || 'Failed to load all channels.',
-        }
-      })
-      .finally(() => {
-        if (requestId === directoryRequestId) directoryRequest = null
-      })
-    return directoryRequest
   }
 
   async function fetchMembers(id, { limit = 10 } = {}) {
@@ -175,7 +128,6 @@ export const useChannelsStore = defineStore('channels', () => {
     const channel = await api.joinChannel(id)
     upsertChannel(channel)
     patchBrowse(id, { isMember: true, memberCount: channel.memberCount })
-    patchDirectory(id, { isMember: true, memberCount: channel.memberCount })
     return channel
   }
 
@@ -183,14 +135,12 @@ export const useChannelsStore = defineStore('channels', () => {
     await api.leaveChannel(id)
     removeChannel(id)
     patchBrowse(id, { isMember: false })
-    patchDirectory(id, { isMember: false })
   }
 
   async function deleteChannel(id) {
     await api.deleteChannel(id)
     removeChannel(id)
     browse.value.items = browse.value.items.filter((c) => c.id !== String(id))
-    directory.value.items = directory.value.items.filter((c) => c.id !== String(id))
   }
 
   function addChannelMember(id, targetUser) {
@@ -219,17 +169,14 @@ export const useChannelsStore = defineStore('channels', () => {
   function reset() {
     channelsRequestId += 1
     browseRequestId += 1
-    directoryRequestId += 1
     memberRequestIds.clear()
     channels.value = []
     members.value = {}
     browse.value = { items: [], loading: false, error: null }
-    directory.value = { items: [], loading: false, error: null }
     loaded.value = false
     loading.value = false
     error.value = null
     inflight = null
-    directoryRequest = null
   }
 
   return {
@@ -239,13 +186,10 @@ export const useChannelsStore = defineStore('channels', () => {
     error,
     members,
     browse,
-    directory,
     visibleChannels,
-    allChannels,
     getById,
     fetchChannels,
     fetchBrowse,
-    fetchDirectory,
     fetchMembers,
     fetchChannel,
     createChannel,

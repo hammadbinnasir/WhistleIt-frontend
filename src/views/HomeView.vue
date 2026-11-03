@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useRouter } from 'vue-router'
 
@@ -9,7 +9,7 @@ import { useTeamsStore } from '@/stores/teams'
 import { useMembersStore } from '@/stores/members'
 import { useChannelsStore } from '@/features/channels'
 import { useDmStore } from '@/features/dms/stores/dms'
-import { usePresenceStore } from '@/features/dms/stores/presence'
+import { usePresenceStore, STATES } from '@/features/dms/stores/presence'
 import { useActivityStore } from '@/stores/activity'
 import { useRemindersStore } from '@/features/search/reminders'
 import { useUserStore, UserModule } from '@/features/account'
@@ -215,15 +215,11 @@ function openActivityConversation({ id, type }) {
   ui.closePanel()
 }
 
-async function openActivityUserChat(userId) {
+function openActivityUserChat(userId) {
   if (userId === dms.meId) return
-  try {
-    await dms.startDm(userId)
-    ui.selectChannel(null)
-    ui.closePanel()
-  } catch (error) {
-    ui.toast('Direct message error', error?.message || 'Could not open this direct message.', 'error')
-  }
+  dms.startDm(userId)
+  ui.selectChannel(null)
+  ui.closePanel()
 }
 
 onMounted(async () => {
@@ -234,13 +230,6 @@ onMounted(async () => {
   }
   remindersStore.startWatcher()
 })
-
-watch(
-  () => teamsStore.activeWorkspaceId,
-  (companyId) => {
-    if (companyId != null) void dms.init(companyId)
-  },
-)
 
 onBeforeUnmount(() => {
   remindersStore.stopWatcher()
@@ -403,12 +392,11 @@ onBeforeUnmount(() => {
               <button
                 v-if="activeConversationPartnerId"
                 type="button"
-                class="shrink-0 rounded p-0.5 transition-colors hover:bg-slate-100 hover:text-indigo-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-indigo-500"
+                class="shrink-0 rounded p-0.5 transition-colors hover:bg-slate-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-indigo-500"
                 :class="activeConversationIsFavorite ? 'text-indigo-500' : 'text-slate-400'"
                 :aria-label="
                   activeConversationIsFavorite ? 'Remove from favorites' : 'Add to favorites'
                 "
-                :title="activeConversationIsFavorite ? 'Remove from Favorites' : 'Add to Favorites'"
                 :aria-pressed="activeConversationIsFavorite"
                 @click="dms.toggleFavorite(activeConversation.id)"
               >
@@ -434,10 +422,10 @@ onBeforeUnmount(() => {
                 <p
                   v-if="activeConversationPartnerId && !presence.loading && !presence.error"
                   class="flex items-center gap-1.5 text-xs text-slate-500"
-                  :aria-label="presence.labelOf(activeConversationPartnerId)"
+                  :aria-label="STATES[activeConversationPresence]"
                 >
                   <PresenceDot :state="activeConversationPresence" :size="9" ring="border-white" />
-                  {{ presence.labelOf(activeConversationPartnerId) }}
+                  {{ STATES[activeConversationPresence] }}
                 </p>
                 <p v-else class="text-xs text-slate-500">
                   {{ activeConversationPartnerId ? 'Direct message' : 'Group direct message' }}

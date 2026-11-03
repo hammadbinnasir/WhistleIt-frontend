@@ -7,7 +7,6 @@ import { useChannelsStore } from '@/features/channels'
 import { useDmStore } from '@/features/dms/stores/dms'
 import { useMessagesStore } from '@/features/messages/messages'
 import { useRemindersStore } from '@/features/search/reminders'
-import { useTeamsStore } from '@/stores/teams'
 import { useUiStore } from '@/stores/ui'
 
 const emojiPickerProps = vi.hoisted(() => vi.fn())
@@ -38,7 +37,6 @@ describe('composer conversation', () => {
   beforeEach(() => {
     localStorage.clear()
     setActivePinia(createPinia())
-    useTeamsStore().activeWorkspaceId = 'company-1'
   })
 
   async function sendMessage(wrapper, content) {
@@ -196,9 +194,6 @@ describe('composer conversation', () => {
     })
 
     expect(wrapper.text()).toContain('Project ideas bhej di hain')
-    expect(wrapper.get('.composer-conversation__avatar').text()).toContain('MN')
-    expect(wrapper.find('.composer-conversation__avatar img').exists()).toBe(false)
-    expect(wrapper.text()).toContain('Muniba Naseer')
 
     const editor = wrapper.get('[contenteditable="true"]')
     editor.element.textContent = 'Reply from the composer'

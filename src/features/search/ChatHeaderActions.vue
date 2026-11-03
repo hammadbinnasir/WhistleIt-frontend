@@ -1,6 +1,6 @@
 <script setup>
-import { computed } from 'vue'
 // Right side of the channel/DM header.
+import { computed } from 'vue'
 import { useUiStore } from '@/stores/ui'
 
 const props = defineProps({
@@ -12,10 +12,8 @@ const hasCurrentConversationPins = computed(() =>
   ui.pinnedMessages.some((item) => {
     const conversation = item.conversation || {}
     const kind = conversation.kind === 'dm' || conversation.type === 'dm' ? 'dm' : 'channel'
-    return (
-      kind === (props.isDm ? 'dm' : 'channel') &&
+    return kind === (props.isDm ? 'dm' : 'channel') &&
       String(conversation.id ?? '') === String(props.conversationId ?? '')
-    )
   }),
 )
 </script>

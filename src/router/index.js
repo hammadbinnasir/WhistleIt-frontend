@@ -14,8 +14,8 @@ const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
   routes: [
     { path: '/', redirect: '/login' },
-    { path: '/login', name: 'login', component: AuthView, meta: { guestOnly: true } },
-    { path: '/signup', name: 'signup', component: AuthView, meta: { guestOnly: true } },
+    { path: '/login', name: 'login', component: AuthView },
+    { path: '/signup', name: 'signup', component: AuthView },
     ...invitationRoutes,
     { path: '/forgot-password', name: 'forgot-password', component: AuthView },
     { path: '/reset-password', name: 'reset-password', component: AuthView },

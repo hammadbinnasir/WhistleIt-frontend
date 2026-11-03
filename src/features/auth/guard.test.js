@@ -1,4 +1,4 @@
-import { createMemoryHistory, createRouter, createWebHistory } from 'vue-router'
+import { createMemoryHistory, createRouter } from 'vue-router'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { installAuthGuard } from './guard'
 import { clearAuthSession, saveAuthToken } from './session'
@@ -55,41 +55,5 @@ describe('auth route guard', () => {
     await router.push('/signup')
 
     expect(router.currentRoute.value.name).toBe('home')
-  })
-
-  it('redirects authenticated users away from the login page', async () => {
-    saveAuthToken({ token: 'valid-token' })
-    const router = createTestRouter()
-
-    await router.push('/login')
-
-    expect(router.currentRoute.value.name).toBe('home')
-  })
-
-  it('keeps authenticated users on the protected page when browser back reaches the same route', async () => {
-    window.history.replaceState(null, '', '/')
-    saveAuthToken({ token: 'valid-token' })
-    const router = createRouter({
-      history: createWebHistory(),
-      routes: [
-        { path: '/login', name: 'login', component: EmptyPage, meta: { guestOnly: true } },
-        { path: '/app', name: 'home', component: EmptyPage, meta: { requiresAuth: true } },
-      ],
-    })
-    installAuthGuard(router)
-    await router.push('/app')
-    await router.isReady()
-
-    let anotherPopstateListenerRan = false
-    const anotherPopstateListener = () => {
-      anotherPopstateListenerRan = true
-    }
-    window.addEventListener('popstate', anotherPopstateListener)
-    window.dispatchEvent(new PopStateEvent('popstate', { state: { current: '/app' } }))
-    window.removeEventListener('popstate', anotherPopstateListener)
-
-    expect(router.currentRoute.value.name).toBe('home')
-    expect(window.history.state.current).toBe('/app')
-    expect(anotherPopstateListenerRan).toBe(false)
   })
 })
