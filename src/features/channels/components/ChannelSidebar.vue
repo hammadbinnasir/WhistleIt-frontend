@@ -7,7 +7,6 @@ import { useChannelsStore } from '../store/channels.store'
 import { useChannelsUiStore } from '../store/channels.ui.store'
 import { useChannelActions } from '../composables/useChannelActions'
 import { useActiveChannel } from '../composables/useActiveChannel'
-import { SIDEBAR_MAX_VISIBLE } from '../constants'
 import ChIcon from './ChIcon.vue'
 import ChannelListItem from './ChannelListItem.vue'
 import ChannelContextMenu from './ChannelContextMenu.vue'
@@ -24,15 +23,9 @@ const { menuItemsFor, run } = useChannelActions()
 
 const expanded = ref(true)
 const menu = ref({ open: false, x: 0, y: 0, channelId: null })
+const joiningChannelId = ref(null)
 
-// First N channels; the active one is always kept visible even if it's beyond the limit.
-const shownChannels = computed(() => {
-  const all = store.visibleChannels
-  const shown = all.slice(0, SIDEBAR_MAX_VISIBLE)
-  const active = all.find((c) => c.id === activeId.value)
-  if (active && !shown.includes(active)) shown[shown.length - 1] = active
-  return shown
-})
+const shownChannels = computed(() => store.allChannels)
 
 const menuItems = computed(() => menuItemsFor(store.getById(menu.value.channelId)))
 
@@ -52,7 +45,24 @@ function ensureSelection() {
   else if (activeId.value) clear()
 }
 
-function selectChannel(id) {
+async function selectChannel(id) {
+  const channel =
+    store.getById(id) ?? store.directory.items.find((item) => item.id === String(id))
+  if (!channel) return
+
+  if (!channel.isMember) {
+    joiningChannelId.value = channel.id
+    try {
+      await store.joinChannel(channel.id)
+      ui.notify(`Joined ${channel.name}`, 'success')
+    } catch (err) {
+      ui.notify(err?.message || `Could not join ${channel.name}.`)
+      return
+    } finally {
+      joiningChannelId.value = null
+    }
+  }
+
   dms.deactivateConversation()
   select(id)
   appUi.closePanel()
@@ -73,6 +83,7 @@ watch(
     loadedScope = scope
     store.reset()
     store.fetchChannels()
+    store.fetchDirectory()
   },
   { immediate: true },
 )
@@ -148,15 +159,40 @@ function onMenuSelect(key) {
             :key="channel.id"
             :channel="channel"
             :active="channel.id === activeId"
+            :joining="joiningChannelId === channel.id"
             @select="selectChannel(channel.id)"
             @menu="openMenu($event, channel)"
           />
         </ul>
-        <p v-else class="ch-sidebar__state">You haven't joined any channels yet.</p>
+        <p v-else-if="store.directory.loading" class="ch-sidebar__state">Loading channels…</p>
+        <p v-else-if="store.directory.error" class="ch-sidebar__state" role="alert">
+          {{ store.directory.error }}
+          <button
+            type="button"
+            class="ch-sidebar__link"
+            @click="store.fetchDirectory({ force: true })"
+          >
+            Retry
+          </button>
+        </p>
+        <p v-else class="ch-sidebar__state">No channels are available for this team.</p>
 
-        <button type="button" class="ch-sidebar__more" @click="ui.openBrowse()">
-          More channels
-        </button>
+        <template v-if="shownChannels.length">
+          <p v-if="store.directory.loading" class="ch-sidebar__state">Loading all channels…</p>
+          <p v-else-if="store.directory.error" class="ch-sidebar__state" role="alert">
+            {{ store.directory.error }}
+            <button
+              type="button"
+              class="ch-sidebar__link"
+              @click="store.fetchDirectory({ force: true })"
+            >
+              Retry
+            </button>
+          </p>
+          <button type="button" class="ch-sidebar__more" @click="ui.openBrowse()">
+            More channels
+          </button>
+        </template>
       </template>
     </div>
 

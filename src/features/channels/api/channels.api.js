@@ -15,7 +15,12 @@ function channelsPath(channelId) {
 
 export async function listChannels() {
   const res = await http(channelsPath())
-  return resolveChannelMembership(asList(res).items)
+  return asList(res).items.map((channel) =>
+    normalizeChannel({
+      ...channel,
+      isMember: channel.isMember ?? channel.is_member ?? true,
+    }),
+  )
 }
 
 export async function browseChannels(query = '') {

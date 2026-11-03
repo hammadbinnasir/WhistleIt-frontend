@@ -1,6 +1,8 @@
 import { clearAuthSession, getAuthToken } from '@/features/auth/session'
 
-const BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://10.0.105.90:8000/api'
+const BASE_URL = import.meta.env.DEV
+  ? '/api'
+  : import.meta.env.VITE_API_BASE_URL || 'http://10.0.105.90:8000/api'
 
 export class ApiError extends Error {
   constructor(message, { status = 0, details = null } = {}) {

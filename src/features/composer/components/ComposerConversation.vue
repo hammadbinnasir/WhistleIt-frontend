@@ -15,6 +15,7 @@ import {
 import { useUiStore } from '@/stores/ui'
 import { addMockMessage, removeMockMessage, updateMockMessage } from '@/features/search/search'
 import SetReminderModal from '@/features/search/SetReminderModal.vue'
+import UserAvatar from '@/features/dms/components/UserAvatar.vue'
 import MessageComposer from './MessageComposer.vue'
 
 const props = defineProps({
@@ -99,6 +100,7 @@ const renderedMessages = computed(() => {
             ? dms.usersById[message.from]?.name || conversationLabel.value
             : message.author || currentUser
       const authorId = message.from ?? message.authorId ?? author
+      const avatarUserId = messageAvatarUserId({ ...message, author })
       const grouped =
         previous &&
         authorId === previous.authorId &&
@@ -109,6 +111,7 @@ const renderedMessages = computed(() => {
         content,
         author,
         authorId,
+        avatarUserId,
         mine: message.mine ?? message.from === dms.meId,
         showDate: !previous || !sameDay(previous.createdAt, message.createdAt),
         dateHeading: dateLabel(message.createdAt),
@@ -172,16 +175,24 @@ function isPinned(message) {
 
 function messageAuthorUserId(message) {
   if (message.mine || message.from === dms.meId) return null
-  const authorId = message.from ?? message.authorId
-  if (dms.usersById[authorId]) return authorId
-  return dms.users.find((user) => user.name === message.author)?.id || null
+  return messageAvatarUserId(message)
 }
 
-function openMessageAuthor(message) {
+function messageAvatarUserId(message) {
+  const authorId = message.from ?? message.authorId
+  if (dms.usersById[authorId]) return authorId
+  return dms.users.find((user) => user.name === message.author)?.id ?? null
+}
+
+async function openMessageAuthor(message) {
   const userId = messageAuthorUserId(message)
   if (!userId || userId === dms.meId) return
-  dms.startDm(userId)
-  ui.activePanel = null
+  try {
+    await dms.startDm(userId)
+    ui.activePanel = null
+  } catch (error) {
+    ui.toast('Direct message error', error?.message || 'Could not open this direct message.', 'error')
+  }
 }
 
 function togglePin(message) {
@@ -567,6 +578,13 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', closeActionsOn
 
 <template>
   <section class="composer-conversation" @keydown.esc="closeMessageActions">
+    <p
+      v-if="conversation && dms.detailError"
+      class="px-4 py-2 text-sm text-red-700"
+      role="alert"
+    >
+      {{ dms.detailError }}
+    </p>
     <div ref="messagesContainer" class="composer-conversation__messages" aria-live="polite">
       <button
         v-if="hasOlderMessages"
@@ -587,16 +605,14 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', closeActionsOn
           :class="{ 'composer-conversation__message--grouped': message.grouped }"
           :data-message-id="message.id"
         >
-          <span v-if="!message.grouped" class="composer-conversation__avatar" aria-hidden="true">
-            {{
-              message.author
-                ?.split(/\s+/)
-                .map((part) => part[0])
-                .slice(0, 2)
-                .join('')
-                .toUpperCase()
-            }}
-          </span>
+          <UserAvatar
+            v-if="!message.grouped"
+            class="composer-conversation__avatar"
+            :name="message.author"
+            :size="30"
+            :user-id="message.avatarUserId"
+            ring="border-white"
+          />
           <span v-else class="composer-conversation__avatar-spacer" aria-hidden="true"></span>
 
           <div class="composer-conversation__message-content">
@@ -1203,16 +1219,6 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', closeActionsOn
 .composer-conversation__avatar-spacer {
   width: 30px;
   height: 30px;
-}
-
-.composer-conversation__avatar {
-  display: grid;
-  place-items: center;
-  border-radius: 50%;
-  background: #77c941;
-  color: #25263a;
-  font-size: 11px;
-  font-weight: 600;
 }
 
 .composer-conversation__message-content {

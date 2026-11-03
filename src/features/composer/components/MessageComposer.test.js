@@ -333,13 +333,18 @@ describe('message composer', () => {
     expect(wrapper.emitted('send')).toBeUndefined()
   })
 
-  it('keeps the message draft when Enter is pressed', async () => {
+  it('sends the message and clears the editor when Enter is pressed', async () => {
     const wrapper = mount(MessageComposer)
-    setEditorText(wrapper, 'Send with Enter')
+    const input = setEditorText(wrapper, 'Send with Enter')
 
     await wrapper.get('[contenteditable="true"]').trigger('keydown', { key: 'Enter' })
 
+<<<<<<< Updated upstream
     expect(wrapper.emitted('send')).toBeUndefined()
+=======
+    expect(wrapper.emitted('send')).toEqual([[{ content: 'Send with Enter', attachments: [] }]])
+    expect(input.element.textContent).toBe('')
+>>>>>>> Stashed changes
   })
 
   it('keeps Shift+Enter available for a new line', async () => {
@@ -352,6 +357,22 @@ describe('message composer', () => {
       bubbles: true,
       cancelable: true,
     })
+    wrapper.get('[contenteditable="true"]').element.dispatchEvent(event)
+
+    expect(event.defaultPrevented).toBe(false)
+    expect(wrapper.emitted('send')).toBeUndefined()
+  })
+
+  it('does not send Enter while an input method composition is active', async () => {
+    const wrapper = mount(MessageComposer)
+    setEditorText(wrapper, 'Composing a message')
+    const event = new KeyboardEvent('keydown', {
+      key: 'Enter',
+      isComposing: true,
+      bubbles: true,
+      cancelable: true,
+    })
+
     wrapper.get('[contenteditable="true"]').element.dispatchEvent(event)
 
     expect(event.defaultPrevented).toBe(false)
