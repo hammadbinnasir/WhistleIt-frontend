@@ -163,7 +163,7 @@ export async function getWorkspaceMembers(workspaceId) {
     for (const key of preferredKeys) {
       if (!(key in value)) continue
       const records = findMemberRecords(value[key], seen)
-      if (records?.length || records === []) return records
+      if (Array.isArray(records)) return records
     }
 
     for (const nested of Object.values(value)) {
@@ -181,11 +181,12 @@ export async function getWorkspaceMembers(workspaceId) {
     const id = user.id ?? user.user_id ?? record.user_id ?? record.id
     if (id == null) return null
 
-    const name = user.name
-      ?? user.full_name
-      ?? user.fullName
-      ?? [user.first_name, user.last_name].filter(Boolean).join(' ')
-      ?? record.name
+    const profileName =
+      user.name ??
+      user.full_name ??
+      user.fullName ??
+      [user.first_name, user.last_name].filter(Boolean).join(' ')
+    const name = profileName || record.name
     return {
       id: String(id),
       name: String(name || user.email || record.email || 'User'),

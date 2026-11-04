@@ -4,6 +4,7 @@ import EmojiPicker from 'vue3-emoji-picker'
 import 'vue3-emoji-picker/css'
 import { useChannelsStore } from '@/features/channels'
 import { useDmStore } from '@/features/dms/stores/dms'
+import { getAuthUser } from '@/features/auth/session'
 import { useMessagesStore } from '@/features/messages/messages'
 import {
   createLinkPreview,
@@ -47,8 +48,10 @@ const activePollMode = ref('respond')
 const pollResponses = ref({})
 const pollResults = ref({})
 const closedPolls = ref(new Set())
-const minimumDeleteDate = computed(() =>
-  toLocalDateTimeValue(new Date(Date.now() + 60_000))
+const minimumDeleteDate = computed(() => toLocalDateTimeValue(new Date(Date.now() + 60_000)))
+
+const currentUserName = computed(
+  () => dms.usersById[dms.meId]?.name || getAuthUser()?.fullName || 'You',
 )
 let messageClickTimer = null
 
@@ -95,7 +98,7 @@ const visibleMessages = computed(() =>
     : messageStore.visibleMessagesFor(channelId.value),
 )
 const renderedMessages = computed(() => {
-  const currentUser = dms.usersById[dms.meId]?.name || 'You'
+  const currentUser = currentUserName.value
   let previous = null
 
   return [...visibleMessages.value]
@@ -208,7 +211,7 @@ function addMessage(payload) {
     : messageStore.sendMessage(
         channelId.value,
         messagePayload,
-        dms.usersById[dms.meId]?.name || 'You',
+        currentUserName.value,
         conversationMeta.value.name,
       )
   if (!sentMessage) {
@@ -235,7 +238,7 @@ function addScheduledMessage(message) {
     : messageStore.sendMessage(
         channelId.value,
         message,
-        dms.usersById[dms.meId]?.name || 'You',
+        currentUserName.value,
         conversationMeta.value.name,
       )
   if (!scheduledMessage) {
@@ -252,7 +255,7 @@ function addGif(gif) {
     : messageStore.sendMessage(
         channelId.value,
         message,
-        dms.usersById[dms.meId]?.name || 'You',
+        currentUserName.value,
         conversationMeta.value.name,
       )
   if (!sentMessage) {
@@ -466,7 +469,7 @@ function forwardMessage() {
       : messageStore.sendMessage(
           destination.id,
           payload,
-          dms.usersById[dms.meId]?.name || 'You',
+          currentUserName.value,
           destination.name.replace(/^#/, ''),
         )
 
@@ -698,7 +701,14 @@ onBeforeUnmount(() => {
       >
         Load older messages
       </button>
-
+      <p v-if="messagesLoading" class="composer-conversation__status">Loading messages…</p>
+      <p v-else-if="messagesError" class="composer-conversation__status composer-conversation__status--error">
+          {{ messagesError }}
+       <button type="button" @click="retryConversationMessages">Retry</button>
+      </p>
+      <p v-else-if="conversation && !renderedMessages.length" class="composer-conversation__status">
+          No messages yet.
+      </p>
       <template v-for="message in renderedMessages" :key="message.id">
         <div v-if="message.showDate" class="composer-conversation__date">
           <span>{{ message.dateHeading }}</span>
@@ -2471,6 +2481,22 @@ onBeforeUnmount(() => {
 .composer-conversation__forward-dialog footer button:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+.composer-conversation__status {
+  margin: 12px 0;
+  color: #717487;
+  font-size: 13px;
+  text-align: center;
+}
+.composer-conversation__status--error {
+  color: #c92f43;
+}
+.composer-conversation__status button {
+  margin-left: 6px;
+  color: #5552c7;
+  text-decoration: underline;
+  cursor: pointer;
 }
 
 @media (hover: none) {
