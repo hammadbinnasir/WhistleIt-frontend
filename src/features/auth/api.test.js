@@ -42,4 +42,19 @@ describe('auth API', () => {
       auth: false,
     })
   })
+
+  it('allows password reset credentials without an email when the token identifies the account', () => {
+    const credentials = {
+      password: 'new-password-123',
+      password_confirmation: 'new-password-123',
+    }
+
+    resetPassword('reset-token', credentials)
+
+    expect(http).toHaveBeenCalledWith('/forgetpassword/reset-token', {
+      method: 'POST',
+      body: credentials,
+      auth: false,
+    })
+  })
 })
