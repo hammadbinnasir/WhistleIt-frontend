@@ -66,7 +66,15 @@ const pollIsReady = computed(
           question.options.filter((option) => option.trim()).length >= 2),
     ),
 )
-const pollCanBeCreated = computed(() => pollIsReady.value && pollStartNow.value)
+const pollCanBeCreated = computed(() => {
+  if (!pollIsReady.value) return false
+  if (pollStartNow.value) return true
+  if (!pollScheduleStart.value || !pollStartDate.value || !pollStartTime.value) return false
+  return (
+    !pollScheduleClose.value ||
+    Boolean(pollCloseDate.value && pollCloseTime.value)
+  )
+})
 
 onBeforeUnmount(() => clearTimeout(scheduleErrorTimer))
 
