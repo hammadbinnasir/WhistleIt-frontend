@@ -4,7 +4,6 @@ import {
   deleteUserAvatar,
   deleteUserCustomStatus,
   getUserProfile,
-  getUserSettings,
   updateUserProfile,
   updateUserPassword,
   updateUserStatus,
@@ -206,15 +205,6 @@ async function loadUserProfile() {
   if (photoUrl && !profile.photoUrl) state.profile.photoUrl = photoUrl
 }
 
-async function loadSettings() {
-  let response = await getUserSettings(requireUserId())
-  while (response?.data && typeof response.data === 'object') response = response.data
-  if (response?.settings && typeof response.settings === 'object') {
-    response = response.settings
-  }
-  hydrate(response)
-}
-
 async function setStatus(status) {
   if (!VALID_STATUSES.includes(status)) return
   await updateUserStatus(requireUserId(), { mode: status })
@@ -292,7 +282,6 @@ export function useUserStore() {
     state: readonlyState,
     hydrate,
     loadUserProfile,
-    loadSettings,
     setStatus,
     setCustomStatus,
     clearCustomStatus,

@@ -857,29 +857,9 @@ describe('account settings modal', () => {
     expect(request).toBeTruthy()
     expect(request[0]).toContain('/v1/users/test-user/profile')
     expect(request[1].method).toBe('GET')
-  })
-
-  it('loads account settings from the user settings endpoint', async () => {
-    fetch.mockResolvedValueOnce({
-      ok: true,
-      status: 200,
-      json: async () => ({
-        data: {
-          settings: {
-            preferences: { enterKey: 'newline' },
-            security: { hideEmail: true },
-          },
-        },
-      }),
-    })
-
-    await store.loadSettings()
-
-    const [url, options] = fetch.mock.calls.at(-1)
-    expect(url).toContain('/v1/users/test-user/settings')
-    expect(options.method).toBe('GET')
-    expect(store.state.preferences.enterKey).toBe('newline')
-    expect(store.state.security.hideEmail).toBe(true)
+    expect(fetch.mock.calls.some(([url]) => String(url).includes('/v1/users/test-user/settings'))).toBe(
+      false,
+    )
   })
 
   it('removes a saved profile photo and restores initials in the account icon', async () => {
