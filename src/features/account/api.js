@@ -2,6 +2,10 @@ import { http } from '@/features/channels/api/http'
 
 const userPath = (userId, suffix = '') => `/v1/users/${encodeURIComponent(userId)}${suffix}`
 
+export function getUser(userId) {
+  return http(userPath(userId))
+}
+
 export function getUserProfile(userId) {
   return http(userPath(userId, '/profile'))
 }
