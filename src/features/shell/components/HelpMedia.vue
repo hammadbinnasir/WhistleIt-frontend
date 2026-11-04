@@ -41,7 +41,7 @@ const hint = computed(() => {
   <slot v-else-if="$slots.default" />
   <div
     v-else-if="IS_DEV"
-    class="flex h-24 w-full items-center justify-center rounded-lg border border-dashed border-slate-300 px-3 text-center text-xs text-slate-400"
+    class="flex h-24 w-full items-center justify-center rounded-lg border border-dashed border-slate-300 px-3 text-center text-xs text-slate-600"
     data-testid="help-media-placeholder"
   >
     {{ hint }}

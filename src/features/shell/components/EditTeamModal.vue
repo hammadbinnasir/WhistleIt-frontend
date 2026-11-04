@@ -62,14 +62,14 @@ function close() {
 <template>
   <div
     v-if="isOpen"
-    class="edit-team-backdrop"
+    class="edit-team-backdrop shell-modal-backdrop"
     role="dialog"
     aria-modal="true"
     aria-labelledby="edit-team-title"
     @click.self="close"
     @keydown.esc.prevent="close"
   >
-    <form class="edit-team-card" @submit.prevent="submit">
+    <form class="edit-team-card shell-surface" @submit.prevent="submit">
       <h2 id="edit-team-title">Edit team</h2>
       <div v-if="errorMessage" class="edit-team-error" role="alert">{{ errorMessage }}</div>
       <label for="edit-team-name">Team name</label>
@@ -77,8 +77,10 @@ function close() {
       <label for="edit-team-description">Description</label>
       <textarea id="edit-team-description" v-model="description" rows="3" />
       <div class="edit-team-actions">
-        <button type="button" :disabled="submitting" @click="close">Cancel</button>
-        <button type="submit" :disabled="submitting">
+        <button type="button" class="shell-secondary-button" :disabled="submitting" @click="close">
+          Cancel
+        </button>
+        <button type="submit" class="shell-primary-button" :disabled="submitting">
           {{ submitting ? 'Saving…' : 'Save changes' }}
         </button>
       </div>
@@ -88,13 +90,7 @@ function close() {
 
 <style scoped>
 .edit-team-backdrop {
-  position: fixed;
-  z-index: 50;
-  inset: 0;
-  display: grid;
-  place-items: center;
-  padding: 1rem;
-  background: color-mix(in srgb, var(--color-slate-950) 65%, transparent);
+  z-index: var(--shell-z-modal);
 }
 
 .edit-team-card {
@@ -102,12 +98,12 @@ function close() {
   width: min(28rem, 100%);
   flex-direction: column;
   gap: 0.75rem;
-  border: 1px solid var(--color-slate-300);
-  border-radius: 0.75rem;
   padding: 1.25rem;
-  background: var(--color-white);
-  color: var(--color-slate-900);
-  box-shadow: 0 1rem 2rem color-mix(in srgb, var(--color-slate-950) 20%, transparent);
+  border: 1px solid var(--shell-surface-border);
+  border-radius: 0.75rem;
+  background: var(--shell-surface-background);
+  color: var(--shell-surface-foreground);
+  box-shadow: var(--shell-surface-shadow);
 }
 
 .edit-team-card h2 {
@@ -124,15 +120,16 @@ function close() {
 .edit-team-card textarea {
   width: 100%;
   border: 1px solid var(--color-slate-300);
-  border-radius: 0.375rem;
+  border-radius: 0.5rem;
   padding: 0.5rem;
+  background: var(--color-white);
   color: var(--color-slate-900);
 }
 
 .edit-team-card input:focus-visible,
 .edit-team-card textarea:focus-visible,
 .edit-team-card button:focus-visible {
-  outline: 2px solid var(--color-indigo-500);
+  outline: 2px solid var(--color-indigo-600);
   outline-offset: 2px;
 }
 
@@ -146,25 +143,5 @@ function close() {
   justify-content: flex-end;
   gap: 0.5rem;
   margin-top: 0.25rem;
-}
-
-.edit-team-actions button {
-  border: 1px solid var(--color-slate-300);
-  border-radius: 0.375rem;
-  padding: 0.5rem 0.75rem;
-  background: var(--color-white);
-  color: var(--color-slate-800);
-  cursor: pointer;
-}
-
-.edit-team-actions button[type='submit'] {
-  border-color: var(--color-indigo-600);
-  background: var(--color-indigo-600);
-  color: var(--color-white);
-}
-
-.edit-team-actions button:disabled {
-  cursor: not-allowed;
-  opacity: 0.6;
 }
 </style>
