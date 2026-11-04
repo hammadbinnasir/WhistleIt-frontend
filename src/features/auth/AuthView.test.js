@@ -159,36 +159,58 @@ describe('auth view', () => {
     expect(wrapper.get('#email').element.value).toBe('sam@example.com')
   })
 
-  it('shows a revolving loader instead of Please wait while resetting the password', async () => {
-    let finishReset
-    resetPassword.mockReturnValueOnce(
-      new Promise((resolve) => {
-        finishReset = resolve
-      }),
-    )
-    const { router, wrapper } = await mountAuthView('/reset-password?token=reset-token')
+  it.each([
+    ['/login', login, 'Logging in'],
+    ['/signup', register, 'Creating account'],
+    ['/forgot-password', requestPasswordReset, 'Sending password reset instructions'],
+    ['/reset-password?token=reset-token', resetPassword, 'Resetting your password'],
+  ])(
+    'shows the custom loader instead of button text while submitting %s',
+    async (path, action, label) => {
+      let finishSubmission
+      action.mockReturnValueOnce(
+        new Promise((resolve) => {
+          finishSubmission = resolve
+        }),
+      )
+      const { router, wrapper } = await mountAuthView(path)
 
-    await wrapper.get('#password').setValue('new-password-123')
-    await wrapper.get('#confirm-password').setValue('new-password-123')
-    await wrapper.get('form').trigger('submit')
+      if (!path.startsWith('/reset-password')) {
+        await wrapper.get('#email').setValue('sam@example.com')
+      }
+      if (path === '/signup') {
+        await wrapper.get('#full-name').setValue('Sam Example')
+        await wrapper.get('#company').setValue('Example Co')
+        await wrapper.get('#password').setValue('correct-password')
+        await wrapper.get('#confirm-password').setValue('correct-password')
+        await wrapper.get('#terms').setValue(true)
+      } else if (path.startsWith('/reset-password')) {
+        await wrapper.get('#password').setValue('correct-password')
+        await wrapper.get('#confirm-password').setValue('correct-password')
+      } else if (path === '/login') {
+        await wrapper.get('#password').setValue('correct-password')
+      }
 
-    expect(wrapper.get('.submit-button').attributes('disabled')).toBeDefined()
-    expect(wrapper.get('.submit-button').attributes('aria-busy')).toBe('true')
-    expect(wrapper.get('.auth-loader[role="status"]').attributes('aria-label')).toBe(
-      'Resetting your password',
-    )
-    expect(wrapper.get('.auth-loader__ring circle').attributes('stroke')).toContain(
-      'reset-loader-gradient',
-    )
-    expect(wrapper.get('.submit-button').text()).not.toContain('Please wait')
-    expect(router.currentRoute.value.path).toBe('/reset-password')
+      await wrapper.get('form').trigger('submit')
 
-    finishReset({})
-    await flushPromises()
+      expect(wrapper.get('.submit-button').attributes('disabled')).toBeDefined()
+      expect(wrapper.get('.submit-button').attributes('aria-busy')).toBe('true')
+      expect(wrapper.get('.loading-spinner[role="status"]').attributes('aria-label')).toBe(label)
+      expect(wrapper.get('.loading-spinner__dot').attributes('fill')).toBe('#fff')
+      expect(wrapper.get('.loading-spinner').attributes('style')).toContain(
+        '--loading-spinner-size: 20px',
+      )
+      expect(wrapper.get('.submit-button').text()).not.toContain('Please wait')
 
-    expect(router.currentRoute.value.path).toBe('/login')
-    expect(wrapper.find('.auth-loader').exists()).toBe(false)
-  })
+      finishSubmission(path === '/login' ? { access_token: 'test-token' } : {})
+      await flushPromises()
+
+      expect(wrapper.find('.loading-spinner').exists()).toBe(false)
+      if (path.startsWith('/reset-password')) {
+        expect(router.currentRoute.value.path).toBe('/login')
+      }
+    },
+  )
 
   it('does not show a Go to Login button on the reset-password page', async () => {
     const { wrapper } = await mountAuthView('/reset-password?token=reset-token')
