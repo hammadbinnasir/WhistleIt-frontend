@@ -31,13 +31,15 @@ describe('channel API normalizers', () => {
 
   it('accepts a wrapped channel detail and recognizes private channel types', () => {
     expect(
-      normalizeChannel(asObject({
-        channel: {
-          channel_id: 'channel-2',
-          channel_name: 'Leadership',
-          type: 'private',
-        },
-      })),
+      normalizeChannel(
+        asObject({
+          channel: {
+            channel_id: 'channel-2',
+            channel_name: 'Leadership',
+            type: 'private',
+          },
+        }),
+      ),
     ).toMatchObject({
       id: 'channel-2',
       name: 'Leadership',
@@ -46,12 +48,10 @@ describe('channel API normalizers', () => {
   })
 
   it('does not assume a channel without membership data is joined', () => {
-    expect(
-      normalizeChannel({ id: 'channel-4', name: 'Design Reviews' }).isMember,
-    ).toBe(false)
-    expect(
-      normalizeChannel({ id: 'channel-5', name: 'Random', is_member: 'false' }).isMember,
-    ).toBe(false)
+    expect(normalizeChannel({ id: 'channel-4', name: 'Design Reviews' }).isMember).toBe(false)
+    expect(normalizeChannel({ id: 'channel-5', name: 'Random', is_member: 'false' }).isMember).toBe(
+      false,
+    )
   })
 
   it('normalizes member IDs returned as user_id', () => {
@@ -61,6 +61,12 @@ describe('channel API normalizers', () => {
   it('normalizes member IDs from primitive and nested user records', () => {
     expect(normalizeMember('user-42').id).toBe('user-42')
     expect(normalizeMember({ id: 'membership-1', user: { id: 'user-42' } }).id).toBe('user-42')
+  })
+
+  it('preserves reported member presence and does not invent an offline state', () => {
+    expect(normalizeMember({ user_id: 'user-1' }).status).toBeNull()
+    expect(normalizeMember({ user_id: 'user-2', user: { presence: 'away' } }).status).toBe('away')
+    expect(normalizeMember({ user_id: 'user-3', status: { mode: 'dnd' } }).status).toBe('dnd')
   })
 
   it('uses joined_by as the user ID for channel membership records', () => {

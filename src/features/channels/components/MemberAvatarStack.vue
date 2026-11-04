@@ -16,6 +16,13 @@ const shown = computed(() => props.members.slice(0, props.max))
 const extra = computed(() =>
   Math.max(0, (props.total || props.members.length) - shown.value.length),
 )
+const statusLabels = {
+  online: 'Online',
+  away: 'Away',
+  offline: 'Offline',
+  dnd: 'Do not disturb',
+  unknown: 'Status unavailable',
+}
 
 function initials(name = '') {
   const parts = name.trim().split(/\s+/).filter(Boolean)
@@ -77,9 +84,9 @@ function scheduleHoverClose() {
         </div>
         <span
           class="ch-stack__preview-status"
-          :class="`ch-stack__preview-status--${hoveredMember.status || 'offline'}`"
+          :class="`ch-stack__preview-status--${hoveredMember.status || 'unknown'}`"
         >
-          {{ hoveredMember.status === 'online' ? 'Online' : 'Offline' }}
+          {{ statusLabels[hoveredMember.status] || statusLabels.unknown }}
         </span>
       </div>
 
@@ -155,6 +162,9 @@ function scheduleHoverClose() {
 .ch-stack__dot--away {
   background: #f5a623;
 }
+.ch-stack__dot--dnd {
+  background: #ef4444;
+}
 .ch-stack__preview {
   position: absolute;
   left: 50%;
@@ -204,6 +214,18 @@ function scheduleHoverClose() {
   background: rgba(34, 197, 94, 0.12);
 }
 .ch-stack__preview-status--offline {
+  color: #475569;
+  background: rgba(148, 163, 184, 0.14);
+}
+.ch-stack__preview-status--away {
+  color: #a16207;
+  background: rgba(245, 158, 11, 0.14);
+}
+.ch-stack__preview-status--dnd {
+  color: #b91c1c;
+  background: rgba(239, 68, 68, 0.12);
+}
+.ch-stack__preview-status--unknown {
   color: #475569;
   background: rgba(148, 163, 184, 0.14);
 }

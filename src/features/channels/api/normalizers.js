@@ -42,15 +42,10 @@ export function normalizeChannel(raw = {}) {
     isPrivate:
       rawPrivate == null
         ? type === 'private'
-        : rawPrivate === true ||
-          rawPrivate === 1 ||
-          String(rawPrivate).toLowerCase() === 'true',
+        : rawPrivate === true || rawPrivate === 1 || String(rawPrivate).toLowerCase() === 'true',
     isDefault: Boolean(record.isDefault ?? record.is_default),
     isArchived: Boolean(record.isArchived ?? record.is_archived),
-    isMember:
-      rawMember === true ||
-      rawMember === 1 ||
-      String(rawMember).toLowerCase() === 'true',
+    isMember: rawMember === true || rawMember === 1 || String(rawMember).toLowerCase() === 'true',
     isFavorite: Boolean(record.isFavorite ?? record.is_favorite),
     isMuted: Boolean(record.isMuted ?? record.is_muted),
     isUnread: Boolean(record.isUnread ?? record.is_unread),
@@ -63,10 +58,14 @@ export function normalizeChannel(raw = {}) {
 
 export function normalizeMember(raw = {}) {
   if (typeof raw === 'string' || typeof raw === 'number') {
-    return { id: String(raw), name: '', email: '', avatarUrl: '', status: 'offline' }
+    return { id: String(raw), name: '', email: '', avatarUrl: '', status: null }
   }
 
   const user = raw.user && typeof raw.user === 'object' ? raw.user : {}
+  const rawStatus =
+    raw.status ?? raw.presence ?? raw.state ?? user.status ?? user.presence ?? user.state
+  const status =
+    typeof rawStatus === 'string' ? rawStatus.toLowerCase() : (rawStatus?.state ?? rawStatus?.mode)
   return {
     id: String(
       raw.user_id ??
@@ -89,8 +88,6 @@ export function normalizeMember(raw = {}) {
       user.avatar_url ??
       user.avatar ??
       '',
-    status: ['online', 'away'].includes(raw.status ?? user.status)
-      ? (raw.status ?? user.status)
-      : 'offline',
+    status: ['online', 'away', 'offline', 'dnd'].includes(status) ? status : null,
   }
 }

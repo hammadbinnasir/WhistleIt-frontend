@@ -14,7 +14,6 @@ import {
   listMembers,
   removeChannelMember,
   updateChannel,
-  
 } from './channels.api'
 
 vi.mock('./http', () => ({ http: vi.fn() }))
@@ -245,7 +244,7 @@ describe('channel API routes', () => {
           name: 'Avery Jones',
           email: 'avery@example.com',
           avatarUrl: '',
-          status: 'offline',
+          status: null,
         },
       ],
       total: 1,
