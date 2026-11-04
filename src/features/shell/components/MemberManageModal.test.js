@@ -114,7 +114,6 @@ describe('MemberManageModal', () => {
     const wrapper = mountOpenModal('member', [
       { id: 'team-1', name: 'Design Team', workspaceId: 'workspace-1' },
     ])
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true)
     api.removeMember.mockResolvedValue({
       success: true,
       message: 'You left the team successfully.',
@@ -124,7 +123,11 @@ describe('MemberManageModal', () => {
     await wrapper.find('.leave-btn').trigger('click')
     await flushPromises()
 
-    expect(confirm).toHaveBeenCalledWith('You will lose access to this team. Leave "Design Team"?')
+    const dialog = wrapper.get('[role="alertdialog"]')
+    expect(dialog.text()).toContain('Leave Design Team? You will lose access to this team.')
+    await dialog.get('.shell-confirm-actions button:last-child').trigger('click')
+    await flushPromises()
+
     expect(api.removeMember).toHaveBeenCalledWith('workspace-1', 'team-1', 'self-user')
     expect(useTeamsStore().teams).toEqual([])
     expect(navigation.push).toHaveBeenCalledWith({ path: '/app/workspace-1' })
@@ -271,13 +274,14 @@ describe('MemberManageModal', () => {
   it('confirms removal by user ID and refreshes the member list on success', async () => {
     const wrapper = mountOpenModal()
     const membersStore = useMembersStore()
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true)
     await flushPromises()
 
     await wrapper.find('.remove-btn').trigger('click')
+    const dialog = wrapper.get('[role="alertdialog"]')
+    expect(dialog.text()).toContain('Remove Other Member from Design Team?')
+    await dialog.get('.shell-confirm-actions button:last-child').trigger('click')
     await flushPromises()
 
-    expect(confirm).toHaveBeenCalled()
     expect(api.removeMember).toHaveBeenCalledWith('workspace-1', 'team-1', 'target-user')
     expect(api.getMembers).toHaveBeenCalledTimes(2)
     expect(membersStore.members).toHaveLength(2)
@@ -292,10 +296,12 @@ describe('MemberManageModal', () => {
         finishRemove = resolve
       }),
     )
-    vi.spyOn(window, 'confirm').mockReturnValue(true)
     await flushPromises()
 
     await wrapper.find('.remove-btn').trigger('click')
+    await wrapper
+      .get('[role="alertdialog"] .shell-confirm-actions button:last-child')
+      .trigger('click')
     expect(wrapper.find('.remove-btn').attributes('disabled')).toBeDefined()
 
     finishRemove({ success: true })
@@ -304,26 +310,31 @@ describe('MemberManageModal', () => {
 
   it('shows clear errors and enters read-only state for a forbidden removal', async () => {
     const wrapper = mountOpenModal()
-    vi.spyOn(window, 'confirm').mockReturnValue(true)
     api.removeMember.mockRejectedValue({ status: 403, message: 'Forbidden' })
     await flushPromises()
 
     await wrapper.find('.remove-btn').trigger('click')
+    await wrapper
+      .get('[role="alertdialog"] .shell-confirm-actions button:last-child')
+      .trigger('click')
     await flushPromises()
 
     expect(wrapper.text()).toContain('The list is read-only.')
+    expect(wrapper.get('[role="alertdialog"] [role="alert"]').text()).toBe('Forbidden')
     expect(wrapper.find('.remove-btn').exists()).toBe(false)
   })
 
   it('shows a clear 404 removal error', async () => {
     const wrapper = mountOpenModal()
-    vi.spyOn(window, 'confirm').mockReturnValue(true)
     api.removeMember.mockRejectedValue({ status: 404, message: 'Not found' })
     await flushPromises()
 
     await wrapper.find('.remove-btn').trigger('click')
+    await wrapper
+      .get('[role="alertdialog"] .shell-confirm-actions button:last-child')
+      .trigger('click')
     await flushPromises()
 
-    expect(wrapper.text()).toContain('The team or member could not be found.')
+    expect(wrapper.get('[role="alertdialog"] [role="alert"]').text()).toBe('Not found')
   })
 })

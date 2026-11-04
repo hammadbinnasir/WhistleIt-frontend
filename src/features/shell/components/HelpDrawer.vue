@@ -251,7 +251,7 @@ onBeforeUnmount(() => {
                 v-model="searchQuery"
                 type="text"
                 autocomplete="off"
-                class="w-full bg-transparent text-sm text-slate-800 placeholder-slate-400 outline-none"
+                class="w-full bg-transparent text-sm text-slate-800 placeholder-slate-500 outline-none"
                 placeholder="How can we help?"
                 @input="isSearchOpen = true"
                 @focus="isSearchOpen = true"
@@ -288,9 +288,9 @@ onBeforeUnmount(() => {
                 @click="openResult(entry)"
               >
                 <span class="text-xs font-medium text-slate-700">{{ entry.title }}</span>
-                <span class="shrink-0 text-[11px] text-slate-400">{{ entry.label }}</span>
+                <span class="shrink-0 text-[11px] text-slate-500">{{ entry.label }}</span>
               </button>
-              <div v-if="results.length === 0" class="px-3.5 py-2 text-xs text-slate-400">
+              <div v-if="results.length === 0" class="px-3.5 py-2 text-xs text-slate-500">
                 No articles found. Try a different word.
               </div>
             </div>

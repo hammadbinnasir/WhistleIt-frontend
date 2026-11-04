@@ -43,13 +43,15 @@ onBeforeUnmount(() => document.removeEventListener('keydown', handleKeydown))
 
 <template>
   <div
-    class="fixed inset-0 z-[70] flex items-center justify-center overflow-y-auto bg-slate-950/50 p-4 text-slate-900"
+    class="shell-modal-backdrop flex items-center justify-center overflow-y-auto p-4 text-slate-900"
     role="dialog"
     aria-modal="true"
     aria-labelledby="invite-people-title"
     @click.self="handleClose"
   >
-    <section class="my-auto w-full max-w-lg rounded-2xl bg-white p-6 shadow-2xl sm:p-8">
+    <section
+      class="shell-surface my-auto max-h-[calc(100vh-2rem)] w-full max-w-lg overflow-y-auto rounded-2xl p-6 sm:p-8"
+    >
       <header class="mb-6 flex items-start justify-between gap-4">
         <div>
           <h2 id="invite-people-title" class="text-xl font-semibold text-slate-900">
@@ -83,7 +85,7 @@ onBeforeUnmount(() => document.removeEventListener('keydown', handleKeydown))
             autocomplete="email"
             placeholder="name@company.com"
             required
-            class="w-full rounded-lg border border-slate-300 px-3.5 py-3 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100"
+            class="w-full rounded-lg border border-slate-300 px-3.5 py-3 text-sm text-slate-900 outline-none transition placeholder:text-slate-500 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100"
           />
         </div>
 
@@ -93,7 +95,7 @@ onBeforeUnmount(() => document.removeEventListener('keydown', handleKeydown))
         <button
           type="submit"
           :disabled="isSending"
-          class="w-full rounded-lg bg-indigo-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-indigo-700 focus:outline-none focus:ring-4 focus:ring-indigo-200 disabled:cursor-wait disabled:opacity-60"
+          class="shell-primary-button w-full px-4 py-3 text-sm transition focus:outline-none focus:ring-4 focus:ring-indigo-200 disabled:cursor-wait disabled:opacity-60"
         >
           {{ isSending ? 'Sending invitation...' : 'Send invitation' }}
         </button>
