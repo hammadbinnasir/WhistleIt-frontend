@@ -1,5 +1,5 @@
 :root {
-  --shell-z-rail: 10;
+  --shell-z-rail: 25; /* Rail popovers extend over the adjacent sidebar. */
   --shell-z-sidebar: 20;
   --shell-z-popover: 30;
   --shell-z-modal: 40;
