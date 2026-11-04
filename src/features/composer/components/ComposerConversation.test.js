@@ -219,6 +219,50 @@ describe('composer conversation', () => {
     wrapper.unmount()
   })
 
+  it('closes a poll and shows closed actions when its end time passes', async () => {
+    vi.useFakeTimers()
+    const closeAt = new Date(Date.now() + 60_000).toISOString()
+    const messages = useMessagesStore()
+    messages.messagesByChannel.general = [
+      {
+        id: 'expired-poll',
+        content: '',
+        author: 'You',
+        mine: true,
+        createdAt: new Date().toISOString(),
+        poll: {
+          id: 'expired-poll',
+          title: 'Expired poll',
+          scheduleClose: closeAt,
+          questions: [
+            {
+              text: 'Which option?',
+              type: 'choice',
+              required: true,
+              multiple: false,
+              options: ['A', 'B'],
+            },
+          ],
+        },
+      },
+    ]
+    const wrapper = mount(ComposerConversation)
+
+    expect(wrapper.text()).toContain('Participate')
+
+    await vi.advanceTimersByTimeAsync(60_000)
+    await nextTick()
+
+    expect(wrapper.text()).toContain('Closed')
+    expect(wrapper.text()).not.toContain('Participate')
+    expect(wrapper.text()).not.toContain('Close Poll')
+    expect(wrapper.text()).toContain('View All Results')
+    expect(wrapper.text()).toContain('Export To Csv')
+
+    wrapper.unmount()
+    vi.useRealTimers()
+  })
+
   it('opens and sends messages in the selected direct message', async () => {
     const dms = useDmStore()
     await dms.init()
