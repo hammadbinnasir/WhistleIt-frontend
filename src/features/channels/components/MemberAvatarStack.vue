@@ -10,11 +10,19 @@ const emit = defineEmits(['click'])
 
 const PALETTE = ['#7b2fd0', '#5a45d8', '#3f6bd9', '#8e3fb8', '#6a3fd0', '#2f7fb8']
 const hoveredMember = ref(null)
+let hoverCloseTimer = null
 
 const shown = computed(() => props.members.slice(0, props.max))
 const extra = computed(() =>
   Math.max(0, (props.total || props.members.length) - shown.value.length),
 )
+const statusLabels = {
+  online: 'Online',
+  away: 'Away',
+  offline: 'Offline',
+  dnd: 'Do not disturb',
+  unknown: 'Status unavailable',
+}
 
 function initials(name = '') {
   const parts = name.trim().split(/\s+/).filter(Boolean)
@@ -29,7 +37,16 @@ function colorFor(member) {
 }
 
 function setHovered(member) {
+  clearTimeout(hoverCloseTimer)
   hoveredMember.value = member || null
+}
+
+function scheduleHoverClose() {
+  clearTimeout(hoverCloseTimer)
+  hoverCloseTimer = setTimeout(() => {
+    hoveredMember.value = null
+    hoverCloseTimer = null
+  }, 150)
 }
 </script>
 
@@ -38,6 +55,8 @@ function setHovered(member) {
     class="ch-stack"
     :aria-label="`View ${total || members.length} members`"
     @click="emit('click')"
+    @mouseenter="setHovered(hoveredMember)"
+    @mouseleave="scheduleHoverClose"
   >
     <span
       v-for="member in shown"
@@ -46,7 +65,6 @@ function setHovered(member) {
       :style="member.avatarUrl ? null : { background: colorFor(member) }"
       :title="member.name"
       @mouseenter="setHovered(member)"
-      @mouseleave="setHovered(null)"
     >
       <img v-if="member.avatarUrl" :src="member.avatarUrl" :alt="member.name" />
       <template v-else>{{ initials(member.name) }}</template>
@@ -54,16 +72,21 @@ function setHovered(member) {
     </span>
     <span v-if="extra > 0" class="ch-stack__avatar ch-stack__avatar--extra">+{{ extra }}</span>
 
-    <div v-if="hoveredMember" class="ch-stack__preview" aria-live="polite">
+    <div
+      v-if="hoveredMember"
+      class="ch-stack__preview"
+      aria-live="polite"
+      @mouseenter="setHovered(hoveredMember)"
+    >
       <div class="ch-stack__preview-header">
         <div class="ch-stack__preview-avatar">
           {{ initials(hoveredMember.name) }}
         </div>
         <span
           class="ch-stack__preview-status"
-          :class="`ch-stack__preview-status--${hoveredMember.status || 'offline'}`"
+          :class="`ch-stack__preview-status--${hoveredMember.status || 'unknown'}`"
         >
-          {{ hoveredMember.status === 'online' ? 'Online' : 'Offline' }}
+          {{ statusLabels[hoveredMember.status] || statusLabels.unknown }}
         </span>
       </div>
 
@@ -139,6 +162,9 @@ function setHovered(member) {
 .ch-stack__dot--away {
   background: #f5a623;
 }
+.ch-stack__dot--dnd {
+  background: #ef4444;
+}
 .ch-stack__preview {
   position: absolute;
   left: 50%;
@@ -152,7 +178,7 @@ function setHovered(member) {
   box-shadow: 0 16px 32px rgba(15, 23, 42, 0.18);
   padding: 14px 14px 12px;
   z-index: 30;
-  pointer-events: none;
+  pointer-events: auto;
 }
 .ch-stack__preview-header {
   display: flex;
@@ -188,6 +214,18 @@ function setHovered(member) {
   background: rgba(34, 197, 94, 0.12);
 }
 .ch-stack__preview-status--offline {
+  color: #475569;
+  background: rgba(148, 163, 184, 0.14);
+}
+.ch-stack__preview-status--away {
+  color: #a16207;
+  background: rgba(245, 158, 11, 0.14);
+}
+.ch-stack__preview-status--dnd {
+  color: #b91c1c;
+  background: rgba(239, 68, 68, 0.12);
+}
+.ch-stack__preview-status--unknown {
   color: #475569;
   background: rgba(148, 163, 184, 0.14);
 }

@@ -1,14 +1,17 @@
 <script setup>
-import { nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
+import { nextTick, ref } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useRouter } from 'vue-router'
 import { useTeamsStore } from '@/stores/teams'
 import { useUiStore } from '@/stores/ui'
+import { useUserStore } from '@/features/account/composables/useUserStore'
 import WorkspaceSwitcher from './WorkspaceSwitcher.vue'
+import { useAnchoredPopover } from '../composables/useAnchoredPopover'
 
 const router = useRouter()
 const teamsStore = useTeamsStore()
 const ui = useUiStore()
+const userStore = useUserStore()
 const emit = defineEmits(['invite'])
 const {
   activeWorkspaceId,
@@ -26,6 +29,17 @@ const teamActionsButton = ref(null)
 const teamActionsPopover = ref(null)
 const teamActionsPosition = ref({ top: 0, left: 0 })
 const railTooltip = ref(null)
+const { close: dismissTeamActions, updatePosition: positionTeamActions } = useAnchoredPopover({
+  isOpen: teamActionsOpen,
+  triggerRef: teamActionsButton,
+  popoverRef: teamActionsPopover,
+  position: teamActionsPosition,
+  placement: 'right-start',
+  offset: 30,
+  onClose: () => {
+    teamActionsOpen.value = false
+  },
+})
 
 function getInitials(name) {
   return name
@@ -47,6 +61,12 @@ async function updateRoute(workspaceId, teamId) {
 }
 
 async function handleWorkspaceSelect(workspaceId) {
+  if (userStore.state.preferences.workspaceSwitch === 'new') {
+    const target = router.resolve({ path: `/app/${encodeURIComponent(workspaceId)}` })
+    window.open(target.href, '_blank', 'noopener,noreferrer')
+    return
+  }
+
   await teamsStore.selectWorkspace(workspaceId)
   await updateRoute(workspaceId, teamsStore.activeTeamId)
 }
@@ -56,45 +76,20 @@ async function handleTeamSelect(teamId) {
   await updateRoute(activeWorkspaceId.value, teamId)
 }
 
-function closeTeamActions(restoreFocus = false) {
-  teamActionsOpen.value = false
-  if (restoreFocus) nextTick(() => teamActionsButton.value?.focus())
-}
-
 function toggleTeamActions() {
   if (teamActionsOpen.value) {
-    closeTeamActions()
+    dismissTeamActions()
     return
   }
-  const bounds = teamActionsButton.value.getBoundingClientRect()
-  const railBounds = teamActionsButton.value.closest('.team-rail').getBoundingClientRect()
-  teamActionsPosition.value = {
-    top: Math.min(bounds.top, window.innerHeight - 108),
-    left: Math.max(bounds.right + 8, railBounds.right + 8),
-  }
   teamActionsOpen.value = true
-  nextTick(() => teamActionsPopover.value?.querySelector('button')?.focus())
-}
-
-function handleDocumentPointer(event) {
-  if (
-    teamActionsOpen.value &&
-    !teamActionsButton.value?.contains(event.target) &&
-    !teamActionsPopover.value?.contains(event.target)
-  ) {
-    closeTeamActions()
-  }
-}
-
-function handleDocumentKeydown(event) {
-  if (event.key === 'Escape' && teamActionsOpen.value) {
-    event.preventDefault()
-    closeTeamActions(true)
-  }
+  nextTick(() => {
+    positionTeamActions()
+    teamActionsPopover.value?.querySelector('button')?.focus()
+  })
 }
 
 function openCreateTeam() {
-  closeTeamActions()
+  dismissTeamActions()
   ui.toggleTeamCreateModal()
 }
 
@@ -118,16 +113,6 @@ function showRailTooltip(event, text) {
 function hideRailTooltip() {
   railTooltip.value = null
 }
-
-onMounted(() => {
-  document.addEventListener('pointerdown', handleDocumentPointer)
-  document.addEventListener('keydown', handleDocumentKeydown)
-})
-
-onBeforeUnmount(() => {
-  document.removeEventListener('pointerdown', handleDocumentPointer)
-  document.removeEventListener('keydown', handleDocumentKeydown)
-})
 </script>
 
 <template>
@@ -140,7 +125,7 @@ onBeforeUnmount(() => {
           class="team-rail__icon-list"
           aria-label="Loading workspaces"
         >
-          <span v-for="item in 2" :key="item" class="team-rail__skeleton" />
+          <span class="team-rail__skeleton" />
         </div>
         <WorkspaceSwitcher v-else @select="handleWorkspaceSelect" />
         <p v-if="workspacesError" class="team-rail__message" role="alert">
@@ -286,7 +271,7 @@ onBeforeUnmount(() => {
         class="team-rail__popover"
         role="menu"
         aria-label="Team actions"
-        :style="{ top: `${teamActionsPosition.top}px`, left: `${teamActionsPosition.left}px` }"
+        :style="{ top: teamActionsPosition.top, left: teamActionsPosition.left }"
       >
         <button type="button" role="menuitem" @click="openCreateTeam">Create a team</button>
       </div>
@@ -297,6 +282,7 @@ onBeforeUnmount(() => {
 <style scoped>
 .team-rail {
   position: relative;
+  z-index: var(--shell-z-rail);
   display: flex;
   width: 74px;
   min-width: 74px;
@@ -525,7 +511,7 @@ onBeforeUnmount(() => {
 
 .team-rail__popover {
   position: fixed;
-  z-index: 45;
+  z-index: var(--shell-z-popover);
   display: flex;
   width: 11rem;
   flex-direction: column;
@@ -533,20 +519,21 @@ onBeforeUnmount(() => {
   border: 1px solid var(--color-slate-300);
   border-radius: 0.5rem;
   padding: 0.25rem;
-  background: var(--color-white);
+  background: var(--shell-surface-background);
   color: var(--color-slate-800);
-  box-shadow: 0 0.5rem 1.5rem color-mix(in srgb, var(--color-slate-950) 20%, transparent);
+  box-shadow: var(--shell-surface-shadow);
 }
 
 .team-rail__tooltip {
   position: fixed;
-  z-index: 80;
+  z-index: var(--shell-z-sidebar);
   transform: translateY(-50%);
   border-radius: 0.35rem;
   padding: 0.4rem 0.75rem;
-  background: #555;
-  color: var(--color-white);
-  box-shadow: 0 2px 8px rgb(0 0 0 / 18%);
+  border: 1px solid var(--shell-surface-border);
+  background: var(--shell-surface-background);
+  color: var(--shell-surface-foreground);
+  box-shadow: var(--shell-surface-shadow);
   font-size: 0.8125rem;
   font-weight: 500;
   line-height: 1.25rem;
@@ -566,6 +553,10 @@ onBeforeUnmount(() => {
 
 .team-rail__popover button:hover {
   background: var(--color-slate-100);
+}
+
+.team-rail__popover button:focus-visible {
+  outline-color: var(--shell-accent);
 }
 
 @keyframes rail-pulse {

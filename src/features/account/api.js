@@ -2,6 +2,10 @@ import { http } from '@/features/channels/api/http'
 
 const userPath = (userId, suffix = '') => `/v1/users/${encodeURIComponent(userId)}${suffix}`
 
+export function getUser(userId) {
+  return http(userPath(userId))
+}
+
 export function getUserProfile(userId) {
   return http(userPath(userId, '/profile'))
 }
@@ -10,8 +14,16 @@ export function updateUserProfile(userId, profile) {
   return http(userPath(userId, '/profile'), { method: 'PATCH', body: profile })
 }
 
-export function getUserSettings(userId) {
-  return http(userPath(userId, '/settings'))
+export function updateUserPreferences(userId, preferences) {
+  return http(userPath(userId, '/preferences'), {
+    method: 'PATCH',
+    body: {
+      enter_key: preferences.enterKey,
+      double_click: preferences.doubleClick,
+      left_click: preferences.leftClick === 'menu' ? 'open_menu' : 'default_click',
+      workspace_switch: preferences.workspaceSwitch,
+    },
+  })
 }
 
 export function updateUserStatus(userId, status) {

@@ -1,8 +1,10 @@
 <script setup>
 import { ref, computed, nextTick, onBeforeUnmount, onMounted } from 'vue'
 import MediaToolbar from '../../media/MediaToolbar.vue'
+import { useUserStore } from '@/features/account/composables/useUserStore'
 
 const emit = defineEmits(['send', 'schedule', 'attachment', 'video', 'microphone', 'gif'])
+const userStore = useUserStore()
 
 const editor = ref(null)
 const scheduleTrigger = ref(null)
@@ -66,7 +68,15 @@ const pollIsReady = computed(
           question.options.filter((option) => option.trim()).length >= 2),
     ),
 )
-const pollCanBeCreated = computed(() => pollIsReady.value && pollStartNow.value)
+const pollCanBeCreated = computed(() => {
+  if (!pollIsReady.value) return false
+  if (pollStartNow.value) return true
+  if (!pollScheduleStart.value || !pollStartDate.value || !pollStartTime.value) return false
+  return (
+    !pollScheduleClose.value ||
+    Boolean(pollCloseDate.value && pollCloseTime.value)
+  )
+})
 
 onBeforeUnmount(() => clearTimeout(scheduleErrorTimer))
 
@@ -875,7 +885,14 @@ function handleMediaAction(action, payload) {
 }
 
 function handleKeydown(event) {
-  if (event.key === 'Enter') return
+  if (event.key !== 'Enter') return
+
+  const sendOnEnter = userStore.state.preferences.enterKey === 'send'
+  const shouldSend = event.shiftKey ? !sendOnEnter : sendOnEnter
+  if (!shouldSend) return
+
+  event.preventDefault()
+  sendMessage()
 }
 </script>
 

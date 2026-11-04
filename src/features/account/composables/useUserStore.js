@@ -4,8 +4,8 @@ import {
   deleteUserAvatar,
   deleteUserCustomStatus,
   getUserProfile,
-  getUserSettings,
   updateUserProfile,
+  updateUserPreferences,
   updateUserPassword,
   updateUserStatus,
   uploadUserAvatar,
@@ -41,6 +41,12 @@ const defaultState = () => ({
 })
 
 const VALID_STATUSES = ['online', 'away', 'offline', 'dnd']
+const VALID_PREFERENCES = {
+  enterKey: ['send', 'newline'],
+  doubleClick: ['default', 'reminder'],
+  leftClick: ['default', 'menu'],
+  workspaceSwitch: ['current', 'new'],
+}
 const MAX_TIMEOUT = 2147483647 // setTimeout limit (~24.8 days)
 
 const state = reactive(defaultState())
@@ -102,6 +108,17 @@ function getUserProfileData(response) {
   let data = response
   while (data?.data && typeof data.data === 'object') data = data.data
   return data?.user?.profile ?? data?.profile ?? data?.user ?? data
+}
+
+function normalizePreferences(preferences = {}) {
+  const leftClick = preferences.leftClick ?? preferences.left_click
+  return {
+    enterKey: preferences.enterKey ?? preferences.enter_key,
+    doubleClick: preferences.doubleClick ?? preferences.double_click,
+    leftClick:
+      leftClick === 'open_menu' ? 'menu' : leftClick === 'default_click' ? 'default' : leftClick,
+    workspaceSwitch: preferences.workspaceSwitch ?? preferences.workspace_switch,
+  }
 }
 
 /* ---------- custom status expiry ---------- */
@@ -167,7 +184,12 @@ function hydrate(data = {}) {
   if (data.customStatusExpiresAt !== undefined) {
     state.customStatusExpiresAt = data.customStatusExpiresAt
   }
-  if (data.preferences) Object.assign(state.preferences, data.preferences)
+  if (data.preferences) {
+    const preferences = normalizePreferences(data.preferences)
+    for (const [key, value] of Object.entries(preferences)) {
+      if (VALID_PREFERENCES[key]?.includes(value)) state.preferences[key] = value
+    }
+  }
   if (data.security) Object.assign(state.security, data.security)
   scheduleExpiry()
 }
@@ -175,6 +197,12 @@ function hydrate(data = {}) {
 async function loadUserProfile() {
   const response = await getUserProfile(requireUserId())
   const data = getUserProfileData(response)
+  const responseData = response?.data?.data ?? response?.data ?? response
+  const preferences =
+    data?.preferences ??
+    data?.user?.preferences ??
+    responseData?.preferences ??
+    responseData?.user?.preferences
   const jobResponsibilities = data?.jobResponsibilities ?? data?.job_responsibilities
   const profileFields = {
     fullName: data?.fullName ?? data?.full_name ?? data?.name,
@@ -194,6 +222,7 @@ async function loadUserProfile() {
   }
   hydrate({
     profile,
+    preferences,
     status: data?.status ?? data?.presence,
     customStatus:
       data?.customStatus !== undefined
@@ -204,15 +233,6 @@ async function loadUserProfile() {
   })
   const photoUrl = getAvatarUrl(response)
   if (photoUrl && !profile.photoUrl) state.profile.photoUrl = photoUrl
-}
-
-async function loadSettings() {
-  let response = await getUserSettings(requireUserId())
-  while (response?.data && typeof response.data === 'object') response = response.data
-  if (response?.settings && typeof response.settings === 'object') {
-    response = response.settings
-  }
-  hydrate(response)
 }
 
 async function setStatus(status) {
@@ -279,7 +299,10 @@ async function saveSettings({ profile, photo, removePhoto, preferences, security
     state.profile.photoUrl = ''
   }
 
-  if (preferences) Object.assign(state.preferences, preferences)
+  if (preferences) {
+    await updateUserPreferences(requireUserId(), preferences)
+    Object.assign(state.preferences, preferences)
+  }
   if (security) Object.assign(state.security, security)
 }
 
@@ -292,7 +315,6 @@ export function useUserStore() {
     state: readonlyState,
     hydrate,
     loadUserProfile,
-    loadSettings,
     setStatus,
     setCustomStatus,
     clearCustomStatus,

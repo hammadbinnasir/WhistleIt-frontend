@@ -14,6 +14,7 @@ import {
   timeLabel,
 } from '@/features/messages/message-utils'
 import { useUiStore } from '@/stores/ui'
+import { useUserStore } from '@/features/account/composables/useUserStore'
 import { addMockMessage, removeMockMessage, updateMockMessage } from '@/features/search/search'
 import SetReminderModal from '@/features/search/SetReminderModal.vue'
 import MessageComposer from './MessageComposer.vue'
@@ -26,6 +27,7 @@ const props = defineProps({
 const dms = useDmStore()
 const channelsStore = useChannelsStore()
 const ui = useUiStore()
+const userStore = useUserStore()
 const messageStore = useMessagesStore()
 const messagesContainer = ref(null)
 const editingId = ref(null)
@@ -48,15 +50,18 @@ const pollResults = ref({})
 const closedPolls = ref(new Set())
 const minimumDeleteDate = computed(() => toLocalDateTimeValue(new Date(Date.now() + 60_000)))
 
-const channelId = computed(() => String(props.conversationId || 'general'))
 const currentUserName = computed(
   () => dms.usersById[dms.meId]?.name || getAuthUser()?.fullName || 'You',
 )
-const conversation = computed(() =>
-  props.conversationType === 'dm'
-    ? dms.conversations.find((item) => item.id === String(props.conversationId)) || null
-    : null,
-)
+let messageClickTimer = null
+
+const pollClock = ref(Date.now())
+let pollClockTimer = null
+const channelId = computed(() => String(props.conversationId ?? 'general'))
+const conversation = computed(() => {
+  if (props.conversationType !== 'dm' || props.conversationId == null) return null
+  return dms.conversations.find((item) => String(item.id) === String(props.conversationId)) || null
+})
 const conversationLabel = computed(() =>
   conversation.value ? dms.titleOf(conversation.value) : channelId.value.replaceAll('-', ' '),
 )
@@ -405,6 +410,35 @@ function setReminder(message) {
   openMenuId.value = null
 }
 
+function handleMessageClick(event, message) {
+  if (
+    userStore.state.preferences.leftClick !== 'menu' ||
+    event.detail > 1 ||
+    event.target.closest('button, a, input')
+  ) {
+    return
+  }
+
+  clearTimeout(messageClickTimer)
+  messageClickTimer = setTimeout(() => {
+    openMenuId.value = message.id
+    messageClickTimer = null
+  }, 250)
+}
+
+function handleMessageDoubleClick(event, message) {
+  clearTimeout(messageClickTimer)
+  messageClickTimer = null
+  if (
+    userStore.state.preferences.doubleClick === 'reminder' &&
+    !message.deleted &&
+    !event.target.closest('button, a, input')
+  ) {
+    event.preventDefault()
+    setReminder(message)
+  }
+}
+
 function openForwardDialog(message) {
   forwardTarget.value = message
   openMenuId.value = null
@@ -475,9 +509,8 @@ function closeActionsOnOutsideClick(event) {
 }
 
 function participateInPoll(pollId) {
-  if (closedPolls.value.has(pollId)) return
   const message = renderedMessages.value.find((item) => item.poll?.id === pollId)
-  if (!message?.poll) return
+  if (!message?.poll || !isPollActive(message.poll)) return
   activePoll.value = message.poll
   activePollMode.value = 'respond'
   pollResponses.value = {}
@@ -485,6 +518,49 @@ function participateInPoll(pollId) {
 
 function closePoll(pollId) {
   closedPolls.value = new Set([...closedPolls.value, pollId])
+}
+
+function pollStartTime(poll) {
+  return poll.scheduleStart ? Date.parse(poll.scheduleStart) : NaN
+}
+
+function pollCloseTime(poll) {
+  return poll.scheduleClose ? Date.parse(poll.scheduleClose) : NaN
+}
+
+function isPollActive(poll) {
+  const now = pollClock.value
+  const startsAt = pollStartTime(poll)
+  const closesAt = pollCloseTime(poll)
+  return (
+    !closedPolls.value.has(poll.id) &&
+    (!Number.isFinite(startsAt) || startsAt <= now) &&
+    (!Number.isFinite(closesAt) || closesAt > now)
+  )
+}
+
+function isPollClosed(poll) {
+  return closedPolls.value.has(poll.id) || (
+    Number.isFinite(pollCloseTime(poll)) && pollCloseTime(poll) <= pollClock.value
+  )
+}
+
+function isPollScheduled(poll) {
+  const startsAt = pollStartTime(poll)
+  return Number.isFinite(startsAt) && startsAt > pollClock.value
+}
+
+function pollScheduleLabel(value) {
+  const timestamp = Date.parse(value || '')
+  if (!Number.isFinite(timestamp)) return ''
+  return new Intl.DateTimeFormat('en-US', {
+    weekday: 'short',
+    month: 'short',
+    day: '2-digit',
+    year: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  }).format(timestamp)
 }
 
 function exportPollResults(pollId) {
@@ -601,8 +677,17 @@ async function scrollMessagesToLatest() {
   if (container) container.scrollTop = container.scrollHeight
 }
 
-onMounted(() => document.addEventListener('pointerdown', closeActionsOnOutsideClick))
-onBeforeUnmount(() => document.removeEventListener('pointerdown', closeActionsOnOutsideClick))
+onMounted(() => {
+  document.addEventListener('pointerdown', closeActionsOnOutsideClick)
+  pollClockTimer = window.setInterval(() => {
+    pollClock.value = Date.now()
+  }, 1000)
+})
+onBeforeUnmount(() => {
+  document.removeEventListener('pointerdown', closeActionsOnOutsideClick)
+  clearTimeout(messageClickTimer)
+  if (pollClockTimer) window.clearInterval(pollClockTimer)
+})
 </script>
 
 <template>
@@ -659,6 +744,8 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', closeActionsOn
               class="composer-conversation__message-bubble"
               :class="{ 'composer-conversation__message-bubble--deleted': message.deleted }"
               :data-poll-title="message.content?.match(/^Poll:\s*(.+)$/m)?.[1]?.trim()"
+              @click="handleMessageClick($event, message)"
+              @dblclick="handleMessageDoubleClick($event, message)"
             >
               <template v-if="!message.deleted">
                 <span v-if="message.forwardedFrom" class="composer-conversation__forwarded">
@@ -678,16 +765,22 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', closeActionsOn
                   <div class="composer-conversation__poll-meta">
                     <span
                       class="composer-conversation__poll-status"
-                      :class="{ 'is-closed': closedPolls.has(message.poll.id) }"
+                      :class="{ 'is-closed': closedPolls.has(message.poll.id) || isPollScheduled(message.poll) }"
                     >
                       <i
                         class="composer-conversation__poll-status-icon"
-                        :class="closedPolls.has(message.poll.id) ? 'is-closed' : 'is-open'"
+                        :class="
+                          isPollClosed(message.poll)
+                            ? 'is-closed'
+                            : isPollScheduled(message.poll)
+                              ? 'is-scheduled'
+                              : 'is-open'
+                        "
                         aria-hidden="true"
                       >
-                        {{ closedPolls.has(message.poll.id) ? '×' : '✓' }}
+                        {{ isPollClosed(message.poll) ? '×' : isPollScheduled(message.poll) ? '◷' : '✓' }}
                       </i>
-                      {{ closedPolls.has(message.poll.id) ? 'Closed' : 'Open' }}
+                      {{ isPollClosed(message.poll) ? 'Closed' : isPollScheduled(message.poll) ? 'Scheduled' : 'Open' }}
                     </span>
                     <span
                       class="composer-conversation__poll-meta-divider"
@@ -698,10 +791,31 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', closeActionsOn
                       {{ message.poll.audience === 'anonymous' ? 'Anonymous' : 'Public' }}
                     </span>
                   </div>
+                  <div
+                    v-if="message.poll.scheduleStart || message.poll.scheduleClose"
+                    class="composer-conversation__poll-schedule-info"
+                  >
+                    <div v-if="message.poll.scheduleStart" class="composer-conversation__poll-schedule-item">
+                      <span class="composer-conversation__poll-schedule-icon">◷</span>
+                      <span>
+                        <small>Starts</small>
+                        <strong>{{ pollScheduleLabel(message.poll.scheduleStart) }}</strong>
+                      </span>
+                    </div>
+                    <div v-if="message.poll.scheduleClose" class="composer-conversation__poll-schedule-item">
+                      <span class="composer-conversation__poll-schedule-icon">×</span>
+                      <span>
+                        <small>Ends</small>
+                        <strong>{{ pollScheduleLabel(message.poll.scheduleClose) }}</strong>
+                      </span>
+                    </div>
+                  </div>
                   <div class="composer-conversation__poll-actions">
                     <button
                       v-if="
-                        !closedPolls.has(message.poll.id) && !participatedPolls.has(message.poll.id)
+                        !isPollScheduled(message.poll) &&
+                        !closedPolls.has(message.poll.id) &&
+                        !participatedPolls.has(message.poll.id)
                       "
                       type="button"
                       @click="participateInPoll(message.poll.id)"
@@ -709,7 +823,7 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', closeActionsOn
                       Participate
                     </button>
                     <button
-                      v-else-if="!closedPolls.has(message.poll.id)"
+                      v-else-if="!isPollScheduled(message.poll) && !closedPolls.has(message.poll.id)"
                       type="button"
                       class="is-done"
                       disabled
@@ -717,7 +831,11 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', closeActionsOn
                     >
                       You're Done
                     </button>
-                    <button type="button" @click="viewPollResults(message.poll.id)">
+                    <button
+                      v-if="!isPollScheduled(message.poll)"
+                      type="button"
+                      @click="viewPollResults(message.poll.id)"
+                    >
                       View All Results
                     </button>
                     <button
@@ -727,7 +845,7 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', closeActionsOn
                     >
                       Export To Csv
                     </button>
-                    <button v-else type="button" @click="closePoll(message.poll.id)">
+                    <button v-else-if="!isPollScheduled(message.poll)" type="button" @click="closePoll(message.poll.id)">
                       Close Poll
                     </button>
                   </div>
@@ -1082,16 +1200,16 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', closeActionsOn
             <span>Creator: {{ activePoll.creator || 'You' }}</span>
             <span
               class="composer-conversation__poll-status"
-              :class="{ 'is-closed': closedPolls.has(activePoll.id) }"
+              :class="{ 'is-closed': isPollClosed(activePoll) }"
             >
               <i
                 class="composer-conversation__poll-status-icon"
-                :class="closedPolls.has(activePoll.id) ? 'is-closed' : 'is-open'"
+                :class="isPollClosed(activePoll) ? 'is-closed' : isPollScheduled(activePoll) ? 'is-scheduled' : 'is-open'"
                 aria-hidden="true"
               >
-                {{ closedPolls.has(activePoll.id) ? '×' : '✓' }}
+                {{ isPollClosed(activePoll) ? '×' : isPollScheduled(activePoll) ? '◷' : '✓' }}
               </i>
-              {{ closedPolls.has(activePoll.id) ? 'Closed' : 'Open' }}
+              {{ isPollClosed(activePoll) ? 'Closed' : isPollScheduled(activePoll) ? 'Scheduled' : 'Open' }}
             </span>
             <span class="composer-conversation__poll-meta-divider" aria-hidden="true"></span>
             <span class="composer-conversation__poll-visibility">
@@ -1516,6 +1634,10 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', closeActionsOn
   background: #f04444;
 }
 
+.composer-conversation__poll-status-icon.is-scheduled {
+  background: #5962ff;
+}
+
 .composer-conversation__poll-status.is-closed {
   color: #696d81;
 }
@@ -1537,6 +1659,72 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', closeActionsOn
   flex-wrap: wrap;
   gap: 8px;
   padding: 0 12px 14px;
+}
+
+.composer-conversation__poll-schedule-info {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0;
+  margin: 4px 12px 14px;
+  border: 1px solid #d5d7e2;
+  border-radius: 6px;
+  background: #fff;
+  color: #25263a;
+}
+
+.composer-conversation__poll-schedule-item {
+  display: flex;
+  min-width: 220px;
+  flex: 1 1 220px;
+  align-items: center;
+  gap: 9px;
+  padding: 10px 12px;
+}
+
+.composer-conversation__poll-schedule-item + .composer-conversation__poll-schedule-item {
+  border-left: 1px solid #e1e2ea;
+}
+
+.composer-conversation__poll-schedule-icon {
+  display: inline-grid;
+  width: 24px;
+  height: 24px;
+  place-items: center;
+  border-radius: 50%;
+  background: #eef0ff;
+  color: #5962ff;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.composer-conversation__poll-schedule-item > span:last-child {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.composer-conversation__poll-schedule-item small {
+  color: #696d81;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.composer-conversation__poll-schedule-item strong {
+  overflow: hidden;
+  color: #25263a;
+  font-size: 12px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-width: 620px) {
+  .composer-conversation__poll-schedule-item + .composer-conversation__poll-schedule-item {
+    border-top: 1px solid #e1e2ea;
+    border-left: 0;
+  }
 }
 
 .composer-conversation__poll-actions button {

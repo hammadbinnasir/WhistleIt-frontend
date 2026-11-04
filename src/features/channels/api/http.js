@@ -27,6 +27,7 @@ export async function http(
     })
   }
   let response
+  const isFormData = typeof FormData !== 'undefined' && body instanceof FormData
   try {
     response = await fetch(url.toString(), {
       method,
@@ -34,11 +35,11 @@ export async function http(
       signal,
       headers: {
         Accept: 'application/json',
-        ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}),
+        ...(body !== undefined && !isFormData ? { 'Content-Type': 'application/json' } : {}),
         ...(auth ? getAuthHeaders() : {}),
         ...headers,
       },
-      ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
+      ...(body !== undefined ? { body: isFormData ? body : JSON.stringify(body) } : {}),
     })
   } catch (error) {
     throw new ApiError(error.message || 'Network request failed', { details: error })

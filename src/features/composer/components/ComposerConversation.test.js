@@ -8,6 +8,7 @@ import { useDmStore } from '@/features/dms/stores/dms'
 import { useMessagesStore } from '@/features/messages/messages'
 import { useRemindersStore } from '@/features/search/reminders'
 import { useUiStore } from '@/stores/ui'
+import { resetUserStore, useUserStore } from '@/features/account/composables/useUserStore'
 
 const emojiPickerProps = vi.hoisted(() => vi.fn())
 
@@ -38,6 +39,7 @@ describe('composer conversation', () => {
     localStorage.clear()
     sessionStorage.clear()
     setActivePinia(createPinia())
+    resetUserStore()
   })
 
   async function sendMessage(wrapper, content) {
@@ -74,6 +76,37 @@ describe('composer conversation', () => {
     expect(wrapper.get('time').attributes('datetime')).toBeTruthy()
 
     expect(wrapper.get('[aria-label="Sent"]').text()).toBe('✓✓')
+  })
+
+  it('opens the message action menu on left click when configured', async () => {
+    const wrapper = mount(ComposerConversation)
+    await sendMessage(wrapper, 'Click for actions')
+
+    await wrapper.get('.composer-conversation__message-bubble').trigger('click')
+    await new Promise((resolve) => setTimeout(resolve, 275))
+
+    expect(wrapper.find('.composer-conversation__menu').exists()).toBe(true)
+  })
+
+  it('opens the reminder dialog on double click when configured', async () => {
+    useUserStore().hydrate({ preferences: { doubleClick: 'reminder' } })
+    const wrapper = mount(ComposerConversation)
+    await sendMessage(wrapper, 'Remind me about this')
+
+    await wrapper.get('.composer-conversation__message-bubble').trigger('dblclick')
+
+    expect(wrapper.get('[aria-label="Reminder title"]').exists()).toBe(true)
+  })
+
+  it('does not open a message menu when left click is set to default', async () => {
+    useUserStore().hydrate({ preferences: { leftClick: 'default' } })
+    const wrapper = mount(ComposerConversation)
+    await sendMessage(wrapper, 'Select this message')
+
+    await wrapper.get('.composer-conversation__message-bubble').trigger('click')
+    await new Promise((resolve) => setTimeout(resolve, 275))
+
+    expect(wrapper.find('.composer-conversation__menu').exists()).toBe(false)
   })
 
   it('shows a sent poll in the conversation', async () => {
@@ -155,6 +188,34 @@ describe('composer conversation', () => {
     closeButton.click()
     await nextTick()
     expect(document.querySelector('.composer-conversation__poll-response-modal')).toBeNull()
+    wrapper.unmount()
+  })
+
+  it('shows scheduled poll start and end times before participation', async () => {
+    const messages = useMessagesStore()
+    messages.messagesByChannel.general = [
+      {
+        id: 'scheduled-poll',
+        content: '',
+        author: 'You',
+        mine: true,
+        createdAt: new Date().toISOString(),
+        poll: {
+          id: 'scheduled-poll',
+          title: 'Scheduled poll',
+          scheduleStart: '2099-11-03T12:34:59',
+          scheduleClose: '2099-11-03T13:34:59',
+          questions: [],
+        },
+      },
+    ]
+    const wrapper = mount(ComposerConversation)
+
+    expect(wrapper.text()).toContain('Starts')
+    expect(wrapper.text()).toContain('Ends')
+    expect(wrapper.text()).toContain('Scheduled')
+    expect(wrapper.text()).not.toContain('Participate')
+    expect(wrapper.text()).not.toContain('View All Results')
     wrapper.unmount()
   })
 

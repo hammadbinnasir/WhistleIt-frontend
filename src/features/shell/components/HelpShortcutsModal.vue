@@ -28,11 +28,11 @@ onBeforeUnmount(() => {
 <template>
   <Teleport to="body">
     <div
-      class="fixed inset-0 z-[70] flex items-center justify-center bg-black/50 p-4"
+      class="shell-modal-backdrop fixed inset-0 flex items-center justify-center p-4"
       @click.self="emit('close')"
     >
       <div
-        class="relative flex max-h-[90vh] w-full max-w-4xl flex-col rounded-xl bg-white shadow-2xl"
+        class="shell-surface relative flex max-h-[90vh] w-full max-w-4xl flex-col rounded-xl"
         role="dialog"
         aria-modal="true"
         aria-labelledby="help-shortcuts-title"
@@ -65,10 +65,15 @@ onBeforeUnmount(() => {
         >
           Keyboard Shortcuts
           <span class="flex items-center gap-1">
-            <kbd class="rounded bg-slate-700 px-1.5 py-0.5 text-xs font-semibold text-white">
+            <kbd
+              class="rounded bg-slate-100 px-1.5 py-0.5 text-xs font-semibold text-slate-700 ring-1 ring-slate-200"
+            >
               Ctrl
             </kbd>
-            <kbd class="rounded bg-slate-700 px-1.5 py-0.5 text-xs font-semibold text-white">/</kbd>
+            <kbd
+              class="rounded bg-slate-100 px-1.5 py-0.5 text-xs font-semibold text-slate-700 ring-1 ring-slate-200"
+              >/</kbd
+            >
           </span>
         </h2>
 
@@ -92,7 +97,7 @@ onBeforeUnmount(() => {
                   <kbd
                     v-for="key in item.keys"
                     :key="key"
-                    class="rounded bg-slate-700 px-1.5 py-0.5 text-xs font-semibold text-white"
+                    class="rounded bg-slate-100 px-1.5 py-0.5 text-xs font-semibold text-slate-700 ring-1 ring-slate-200"
                   >
                     {{ key }}
                   </kbd>

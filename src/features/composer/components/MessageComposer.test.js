@@ -1,6 +1,6 @@
 import { mount } from '@vue/test-utils'
 
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('vue3-emoji-picker', async () => {
   const { defineComponent, h } = await import('vue')
@@ -47,8 +47,13 @@ vi.mock('vue3-emoji-picker', async () => {
 })
 
 import MessageComposer from './MessageComposer.vue'
+import { resetUserStore, useUserStore } from '@/features/account/composables/useUserStore'
 
+beforeEach(() => {
+  resetUserStore()
+})
 afterEach(() => {
+  resetUserStore()
   vi.restoreAllMocks()
 })
 
@@ -221,6 +226,70 @@ describe('message composer', () => {
     wrapper.unmount()
   })
 
+  it('allows a poll scheduled to start later', async () => {
+    const wrapper = mount(MessageComposer, { attachTo: document.body })
+    await wrapper.get('button[aria-label="Insert poll"]').trigger('click')
+
+    document.querySelector('#poll-title-input').value = 'Scheduled poll'
+    document.querySelector('#poll-title-input').dispatchEvent(new Event('input', { bubbles: true }))
+    document.querySelector('#poll-question-0').value = 'What time works?'
+    document
+      .querySelector('#poll-question-0')
+      .dispatchEvent(new Event('input', { bubbles: true }))
+    document.querySelector('.message-composer__poll-option input').value = 'Morning'
+    document
+      .querySelector('.message-composer__poll-option input')
+      .dispatchEvent(new Event('input', { bubbles: true }))
+    document.querySelectorAll('.message-composer__poll-option input')[1].value = 'Evening'
+    document
+      .querySelectorAll('.message-composer__poll-option input')[1]
+      .dispatchEvent(new Event('input', { bubbles: true }))
+    document.querySelector('.message-composer__poll-next').click()
+    await wrapper.vm.$nextTick()
+    document.querySelector('.message-composer__poll-next').click()
+    await wrapper.vm.$nextTick()
+    const scheduleOptions = document.querySelectorAll('.message-composer__poll-schedule-option input')
+    scheduleOptions[1].click()
+    await wrapper.vm.$nextTick()
+    document.querySelector('.message-composer__poll-footer .message-composer__poll-next').click()
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.emitted('send')[0][0].poll.scheduleStart).toBeTruthy()
+    expect(wrapper.emitted('send')[0][0].poll.startNow).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('enables Create Poll when start and end schedules are set without Start now', async () => {
+    const wrapper = mount(MessageComposer, { attachTo: document.body })
+    await wrapper.get('button[aria-label="Insert poll"]').trigger('click')
+
+    document.querySelector('#poll-title-input').value = 'Timed poll'
+    document.querySelector('#poll-title-input').dispatchEvent(new Event('input', { bubbles: true }))
+    document.querySelector('#poll-question-0').value = 'Choose a time'
+    document
+      .querySelector('#poll-question-0')
+      .dispatchEvent(new Event('input', { bubbles: true }))
+    const options = document.querySelectorAll('.message-composer__poll-option input')
+    options[0].value = 'Morning'
+    options[0].dispatchEvent(new Event('input', { bubbles: true }))
+    options[1].value = 'Evening'
+    options[1].dispatchEvent(new Event('input', { bubbles: true }))
+    document.querySelector('.message-composer__poll-next').click()
+    await wrapper.vm.$nextTick()
+    document.querySelector('.message-composer__poll-next').click()
+    await wrapper.vm.$nextTick()
+
+    const scheduleOptions = document.querySelectorAll('.message-composer__poll-schedule-option input')
+    scheduleOptions[1].click()
+    scheduleOptions[2].click()
+    await wrapper.vm.$nextTick()
+
+    expect(document.querySelector('.message-composer__poll-footer .message-composer__poll-next').disabled).toBe(
+      false,
+    )
+    wrapper.unmount()
+  })
+
   it('moves between poll steps with the Previous button', async () => {
     const wrapper = mount(MessageComposer, { attachTo: document.body })
     await wrapper.get('button[aria-label="Insert poll"]').trigger('click')
@@ -333,29 +402,49 @@ describe('message composer', () => {
     expect(wrapper.emitted('send')).toBeUndefined()
   })
 
-  it('keeps the message draft when Enter is pressed', async () => {
+  it('sends the message when Enter is pressed with the default preference', async () => {
     const wrapper = mount(MessageComposer)
     setEditorText(wrapper, 'Send with Enter')
 
-    await wrapper.get('[contenteditable="true"]').trigger('keydown', { key: 'Enter' })
-
-    expect(wrapper.emitted('send')).toBeUndefined()
-  })
-
-  it('keeps Shift+Enter available for a new line', async () => {
-    const wrapper = mount(MessageComposer)
-    setEditorText(wrapper, 'Keep typing')
-
     const event = new KeyboardEvent('keydown', {
       key: 'Enter',
-      shiftKey: true,
       bubbles: true,
       cancelable: true,
     })
     wrapper.get('[contenteditable="true"]').element.dispatchEvent(event)
 
-    expect(event.defaultPrevented).toBe(false)
+    expect(event.defaultPrevented).toBe(true)
+    expect(wrapper.emitted('send')).toEqual([
+      [{ content: 'Send with Enter', attachments: [] }],
+    ])
+  })
+
+  it('uses Enter for newlines and Shift+Enter to send when configured', async () => {
+    useUserStore().hydrate({ preferences: { enterKey: 'newline' } })
+    const wrapper = mount(MessageComposer)
+    setEditorText(wrapper, 'Keep typing')
+
+    const enter = new KeyboardEvent('keydown', {
+      key: 'Enter',
+      bubbles: true,
+      cancelable: true,
+    })
+    wrapper.get('[contenteditable="true"]').element.dispatchEvent(enter)
+    expect(enter.defaultPrevented).toBe(false)
     expect(wrapper.emitted('send')).toBeUndefined()
+
+    const shiftEnter = new KeyboardEvent('keydown', {
+      key: 'Enter',
+      shiftKey: true,
+      bubbles: true,
+      cancelable: true,
+    })
+    wrapper.get('[contenteditable="true"]').element.dispatchEvent(shiftEnter)
+
+    expect(shiftEnter.defaultPrevented).toBe(true)
+    expect(wrapper.emitted('send')).toEqual([
+      [{ content: 'Keep typing', attachments: [] }],
+    ])
   })
 
   it('keeps formatting options independently toggleable', async () => {

@@ -19,7 +19,7 @@ export const useChannelsStore = defineStore('channels', () => {
   // ---------- getters ----------
   // Keep the order supplied by the team API; channels without these fields remain supported.
   const visibleChannels = computed(() => {
-    return channels.value.filter((channel) => channel.isMember && !channel.isArchived)
+    return channels.value.filter((channel) => channel.isMember !== false && !channel.isArchived)
   })
 
   function getById(id) {
@@ -151,9 +151,19 @@ export const useChannelsStore = defineStore('channels', () => {
     return api.removeChannelMember(id, targetUser)
   }
 
+  function toggleFavorite(id) {
+    const channel = getById(id)
+    if (!channel) return false
+
+    const isFavorite = !channel.isFavorite
+    patch(id, { isFavorite })
+    patchBrowse(id, { isFavorite })
+    return isFavorite
+  }
+
   // ---------- local mutations (also usable by a realtime/socket handler) ----------
   function upsertChannel(channel) {
-    if (!channel.isMember) {
+    if (channel.isMember === false) {
       removeChannel(channel.id)
       return
     }
@@ -199,6 +209,7 @@ export const useChannelsStore = defineStore('channels', () => {
     deleteChannel,
     addChannelMember,
     removeChannelMember,
+    toggleFavorite,
     upsertChannel,
     removeChannel,
     reset,
