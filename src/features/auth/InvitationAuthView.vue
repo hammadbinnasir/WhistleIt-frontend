@@ -352,7 +352,7 @@ async function submitForm() {
               ? 'Please wait...'
               : isLogin
                 ? 'Log in and accept invitation'
-                : 'Create account'
+                : 'Sign up'
           }}
         </button>
       </form>
@@ -370,7 +370,7 @@ async function submitForm() {
             })
           "
         >
-          {{ isLogin ? 'Create account' : 'Log in' }}
+          {{ isLogin ? 'Sign up' : 'Log in' }}
         </button>
       </p>
     </section>
