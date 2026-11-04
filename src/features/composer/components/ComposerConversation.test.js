@@ -37,6 +37,7 @@ import MessageComposer from './MessageComposer.vue'
 describe('composer conversation', () => {
   beforeEach(() => {
     localStorage.clear()
+    sessionStorage.clear()
     setActivePinia(createPinia())
     resetUserStore()
   })
@@ -239,6 +240,23 @@ describe('composer conversation', () => {
       text: 'Reply from the composer',
     })
     expect(wrapper.text()).toContain('Reply from the composer')
+  })
+
+  it('shows the signed-in user name instead of You for DM messages', async () => {
+    sessionStorage.setItem('authUser', JSON.stringify({ id: 'u1', fullName: 'Aiman Iqbal' }))
+    const dms = useDmStore()
+    await dms.init()
+    dms.users = dms.users.filter((user) => user.id !== dms.meId)
+    const conversation = dms.startDm('u2')
+    const wrapper = mount(ComposerConversation, {
+      props: { conversationId: conversation.id, conversationType: 'dm' },
+    })
+
+    await sendMessage(wrapper, 'Name should be visible')
+
+    expect(wrapper.text()).toContain('Aiman Iqbal')
+    expect(wrapper.text()).not.toContain('You')
+    wrapper.unmount()
   })
 
   it('opens the message author direct message from a channel', async () => {
