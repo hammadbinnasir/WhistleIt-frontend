@@ -4,12 +4,14 @@ import { storeToRefs } from 'pinia'
 import { useRouter } from 'vue-router'
 import { useTeamsStore } from '@/stores/teams'
 import { useUiStore } from '@/stores/ui'
+import { useUserStore } from '@/features/account/composables/useUserStore'
 import WorkspaceSwitcher from './WorkspaceSwitcher.vue'
 import { useAnchoredPopover } from '../composables/useAnchoredPopover'
 
 const router = useRouter()
 const teamsStore = useTeamsStore()
 const ui = useUiStore()
+const userStore = useUserStore()
 const emit = defineEmits(['invite'])
 const {
   activeWorkspaceId,
@@ -59,6 +61,12 @@ async function updateRoute(workspaceId, teamId) {
 }
 
 async function handleWorkspaceSelect(workspaceId) {
+  if (userStore.state.preferences.workspaceSwitch === 'new') {
+    const target = router.resolve({ path: `/app/${encodeURIComponent(workspaceId)}` })
+    window.open(target.href, '_blank', 'noopener,noreferrer')
+    return
+  }
+
   await teamsStore.selectWorkspace(workspaceId)
   await updateRoute(workspaceId, teamsStore.activeTeamId)
 }

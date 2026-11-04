@@ -1,6 +1,6 @@
 import { mount } from '@vue/test-utils'
 
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('vue3-emoji-picker', async () => {
   const { defineComponent, h } = await import('vue')
@@ -47,8 +47,13 @@ vi.mock('vue3-emoji-picker', async () => {
 })
 
 import MessageComposer from './MessageComposer.vue'
+import { resetUserStore, useUserStore } from '@/features/account/composables/useUserStore'
 
+beforeEach(() => {
+  resetUserStore()
+})
 afterEach(() => {
+  resetUserStore()
   vi.restoreAllMocks()
 })
 
@@ -397,29 +402,49 @@ describe('message composer', () => {
     expect(wrapper.emitted('send')).toBeUndefined()
   })
 
-  it('keeps the message draft when Enter is pressed', async () => {
+  it('sends the message when Enter is pressed with the default preference', async () => {
     const wrapper = mount(MessageComposer)
     setEditorText(wrapper, 'Send with Enter')
 
-    await wrapper.get('[contenteditable="true"]').trigger('keydown', { key: 'Enter' })
-
-    expect(wrapper.emitted('send')).toBeUndefined()
-  })
-
-  it('keeps Shift+Enter available for a new line', async () => {
-    const wrapper = mount(MessageComposer)
-    setEditorText(wrapper, 'Keep typing')
-
     const event = new KeyboardEvent('keydown', {
       key: 'Enter',
-      shiftKey: true,
       bubbles: true,
       cancelable: true,
     })
     wrapper.get('[contenteditable="true"]').element.dispatchEvent(event)
 
-    expect(event.defaultPrevented).toBe(false)
+    expect(event.defaultPrevented).toBe(true)
+    expect(wrapper.emitted('send')).toEqual([
+      [{ content: 'Send with Enter', attachments: [] }],
+    ])
+  })
+
+  it('uses Enter for newlines and Shift+Enter to send when configured', async () => {
+    useUserStore().hydrate({ preferences: { enterKey: 'newline' } })
+    const wrapper = mount(MessageComposer)
+    setEditorText(wrapper, 'Keep typing')
+
+    const enter = new KeyboardEvent('keydown', {
+      key: 'Enter',
+      bubbles: true,
+      cancelable: true,
+    })
+    wrapper.get('[contenteditable="true"]').element.dispatchEvent(enter)
+    expect(enter.defaultPrevented).toBe(false)
     expect(wrapper.emitted('send')).toBeUndefined()
+
+    const shiftEnter = new KeyboardEvent('keydown', {
+      key: 'Enter',
+      shiftKey: true,
+      bubbles: true,
+      cancelable: true,
+    })
+    wrapper.get('[contenteditable="true"]').element.dispatchEvent(shiftEnter)
+
+    expect(shiftEnter.defaultPrevented).toBe(true)
+    expect(wrapper.emitted('send')).toEqual([
+      [{ content: 'Keep typing', attachments: [] }],
+    ])
   })
 
   it('keeps formatting options independently toggleable', async () => {
