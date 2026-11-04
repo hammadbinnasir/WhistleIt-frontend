@@ -57,6 +57,52 @@ describe('WorkspaceSwitcher', () => {
     expect(document.body.querySelector('[role="menu"]')).toBeNull()
   })
 
+  it('keeps the flyout open while the pointer crosses the gap from the rail tile', async () => {
+    vi.useFakeTimers()
+    const wrapper = mountSwitcher(workspaces)
+    const trigger = wrapper.get('.workspace-switcher__button')
+    vi.spyOn(trigger.element, 'getBoundingClientRect').mockReturnValue({
+      left: 19,
+      right: 55,
+      top: 100,
+      bottom: 136,
+      width: 36,
+      height: 36,
+    })
+
+    await trigger.trigger('mouseenter')
+    vi.advanceTimersByTime(150)
+    await flushPromises()
+
+    const menu = document.body.querySelector('.workspace-switcher__menu')
+    vi.spyOn(menu, 'getBoundingClientRect').mockReturnValue({
+      left: 83,
+      right: 355,
+      top: 100,
+      bottom: 260,
+      width: 272,
+      height: 160,
+    })
+    window.dispatchEvent(new Event('resize'))
+    await flushPromises()
+
+    const bridge = document.body.querySelector('.workspace-switcher__hover-bridge')
+    expect(bridge.style.left).toBe('55px')
+    expect(bridge.style.width).toBe('28px')
+
+    await trigger.trigger('mouseleave')
+    await bridge.dispatchEvent(new MouseEvent('mouseenter'))
+    vi.advanceTimersByTime(250)
+    await flushPromises()
+    expect(document.body.querySelector('[role="menu"]')).not.toBeNull()
+
+    await bridge.dispatchEvent(new MouseEvent('mouseleave'))
+    await menu.dispatchEvent(new MouseEvent('mouseenter'))
+    vi.advanceTimersByTime(250)
+    await flushPromises()
+    expect(document.body.querySelector('[role="menu"]')).not.toBeNull()
+  })
+
   it('opens with keyboard, moves through items with arrows, and selects a workspace', async () => {
     const wrapper = mountSwitcher(workspaces)
     const trigger = wrapper.get('.workspace-switcher__button')

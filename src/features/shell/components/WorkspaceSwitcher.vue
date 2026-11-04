@@ -1,5 +1,5 @@
 <script setup>
-import { computed, nextTick, onBeforeUnmount, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useTeamsStore } from '@/stores/teams'
 import { useAnchoredPopover } from '../composables/useAnchoredPopover'
@@ -20,6 +20,7 @@ const isOpen = ref(false)
 const trigger = ref(null)
 const menu = ref(null)
 const position = ref({ top: 0, left: 0 })
+const hoverBridgeStyle = ref(null)
 let openTimer = null
 let closeTimer = null
 let restoringFocus = false
@@ -64,6 +65,58 @@ function openFlyout() {
   nextTick(updatePosition)
 }
 
+function updateHoverBridge() {
+  const triggerBounds = trigger.value?.getBoundingClientRect()
+  const menuBounds = menu.value?.getBoundingClientRect()
+  if (!triggerBounds || !menuBounds) {
+    hoverBridgeStyle.value = null
+    return
+  }
+
+  const isToRight = menuBounds.left >= triggerBounds.right
+  const left = isToRight ? triggerBounds.right : menuBounds.right
+  const width = isToRight
+    ? menuBounds.left - triggerBounds.right
+    : triggerBounds.left - menuBounds.right
+
+  hoverBridgeStyle.value =
+    width > 0
+      ? {
+          top: `${menuBounds.top}px`,
+          left: `${left}px`,
+          width: `${width}px`,
+          height: `${menuBounds.height}px`,
+        }
+      : null
+}
+
+function refreshFlyoutPosition() {
+  updatePosition()
+  nextTick(updateHoverBridge)
+}
+
+function stopTrackingFlyoutPosition() {
+  window.removeEventListener('resize', refreshFlyoutPosition)
+  window.removeEventListener('scroll', refreshFlyoutPosition, true)
+}
+
+watch(
+  isOpen,
+  async (open) => {
+    stopTrackingFlyoutPosition()
+    if (!open) {
+      hoverBridgeStyle.value = null
+      return
+    }
+
+    await nextTick()
+    refreshFlyoutPosition()
+    window.addEventListener('resize', refreshFlyoutPosition)
+    window.addEventListener('scroll', refreshFlyoutPosition, true)
+  },
+  { flush: 'post' },
+)
+
 function handleTriggerFocus() {
   if (!restoringFocus) openFlyout()
 }
@@ -81,6 +134,11 @@ function scheduleClose() {
     isOpen.value = false
     closeTimer = null
   }, 200)
+}
+
+function cancelClose() {
+  clearTimeout(closeTimer)
+  closeTimer = null
 }
 
 function handleFocusout(event) {
@@ -121,7 +179,10 @@ function selectWorkspace(workspaceId) {
   emit('select', workspaceId)
 }
 
-onBeforeUnmount(clearTimers)
+onBeforeUnmount(() => {
+  clearTimers()
+  stopTrackingFlyoutPosition()
+})
 </script>
 
 <template>
@@ -147,13 +208,21 @@ onBeforeUnmount(clearTimers)
 
     <Teleport to="body">
       <div
+        v-if="isOpen && hoverBridgeStyle"
+        class="workspace-switcher__hover-bridge"
+        aria-hidden="true"
+        :style="hoverBridgeStyle"
+        @mouseenter="cancelClose"
+        @mouseleave="scheduleClose"
+      />
+      <div
         v-if="isOpen"
         ref="menu"
         class="workspace-switcher__menu shell-surface"
         role="menu"
         aria-label="Workspaces"
         :style="{ top: position.top, left: position.left }"
-        @mouseenter="clearTimeout(closeTimer)"
+        @mouseenter="cancelClose"
         @mouseleave="scheduleClose"
         @focusout="handleFocusout"
         @keydown="handleMenuKeydown"
@@ -247,6 +316,12 @@ onBeforeUnmount(clearTimers)
   padding: 0.375rem;
   scrollbar-color: var(--color-slate-400) transparent;
   scrollbar-width: thin;
+}
+
+.workspace-switcher__hover-bridge {
+  position: fixed;
+  z-index: var(--shell-z-popover);
+  background: transparent;
 }
 
 .workspace-switcher__item {
