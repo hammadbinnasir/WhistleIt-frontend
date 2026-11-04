@@ -9,7 +9,9 @@ const route = useRoute()
 const router = useRouter()
 const isSignup = computed(() => route.path === '/signup')
 const isForgotPassword = computed(() => route.path === '/forgot-password')
-const isResetPassword = computed(() => route.path === '/reset-password')
+const isResetPassword = computed(
+  () => route.name === 'reset-password' || route.path === '/reset-password',
+)
 const resetToken = computed(() => (typeof route.query.token === 'string' ? route.query.token : ''))
 const form = ref(null)
 const fullName = ref('')
@@ -31,7 +33,9 @@ watch(
     fullName.value = ''
     company.value = ''
     email.value =
-      isResetPassword.value && typeof route.query.email === 'string' ? route.query.email : ''
+      (isResetPassword.value || route.name === 'login') && typeof route.query.email === 'string'
+        ? route.query.email
+        : ''
     password.value = ''
     confirmPassword.value = ''
     rememberMe.value = false
@@ -89,12 +93,14 @@ async function submitForm() {
 
     if (isResetPassword.value) {
       await resetPassword(resetToken.value, {
-        email: email.value,
+        ...(email.value ? { email: email.value } : {}),
         password: password.value,
         password_confirmation: confirmPassword.value,
       })
-      feedback.value = 'Your password has been reset. You can now log in.'
-      feedbackIsSuccess.value = true
+      await router.replace({
+        name: 'login',
+        query: email.value ? { email: email.value } : {},
+      })
       return
     }
 
@@ -214,26 +220,18 @@ async function submitForm() {
             />
           </template>
 
-          <label class="sr-only" for="email">Email Address</label>
-          <input
-            id="email"
-            v-model.trim="email"
-            :name="
-              isSignup
-                ? 'new-account-email'
-                : isForgotPassword
-                  ? 'reset-email'
-                  : isResetPassword
-                    ? 'reset-email'
-                    : 'username'
-            "
-            type="email"
-            :autocomplete="
-              isSignup ? 'off' : isForgotPassword || isResetPassword ? 'email' : 'username'
-            "
-            placeholder="Email Address*"
-            required
-          />
+          <template v-if="!isResetPassword">
+            <label class="sr-only" for="email">Email Address</label>
+            <input
+              id="email"
+              v-model.trim="email"
+              :name="isSignup ? 'new-account-email' : isForgotPassword ? 'reset-email' : 'username'"
+              type="email"
+              :autocomplete="isSignup ? 'off' : isForgotPassword ? 'email' : 'username'"
+              placeholder="Email Address*"
+              required
+            />
+          </template>
 
           <div v-if="!isForgotPassword" class="password-field">
             <label class="sr-only" for="password">Password</label>
@@ -353,9 +351,43 @@ async function submitForm() {
             <RouterLink class="text-link" to="/forgot-password"> Forgot Password? </RouterLink>
           </div>
 
-          <button class="submit-button" type="submit" :disabled="isSubmitting">
+          <button
+            class="submit-button"
+            :class="{
+              'submit-button--login': !isSignup && !isForgotPassword && !isResetPassword,
+              'submit-button--loading': isSubmitting && isResetPassword,
+            }"
+            type="submit"
+            :disabled="isSubmitting"
+            :aria-busy="isSubmitting && isResetPassword"
+          >
+            <span
+              v-if="isSubmitting && isResetPassword"
+              class="auth-loader"
+              role="status"
+              aria-label="Resetting your password"
+            >
+              <svg class="auth-loader__ring" viewBox="0 0 64 64" aria-hidden="true">
+                <defs>
+                  <linearGradient id="reset-loader-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                    <stop offset="0%" stop-color="#00c6ff" />
+                    <stop offset="38%" stop-color="#126be8" />
+                    <stop offset="68%" stop-color="#5220df" />
+                    <stop offset="100%" stop-color="#ed00ff" />
+                  </linearGradient>
+                </defs>
+                <circle
+                  cx="32"
+                  cy="32"
+                  r="27"
+                  fill="none"
+                  stroke="url(#reset-loader-gradient)"
+                  stroke-width="10"
+                />
+              </svg>
+            </span>
             {{
-              isSubmitting
+              isSubmitting && !isResetPassword
                 ? 'Please wait...'
                 : isSignup
                   ? 'Create Account'

@@ -75,18 +75,19 @@ a {
 }
 
 .auth-page--forgot-password .auth-panel {
-  padding: 198px 24px 40px 8.9vw;
+  padding: 138px 24px 40px 8.9vw;
 }
 
 .auth-page--forgot-password .brand {
   position: absolute;
-  top: 10px;
-  left: 3vw;
+  top: 40px;
+  left: 48px;
 }
 
 .auth-page--forgot-password .auth-content {
   width: min(100%, 500px);
   margin: 0 0 48px;
+  transform: translateY(-24px);
 }
 
 .auth-page--forgot-password .auth-heading h1 {
@@ -96,8 +97,9 @@ a {
 
 .auth-page--forgot-password .auth-heading p {
   margin: 12px 0 32px;
-  color: #999;
-  font-size: 16px;
+  color: #111a31;
+  font-size: 15px;
+  font-weight: 400;
   line-height: 1.4;
 }
 
@@ -458,12 +460,12 @@ a {
 
   .auth-page--forgot-password .auth-panel {
     min-height: 100vh;
-    padding: 120px 24px 40px;
+    padding: 80px 24px 40px;
   }
 
   .auth-page--forgot-password .brand {
-    top: 24px;
-    left: 24px;
+    top: 40px;
+    left: 48px;
   }
 
   .auth-page--forgot-password .auth-content {
@@ -477,7 +479,8 @@ a {
 
   .auth-page--forgot-password .auth-heading p {
     margin: 12px 0 30px;
-    font-size: 16px;
+    color: #111a31;
+    font-size: 14px;
   }
 
   .auth-page--forgot-password .auth-form {
@@ -585,11 +588,16 @@ a {
 
 .brand {
   position: absolute;
-  top: clamp(30px, 5vh, 52px);
-  left: clamp(32px, 6vw, 88px);
+  top: 40px;
+  left: 48px;
+  display: inline-flex;
   flex-direction: column;
   align-items: center;
-  gap: 2px;
+  justify-content: center;
+  gap: 0;
+  width: 80px;
+  height: 50.5px;
+  margin: 0;
   color: #101010;
   font-size: 16px;
   font-weight: 800;
@@ -718,6 +726,51 @@ a {
     transform 160ms ease;
 }
 
+.submit-button.submit-button--login {
+  font-size: 20px;
+}
+
+.submit-button--loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  min-height: 76px;
+  cursor: wait;
+}
+
+.auth-loader {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.auth-loader__ring {
+  flex: 0 0 64px;
+  width: 64px;
+  height: 64px;
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: reset-loader-spin 1s linear infinite;
+}
+
+.auth-loader__label {
+  font-size: 17px;
+}
+
+@keyframes reset-loader-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.auth-reset-login-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+}
+
 .submit-button:hover,
 .auth-page--signup .submit-button:hover,
 .auth-page--forgot-password .submit-button:hover {
@@ -776,8 +829,9 @@ a {
 
   .brand,
   .auth-page--forgot-password .brand {
-    top: 28px;
-    left: clamp(24px, 8vw, 64px);
+    top: 40px;
+    left: 48px;
+    margin: 0;
   }
 
   .auth-content,
@@ -800,6 +854,11 @@ a {
   .auth-heading p,
   .auth-page--forgot-password .auth-heading p {
     margin-bottom: 26px;
+    font-size: 15px;
+  }
+
+  .auth-page--forgot-password .auth-heading p {
+    color: #111a31;
     font-size: 15px;
   }
 }

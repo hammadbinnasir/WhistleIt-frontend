@@ -321,7 +321,7 @@ const showSample = ref(false)
       class="fixed inset-0 z-[70] flex items-center justify-center bg-slate-900/40 p-4"
       @click.self="showMessagePermissions = false"
     >
-      <section class="w-[520px] max-w-full overflow-visible rounded-md bg-white shadow-2xl">
+      <section class="w-[520px] max-w-full overflow-hidden rounded-md bg-white shadow-2xl">
         <header class="relative px-6 py-5 text-center">
           <button
             type="button"
@@ -541,22 +541,22 @@ const showSample = ref(false)
               <div class="relative px-6 pb-3 pt-4 text-center">
                 <button
                   type="button"
-                  class="absolute right-5 top-5 grid h-10 w-10 cursor-pointer place-items-center rounded-full border border-slate-200 bg-white text-xl leading-none text-slate-600 shadow-sm hover:bg-slate-100"
+                  class="absolute right-5 top-5 grid h-8 w-8 cursor-pointer place-items-center rounded-full border border-slate-200 bg-white text-lg leading-none text-slate-600 shadow-sm hover:bg-slate-100"
                   aria-label="Close add members"
                   @click="closeAdd"
                 >
                   &times;
                 </button>
-                <h3 class="pr-12 text-[22px] font-bold leading-tight text-slate-700">
+                <h3 class="pr-8 text-[22px] font-bold leading-tight text-slate-700">
                   Add Members in Channel
                 </h3>
               </div>
 
-              <div class="px-8 pb-5 pt-3">
+              <div class="px-[34px] pb-5 pt-2">
                 <label class="relative block">
                   <span class="absolute left-2 -top-3 bg-white px-1 text-sm text-indigo-500">Search</span>
                   <span
-                    class="absolute left-5 top-1/2 -translate-y-1/2 text-xl text-slate-400"
+                    class="absolute left-3 top-6 text-lg text-slate-400"
                     aria-hidden="true"
                   >⌕</span>
                   <input
@@ -564,7 +564,6 @@ const showSample = ref(false)
                     placeholder="Type here to search"
                     class="h-[52px] w-full rounded border-2 border-indigo-500 px-10 text-base text-slate-600 outline-none focus:ring-2 focus:ring-indigo-100"
                     @input="onAddSearch"
-                    @focus="dropdownOpen = true; onAddSearch()"
                   />
                   <button
                     type="button"
@@ -632,7 +631,7 @@ const showSample = ref(false)
                 </div>
               </div>
 
-              <div class="border-t border-slate-200 px-8 py-4 text-right">
+              <div class="border-t border-slate-200 px-6 py-3 text-right">
                 <button
                   type="button"
                   class="h-[42px] cursor-pointer rounded bg-indigo-500 px-5 text-sm font-bold tracking-wide text-white shadow-sm hover:bg-indigo-600 disabled:cursor-not-allowed disabled:bg-indigo-300 disabled:text-white"
