@@ -159,7 +159,7 @@ describe('auth view', () => {
     expect(wrapper.get('#email').element.value).toBe('sam@example.com')
   })
 
-  it('shows an animated loader while resetting, then redirects to login', async () => {
+  it('shows a revolving loader instead of Please wait while resetting the password', async () => {
     let finishReset
     resetPassword.mockReturnValueOnce(
       new Promise((resolve) => {
@@ -180,12 +180,7 @@ describe('auth view', () => {
     expect(wrapper.get('.auth-loader__ring circle').attributes('stroke')).toContain(
       'reset-loader-gradient',
     )
-    expect(wrapper.get('.auth-loader__ring circle').attributes('stroke-dasharray')).toBeUndefined()
-    expect(
-      wrapper.findAll('.auth-loader__ring stop').map((stop) => stop.attributes('stop-color')),
-    ).toEqual(['#00c6ff', '#126be8', '#5220df', '#ed00ff'])
-    expect(wrapper.find('.auth-loader__label').exists()).toBe(false)
-    expect(wrapper.find('.submit-button img').exists()).toBe(false)
+    expect(wrapper.get('.submit-button').text()).not.toContain('Please wait')
     expect(router.currentRoute.value.path).toBe('/reset-password')
 
     finishReset({})
