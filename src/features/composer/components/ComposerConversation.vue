@@ -51,6 +51,11 @@ const minimumDeleteDate = computed(() =>
 
 const pollClock = ref(Date.now())
 let pollClockTimer = null
+const channelId = computed(() => String(props.conversationId ?? 'general'))
+const conversation = computed(() => {
+  if (props.conversationType !== 'dm' || props.conversationId == null) return null
+  return dms.conversations.find((item) => String(item.id) === String(props.conversationId)) || null
+})
 const conversationLabel = computed(() =>
   conversation.value ? dms.titleOf(conversation.value) : channelId.value.replaceAll('-', ' '),
 )
@@ -722,16 +727,22 @@ onBeforeUnmount(() => {
                   <div class="composer-conversation__poll-meta">
                     <span
                       class="composer-conversation__poll-status"
-                      :class="{ 'is-closed': closedPolls.has(message.poll.id) }"
+                      :class="{ 'is-closed': closedPolls.has(message.poll.id) || isPollScheduled(message.poll) }"
                     >
                       <i
                         class="composer-conversation__poll-status-icon"
-                        :class="closedPolls.has(message.poll.id) ? 'is-closed' : 'is-open'"
+                        :class="
+                          isPollClosed(message.poll)
+                            ? 'is-closed'
+                            : isPollScheduled(message.poll)
+                              ? 'is-scheduled'
+                              : 'is-open'
+                        "
                         aria-hidden="true"
                       >
-                        {{ closedPolls.has(message.poll.id) ? '×' : '✓' }}
+                        {{ isPollClosed(message.poll) ? '×' : isPollScheduled(message.poll) ? '◷' : '✓' }}
                       </i>
-                      {{ closedPolls.has(message.poll.id) ? 'Closed' : 'Open' }}
+                      {{ isPollClosed(message.poll) ? 'Closed' : isPollScheduled(message.poll) ? 'Scheduled' : 'Open' }}
                     </span>
                     <span
                       class="composer-conversation__poll-meta-divider"
@@ -742,10 +753,31 @@ onBeforeUnmount(() => {
                       {{ message.poll.audience === 'anonymous' ? 'Anonymous' : 'Public' }}
                     </span>
                   </div>
+                  <div
+                    v-if="message.poll.scheduleStart || message.poll.scheduleClose"
+                    class="composer-conversation__poll-schedule-info"
+                  >
+                    <div v-if="message.poll.scheduleStart" class="composer-conversation__poll-schedule-item">
+                      <span class="composer-conversation__poll-schedule-icon">◷</span>
+                      <span>
+                        <small>Starts</small>
+                        <strong>{{ pollScheduleLabel(message.poll.scheduleStart) }}</strong>
+                      </span>
+                    </div>
+                    <div v-if="message.poll.scheduleClose" class="composer-conversation__poll-schedule-item">
+                      <span class="composer-conversation__poll-schedule-icon">×</span>
+                      <span>
+                        <small>Ends</small>
+                        <strong>{{ pollScheduleLabel(message.poll.scheduleClose) }}</strong>
+                      </span>
+                    </div>
+                  </div>
                   <div class="composer-conversation__poll-actions">
                     <button
                       v-if="
-                        !closedPolls.has(message.poll.id) && !participatedPolls.has(message.poll.id)
+                        !isPollScheduled(message.poll) &&
+                        !closedPolls.has(message.poll.id) &&
+                        !participatedPolls.has(message.poll.id)
                       "
                       type="button"
                       @click="participateInPoll(message.poll.id)"
@@ -753,7 +785,7 @@ onBeforeUnmount(() => {
                       Participate
                     </button>
                     <button
-                      v-else-if="!closedPolls.has(message.poll.id)"
+                      v-else-if="!isPollScheduled(message.poll) && !closedPolls.has(message.poll.id)"
                       type="button"
                       class="is-done"
                       disabled
@@ -761,7 +793,11 @@ onBeforeUnmount(() => {
                     >
                       You're Done
                     </button>
-                    <button type="button" @click="viewPollResults(message.poll.id)">
+                    <button
+                      v-if="!isPollScheduled(message.poll)"
+                      type="button"
+                      @click="viewPollResults(message.poll.id)"
+                    >
                       View All Results
                     </button>
                     <button
@@ -771,7 +807,7 @@ onBeforeUnmount(() => {
                     >
                       Export To Csv
                     </button>
-                    <button v-else type="button" @click="closePoll(message.poll.id)">
+                    <button v-else-if="!isPollScheduled(message.poll)" type="button" @click="closePoll(message.poll.id)">
                       Close Poll
                     </button>
                   </div>
