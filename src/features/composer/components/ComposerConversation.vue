@@ -701,7 +701,14 @@ onBeforeUnmount(() => {
       >
         Load older messages
       </button>
-
+      <p v-if="messagesLoading" class="composer-conversation__status">Loading messages…</p>
+      <p v-else-if="messagesError" class="composer-conversation__status composer-conversation__status--error">
+          {{ messagesError }}
+       <button type="button" @click="retryConversationMessages">Retry</button>
+      </p>
+      <p v-else-if="conversation && !renderedMessages.length" class="composer-conversation__status">
+          No messages yet.
+      </p>
       <template v-for="message in renderedMessages" :key="message.id">
         <div v-if="message.showDate" class="composer-conversation__date">
           <span>{{ message.dateHeading }}</span>
@@ -2474,6 +2481,22 @@ onBeforeUnmount(() => {
 .composer-conversation__forward-dialog footer button:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+.composer-conversation__status {
+  margin: 12px 0;
+  color: #717487;
+  font-size: 13px;
+  text-align: center;
+}
+.composer-conversation__status--error {
+  color: #c92f43;
+}
+.composer-conversation__status button {
+  margin-left: 6px;
+  color: #5552c7;
+  text-decoration: underline;
+  cursor: pointer;
 }
 
 @media (hover: none) {

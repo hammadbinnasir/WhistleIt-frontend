@@ -884,6 +884,10 @@ function handleMediaAction(action, payload) {
   }
 }
 
+// function handleKeydown(event) {
+//   if (event.key === 'Enter') return
+// }
+
 function handleKeydown(event) {
   if (event.key !== 'Enter') return
 
