@@ -11,7 +11,7 @@ import ChannelListItem from './ChannelListItem.vue'
 describe('ChannelSidebar', () => {
   beforeEach(() => setActivePinia(createPinia()))
 
-  it('keeps the channel unselected while a direct message is open', async () => {
+  it('switches from an open direct message to the selected channel', async () => {
     const channels = useChannelsStore()
     channels.channels = [
       {
@@ -25,19 +25,17 @@ describe('ChannelSidebar', () => {
     channels.loaded = true
 
     const dms = useDmStore()
-    await dms.init()
-    const conversation = dms.startDm('u2')
+    dms.activeId = 'conversation-1'
     const ui = useUiStore()
 
-    shallowMount(ChannelSidebar)
+    const wrapper = shallowMount(ChannelSidebar)
     await nextTick()
 
-    expect(ui.selectedChannelId).toBeNull()
-
-    dms.closeConversation(conversation.id)
+    wrapper.findComponent(ChannelListItem).vm.$emit('select')
     await nextTick()
 
     expect(ui.selectedChannelId).toBe('channel-1')
+    expect(dms.activeId).toBeNull()
   })
 
   it('closes the activity panel when a channel is selected', async () => {

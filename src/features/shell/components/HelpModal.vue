@@ -13,12 +13,12 @@ function closeHelp() {
   <Teleport to="body">
     <div
       v-if="ui.helpModalOpen"
-      class="fixed inset-0 z-50 flex justify-end bg-black/40"
+      class="shell-modal-backdrop shell-modal-backdrop--drawer fixed inset-0 flex justify-end"
       data-testid="help-backdrop"
       @click.self="closeHelp"
     >
       <aside
-        class="h-full w-full max-w-[432px] bg-white shadow-2xl"
+        class="shell-surface h-full w-full max-w-[432px] rounded-none"
         role="dialog"
         aria-modal="true"
         aria-label="Help and resources"

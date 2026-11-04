@@ -13,6 +13,7 @@ import { usePresenceStore, STATES } from '@/features/dms/stores/presence'
 import { useActivityStore } from '@/stores/activity'
 import { useRemindersStore } from '@/features/search/reminders'
 import { useUserStore, UserModule } from '@/features/account'
+import { getAccountErrorToast } from '@/features/account/errorMessages'
 import { clearAuthSession, getAuthUser } from '@/features/auth/session'
 import { logout as logoutRequest } from '@/features/auth/api'
 
@@ -100,7 +101,8 @@ function onAccountSettingsSaved(payload) {
 }
 
 function onAccountError(error) {
-  ui.toast('Account error', error?.message || 'The account request failed.', 'error')
+  const toast = getAccountErrorToast(error)
+  ui.toast(toast.title, toast.message, 'error')
 }
 
 const selectedChannel = computed(() => {
@@ -116,11 +118,16 @@ const selectedChannel = computed(() => {
       favourite: false,
     }
   }
+  const creatorId = ch.createdById || ch.createdBy
+  const createdBy =
+    creatorId && String(creatorId) === String(authenticatedUser?.id)
+      ? (authenticatedUser.fullName || ch.createdBy)
+      : ch.createdBy
   return {
     id: ch.id,
     name: ch.name,
     description: ch.description || '',
-    createdBy: ch.createdBy || 'Team Member',
+    createdBy: createdBy || 'Team Member',
     muted: ch.isMuted || false,
     favourite: ch.isFavorite || false,
     canManage: Boolean(ch.canManage),
@@ -140,7 +147,30 @@ const reminderMessage = computed(() => ({
 async function toggleChannelMute() {
   if (!selectedChannel.value) return
   try {
-    await channelsStore.toggleMute(selectedChannel.value.id)
+    if (typeof channelsStore.toggleMute === 'function') {
+      channelsStore.toggleMute(selectedChannel.value.id)
+      return
+    }
+
+    const channel = channelsStore.getById(selectedChannel.value.id)
+    if (!channel) return
+    const muted = !channel.isMuted
+    channelsStore.upsertChannel({ ...channel, isMuted: muted })
+
+    const storageKey = 'whistleit-muted-channel-ids'
+    let mutedIds = []
+    try {
+      const saved = JSON.parse(localStorage.getItem(storageKey) || '[]')
+      mutedIds = Array.isArray(saved) ? saved.map(String) : []
+    } catch {
+      mutedIds = []
+    }
+    if (muted) {
+      if (!mutedIds.includes(String(channel.id))) mutedIds.push(String(channel.id))
+    } else {
+      mutedIds = mutedIds.filter((id) => id !== String(channel.id))
+    }
+    localStorage.setItem(storageKey, JSON.stringify(mutedIds))
   } catch (error) {
     ui.toast('Unable to update mute setting', error?.message || 'Please try again.', 'error')
   }
@@ -516,48 +546,82 @@ onBeforeUnmount(() => {
     />
 
     <!-- Toast Notifications -->
-    <div class="fixed bottom-4 right-4 z-[60] flex w-80 flex-col gap-2">
-      <div
-        v-for="toast in ui.toasts"
-        :key="toast.id"
-        class="flex items-center gap-3 rounded-lg p-4 shadow-lg"
-        :class="
-          toast.type === 'success'
-            ? 'border-t-4 border-emerald-400 bg-white text-slate-700'
-            : 'bg-slate-900 text-white'
-        "
-      >
-        <svg
-          v-if="toast.type === 'success'"
-          class="h-5 w-5 shrink-0 text-emerald-500"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="3"
-          aria-hidden="true"
+    <Teleport to="body">
+      <div class="fixed bottom-4 right-4 z-[3000] flex w-80 flex-col gap-2">
+        <div
+          v-for="toast in ui.toasts"
+          :key="toast.id"
+          :role="toast.type === 'error' && toast.title === 'Error!' ? 'alert' : 'status'"
+          :class="[
+            toast.type === 'error' && toast.title === 'Error!'
+              ? 'fixed right-4 top-4 z-[3001] flex min-h-[60px] w-[386px] max-w-[calc(100vw-2rem)] items-center gap-3 rounded-sm border-b-4 border-red-500 bg-white px-5 py-3 text-slate-600 shadow-lg'
+              : 'flex items-center gap-3 rounded-lg p-4 shadow-lg',
+            toast.type === 'success'
+              ? 'border-t-4 border-emerald-400 bg-white text-slate-700'
+              : toast.type === 'error' && toast.title === 'Error!'
+                ? ''
+                : 'bg-slate-900 text-white',
+          ]"
         >
-          <circle cx="12" cy="12" r="9" />
-          <path d="m8 12 2.5 2.5L16 9" />
-        </svg>
-        <div class="min-w-0 flex-1">
-          <p class="font-semibold">{{ toast.title }}</p>
-          <p
-            class="mt-1 text-sm"
-            :class="toast.type === 'success' ? 'text-slate-500' : 'text-slate-200'"
+          <svg
+            v-if="toast.type === 'error' && toast.title === 'Error!'"
+            class="h-5 w-5 shrink-0 text-rose-500"
+            viewBox="0 0 24 24"
+            fill="currentColor"
+            aria-hidden="true"
           >
-            {{ toast.body }}
-          </p>
+            <circle cx="12" cy="12" r="10" />
+            <path
+              d="m9 8 3 3 3-3 1.4 1.4-3 3 3 3L15 17l-3-3-3 3-1.4-1.6 3-3-3-3L9 8Z"
+              fill="white"
+            />
+          </svg>
+          <svg
+            v-else-if="toast.type === 'success'"
+            class="h-5 w-5 shrink-0 text-emerald-500"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="3"
+            aria-hidden="true"
+          >
+            <circle cx="12" cy="12" r="9" />
+            <path d="m8 12 2.5 2.5L16 9" />
+          </svg>
+          <div
+            v-if="toast.type === 'error' && toast.title === 'Error!'"
+            class="min-w-0 flex-1 text-[14px] leading-5"
+          >
+            <p>
+              <span class="font-semibold">{{ toast.title }}</span>
+              <span class="ml-1">{{ toast.body }}</span>
+            </p>
+          </div>
+          <div v-else class="min-w-0 flex-1">
+            <p class="font-semibold">{{ toast.title }}</p>
+            <p
+              class="mt-1 text-sm"
+              :class="toast.type === 'success' ? 'text-slate-500' : 'text-slate-200'"
+            >
+              {{ toast.body }}
+            </p>
+          </div>
+          <button
+            type="button"
+            class="shrink-0 text-slate-400 hover:text-slate-700"
+            :class="
+              toast.type === 'error' && toast.title === 'Error!'
+                ? 'text-lg font-light leading-none'
+                : ''
+            "
+            aria-label="Dismiss notification"
+            @click="ui.dismissToast(toast.id)"
+          >
+            ×
+          </button>
         </div>
-        <button
-          type="button"
-          class="shrink-0 text-slate-400 hover:text-slate-700"
-          aria-label="Dismiss notification"
-          @click="ui.dismissToast(toast.id)"
-        >
-          ×
-        </button>
       </div>
-    </div>
+    </Teleport>
 
     <!-- Shell Modals -->
     <CreateTeamModal />

@@ -1,5 +1,6 @@
 <script setup>
-import { computed, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
+import { getUser } from '@/features/account/api'
 import { useChannelsStore } from '../store/channels.store'
 import { HEADER_AVATAR_MAX } from '../constants'
 import ChIcon from './ChIcon.vue'
@@ -15,6 +16,8 @@ const props = defineProps({
 const emit = defineEmits(['members-click'])
 
 const store = useChannelsStore()
+const profileStatusByUserId = ref({})
+let profileRequestVersion = 0
 
 const channel = computed(() => store.getById(props.channelId))
 const channelMembers = computed(() => store.members[String(props.channelId)])
@@ -23,13 +26,61 @@ const memberItems = computed(() =>
     id: member.id,
     name: member.name || member.email || 'Channel member',
     avatarUrl: member.avatarUrl || '',
-    status: member.status || 'offline',
+    status: member.status || profileStatusByUserId.value[member.id] || 'unknown',
     email: member.email || '',
   })),
 )
 watch(
   () => props.channelId,
-  (channelId) => store.fetchMembers(channelId),
+  (channelId) => {
+    profileRequestVersion += 1
+    profileStatusByUserId.value = {}
+    void store.fetchMembers(channelId)
+  },
+  { immediate: true },
+)
+watch(
+  () =>
+    (channelMembers.value?.items || [])
+      .map((member) => `${member.id}:${member.status || ''}`)
+      .join('|'),
+  async () => {
+    const requestVersion = ++profileRequestVersion
+    const members = channelMembers.value?.items || []
+    if (!members.length) {
+      profileStatusByUserId.value = {}
+      return
+    }
+
+    const results = await Promise.allSettled(
+      members.map(async (member) => {
+        const response = await getUser(member.id)
+        let payload = response
+        while (payload?.data && typeof payload.data === 'object') payload = payload.data
+        const user = payload?.user ?? payload
+        const rawStatus =
+          user?.status_mode ?? user?.presence ?? user?.status ?? user?.mode ?? user?.state
+        const status =
+          typeof rawStatus === 'string'
+            ? rawStatus.toLowerCase()
+            : (rawStatus?.state ?? rawStatus?.mode ?? rawStatus?.status)
+        return {
+          id: member.id,
+          status: ['online', 'away', 'offline', 'dnd'].includes(status) ? status : 'unknown',
+        }
+      }),
+    )
+
+    if (requestVersion !== profileRequestVersion) return
+    profileStatusByUserId.value = Object.fromEntries(
+      results.map((result, index) => {
+        const memberId = members[index].id
+        return result.status === 'fulfilled'
+          ? [result.value.id, result.value.status]
+          : [memberId, 'unknown']
+      }),
+    )
+  },
   { immediate: true },
 )
 
@@ -41,7 +92,6 @@ function toggleFavorite() {
 <template>
   <header v-if="channel" class="ch-header">
     <div class="ch-header__row">
-
       <button
         type="button"
         class="ch-header__favorite"

@@ -10,10 +10,11 @@ const hideEmail = ref(props.security.hideEmail ?? false)
 const passwords = reactive({ old: '', next: '', confirm: '' })
 const showPw = reactive({ old: false, next: false, confirm: false })
 const touched = reactive({ old: false, next: false, confirm: false })
+const oldPasswordFocused = ref(false)
 const attempted = ref(false)
 
 const passwordFields = [
-  { key: 'old', placeholder: 'Old Password', autocomplete: 'current-password' },
+  { key: 'old', placeholder: 'Old Password', autocomplete: 'new-password' },
   { key: 'next', placeholder: 'Enter New Password', autocomplete: 'new-password' },
   { key: 'confirm', placeholder: 'Confirm New Password', autocomplete: 'new-password' },
 ]
@@ -97,7 +98,9 @@ defineExpose({ validate, getValues })
           :type="showPw[pf.key] ? 'text' : 'password'"
           :placeholder="pf.placeholder"
           :autocomplete="pf.autocomplete"
+          :readonly="pf.key === 'old' && !oldPasswordFocused"
           :aria-invalid="!!errors[pf.key]"
+          @focus="pf.key === 'old' && (oldPasswordFocused = true)"
           @blur="touched[pf.key] = true"
         />
         <button

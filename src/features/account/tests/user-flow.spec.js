@@ -613,12 +613,50 @@ describe('account settings modal', () => {
     await openSettings()
     await click(tab('User Preferences'))
     await click($('input[name="pref-enterKey"][value="newline"]'))
+    await click($('input[name="pref-leftClick"][value="default"]'))
     await click($('input[name="pref-workspaceSwitch"][value="new"]'))
     await click(byText('SAVE'))
 
     expect(store.state.preferences.enterKey).toBe('newline')
     expect(store.state.preferences.workspaceSwitch).toBe('new')
     expect(store.state.preferences.doubleClick).toBe('default')
+    const [url, options] = fetch.mock.calls.find(([, request]) => request.method === 'PATCH')
+    expect(url).toContain('/v1/users/test-user/preferences')
+    expect(options.method).toBe('PATCH')
+    expect(JSON.parse(options.body)).toEqual({
+      enter_key: 'newline',
+      double_click: 'default',
+      left_click: 'default_click',
+      workspace_switch: 'new',
+    })
+  })
+
+  it('sends the API enum for the Open Menu left-click preference', async () => {
+    await openSettings()
+    await click(tab('User Preferences'))
+    await click($('input[name="pref-leftClick"][value="menu"]'))
+    await click(byText('SAVE'))
+
+    const [, options] = fetch.mock.calls.find(([, request]) => request.method === 'PATCH')
+    expect(JSON.parse(options.body).left_click).toBe('open_menu')
+  })
+
+  it('keeps preferences unchanged and settings open when the API update fails', async () => {
+    await openSettings()
+    await click(tab('User Preferences'))
+    await click($('input[name="pref-enterKey"][value="newline"]'))
+    fetch.mockResolvedValueOnce({
+      ok: false,
+      status: 422,
+      statusText: 'Unprocessable Entity',
+      json: async () => ({ message: 'Preferences update failed' }),
+    })
+
+    await click(byText('SAVE'))
+
+    expect($('[role=dialog]')).toBeTruthy()
+    expect(store.state.preferences.enterKey).toBe('send')
+    expect(wrapper.emitted('error')[0][0].message).toContain('Preferences update failed')
   })
 
   it('keeps unsaved input when switching tabs', async () => {
@@ -644,6 +682,11 @@ describe('account settings modal', () => {
     await openSettings()
     await click(tab('Security'))
     const old = $('input[placeholder="Old Password"]')
+    expect(old.autocomplete).toBe('new-password')
+    expect(old.readOnly).toBe(true)
+    old.focus()
+    await flushPromises()
+    expect(old.readOnly).toBe(false)
     old.dispatchEvent(new Event('blur'))
     await flushPromises()
     expect($('.pw-error').textContent).toBe('Required.')
@@ -823,6 +866,12 @@ describe('account settings modal', () => {
           avatar_url: 'http://10.0.105.90:8000//api//v1//avatars//avatars//test-user//saved.png',
           presence: 'away',
           custom_status: 'Working remotely',
+          preferences: {
+            enter_key: 'newline',
+            double_click: 'reminder',
+            left_click: 'default_click',
+            workspace_switch: 'new',
+          },
         },
       }),
     })
@@ -842,6 +891,12 @@ describe('account settings modal', () => {
     )
     expect(store.state.status).toBe('away')
     expect(store.state.customStatus).toBe('Working remotely')
+    expect(store.state.preferences).toEqual({
+      enterKey: 'newline',
+      doubleClick: 'reminder',
+      leftClick: 'default',
+      workspaceSwitch: 'new',
+    })
     expect($('.avatar-btn img').getAttribute('src')).toBe(
       'http://10.0.105.90:8000/api/v1/avatars/avatars/test-user/saved.png',
     )

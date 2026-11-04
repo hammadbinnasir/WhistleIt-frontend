@@ -4,6 +4,7 @@ import EmojiPicker from 'vue3-emoji-picker'
 import 'vue3-emoji-picker/css'
 import { useChannelsStore } from '@/features/channels'
 import { useDmStore } from '@/features/dms/stores/dms'
+import { getAuthUser } from '@/features/auth/session'
 import { useMessagesStore } from '@/features/messages/messages'
 import {
   createLinkPreview,
@@ -13,6 +14,7 @@ import {
   timeLabel,
 } from '@/features/messages/message-utils'
 import { useUiStore } from '@/stores/ui'
+import { useUserStore } from '@/features/account/composables/useUserStore'
 import { addMockMessage, removeMockMessage, updateMockMessage } from '@/features/search/search'
 import SetReminderModal from '@/features/search/SetReminderModal.vue'
 import MessageComposer from './MessageComposer.vue'
@@ -25,6 +27,7 @@ const props = defineProps({
 const dms = useDmStore()
 const channelsStore = useChannelsStore()
 const ui = useUiStore()
+const userStore = useUserStore()
 const messageStore = useMessagesStore()
 const messagesContainer = ref(null)
 const editingId = ref(null)
@@ -45,9 +48,12 @@ const activePollMode = ref('respond')
 const pollResponses = ref({})
 const pollResults = ref({})
 const closedPolls = ref(new Set())
-const minimumDeleteDate = computed(() =>
-  toLocalDateTimeValue(new Date(Date.now() + 60_000))
+const minimumDeleteDate = computed(() => toLocalDateTimeValue(new Date(Date.now() + 60_000)))
+
+const currentUserName = computed(
+  () => dms.usersById[dms.meId]?.name || getAuthUser()?.fullName || 'You',
 )
+let messageClickTimer = null
 
 const pollClock = ref(Date.now())
 let pollClockTimer = null
@@ -92,7 +98,7 @@ const visibleMessages = computed(() =>
     : messageStore.visibleMessagesFor(channelId.value),
 )
 const renderedMessages = computed(() => {
-  const currentUser = dms.usersById[dms.meId]?.name || 'You'
+  const currentUser = currentUserName.value
   let previous = null
 
   return [...visibleMessages.value]
@@ -205,7 +211,7 @@ function addMessage(payload) {
     : messageStore.sendMessage(
         channelId.value,
         messagePayload,
-        dms.usersById[dms.meId]?.name || 'You',
+        currentUserName.value,
         conversationMeta.value.name,
       )
   if (!sentMessage) {
@@ -232,7 +238,7 @@ function addScheduledMessage(message) {
     : messageStore.sendMessage(
         channelId.value,
         message,
-        dms.usersById[dms.meId]?.name || 'You',
+        currentUserName.value,
         conversationMeta.value.name,
       )
   if (!scheduledMessage) {
@@ -249,7 +255,7 @@ function addGif(gif) {
     : messageStore.sendMessage(
         channelId.value,
         message,
-        dms.usersById[dms.meId]?.name || 'You',
+        currentUserName.value,
         conversationMeta.value.name,
       )
   if (!sentMessage) {
@@ -404,6 +410,35 @@ function setReminder(message) {
   openMenuId.value = null
 }
 
+function handleMessageClick(event, message) {
+  if (
+    userStore.state.preferences.leftClick !== 'menu' ||
+    event.detail > 1 ||
+    event.target.closest('button, a, input')
+  ) {
+    return
+  }
+
+  clearTimeout(messageClickTimer)
+  messageClickTimer = setTimeout(() => {
+    openMenuId.value = message.id
+    messageClickTimer = null
+  }, 250)
+}
+
+function handleMessageDoubleClick(event, message) {
+  clearTimeout(messageClickTimer)
+  messageClickTimer = null
+  if (
+    userStore.state.preferences.doubleClick === 'reminder' &&
+    !message.deleted &&
+    !event.target.closest('button, a, input')
+  ) {
+    event.preventDefault()
+    setReminder(message)
+  }
+}
+
 function openForwardDialog(message) {
   forwardTarget.value = message
   openMenuId.value = null
@@ -434,7 +469,7 @@ function forwardMessage() {
       : messageStore.sendMessage(
           destination.id,
           payload,
-          dms.usersById[dms.meId]?.name || 'You',
+          currentUserName.value,
           destination.name.replace(/^#/, ''),
         )
 
@@ -650,6 +685,7 @@ onMounted(() => {
 })
 onBeforeUnmount(() => {
   document.removeEventListener('pointerdown', closeActionsOnOutsideClick)
+  clearTimeout(messageClickTimer)
   if (pollClockTimer) window.clearInterval(pollClockTimer)
 })
 </script>
@@ -665,7 +701,14 @@ onBeforeUnmount(() => {
       >
         Load older messages
       </button>
-
+      <p v-if="messagesLoading" class="composer-conversation__status">Loading messages…</p>
+      <p v-else-if="messagesError" class="composer-conversation__status composer-conversation__status--error">
+          {{ messagesError }}
+       <button type="button" @click="retryConversationMessages">Retry</button>
+      </p>
+      <p v-else-if="conversation && !renderedMessages.length" class="composer-conversation__status">
+          No messages yet.
+      </p>
       <template v-for="message in renderedMessages" :key="message.id">
         <div v-if="message.showDate" class="composer-conversation__date">
           <span>{{ message.dateHeading }}</span>
@@ -708,6 +751,8 @@ onBeforeUnmount(() => {
               class="composer-conversation__message-bubble"
               :class="{ 'composer-conversation__message-bubble--deleted': message.deleted }"
               :data-poll-title="message.content?.match(/^Poll:\s*(.+)$/m)?.[1]?.trim()"
+              @click="handleMessageClick($event, message)"
+              @dblclick="handleMessageDoubleClick($event, message)"
             >
               <template v-if="!message.deleted">
                 <span v-if="message.forwardedFrom" class="composer-conversation__forwarded">
@@ -2436,6 +2481,22 @@ onBeforeUnmount(() => {
 .composer-conversation__forward-dialog footer button:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+.composer-conversation__status {
+  margin: 12px 0;
+  color: #717487;
+  font-size: 13px;
+  text-align: center;
+}
+.composer-conversation__status--error {
+  color: #c92f43;
+}
+.composer-conversation__status button {
+  margin-left: 6px;
+  color: #5552c7;
+  text-decoration: underline;
+  cursor: pointer;
 }
 
 @media (hover: none) {
