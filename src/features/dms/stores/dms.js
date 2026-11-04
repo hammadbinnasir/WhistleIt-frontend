@@ -897,6 +897,10 @@ export const useDmStore = defineStore('dms', () => {
     return true
   }
 
+  function deactivateConversation() {
+    activeId.value = null
+  }
+
   function closeConversation(id) {
     if (!closedIds.value.includes(id)) closedIds.value.push(id)
     if (activeId.value === id) activeId.value = null
@@ -1067,6 +1071,7 @@ export const useDmStore = defineStore('dms', () => {
     init,
     loadCompanyMembers,
     openConversation,
+    deactivateConversation,
     loadMessages,
     closeConversation,
     startDm,
