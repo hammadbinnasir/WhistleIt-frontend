@@ -1,5 +1,6 @@
 import { useMembersStore } from '@/stores/members'
 import { useTeamsStore } from '@/stores/teams'
+import { useChannelsStore } from '@/features/channels'
 import {
   addChannelMember,
   listAvailableMembers as listAvailableChannelMembers,
@@ -57,11 +58,13 @@ export async function listAvailableMembers(channelId) {
 export async function removeMember(userId, channelId) {
   if (!channelId) throw new Error('A channel ID is required to remove a member.')
   await removeChannelMember(channelId, userId)
+  await useChannelsStore().fetchMembers(channelId)
 }
 
 export async function addMember(user, channelId) {
   if (!channelId) throw new Error('A channel ID is required to add a member.')
   await addChannelMember(channelId, user.id)
+  await useChannelsStore().fetchMembers(channelId)
 }
 export async function getWebhookUrl(channelId) {
   await wait(100)

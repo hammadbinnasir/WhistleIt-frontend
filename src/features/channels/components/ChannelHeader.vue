@@ -1,13 +1,10 @@
 <script setup>
 import { computed, watch } from 'vue'
 import { useChannelsStore } from '../store/channels.store'
-import { useChannelActions } from '../composables/useChannelActions'
 import { HEADER_AVATAR_MAX } from '../constants'
 import ChIcon from './ChIcon.vue'
 import MemberAvatarStack from './MemberAvatarStack.vue'
 import '../styles/tokens.css'
-import { useMembersStore } from '@/stores/members'
-import { useTeamsStore } from '@/stores/teams'
 
 // Drop this into any chat screen:  <ChannelHeader :channel-id="route.params.channelId" />
 const props = defineProps({
@@ -18,36 +15,47 @@ const props = defineProps({
 const emit = defineEmits(['members-click'])
 
 const store = useChannelsStore()
-const { run } = useChannelActions()
-const membersStore = useMembersStore()
-const teamsStore = useTeamsStore()
 
 const channel = computed(() => store.getById(props.channelId))
+const channelMembers = computed(() => store.members[String(props.channelId)])
 const memberItems = computed(() =>
-  membersStore.members.map((member) => ({
-    id: member.userId || member.membershipId,
-    name: member.name || member.email || 'Team member',
-    avatarUrl: member.avatar || '',
+  (channelMembers.value?.items || []).map((member) => ({
+    id: member.id,
+    name: member.name || member.email || 'Channel member',
+    avatarUrl: member.avatarUrl || '',
     status: member.status || 'offline',
     email: member.email || '',
   })),
 )
 watch(
-  () => [teamsStore.activeWorkspaceId, teamsStore.activeTeamId],
-  ([workspaceId, teamId]) => {
-    if (workspaceId && teamId) membersStore.fetchMembers(workspaceId, teamId)
-  },
+  () => props.channelId,
+  (channelId) => store.fetchMembers(channelId),
   { immediate: true },
 )
 
 function toggleFavorite() {
-  run('favorite', channel.value)
+  store.toggleFavorite(props.channelId)
 }
 </script>
 
 <template>
   <header v-if="channel" class="ch-header">
     <div class="ch-header__row">
+
+      <button
+        type="button"
+        class="ch-header__favorite"
+        :class="{ 'is-favorite': channel.isFavorite }"
+        :aria-label="
+          channel.isFavorite ? 'Remove channel from favorites' : 'Add channel to favorites'
+        "
+        :aria-pressed="channel.isFavorite"
+        :title="channel.isFavorite ? 'Remove from favorites' : 'Add to favorites'"
+        @click="toggleFavorite"
+      >
+        <ChIcon name="star" :size="19" :filled="channel.isFavorite" />
+      </button>
+
       <h1 class="ch-header__name" :title="channel.name">
         <ChIcon v-if="channel.isPrivate" name="lock" :size="18" />
         <span>{{ channel.name }}</span>
@@ -57,7 +65,7 @@ function toggleFavorite() {
 
       <MemberAvatarStack
         :members="memberItems"
-        :total="membersStore.memberCount || channel.memberCount"
+        :total="channelMembers?.total ?? channel.memberCount"
         :max="maxAvatars"
         @click="emit('members-click')"
       />
@@ -70,7 +78,6 @@ function toggleFavorite() {
     <p v-if="channel.description" class="ch-header__desc">
       <span class="ch-header__bullet" aria-hidden="true">•</span>{{ channel.description }}
     </p>
-
   </header>
   <div v-else class="ch-header ch-header--skeleton" aria-hidden="true" />
 </template>
@@ -104,6 +111,29 @@ function toggleFavorite() {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+.ch-header__favorite {
+  display: grid;
+  flex: 0 0 auto;
+  place-items: center;
+  padding: 3px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: #85899a;
+  cursor: pointer;
+}
+.ch-header__favorite:hover,
+.ch-header__favorite:focus-visible {
+  background: #f3f4f6;
+  color: #d99a00;
+}
+.ch-header__favorite.is-favorite {
+  color: #d99a00;
+}
+.ch-header__favorite:focus-visible {
+  outline: 2px solid #5962ff;
+  outline-offset: 2px;
 }
 .ch-header__divider {
   align-self: stretch;
