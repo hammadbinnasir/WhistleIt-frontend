@@ -10,6 +10,7 @@ const emit = defineEmits(['click'])
 
 const PALETTE = ['#7b2fd0', '#5a45d8', '#3f6bd9', '#8e3fb8', '#6a3fd0', '#2f7fb8']
 const hoveredMember = ref(null)
+let hoverCloseTimer = null
 
 const shown = computed(() => props.members.slice(0, props.max))
 const extra = computed(() =>
@@ -29,7 +30,16 @@ function colorFor(member) {
 }
 
 function setHovered(member) {
+  clearTimeout(hoverCloseTimer)
   hoveredMember.value = member || null
+}
+
+function scheduleHoverClose() {
+  clearTimeout(hoverCloseTimer)
+  hoverCloseTimer = setTimeout(() => {
+    hoveredMember.value = null
+    hoverCloseTimer = null
+  }, 150)
 }
 </script>
 
@@ -38,6 +48,8 @@ function setHovered(member) {
     class="ch-stack"
     :aria-label="`View ${total || members.length} members`"
     @click="emit('click')"
+    @mouseenter="setHovered(hoveredMember)"
+    @mouseleave="scheduleHoverClose"
   >
     <span
       v-for="member in shown"
@@ -46,7 +58,6 @@ function setHovered(member) {
       :style="member.avatarUrl ? null : { background: colorFor(member) }"
       :title="member.name"
       @mouseenter="setHovered(member)"
-      @mouseleave="setHovered(null)"
     >
       <img v-if="member.avatarUrl" :src="member.avatarUrl" :alt="member.name" />
       <template v-else>{{ initials(member.name) }}</template>
@@ -54,7 +65,12 @@ function setHovered(member) {
     </span>
     <span v-if="extra > 0" class="ch-stack__avatar ch-stack__avatar--extra">+{{ extra }}</span>
 
-    <div v-if="hoveredMember" class="ch-stack__preview" aria-live="polite">
+    <div
+      v-if="hoveredMember"
+      class="ch-stack__preview"
+      aria-live="polite"
+      @mouseenter="setHovered(hoveredMember)"
+    >
       <div class="ch-stack__preview-header">
         <div class="ch-stack__preview-avatar">
           {{ initials(hoveredMember.name) }}
@@ -152,7 +168,7 @@ function setHovered(member) {
   box-shadow: 0 16px 32px rgba(15, 23, 42, 0.18);
   padding: 14px 14px 12px;
   z-index: 30;
-  pointer-events: none;
+  pointer-events: auto;
 }
 .ch-stack__preview-header {
   display: flex;
