@@ -13,6 +13,7 @@ import {
   timeLabel,
 } from '@/features/messages/message-utils'
 import { useUiStore } from '@/stores/ui'
+import { useUserStore } from '@/features/account/composables/useUserStore'
 import { addMockMessage, removeMockMessage, updateMockMessage } from '@/features/search/search'
 import SetReminderModal from '@/features/search/SetReminderModal.vue'
 import MessageComposer from './MessageComposer.vue'
@@ -25,6 +26,7 @@ const props = defineProps({
 const dms = useDmStore()
 const channelsStore = useChannelsStore()
 const ui = useUiStore()
+const userStore = useUserStore()
 const messageStore = useMessagesStore()
 const messagesContainer = ref(null)
 const editingId = ref(null)
@@ -48,6 +50,7 @@ const closedPolls = ref(new Set())
 const minimumDeleteDate = computed(() =>
   toLocalDateTimeValue(new Date(Date.now() + 60_000))
 )
+let messageClickTimer = null
 
 const pollClock = ref(Date.now())
 let pollClockTimer = null
@@ -404,6 +407,35 @@ function setReminder(message) {
   openMenuId.value = null
 }
 
+function handleMessageClick(event, message) {
+  if (
+    userStore.state.preferences.leftClick !== 'menu' ||
+    event.detail > 1 ||
+    event.target.closest('button, a, input')
+  ) {
+    return
+  }
+
+  clearTimeout(messageClickTimer)
+  messageClickTimer = setTimeout(() => {
+    openMenuId.value = message.id
+    messageClickTimer = null
+  }, 250)
+}
+
+function handleMessageDoubleClick(event, message) {
+  clearTimeout(messageClickTimer)
+  messageClickTimer = null
+  if (
+    userStore.state.preferences.doubleClick === 'reminder' &&
+    !message.deleted &&
+    !event.target.closest('button, a, input')
+  ) {
+    event.preventDefault()
+    setReminder(message)
+  }
+}
+
 function openForwardDialog(message) {
   forwardTarget.value = message
   openMenuId.value = null
@@ -650,6 +682,7 @@ onMounted(() => {
 })
 onBeforeUnmount(() => {
   document.removeEventListener('pointerdown', closeActionsOnOutsideClick)
+  clearTimeout(messageClickTimer)
   if (pollClockTimer) window.clearInterval(pollClockTimer)
 })
 </script>
@@ -708,6 +741,8 @@ onBeforeUnmount(() => {
               class="composer-conversation__message-bubble"
               :class="{ 'composer-conversation__message-bubble--deleted': message.deleted }"
               :data-poll-title="message.content?.match(/^Poll:\s*(.+)$/m)?.[1]?.trim()"
+              @click="handleMessageClick($event, message)"
+              @dblclick="handleMessageDoubleClick($event, message)"
             >
               <template v-if="!message.deleted">
                 <span v-if="message.forwardedFrom" class="composer-conversation__forwarded">

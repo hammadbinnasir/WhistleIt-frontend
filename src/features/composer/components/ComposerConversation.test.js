@@ -8,6 +8,7 @@ import { useDmStore } from '@/features/dms/stores/dms'
 import { useMessagesStore } from '@/features/messages/messages'
 import { useRemindersStore } from '@/features/search/reminders'
 import { useUiStore } from '@/stores/ui'
+import { resetUserStore, useUserStore } from '@/features/account/composables/useUserStore'
 
 const emojiPickerProps = vi.hoisted(() => vi.fn())
 
@@ -37,6 +38,7 @@ describe('composer conversation', () => {
   beforeEach(() => {
     localStorage.clear()
     setActivePinia(createPinia())
+    resetUserStore()
   })
 
   async function sendMessage(wrapper, content) {
@@ -73,6 +75,37 @@ describe('composer conversation', () => {
     expect(wrapper.get('time').attributes('datetime')).toBeTruthy()
 
     expect(wrapper.get('[aria-label="Sent"]').text()).toBe('✓✓')
+  })
+
+  it('opens the message action menu on left click when configured', async () => {
+    const wrapper = mount(ComposerConversation)
+    await sendMessage(wrapper, 'Click for actions')
+
+    await wrapper.get('.composer-conversation__message-bubble').trigger('click')
+    await new Promise((resolve) => setTimeout(resolve, 275))
+
+    expect(wrapper.find('.composer-conversation__menu').exists()).toBe(true)
+  })
+
+  it('opens the reminder dialog on double click when configured', async () => {
+    useUserStore().hydrate({ preferences: { doubleClick: 'reminder' } })
+    const wrapper = mount(ComposerConversation)
+    await sendMessage(wrapper, 'Remind me about this')
+
+    await wrapper.get('.composer-conversation__message-bubble').trigger('dblclick')
+
+    expect(wrapper.get('[aria-label="Reminder title"]').exists()).toBe(true)
+  })
+
+  it('does not open a message menu when left click is set to default', async () => {
+    useUserStore().hydrate({ preferences: { leftClick: 'default' } })
+    const wrapper = mount(ComposerConversation)
+    await sendMessage(wrapper, 'Select this message')
+
+    await wrapper.get('.composer-conversation__message-bubble').trigger('click')
+    await new Promise((resolve) => setTimeout(resolve, 275))
+
+    expect(wrapper.find('.composer-conversation__menu').exists()).toBe(false)
   })
 
   it('shows a sent poll in the conversation', async () => {
