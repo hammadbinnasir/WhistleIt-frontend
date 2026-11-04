@@ -4,6 +4,7 @@ import { dmApi } from '@/features/dms/dmApi'
 import { useActivityStore } from '@/stores/activity'
 
 let generatedId = 0
+const MAX_TIMEOUT = 2_147_483_647
 
 function createId() {
   return globalThis.crypto?.randomUUID?.() ?? `local-${Date.now()}-${generatedId++}`
@@ -20,6 +21,7 @@ export const useDmStore = defineStore('dms', () => {
   const activeId = ref(null)
   const loading = ref(false)
   const error = ref('')
+  const deletionTimers = new Map()
   const usersById = computed(() => Object.fromEntries(users.value.map((user) => [user.id, user])))
   const sorted = computed(() =>
     conversations.value.slice().sort((a, b) => {
@@ -31,6 +33,50 @@ export const useDmStore = defineStore('dms', () => {
 
   let initialization
 
+  function finalizeDeletion(message) {
+    message.deleted = true
+    message.deletedAt = new Date().toISOString()
+    message.text = ''
+    message.content = ''
+    message.attachments = []
+    message.reactions = []
+    delete message.deleteScheduledAt
+    delete message.gif
+    delete message.poll
+  }
+
+  function scheduleDeletion(conversationId, message) {
+    const timerKey = `${conversationId}:${message.id}`
+    const scheduledAt = message.deleteScheduledAt
+    const existingTimer = deletionTimers.get(timerKey)
+    if (existingTimer) clearTimeout(existingTimer)
+    deletionTimers.delete(timerKey)
+
+    const delay = Date.parse(scheduledAt) - Date.now()
+    if (!Number.isFinite(delay)) return
+    if (delay <= 0) {
+      finalizeDeletion(message)
+      return
+    }
+
+    const timer = setTimeout(
+      () => {
+        deletionTimers.delete(timerKey)
+        const conversation = conversations.value.find((item) => item.id === conversationId)
+        const current = conversation?.messages.find((item) => item.id === message.id)
+        if (!current || current.deleteScheduledAt !== scheduledAt) return
+        if (Date.parse(scheduledAt) <= Date.now()) {
+          finalizeDeletion(current)
+        } else {
+          scheduleDeletion(conversationId, current)
+        }
+      },
+      Math.min(delay, MAX_TIMEOUT),
+    )
+    timer.unref?.()
+    deletionTimers.set(timerKey, timer)
+  }
+
   async function init() {
     if (initialization) return initialization
 
@@ -41,6 +87,11 @@ export const useDmStore = defineStore('dms', () => {
         users.value = loadedUsers
         conversations.value = loadedConversations
         meId.value = dmApi.meId()
+        for (const conversation of conversations.value) {
+          for (const message of conversation.messages) {
+            if (message.deleteScheduledAt) scheduleDeletion(conversation.id, message)
+          }
+        }
       })
       .catch((cause) => {
         error.value = errorMessage(cause)
@@ -169,24 +220,53 @@ export const useDmStore = defineStore('dms', () => {
   function editMessage(conversationId, messageId, text) {
     const conversation = conversations.value.find((item) => item.id === conversationId)
     const message = conversation?.messages.find((item) => item.id === messageId)
-    if (!message || message.from !== meId.value || message.scheduled || !text.trim()) return false
+    if (
+      !message ||
+      message.from !== meId.value ||
+      message.scheduled ||
+      message.deleted ||
+      message.deleteScheduledAt ||
+      !text.trim()
+    ) {
+      return false
+    }
     message.text = text.trim()
     message.editedAt = new Date().toISOString()
     return true
   }
 
-  function deleteMessage(conversationId, messageId) {
+  function deleteMessage(conversationId, messageId, scheduledAt = null) {
     const conversation = conversations.value.find((item) => item.id === conversationId)
     const message = conversation?.messages.find((item) => item.id === messageId)
-    if (!conversation || !message || message.from !== meId.value || message.scheduled) return false
-    conversation.messages = conversation.messages.filter((item) => item.id !== messageId)
+    if (
+      !conversation ||
+      !message ||
+      message.from !== meId.value ||
+      message.scheduled ||
+      message.deleted
+    ) {
+      return false
+    }
+    if (scheduledAt) {
+      const timestamp = Date.parse(scheduledAt)
+      if (!Number.isFinite(timestamp) || timestamp <= Date.now()) return false
+      message.deleteScheduledAt = new Date(timestamp).toISOString()
+      scheduleDeletion(conversationId, message)
+      return true
+    }
+
+    const timerKey = `${conversationId}:${message.id}`
+    const timer = deletionTimers.get(timerKey)
+    if (timer) clearTimeout(timer)
+    deletionTimers.delete(timerKey)
+    finalizeDeletion(message)
     return true
   }
 
   function toggleReaction(conversationId, messageId, emoji) {
     const conversation = conversations.value.find((item) => item.id === conversationId)
     const message = conversation?.messages.find((item) => item.id === messageId)
-    if (!message || !emoji) return false
+    if (!message || message.deleted || !emoji) return false
     if (!message.reactions) message.reactions = []
 
     const userId = meId.value || 'current-user'

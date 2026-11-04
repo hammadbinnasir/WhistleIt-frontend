@@ -13,6 +13,7 @@ const api = vi.hoisted(() => ({
   addMembers: vi.fn(),
   removeMember: vi.fn(),
 }))
+const navigation = vi.hoisted(() => ({ push: vi.fn() }))
 
 vi.mock('@/features/shell/api/membersApi', () => ({
   getMembers: api.getMembers,
@@ -24,6 +25,10 @@ vi.mock('@/features/shell/api/membersApi', () => ({
 
 vi.mock('@/features/auth/session', () => ({
   getAuthUserId: () => 'self-user',
+}))
+
+vi.mock('vue-router', () => ({
+  useRouter: () => navigation,
 }))
 
 const initialMembers = [
@@ -51,6 +56,7 @@ describe('MemberManageModal', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     vi.clearAllMocks()
+    navigation.push.mockReset()
     api.getMembers.mockResolvedValue(initialMembers)
     api.getNotMembers.mockResolvedValue(availableUsers)
     api.addMember.mockResolvedValue({ success: true, message: 'Team member added successfully' })
@@ -66,14 +72,21 @@ describe('MemberManageModal', () => {
     vi.useRealTimers()
   })
 
-  function mountOpenModal() {
+  function mountOpenModal(role = 'admin', teams = null) {
     const teamsStore = useTeamsStore()
-    teamsStore.workspaces = [{ id: 'workspace-1', name: 'Workspace' }]
+    teamsStore.workspaces = [
+      {
+        id: 'workspace-1',
+        name: 'Workspace',
+        role,
+        isAdmin: role === 'admin',
+      },
+    ]
     teamsStore.activeWorkspaceId = 'workspace-1'
     teamsStore.teamsByWorkspaceId = {
-      'workspace-1': [{ id: 'team-1', name: 'Design Team', workspaceId: 'workspace-1' }],
+      'workspace-1': teams ?? [{ id: 'team-1', name: 'Design Team', workspaceId: 'workspace-1' }],
     }
-    teamsStore.activeTeamId = 'team-1'
+    teamsStore.activeTeamId = teamsStore.teamsByWorkspaceId['workspace-1'][0]?.id ?? null
     useUiStore().memberManageModalOpen = true
     return mount(MemberManageModal)
   }
@@ -83,13 +96,51 @@ describe('MemberManageModal', () => {
     await flushPromises()
   }
 
-  it('marks the current user, shows the creator badge, and never offers Remove for them', async () => {
+  it('marks the current user and offers Leave instead of Remove on their row', async () => {
     const wrapper = mountOpenModal()
     await flushPromises()
 
     expect(wrapper.text()).toContain('Current User (You)')
     expect(wrapper.text()).toContain('Creator')
+    const currentUserRow = wrapper
+      .findAll('.member-row')
+      .find((row) => row.text().includes('(You)'))
+    expect(currentUserRow.text()).toContain('Leave team')
+    expect(currentUserRow.find('.remove-btn').exists()).toBe(false)
     expect(wrapper.findAll('.remove-btn')).toHaveLength(1)
+  })
+
+  it('confirms leaving, removes the current user, and routes to the empty workspace state', async () => {
+    const wrapper = mountOpenModal('member', [
+      { id: 'team-1', name: 'Design Team', workspaceId: 'workspace-1' },
+    ])
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    api.removeMember.mockResolvedValue({
+      success: true,
+      message: 'You left the team successfully.',
+    })
+    await flushPromises()
+
+    await wrapper.find('.leave-btn').trigger('click')
+    await flushPromises()
+
+    expect(confirm).toHaveBeenCalledWith('You will lose access to this team. Leave "Design Team"?')
+    expect(api.removeMember).toHaveBeenCalledWith('workspace-1', 'team-1', 'self-user')
+    expect(useTeamsStore().teams).toEqual([])
+    expect(navigation.push).toHaveBeenCalledWith({ path: '/app/workspace-1' })
+    expect(useUiStore().toasts.at(-1)).toMatchObject({
+      body: 'You left the team successfully.',
+      type: 'success',
+    })
+  })
+
+  it('keeps the member list read-only for non-admins', async () => {
+    const wrapper = mountOpenModal('member')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('Other Member')
+    expect(wrapper.find('button.add-btn').exists()).toBe(false)
+    expect(wrapper.find('.remove-btn').exists()).toBe(false)
   })
 
   it('loads the picker list only when opened and keeps user IDs out of visible text', async () => {
@@ -128,7 +179,7 @@ describe('MemberManageModal', () => {
     expect(wrapper.find('.member-picker .retry-members').exists()).toBe(true)
   })
 
-  it('debounces case-insensitive trimmed search across names and email addresses', async () => {
+  it('debounces case-insensitive trimmed name-only search', async () => {
     vi.useFakeTimers()
     const wrapper = mountOpenModal()
     await flushPromises()
@@ -148,8 +199,7 @@ describe('MemberManageModal', () => {
     await search.setValue('  MATCH@EXAMPLE.TEST ')
     await vi.advanceTimersByTimeAsync(200)
     await flushPromises()
-    expect(wrapper.text()).toContain('Alex Search')
-    expect(wrapper.text()).not.toContain('Sarah Khan')
+    expect(wrapper.text()).toContain('No users found')
   })
 
   it('shows No users found when a non-empty picker list has no search matches', async () => {

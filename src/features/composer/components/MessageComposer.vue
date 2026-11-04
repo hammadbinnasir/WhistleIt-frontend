@@ -20,6 +20,7 @@ const customScheduleDate = ref('')
 const customScheduleTime = ref('')
 const scheduleClock = ref(new Date())
 const pollOpen = ref(false)
+const pollDraft = ref(null)
 const pollStep = ref(0)
 const pollTitle = ref('')
 const pollDescription = ref('')
@@ -38,7 +39,7 @@ const pollStartTime = ref('')
 const pollCloseDate = ref('')
 const pollCloseTime = ref('')
 const attachments = ref([])
-const messageIsReady = computed(() => content.value.trim().length > 0)
+const messageIsReady = computed(() => content.value.trim().length > 0 || Boolean(pollDraft.value))
 const scheduleIsReady = computed(() => messageIsReady.value || attachments.value.length > 0)
 const scheduleTimeZone = 'Asia/Karachi'
 let savedSelectionRange = null
@@ -51,7 +52,7 @@ function createPollQuestion() {
     ratingType: '1-5',
     required: true,
     multiple: false,
-    options: ['option 1', 'option 2', 'option 3'],
+    options: ['', '', ''],
   }
 }
 
@@ -65,6 +66,15 @@ const pollIsReady = computed(
           question.options.filter((option) => option.trim()).length >= 2),
     ),
 )
+const pollCanBeCreated = computed(() => {
+  if (!pollIsReady.value) return false
+  if (pollStartNow.value) return true
+  if (!pollScheduleStart.value || !pollStartDate.value || !pollStartTime.value) return false
+  return (
+    !pollScheduleClose.value ||
+    Boolean(pollCloseDate.value && pollCloseTime.value)
+  )
+})
 
 onBeforeUnmount(() => clearTimeout(scheduleErrorTimer))
 
@@ -271,6 +281,12 @@ function nodeToMarkdown(node) {
 
 function syncContent() {
   if (!editor.value) return
+  if (!editor.value.textContent?.trim()) {
+    editor.value.innerHTML = ''
+    content.value = ''
+    saveSelection(true)
+    return
+  }
   content.value = [...editor.value.childNodes].map(nodeToMarkdown).join('').replace(/\n+$/, '')
   saveSelection(true)
 }
@@ -635,6 +651,7 @@ function sendMessage() {
   emit('send', {
     content: content.value.trim(),
     attachments: [...attachments.value],
+    ...(pollDraft.value ? { poll: pollDraft.value } : {}),
     ...(important.value ? { important: true } : {}),
   })
   content.value = ''
@@ -645,6 +662,7 @@ function sendMessage() {
   important.value = false
   savedSelectionRange = null
   attachments.value = []
+  pollDraft.value = null
 }
 
 function scheduleMessage() {
@@ -744,7 +762,7 @@ function goToPollStep(step) {
 
 function addPollQuestion() {
   if (
-    pollQuestions.value.length >= 10 ||
+    pollQuestions.value.length >= 20 ||
     pollQuestions.value.some((question) => !['choice', 'rating'].includes(question.type))
   ) {
     return
@@ -775,7 +793,7 @@ function setPollQuestionType(question, type, questionIndex) {
           String(index + 1),
         )
       : type === 'choice'
-        ? ['option 1', 'option 2', 'option 3']
+        ? ['', '', '']
         : []
   question.multiple = false
   openPollQuestionType.value = null
@@ -804,7 +822,7 @@ function removePollChoice(question, index) {
 }
 
 function createPollDraft() {
-  if (!pollIsReady.value) {
+  if (!pollCanBeCreated.value) {
     pollValidationErrors.value = {
       title: !pollTitle.value.trim(),
       questions: pollQuestions.value.map((question) => question.required && !question.text.trim()),
@@ -817,30 +835,30 @@ function createPollDraft() {
     pollStep.value = 0
     return
   }
-  const questionText = pollQuestions.value
-    .map((question) => {
-      const options =
-        question.type === 'choice' || question.type === 'rating'
-          ? question.options
-              .map((option) => option.trim())
-              .filter(Boolean)
-              .map((option) => `• ${option}`)
-          : []
-      const questionLabel =
-        question.type === 'rating'
-          ? `${question.text.trim()} (Rating: ${question.ratingType})`
-          : question.type === 'openEnded'
-            ? `${question.text.trim()} (Open Ended)`
-            : question.text.trim()
-      return [questionLabel, ...options].join('\n')
-    })
-    .join('\n\n')
-  const pollText = [`Poll: ${pollTitle.value.trim()}`, pollDescription.value.trim(), questionText]
-    .filter(Boolean)
-    .join('\n\n')
-  const prefix = content.value.trim() ? '\n\n' : ''
-  insertAtSelection(`${prefix}${pollText}`)
+  pollDraft.value = {
+    id: `poll-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    title: pollTitle.value.trim(),
+    description: pollDescription.value.trim(),
+    questions: pollQuestions.value.map((question) => ({
+      text: question.text.trim(),
+      type: question.type,
+      ratingType: question.ratingType,
+      required: question.required,
+      multiple: question.multiple,
+      options: question.options.map((option) => option.trim()).filter(Boolean),
+    })),
+    audience: pollAudience.value,
+    resultsVisibility: pollResultsVisibility.value,
+    startNow: pollStartNow.value,
+    scheduleStart: pollScheduleStart.value
+      ? `${pollStartDate.value}T${pollStartTime.value}`
+      : '',
+    scheduleClose: pollScheduleClose.value
+      ? `${pollCloseDate.value}T${pollCloseTime.value}`
+      : '',
+  }
   closePoll()
+  sendMessage()
 }
 
 function handleFilesSelected(files) {
@@ -874,6 +892,11 @@ function handleKeydown(event) {
     <div class="message-composer__input-row">
       <div class="message-composer__editor-area">
         <span v-if="important" class="message-composer__important">IMPORTANT!</span>
+        <article v-if="pollDraft" class="message-composer__poll-draft" aria-label="Poll draft">
+          <strong>{{ pollDraft.title }}</strong>
+          <span v-if="pollDraft.description">{{ pollDraft.description }}</span>
+          <small>{{ pollDraft.questions.length }} question{{ pollDraft.questions.length === 1 ? '' : 's' }}</small>
+        </article>
         <label class="sr-only" for="message-composer-input">Message</label>
         <div
           id="message-composer-input"
@@ -1370,6 +1393,9 @@ function handleKeydown(event) {
                         !question.options[optionIndex].trim(),
                     }"
                     type="text"
+                    :placeholder="
+                      question.type === 'choice' ? `Option ${optionIndex + 1}` : undefined
+                    "
                     :aria-label="`Question ${questionIndex + 1} option ${optionIndex + 1}`"
                   />
                   <button
@@ -1401,7 +1427,7 @@ function handleKeydown(event) {
             </section>
             <button
               v-if="
-                pollQuestions.length < 10 &&
+                pollQuestions.length < 20 &&
                 pollQuestions.every((question) => ['choice', 'rating'].includes(question.type))
               "
               class="message-composer__poll-add-question"
@@ -1516,8 +1542,8 @@ function handleKeydown(event) {
             v-else
             type="button"
             class="message-composer__poll-next"
-            :disabled="!pollIsReady"
-            @click="createPollDraft"
+            :disabled="!pollCanBeCreated"
+            @click.prevent="createPollDraft"
           >
             Create Poll
           </button>
@@ -1566,6 +1592,27 @@ function handleKeydown(event) {
   font: inherit;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+}
+
+.message-composer__poll-draft {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin: 0 8px 8px;
+  padding: 10px 12px;
+  border-left: 4px solid #1717ff;
+  background: #edeef6;
+  color: #25263a;
+}
+
+.message-composer__poll-draft strong {
+  font-size: 15px;
+}
+
+.message-composer__poll-draft span,
+.message-composer__poll-draft small {
+  color: #696d81;
+  font-size: 12px;
 }
 
 .message-composer__important {
@@ -1647,7 +1694,7 @@ function handleKeydown(event) {
 
 .message-composer__primary-actions {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 4px;
   padding: 5px 7px;
 }
@@ -2714,6 +2761,14 @@ function handleKeydown(event) {
   font-weight: 600;
   letter-spacing: 0.05em;
   cursor: pointer;
+}
+
+.message-composer__poll-footer .message-composer__poll-previous {
+  color: #70727f;
+}
+
+.message-composer__poll-footer .message-composer__poll-previous:disabled {
+  color: #a0a2ad;
 }
 
 .message-composer__poll-footer button:disabled {

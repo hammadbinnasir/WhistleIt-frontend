@@ -13,7 +13,7 @@ export class ApiError extends Error {
 
 function getAuthHeaders() {
   const token = getAuthToken()
-  return token ? { Authorization: `Bearer ${token}` } : {}
+  return token ? { Authorization: 'Bearer ' + token } : {}
 }
 
 export async function http(
@@ -26,45 +26,35 @@ export async function http(
       if (value !== undefined && value !== null && value !== '') url.searchParams.set(key, value)
     })
   }
-
   let response
-  const isFormData = typeof FormData !== 'undefined' && body instanceof FormData
   try {
     response = await fetch(url.toString(), {
       method,
-      signal,
       credentials,
+      signal,
       headers: {
         Accept: 'application/json',
-        ...(body !== undefined && !isFormData ? { 'Content-Type': 'application/json' } : {}),
+        ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}),
         ...(auth ? getAuthHeaders() : {}),
         ...headers,
       },
-      body: body === undefined ? undefined : isFormData ? body : JSON.stringify(body),
+      ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
     })
-  } catch (err) {
-    if (err?.name === 'AbortError') throw err
-    throw new ApiError('Network error. Please check your connection.')
+  } catch (error) {
+    throw new ApiError(error.message || 'Network request failed', { details: error })
   }
-
-  let data = null
-  if (response.status !== 204) {
-    try {
-      data = await response.json()
-    } catch {
-      data = null
-    }
+  let payload = null
+  try {
+    payload = await response.json()
+  } catch {
+    payload = null
   }
-
+  if (response.status === 401) clearAuthSession()
   if (!response.ok) {
-    if (response.status === 401) {
-      clearAuthSession()
-      window.dispatchEvent(new Event('auth:expired'))
-    }
-    throw new ApiError(data?.message || `Request failed (${response.status})`, {
+    throw new ApiError(payload?.message || response.statusText || 'Request failed', {
       status: response.status,
-      details: data,
+      details: payload,
     })
   }
-  return data
+  return payload
 }

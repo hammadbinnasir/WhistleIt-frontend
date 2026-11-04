@@ -19,7 +19,7 @@ export const useChannelsStore = defineStore('channels', () => {
   // ---------- getters ----------
   // Keep the order supplied by the team API; channels without these fields remain supported.
   const visibleChannels = computed(() => {
-    return channels.value.filter((channel) => channel.isMember && !channel.isArchived)
+    return channels.value.filter((channel) => channel.isMember !== false && !channel.isArchived)
   })
 
   function getById(id) {
@@ -47,7 +47,7 @@ export const useChannelsStore = defineStore('channels', () => {
     error.value = null
     const requestId = ++channelsRequestId
     inflight = api
-      .listMyChannels()
+      .listChannels()
       .then((list) => {
         if (requestId !== channelsRequestId) return
         channels.value = list.filter((channel) => channel.isMember && !channel.isArchived)
@@ -107,13 +107,18 @@ export const useChannelsStore = defineStore('channels', () => {
   // ---------- actions: management ----------
   async function createChannel(payload) {
     const channel = await api.createChannel(payload)
+    channel.canManage = true
     upsertChannel(channel)
     return channel
   }
 
   async function updateChannel(id, payload) {
     const channel = await api.updateChannel(id, payload)
-    const editable = { name: channel.name, description: channel.description }
+    const editable = {
+      name: channel.name,
+      description: channel.description,
+      messagePermission: channel.messagePermission,
+    }
     patch(id, editable)
     patchBrowse(id, editable)
     return getById(id) || channel
@@ -148,7 +153,7 @@ export const useChannelsStore = defineStore('channels', () => {
 
   // ---------- local mutations (also usable by a realtime/socket handler) ----------
   function upsertChannel(channel) {
-    if (!channel.isMember) {
+    if (channel.isMember === false) {
       removeChannel(channel.id)
       return
     }

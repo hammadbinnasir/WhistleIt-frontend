@@ -1,15 +1,28 @@
 <script setup>
 // Channel Settings modal: Settings | Members | Integrations | About
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { useUiStore } from '@/stores/ui'
-import { listMembers, removeMember, addMember, getWebhookUrl } from './members'
-import { searchUsers } from './search'
+import {
+  listMembers,
+  listAvailableMembers,
+  removeMember,
+  addMember,
+  getWebhookUrl,
+} from './members'
 
 const props = defineProps({
   // { id, name, description, createdBy, muted, favourite }
   channel: { type: Object, required: true },
 })
-const emit = defineEmits(['toggle-mute', 'toggle-favourite', 'show-polls', 'left'])
+const emit = defineEmits([
+  'toggle-mute',
+  'toggle-favourite',
+  'show-polls',
+  'left',
+  'save-message-permission',
+  'archive',
+  'save-details',
+])
 const ui = useUiStore()
 
 const tab = ref(ui.channelSettingsTab)
@@ -19,9 +32,75 @@ const loadingMembers = ref(true)
 const adding = ref(false)
 const addQuery = ref('')
 const addOptions = ref([])
+const selectedUserIds = ref([])
+const dropdownOpen = ref(false)
+const loadingAddOptions = ref(false)
+const addOptionsError = ref('')
+const addMemberError = ref('')
 const webhookUrl = ref('')
 const copied = ref(false)
+const connectionCopied = ref(false)
 const confirmLeave = ref(false)
+const showMessagePermissions = ref(false)
+const confirmArchive = ref(false)
+const confirmConnectionUpdate = ref(false)
+const connectionUrl = ref('')
+const editingDetails = ref(false)
+const draftName = ref('')
+const draftDescription = ref('')
+const messagePermission = ref('everyone')
+const selectedMessagePermission = ref('everyone')
+
+const permissionStorageKey = computed(() => `channel-message-permission:${props.channel.id}`)
+
+function createConnectionUrl() {
+  return `https://app.whistleit.io/guestChannel/${props.channel.id}/U2F${props.channel.id}`
+}
+
+connectionUrl.value = createConnectionUrl()
+
+watch(
+  permissionStorageKey,
+  () => loadMessagePermission(),
+  { immediate: true },
+)
+
+function loadMessagePermission() {
+  const saved = localStorage.getItem(permissionStorageKey.value)
+  if (['everyone', 'admins', 'specific'].includes(saved)) messagePermission.value = saved
+  selectedMessagePermission.value = messagePermission.value
+}
+
+function openMessagePermissions() {
+  selectedMessagePermission.value = messagePermission.value
+  showMessagePermissions.value = true
+}
+
+function saveMessagePermissions() {
+  messagePermission.value = selectedMessagePermission.value
+  localStorage.setItem(permissionStorageKey.value, messagePermission.value)
+  emit('save-message-permission', messagePermission.value)
+  showMessagePermissions.value = false
+}
+
+function startEditingDetails() {
+  draftName.value = props.channel.name
+  draftDescription.value = props.channel.description || ''
+  editingDetails.value = true
+}
+
+function cancelEditingDetails() {
+  editingDetails.value = false
+  draftName.value = props.channel.name
+  draftDescription.value = props.channel.description || ''
+}
+
+function saveDetails() {
+  const name = draftName.value.trim()
+  if (!name) return
+  emit('save-details', { name, description: draftDescription.value.trim() })
+  editingDetails.value = false
+}
 
 const colors = ['bg-orange-500', 'bg-green-500', 'bg-purple-600', 'bg-blue-600', 'bg-pink-500']
 const colorFor = (id) =>
@@ -38,29 +117,87 @@ const filtered = computed(() =>
 )
 
 async function refresh() {
-  members.value = await listMembers()
+  members.value = await listMembers(props.channel.id)
   loadingMembers.value = false
 }
 onMounted(async () => {
   await refresh()
   webhookUrl.value = await getWebhookUrl(props.channel.id)
+  connectionUrl.value =
+    localStorage.getItem(`channel-connection-url:${props.channel.id}`) || createConnectionUrl()
 })
 
 async function openAdd() {
   adding.value = !adding.value
-  if (adding.value) onAddSearch()
+  if (adding.value) {
+    dropdownOpen.value = true
+    onAddSearch()
+  }
+}
+function closeAdd() {
+  adding.value = false
+  addQuery.value = ''
+  selectedUserIds.value = []
+  dropdownOpen.value = false
 }
 async function onAddSearch() {
-  const all = await searchUsers(addQuery.value)
-  addOptions.value = all.filter((u) => !members.value.find((m) => m.id === u.id))
+  loadingAddOptions.value = true
+  addOptionsError.value = ''
+  try {
+    const availableMembers = await listAvailableMembers(props.channel.id)
+    const query = addQuery.value.trim().toLowerCase()
+    addOptions.value = availableMembers
+      .filter((user) => {
+        if (!query) return true
+        return `${user.name} ${user.email}`.toLowerCase().includes(query)
+      })
+      .filter((user) => !members.value.some((member) => String(member.id) === String(user.id)))
+  } catch (error) {
+    addOptions.value = []
+    addOptionsError.value = error?.message || 'Unable to load available channel members.'
+  } finally {
+    loadingAddOptions.value = false
+  }
+}
+async function toggleDropdown() {
+  dropdownOpen.value = !dropdownOpen.value
+  if (dropdownOpen.value) await onAddSearch()
 }
 async function add(u) {
-  await addMember(u)
-  await refresh()
-  onAddSearch()
+  addMemberError.value = ''
+  try {
+    await addMember(u, props.channel.id)
+    await refresh()
+    await onAddSearch()
+  } catch (error) {
+    addMemberError.value = error?.status === 403
+      ? 'You are not authorized to add members to this channel.'
+      : (error?.message || 'Unable to add this member to the channel.')
+  }
+}
+function toggleSelectedUser(userId) {
+  const id = String(userId)
+  selectedUserIds.value = selectedUserIds.value.includes(id)
+    ? selectedUserIds.value.filter((selectedId) => selectedId !== id)
+    : [...selectedUserIds.value, id]
+}
+async function addSelected() {
+  const selectedUsers = addOptions.value.filter((user) =>
+    selectedUserIds.value.includes(String(user.id)),
+  )
+  addMemberError.value = ''
+  try {
+    for (const user of selectedUsers) await addMember(user, props.channel.id)
+    await refresh()
+    closeAdd()
+  } catch (error) {
+    addMemberError.value = error?.status === 403
+      ? 'You are not authorized to add members to this channel.'
+      : (error?.message || 'Unable to add the selected members to the channel.')
+  }
 }
 async function remove(m) {
-  await removeMember(m.id)
+  await removeMember(m.id, props.channel.id)
   await refresh()
 }
 
@@ -72,6 +209,23 @@ async function copy() {
   } catch (error) {
     console.error('Unable to copy webhook URL:', error)
   }
+}
+
+async function copyConnectionUrl() {
+  try {
+    await navigator.clipboard.writeText(connectionUrl.value)
+    connectionCopied.value = true
+    setTimeout(() => (connectionCopied.value = false), 1500)
+  } catch (error) {
+    console.error('Unable to copy connection URL:', error)
+  }
+}
+
+function updateConnectionUrl() {
+  const token = Math.random().toString(36).slice(2, 10).toUpperCase()
+  connectionUrl.value = `https://app.whistleit.io/guestChannel/${props.channel.id}/${token}`
+  localStorage.setItem(`channel-connection-url:${props.channel.id}`, connectionUrl.value)
+  confirmConnectionUpdate.value = false
 }
 function leave() {
   emit('left')
@@ -167,7 +321,7 @@ const showSample = ref(false)
       class="fixed inset-0 z-[70] flex items-center justify-center bg-slate-900/40 p-4"
       @click.self="showMessagePermissions = false"
     >
-      <section class="w-[520px] max-w-full overflow-visible rounded-md bg-white shadow-2xl">
+      <section class="w-[520px] max-w-full overflow-hidden rounded-md bg-white shadow-2xl">
         <header class="relative px-6 py-5 text-center">
           <button
             type="button"
@@ -294,6 +448,48 @@ const showSample = ref(false)
               easily
             </p>
           </div>
+          <div v-if="channel.canManage" class="rounded border border-slate-300 p-3">
+            <h3 class="font-bold text-slate-700">Connection URL</h3>
+            <p class="mt-1 text-sm text-slate-500">
+              Provide this url to anyone around the globe who wants to communicate.
+            </p>
+            <div class="mt-3 flex gap-2">
+              <input
+                :value="connectionUrl"
+                readonly
+                class="min-w-0 flex-1 rounded border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700"
+              />
+              <button
+                type="button"
+                class="w-9 shrink-0 cursor-pointer rounded border border-indigo-300 text-indigo-500 hover:bg-indigo-50"
+                :aria-label="connectionCopied ? 'Copied' : 'Copy connection URL'"
+                @click="copyConnectionUrl"
+              >
+                <i :class="connectionCopied ? 'fa-solid fa-check' : 'fa-solid fa-copy'" aria-hidden="true"></i>
+              </button>
+              <button
+                type="button"
+                class="cursor-pointer rounded bg-indigo-500 px-3 py-2 text-sm font-semibold text-white"
+                @click="confirmConnectionUpdate = true"
+              >
+                Update
+              </button>
+            </div>
+          </div>
+          <div v-if="channel.canManage" class="rounded border border-slate-300 p-3">
+            <h3 class="font-bold text-slate-700">Message Permissions</h3>
+            <p class="mt-1 text-sm text-slate-500">
+              Control who can send and reply to messages in this channel. By default everyone can
+              send messages in channel
+            </p>
+            <button
+              type="button"
+              class="mt-3 cursor-pointer rounded bg-indigo-500 px-4 py-2 text-sm font-semibold text-white"
+              @click="openMessagePermissions"
+            >
+              Update
+            </button>
+          </div>
           <div class="rounded border border-slate-300 p-3">
             <h3 class="font-bold text-slate-700">Polls</h3>
             <p class="mt-1 text-sm text-slate-500">
@@ -304,6 +500,16 @@ const showSample = ref(false)
               @click="emit('show-polls')"
             >
               History
+            </button>
+          </div>
+          <div v-if="channel.canManage" class="rounded border border-slate-300 p-3">
+            <button
+              type="button"
+              class="flex cursor-pointer items-center gap-2 font-bold text-red-500"
+              @click="confirmArchive = true"
+            >
+              <i class="fa-solid fa-box-archive" aria-hidden="true"></i>
+              ARCHIVE CHANNEL
             </button>
           </div>
         </div>
@@ -317,6 +523,7 @@ const showSample = ref(false)
           />
           <button
             class="my-3 flex items-center gap-2 text-sm font-bold tracking-wide text-indigo-600"
+            style="cursor: pointer"
             @click="openAdd"
           >
             <span
@@ -334,22 +541,22 @@ const showSample = ref(false)
               <div class="relative px-6 pb-3 pt-4 text-center">
                 <button
                   type="button"
-                  class="absolute right-5 top-5 grid h-10 w-10 cursor-pointer place-items-center rounded-full border border-slate-200 bg-white text-xl leading-none text-slate-600 shadow-sm hover:bg-slate-100"
+                  class="absolute right-5 top-5 grid h-8 w-8 cursor-pointer place-items-center rounded-full border border-slate-200 bg-white text-lg leading-none text-slate-600 shadow-sm hover:bg-slate-100"
                   aria-label="Close add members"
                   @click="closeAdd"
                 >
                   &times;
                 </button>
-                <h3 class="pr-12 text-[22px] font-bold leading-tight text-slate-700">
+                <h3 class="pr-8 text-[22px] font-bold leading-tight text-slate-700">
                   Add Members in Channel
                 </h3>
               </div>
 
-              <div class="px-8 pb-5 pt-3">
+              <div class="px-[34px] pb-5 pt-2">
                 <label class="relative block">
                   <span class="absolute left-2 -top-3 bg-white px-1 text-sm text-indigo-500">Search</span>
                   <span
-                    class="absolute left-5 top-1/2 -translate-y-1/2 text-xl text-slate-400"
+                    class="absolute left-3 top-6 text-lg text-slate-400"
                     aria-hidden="true"
                   >⌕</span>
                   <input
@@ -357,7 +564,6 @@ const showSample = ref(false)
                     placeholder="Type here to search"
                     class="h-[52px] w-full rounded border-2 border-indigo-500 px-10 text-base text-slate-600 outline-none focus:ring-2 focus:ring-indigo-100"
                     @input="onAddSearch"
-                    @focus="dropdownOpen = true; onAddSearch()"
                   />
                   <button
                     type="button"
@@ -425,7 +631,7 @@ const showSample = ref(false)
                 </div>
               </div>
 
-              <div class="border-t border-slate-200 px-8 py-4 text-right">
+              <div class="border-t border-slate-200 px-6 py-3 text-right">
                 <button
                   type="button"
                   class="h-[42px] cursor-pointer rounded bg-indigo-500 px-5 text-sm font-bold tracking-wide text-white shadow-sm hover:bg-indigo-600 disabled:cursor-not-allowed disabled:bg-indigo-300 disabled:text-white"
@@ -493,12 +699,74 @@ const showSample = ref(false)
 
         <!-- About -->
         <div v-else class="rounded border border-slate-300">
-          <div class="border-b border-slate-200 p-3">
-            <p class="font-bold text-slate-700">Name</p>
+          <template v-if="editingDetails && channel.canManage">
+            <div class="space-y-4 p-3">
+              <label class="block text-sm font-bold text-slate-700">
+                Name
+                <input
+                  v-model="draftName"
+                  class="mt-1 w-full rounded border border-slate-300 px-3 py-2 font-normal text-slate-700 outline-none focus:border-indigo-500"
+                />
+              </label>
+              <label class="block text-sm font-bold text-slate-700">
+                Description
+                <textarea
+                  v-model="draftDescription"
+                  rows="3"
+                  class="mt-1 w-full resize-y rounded border border-slate-300 px-3 py-2 font-normal text-slate-700 outline-none focus:border-indigo-500"
+                ></textarea>
+              </label>
+              <div class="flex justify-end gap-2">
+                <button
+                  type="button"
+                  class="cursor-pointer rounded px-3 py-2 text-sm font-semibold text-slate-600"
+                  @click="cancelEditingDetails"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  class="cursor-pointer rounded bg-indigo-500 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-indigo-300"
+                  :disabled="!draftName.trim()"
+                  @click="saveDetails"
+                >
+                  Save
+                </button>
+              </div>
+            </div>
+          </template>
+          <div
+            v-if="!editingDetails"
+            class="border-b border-slate-200 p-3"
+          >
+            <div class="flex items-center justify-between">
+              <p class="font-bold text-slate-700">Name</p>
+              <button
+                v-if="channel.canManage"
+                type="button"
+                class="cursor-pointer text-sm font-semibold text-blue-600 underline"
+                @click="startEditingDetails"
+              >
+                Edit
+              </button>
+            </div>
             <p class="text-sm text-slate-500">{{ channel.name }}</p>
           </div>
-          <div class="border-b border-slate-200 p-3">
-            <p class="font-bold text-slate-700">Description</p>
+          <div
+            v-if="!editingDetails"
+            class="border-b border-slate-200 p-3"
+          >
+            <div class="flex items-center justify-between">
+              <p class="font-bold text-slate-700">Description</p>
+              <button
+                v-if="channel.canManage"
+                type="button"
+                class="cursor-pointer text-sm font-semibold text-blue-600 underline"
+                @click="startEditingDetails"
+              >
+                Edit
+              </button>
+            </div>
             <p class="text-sm text-slate-500">
               {{ channel.description || 'Add channel description' }}
             </p>

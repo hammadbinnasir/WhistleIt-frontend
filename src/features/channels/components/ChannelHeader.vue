@@ -6,6 +6,8 @@ import { HEADER_AVATAR_MAX } from '../constants'
 import ChIcon from './ChIcon.vue'
 import MemberAvatarStack from './MemberAvatarStack.vue'
 import '../styles/tokens.css'
+import { useMembersStore } from '@/stores/members'
+import { useTeamsStore } from '@/stores/teams'
 
 // Drop this into any chat screen:  <ChannelHeader :channel-id="route.params.channelId" />
 const props = defineProps({
@@ -17,16 +19,23 @@ const emit = defineEmits(['members-click'])
 
 const store = useChannelsStore()
 const { run } = useChannelActions()
+const membersStore = useMembersStore()
+const teamsStore = useTeamsStore()
 
 const channel = computed(() => store.getById(props.channelId))
-const memberState = computed(
-  () => store.members[String(props.channelId)] || { items: [], total: 0 },
+const memberItems = computed(() =>
+  membersStore.members.map((member) => ({
+    id: member.userId || member.membershipId,
+    name: member.name || member.email || 'Team member',
+    avatarUrl: member.avatar || '',
+    status: member.status || 'offline',
+    email: member.email || '',
+  })),
 )
 watch(
-  () => props.channelId,
-  (id) => {
-    if (id !== null && id !== undefined && id !== '')
-      store.fetchMembers(id, { limit: props.maxAvatars })
+  () => [teamsStore.activeWorkspaceId, teamsStore.activeTeamId],
+  ([workspaceId, teamId]) => {
+    if (workspaceId && teamId) membersStore.fetchMembers(workspaceId, teamId)
   },
   { immediate: true },
 )
@@ -47,8 +56,8 @@ function toggleFavorite() {
       <span class="ch-header__divider" aria-hidden="true" />
 
       <MemberAvatarStack
-        :members="memberState.items"
-        :total="memberState.total || channel.memberCount"
+        :members="memberItems"
+        :total="membersStore.memberCount || channel.memberCount"
         :max="maxAvatars"
         @click="emit('members-click')"
       />

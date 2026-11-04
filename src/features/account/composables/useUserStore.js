@@ -242,7 +242,7 @@ async function saveSettings({ profile, photo, removePhoto, preferences, security
             .filter(Boolean)
         : []
     const profilePayload = {
-      full_name: profile.fullName,
+      name: profile.fullName,
       display_name: profile.alias,
       two_factor: profile.twoFactor,
       title: profile.designation,
