@@ -116,11 +116,16 @@ const selectedChannel = computed(() => {
       favourite: false,
     }
   }
+  const creatorId = ch.createdById || ch.createdBy
+  const createdBy =
+    creatorId && String(creatorId) === String(authenticatedUser?.id)
+      ? (authenticatedUser.fullName || ch.createdBy)
+      : ch.createdBy
   return {
     id: ch.id,
     name: ch.name,
     description: ch.description || '',
-    createdBy: ch.createdBy || 'Team Member',
+    createdBy: createdBy || 'Team Member',
     muted: ch.isMuted || false,
     favourite: ch.isFavorite || false,
     canManage: Boolean(ch.canManage),
@@ -140,7 +145,30 @@ const reminderMessage = computed(() => ({
 async function toggleChannelMute() {
   if (!selectedChannel.value) return
   try {
-    await channelsStore.toggleMute(selectedChannel.value.id)
+    if (typeof channelsStore.toggleMute === 'function') {
+      channelsStore.toggleMute(selectedChannel.value.id)
+      return
+    }
+
+    const channel = channelsStore.getById(selectedChannel.value.id)
+    if (!channel) return
+    const muted = !channel.isMuted
+    channelsStore.upsertChannel({ ...channel, isMuted: muted })
+
+    const storageKey = 'whistleit-muted-channel-ids'
+    let mutedIds = []
+    try {
+      const saved = JSON.parse(localStorage.getItem(storageKey) || '[]')
+      mutedIds = Array.isArray(saved) ? saved.map(String) : []
+    } catch {
+      mutedIds = []
+    }
+    if (muted) {
+      if (!mutedIds.includes(String(channel.id))) mutedIds.push(String(channel.id))
+    } else {
+      mutedIds = mutedIds.filter((id) => id !== String(channel.id))
+    }
+    localStorage.setItem(storageKey, JSON.stringify(mutedIds))
   } catch (error) {
     ui.toast('Unable to update mute setting', error?.message || 'Please try again.', 'error')
   }

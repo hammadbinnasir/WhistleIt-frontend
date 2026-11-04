@@ -29,6 +29,13 @@ async function resolveChannelMembership(records) {
     records.map(async (record) => {
       const channel = normalizeChannel(record)
       const source = record?.channel ?? record
+      if (userId && (channel.createdById != null || channel.createdBy != null)) {
+        channel.isOwner =
+          channel.isOwner ||
+          String(channel.createdById ?? channel.createdBy) === String(userId)
+        channel.canManage = channel.canManage || channel.isOwner
+      }
+      await resolveCreatorName(channel)
       if (source.isMember != null || source.is_member != null) return channel
       if (!userId) {
         throw new Error(
@@ -47,9 +54,30 @@ async function resolveChannelMembership(records) {
   )
 }
 
+async function resolveCreatorName(channel) {
+  const creatorId = channel.createdById ?? channel.createdBy
+  if (creatorId == null || !/^[a-f\d]{16,}$/i.test(String(creatorId))) return
+  try {
+    const { items } = await listMembers(channel.id, { limit: 100 })
+    const creator = items.find((member) => member.id === String(creatorId))
+    if (creator?.name) channel.createdBy = creator.name
+  } catch {
+    // Keep the creator ID as a fallback when the members endpoint is unavailable.
+  }
+}
+
 export async function getChannel(id) {
   const res = await http(channelsPath(id))
-  return normalizeChannel(asObject(res))
+  const channel = normalizeChannel(asObject(res))
+  const userId = getAuthUserId()
+  if (userId && (channel.createdById != null || channel.createdBy != null)) {
+    channel.isOwner =
+      channel.isOwner ||
+      String(channel.createdById ?? channel.createdBy) === String(userId)
+    channel.canManage = channel.canManage || channel.isOwner
+  }
+  await resolveCreatorName(channel)
+  return channel
 }
 
 export async function createChannel({ name, description, isPrivate }) {

@@ -35,6 +35,30 @@ export function normalizeChannel(raw = {}) {
   const rawPrivate = record.isPrivate ?? record.is_private
   const rawMember = record.isMember ?? record.is_member
   const type = String(record.type ?? record.channel_type ?? '').toLowerCase()
+  const createdByRaw =
+    record.createdBy ??
+    record.created_by ??
+    record.creatorId ??
+    record.creator_id ??
+    record.creator ??
+    record.owner
+  const createdById =
+    createdByRaw && typeof createdByRaw === 'object'
+      ? (createdByRaw.id ?? createdByRaw.user_id ?? createdByRaw.userId)
+      : (record.createdById ??
+        record.created_by_id ??
+        record.creatorId ??
+        record.creator_id ??
+        createdByRaw)
+  const createdBy =
+    createdByRaw && typeof createdByRaw === 'object'
+      ? (createdByRaw.fullName ??
+        createdByRaw.full_name ??
+        createdByRaw.name ??
+        [createdByRaw.first_name ?? createdByRaw.firstName, createdByRaw.last_name ?? createdByRaw.lastName]
+          .filter(Boolean)
+          .join(' '))
+      : createdByRaw
   return {
     id: String(id),
     name: String(name).trim(),
@@ -51,7 +75,15 @@ export function normalizeChannel(raw = {}) {
     isUnread: Boolean(record.isUnread ?? record.is_unread),
     unreadCount: Number(record.unreadCount ?? record.unread_count) || 0,
     memberCount: Number(record.memberCount ?? record.member_count) || 0,
-    canManage: Boolean(record.canManage ?? record.can_manage),
+    createdBy: createdBy == null ? undefined : String(createdBy),
+    createdById: createdById == null ? undefined : String(createdById),
+    isOwner: Boolean(
+      record.isOwner ??
+        record.is_owner ??
+        record.owner ??
+        false,
+    ),
+    canManage: Boolean(record.canManage ?? record.can_manage ?? record.isOwner ?? record.is_owner),
     messagePermission: record.messagePermission ?? record.message_permission ?? 'everyone',
   }
 }
