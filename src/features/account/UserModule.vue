@@ -92,7 +92,6 @@ onMounted(() => {
   document.addEventListener('keydown', onDocKeydown)
   if (getAuthUserId()) {
     store.loadUserProfile().catch((err) => emit('error', err))
-    store.loadSettings().catch((err) => emit('error', err))
   }
 })
 

@@ -137,13 +137,13 @@ describe('auth view', () => {
     expect(wrapper.get('[role="status"]').text()).toContain('Reset endpoint unavailable')
   })
 
-  it('resets the password using the token and email from the reset link', async () => {
+  it('resets the password without showing the email and redirects to login afterward', async () => {
     const { router, wrapper } = await mountAuthView(
       '/reset-password?token=reset-token&email=sam%40example.com',
     )
 
     expect(wrapper.get('h1').text()).toBe('Reset Password')
-    expect(wrapper.get('#email').element.value).toBe('sam@example.com')
+    expect(wrapper.find('#email').exists()).toBe(false)
     expect(wrapper.get('#password').attributes('autocomplete')).toBe('new-password')
     await wrapper.get('#password').setValue('new-password-123')
     await wrapper.get('#confirm-password').setValue('new-password-123')
@@ -155,8 +155,48 @@ describe('auth view', () => {
       password: 'new-password-123',
       password_confirmation: 'new-password-123',
     })
-    expect(wrapper.get('[role="status"]').text()).toContain('Your password has been reset')
+    expect(router.currentRoute.value.path).toBe('/login')
+    expect(wrapper.get('#email').element.value).toBe('sam@example.com')
+  })
+
+  it('shows a revolving loader instead of Please wait while resetting the password', async () => {
+    let finishReset
+    resetPassword.mockReturnValueOnce(
+      new Promise((resolve) => {
+        finishReset = resolve
+      }),
+    )
+    const { router, wrapper } = await mountAuthView('/reset-password?token=reset-token')
+
+    await wrapper.get('#password').setValue('new-password-123')
+    await wrapper.get('#confirm-password').setValue('new-password-123')
+    await wrapper.get('form').trigger('submit')
+
+    expect(wrapper.get('.submit-button').attributes('disabled')).toBeDefined()
+    expect(wrapper.get('.submit-button').attributes('aria-busy')).toBe('true')
+    expect(wrapper.get('.auth-loader[role="status"]').attributes('aria-label')).toBe(
+      'Resetting your password',
+    )
+    expect(wrapper.get('.auth-loader__ring circle').attributes('stroke')).toContain(
+      'reset-loader-gradient',
+    )
+    expect(wrapper.get('.submit-button').text()).not.toContain('Please wait')
     expect(router.currentRoute.value.path).toBe('/reset-password')
+
+    finishReset({})
+    await flushPromises()
+
+    expect(router.currentRoute.value.path).toBe('/login')
+    expect(wrapper.find('.auth-loader').exists()).toBe(false)
+  })
+
+  it('does not show a Go to Login button on the reset-password page', async () => {
+    const { wrapper } = await mountAuthView('/reset-password?token=reset-token')
+
+    expect(wrapper.find('.auth-reset-login-button').exists()).toBe(false)
+    expect(
+      wrapper.findAll('.submit-button').some((button) => button.text().includes('Go to Login')),
+    ).toBe(false)
   })
 
   it.each(['/forgetpassword/reset-token', '/forgetpasswordreset-token'])(
@@ -166,7 +206,7 @@ describe('auth view', () => {
 
       expect(router.currentRoute.value.name).toBe('reset-password')
       expect(router.currentRoute.value.query.token).toBe('reset-token')
-      expect(wrapper.get('#email').element.value).toBe('sam@example.com')
+      expect(wrapper.find('#email').exists()).toBe(false)
       expect(wrapper.get('#password').attributes('placeholder')).toBe('New Password*')
     },
   )
@@ -184,15 +224,31 @@ describe('auth view', () => {
   })
 
   it('rejects mismatched passwords when resetting a password', async () => {
-    const { wrapper } = await mountAuthView('/reset-password?token=reset-token')
+    const { wrapper } = await mountAuthView(
+      '/reset-password?token=reset-token&email=sam%40example.com',
+    )
 
-    await wrapper.get('#email').setValue('sam@example.com')
     await wrapper.get('#password').setValue('new-password-123')
     await wrapper.get('#confirm-password').setValue('different-password')
     await wrapper.get('form').trigger('submit')
 
     expect(resetPassword).not.toHaveBeenCalled()
     expect(wrapper.get('[role="status"]').text()).toContain('Passwords do not match')
+  })
+
+  it('resets the password using the token when the reset link has no email', async () => {
+    const { router, wrapper } = await mountAuthView('/reset-password?token=reset-token')
+
+    await wrapper.get('#password').setValue('new-password-123')
+    await wrapper.get('#confirm-password').setValue('new-password-123')
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+
+    expect(resetPassword).toHaveBeenCalledWith('reset-token', {
+      password: 'new-password-123',
+      password_confirmation: 'new-password-123',
+    })
+    expect(router.currentRoute.value.path).toBe('/login')
   })
 
   it('logs in and navigates to the workspace after a valid form submission', async () => {
