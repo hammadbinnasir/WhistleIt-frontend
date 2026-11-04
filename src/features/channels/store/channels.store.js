@@ -19,7 +19,7 @@ export const useChannelsStore = defineStore('channels', () => {
   // ---------- getters ----------
   // Keep the order supplied by the team API; channels without these fields remain supported.
   const visibleChannels = computed(() => {
-    return channels.value.filter((channel) => channel.isMember && !channel.isArchived)
+    return channels.value.filter((channel) => channel.isMember !== false && !channel.isArchived)
   })
 
   function getById(id) {
@@ -153,7 +153,7 @@ export const useChannelsStore = defineStore('channels', () => {
 
   // ---------- local mutations (also usable by a realtime/socket handler) ----------
   function upsertChannel(channel) {
-    if (!channel.isMember) {
+    if (channel.isMember === false) {
       removeChannel(channel.id)
       return
     }
