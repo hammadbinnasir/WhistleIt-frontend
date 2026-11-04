@@ -33,6 +33,7 @@ const adding = ref(false)
 const addQuery = ref('')
 const addOptions = ref([])
 const selectedUserIds = ref([])
+const selectedUsers = ref([])
 const dropdownOpen = ref(false)
 const loadingAddOptions = ref(false)
 const addOptionsError = ref('')
@@ -45,6 +46,7 @@ const showMessagePermissions = ref(false)
 const confirmArchive = ref(false)
 const confirmConnectionUpdate = ref(false)
 const connectionUrl = ref('')
+const connectionUrlDraft = ref('')
 const editingDetails = ref(false)
 const draftName = ref('')
 const draftDescription = ref('')
@@ -130,14 +132,14 @@ onMounted(async () => {
 async function openAdd() {
   adding.value = !adding.value
   if (adding.value) {
-    dropdownOpen.value = true
-    onAddSearch()
+    dropdownOpen.value = false
   }
 }
 function closeAdd() {
   adding.value = false
   addQuery.value = ''
   selectedUserIds.value = []
+  selectedUsers.value = []
   dropdownOpen.value = false
 }
 async function onAddSearch() {
@@ -152,6 +154,7 @@ async function onAddSearch() {
         return `${user.name} ${user.email}`.toLowerCase().includes(query)
       })
       .filter((user) => !members.value.some((member) => String(member.id) === String(user.id)))
+      .filter((user) => !selectedUserIds.value.includes(String(user.id)))
   } catch (error) {
     addOptions.value = []
     addOptionsError.value = error?.message || 'Unable to load available channel members.'
@@ -163,31 +166,25 @@ async function toggleDropdown() {
   dropdownOpen.value = !dropdownOpen.value
   if (dropdownOpen.value) await onAddSearch()
 }
-async function add(u) {
-  addMemberError.value = ''
-  try {
-    await addMember(u, props.channel.id)
-    await refresh()
-    await onAddSearch()
-  } catch (error) {
-    addMemberError.value = error?.status === 403
-      ? 'You are not authorized to add members to this channel.'
-      : (error?.message || 'Unable to add this member to the channel.')
-  }
-}
 function toggleSelectedUser(userId) {
   const id = String(userId)
-  selectedUserIds.value = selectedUserIds.value.includes(id)
-    ? selectedUserIds.value.filter((selectedId) => selectedId !== id)
-    : [...selectedUserIds.value, id]
+  if (selectedUserIds.value.includes(id)) {
+    const removedUser = selectedUsers.value.find((user) => String(user.id) === id)
+    selectedUserIds.value = selectedUserIds.value.filter((selectedId) => selectedId !== id)
+    selectedUsers.value = selectedUsers.value.filter((user) => String(user.id) !== id)
+    if (removedUser) addOptions.value = [...addOptions.value, removedUser]
+  } else {
+    const user = addOptions.value.find((option) => String(option.id) === id)
+    if (!user) return
+    selectedUserIds.value = [...selectedUserIds.value, id]
+    selectedUsers.value = [...selectedUsers.value, user]
+    addOptions.value = addOptions.value.filter((option) => String(option.id) !== id)
+  }
 }
 async function addSelected() {
-  const selectedUsers = addOptions.value.filter((user) =>
-    selectedUserIds.value.includes(String(user.id)),
-  )
   addMemberError.value = ''
   try {
-    for (const user of selectedUsers) await addMember(user, props.channel.id)
+    for (const user of selectedUsers.value) await addMember(user, props.channel.id)
     await refresh()
     closeAdd()
   } catch (error) {
@@ -222,10 +219,15 @@ async function copyConnectionUrl() {
 }
 
 function updateConnectionUrl() {
-  const token = Math.random().toString(36).slice(2, 10).toUpperCase()
-  connectionUrl.value = `https://app.whistleit.io/guestChannel/${props.channel.id}/${token}`
+  connectionUrlDraft.value = connectionUrlDraft.value.trim()
+  if (!connectionUrlDraft.value) return
+  connectionUrl.value = connectionUrlDraft.value
   localStorage.setItem(`channel-connection-url:${props.channel.id}`, connectionUrl.value)
   confirmConnectionUpdate.value = false
+}
+function openConnectionUrlUpdate() {
+  connectionUrlDraft.value = connectionUrl.value
+  confirmConnectionUpdate.value = true
 }
 function leave() {
   emit('left')
@@ -246,7 +248,7 @@ const showSample = ref(false)
       @click.self="confirmConnectionUpdate = false"
     >
       <section
-        class="w-[520px] max-w-full rounded-lg bg-white px-8 py-7 text-center shadow-2xl"
+        class="w-[450px] max-w-full rounded-lg bg-white px-6 py-6 text-center shadow-2xl"
         role="dialog"
         aria-modal="true"
         aria-labelledby="update-connection-title"
@@ -260,7 +262,13 @@ const showSample = ref(false)
         <p class="mt-7 text-base text-slate-600">
           Are you sure you want to update this channel's connection URL?
         </p>
-        <div class="mt-8 flex justify-end gap-4">
+        <input
+          v-model="connectionUrlDraft"
+          type="url"
+          class="mt-5 w-full rounded border border-slate-300 px-3 py-2 text-sm text-slate-700 outline-none focus:border-indigo-500"
+          aria-label="Connection URL"
+        />
+        <div class="mt-6 flex justify-center gap-4">
           <button
             type="button"
             class="cursor-pointer rounded border border-slate-300 px-7 py-2.5 font-semibold uppercase text-slate-600 hover:bg-slate-50"
@@ -284,7 +292,7 @@ const showSample = ref(false)
       @click.self="confirmArchive = false"
     >
       <section
-        class="w-[520px] max-w-full rounded-lg bg-white px-8 py-7 text-center shadow-2xl"
+        class="w-[450px] max-w-full rounded-lg bg-white px-6 py-6 text-center shadow-2xl"
         role="dialog"
         aria-modal="true"
         aria-labelledby="archive-channel-title"
@@ -298,7 +306,7 @@ const showSample = ref(false)
         <p class="mt-7 text-base text-slate-600">
           Are you sure you want to archive this Channel?
         </p>
-        <div class="mt-8 flex justify-end gap-4">
+        <div class="mt-6 flex justify-center gap-4">
           <button
             type="button"
             class="cursor-pointer rounded border border-slate-300 px-7 py-2.5 font-semibold uppercase text-slate-600 hover:bg-slate-50"
@@ -321,7 +329,7 @@ const showSample = ref(false)
       class="fixed inset-0 z-[70] flex items-center justify-center bg-slate-900/40 p-4"
       @click.self="showMessagePermissions = false"
     >
-      <section class="w-[520px] max-w-full overflow-hidden rounded-md bg-white shadow-2xl">
+      <section class="w-[450px] max-w-full overflow-hidden rounded-md bg-white shadow-2xl">
         <header class="relative px-6 py-5 text-center">
           <button
             type="button"
@@ -350,7 +358,7 @@ const showSample = ref(false)
             Allow Specific Members
           </label>
         </div>
-        <footer class="flex justify-end gap-3 border-t border-slate-200 px-6 py-4">
+        <footer class="flex justify-center gap-3 border-t border-slate-200 px-6 py-4">
           <button
             type="button"
             class="cursor-pointer px-5 py-2 font-semibold uppercase text-slate-700"
@@ -369,7 +377,7 @@ const showSample = ref(false)
       </section>
     </div>
     <div
-      class="relative max-h-[85vh] w-[560px] max-w-[95vw] overflow-hidden rounded-lg bg-white shadow-xl"
+      class="relative max-h-[76vh] w-full max-w-[450px] overflow-hidden rounded-lg bg-white shadow-xl"
     >
       <button
         class="absolute right-3 top-3 flex h-7 w-7 cursor-pointer items-center justify-center rounded-full bg-indigo-50 text-slate-600"
@@ -378,13 +386,13 @@ const showSample = ref(false)
       >
         ✕
       </button>
-      <h2 class="pt-6 text-center text-xl font-semibold text-slate-700">Channel Settings</h2>
+      <h2 class="pt-5 text-center text-lg font-semibold text-slate-700">Channel Settings</h2>
 
-      <nav class="mt-4 flex justify-center gap-8 border-b border-slate-200">
+      <nav       class="mt-3 flex justify-center gap-7 border-b border-slate-200">
         <button
           v-for="t in ['settings', 'members', 'integrations', 'about']"
           :key="t"
-          class="flex cursor-pointer items-center gap-2 border-b-2 pb-3 text-sm font-semibold capitalize"
+          class="flex cursor-pointer items-center gap-2 border-b-2 pb-3 text-xs font-semibold capitalize"
           :class="
             tab === t ? 'border-indigo-500 text-indigo-600' : 'border-transparent text-slate-500'
           "
@@ -399,7 +407,7 @@ const showSample = ref(false)
         </button>
       </nav>
 
-      <div class="max-h-[60vh] overflow-y-auto p-5">
+      <div class="max-h-[58vh] overflow-y-auto p-4">
         <!-- Settings -->
         <div v-if="tab === 'settings'" class="space-y-4">
           <div class="rounded border border-slate-300 p-3">
@@ -470,7 +478,7 @@ const showSample = ref(false)
               <button
                 type="button"
                 class="cursor-pointer rounded bg-indigo-500 px-3 py-2 text-sm font-semibold text-white"
-                @click="confirmConnectionUpdate = true"
+                @click="openConnectionUrlUpdate"
               >
                 Update
               </button>
@@ -537,7 +545,7 @@ const showSample = ref(false)
             class="fixed inset-0 z-[70] flex items-center justify-center bg-slate-900/40 p-4"
             @click.self="closeAdd"
           >
-            <section class="w-[520px] max-w-full overflow-hidden rounded-md bg-white shadow-2xl">
+            <section class="w-[420px] max-w-[calc(100vw-32px)] max-h-[82vh] overflow-hidden rounded-md bg-white shadow-2xl">
               <div class="relative px-6 pb-3 pt-4 text-center">
                 <button
                   type="button"
@@ -555,16 +563,38 @@ const showSample = ref(false)
               <div class="px-[34px] pb-5 pt-2">
                 <label class="relative block">
                   <span class="absolute left-2 -top-3 bg-white px-1 text-sm text-indigo-500">Search</span>
-                  <span
-                    class="absolute left-3 top-6 text-lg text-slate-400"
-                    aria-hidden="true"
-                  >⌕</span>
-                  <input
-                    v-model="addQuery"
-                    placeholder="Type here to search"
-                    class="h-[52px] w-full rounded border-2 border-indigo-500 px-10 text-base text-slate-600 outline-none focus:ring-2 focus:ring-indigo-100"
-                    @input="onAddSearch"
-                  />
+                  <div class="flex h-[48px] w-full items-center rounded border-2 border-indigo-500 bg-white px-3 focus-within:ring-2 focus-within:ring-indigo-100">
+                    <svg class="mr-2 h-5 w-5 shrink-0 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+                      <circle cx="11" cy="11" r="7"></circle>
+                      <path d="m16.4 16.4 4.1 4.1" stroke-linecap="round"></path>
+                    </svg>
+                    <span v-if="selectedUsers.length" class="flex shrink-0 items-center gap-2 pr-2">
+                      <button
+                        v-for="user in selectedUsers"
+                        :key="user.id"
+                        type="button"
+                        class="relative grid h-8 w-8 cursor-pointer place-items-center rounded-full border-2 border-white text-[11px] font-bold text-white shadow-sm"
+                        :class="colorFor(user.id)"
+                        :title="`Remove ${user.name}`"
+                        @click.stop="toggleSelectedUser(user.id)"
+                      >
+                        {{ initials(user.name) }}
+                        <span
+                          class="absolute -right-1 -top-1 grid h-4 w-4 place-items-center rounded-full border border-slate-300 bg-white text-[10px] leading-none text-slate-500 shadow-sm"
+                          aria-hidden="true"
+                        >
+                          &times;
+                        </span>
+                      </button>
+                    </span>
+                    <input
+                      v-model="addQuery"
+                      :placeholder="selectedUsers.length ? '' : 'Type here to search'"
+                      class="min-w-0 flex-1 border-0 bg-transparent px-0 text-base text-slate-600 outline-none"
+                      @focus="dropdownOpen = true; onAddSearch()"
+                      @input="onAddSearch"
+                    />
+                  </div>
                   <button
                     type="button"
                     class="absolute right-2 top-1/2 grid h-8 w-8 -translate-y-1/2 cursor-pointer place-items-center rounded text-sm text-indigo-500 hover:bg-indigo-50"
@@ -602,23 +632,25 @@ const showSample = ref(false)
                   <div
                     v-for="user in addOptions"
                     :key="user.id"
-                    class="flex w-full cursor-pointer items-center justify-between px-4 py-3 text-left text-lg text-slate-800 hover:bg-indigo-50"
-                    @click="toggleSelectedUser(user.id)"
+                    class="flex w-full cursor-pointer items-center justify-between px-4 py-3 text-left text-base text-slate-800 hover:bg-indigo-50"
                   >
                     <span class="flex items-center gap-3">
-                      <input
-                        type="checkbox"
-                        class="pointer-events-none"
-                        :checked="selectedUserIds.includes(String(user.id))"
-                      />
+                      <span
+                        class="grid h-9 w-9 shrink-0 place-items-center rounded-full text-xs font-bold text-white"
+                        :class="colorFor(user.id)"
+                      >
+                        {{ initials(user.name) }}
+                      </span>
                       {{ user.name }}
                     </span>
                     <button
                       type="button"
-                      class="cursor-pointer rounded px-3 py-1 text-sm font-semibold text-indigo-500 hover:bg-indigo-100"
-                      @click.stop="add(user)"
+                      class="h-[28px] min-w-[50px] cursor-pointer rounded-md bg-[#6175e8] text-xs font-bold tracking-wide text-white shadow-sm hover:bg-[#5367da]"
+                      style="padding: 0 12.4444444444px"
+                      :class="selectedUserIds.includes(String(user.id)) ? '!bg-indigo-600' : ''"
+                      @click.stop="toggleSelectedUser(user.id)"
                     >
-                      Add
+                      {{ selectedUserIds.includes(String(user.id)) ? 'Added' : 'Add' }}
                     </button>
                   </div>
                 </div>
