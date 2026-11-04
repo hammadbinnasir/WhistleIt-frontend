@@ -151,6 +151,16 @@ export const useChannelsStore = defineStore('channels', () => {
     return api.removeChannelMember(id, targetUser)
   }
 
+  function toggleFavorite(id) {
+    const channel = getById(id)
+    if (!channel) return false
+
+    const isFavorite = !channel.isFavorite
+    patch(id, { isFavorite })
+    patchBrowse(id, { isFavorite })
+    return isFavorite
+  }
+
   // ---------- local mutations (also usable by a realtime/socket handler) ----------
   function upsertChannel(channel) {
     if (channel.isMember === false) {
@@ -199,6 +209,7 @@ export const useChannelsStore = defineStore('channels', () => {
     deleteChannel,
     addChannelMember,
     removeChannelMember,
+    toggleFavorite,
     upsertChannel,
     removeChannel,
     reset,

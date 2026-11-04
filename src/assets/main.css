@@ -247,6 +247,10 @@ a {
   font-size: inherit;
 }
 
+.login-options .text-link {
+  font-size: 16px;
+}
+
 .text-link:hover,
 .auth-switch a:hover {
   text-decoration: underline;
@@ -363,7 +367,7 @@ a {
   min-height: 49px;
   margin-top: 7px;
   background: #5962ff;
-  font-size: 20px;
+  font-size: 22px;
 }
 
 .auth-page--signup .submit-button:hover {
@@ -373,7 +377,7 @@ a {
 
 .auth-page--signup .auth-switch {
   margin-top: 17px;
-  font-size: 14px;
+  font-size: 16px;
 }
 
 .auth-page--signup .form-feedback {
@@ -538,7 +542,7 @@ a {
     width: 100%;
     min-height: 55px;
     margin-top: 20px;
-    font-size: 21px;
+    font-size: 22px;
   }
 
   .auth-switch {
@@ -546,7 +550,7 @@ a {
   }
 
   .auth-page--signup .auth-switch {
-    font-size: 14px;
+    font-size: 16px;
   }
 
   .auth-art {
@@ -599,15 +603,14 @@ a {
   height: 50.5px;
   margin: 0;
   color: #101010;
-  font-size: 16px;
+  font-size: 13px;
   font-weight: 800;
   letter-spacing: 0;
 }
 
 .brand-mark {
-  width: 44px;
-  height: 36px;
-  color: #5416d7;
+  width: 80px;
+  height: 51px;
 }
 
 .auth-content,
@@ -625,11 +628,25 @@ a {
   line-height: 1.08;
 }
 
+.auth-heading h1.auth-heading__title--login {
+  font-size: 32px;
+}
+
 .auth-heading p {
   margin: 12px 0 30px;
   color: #66718a;
   font-size: 16px;
   line-height: 1.55;
+}
+
+.auth-heading p.auth-heading__description--login {
+  color: #000000de;
+  font-size: 22px;
+}
+
+.auth-heading p.auth-heading__description--signup {
+  color: #111a31;
+  font-size: 22px;
 }
 
 .auth-form,
@@ -691,6 +708,10 @@ a {
 .remember-row,
 .terms-row {
   gap: 9px;
+}
+
+.remember-row {
+  font-size: 16px;
 }
 
 .remember-row input,
@@ -788,6 +809,20 @@ a {
   font-size: 14px;
 }
 
+.auth-switch__prompt {
+  color: #000000de;
+  font-family: Roboto, sans-serif;
+  font-size: 16px;
+}
+
+.auth-switch__signup-link {
+  font-size: 16px;
+}
+
+.auth-page--forgot-password .auth-switch {
+  font-size: 16px;
+}
+
 .auth-art {
   min-height: 100vh;
   min-height: 100svh;
@@ -805,8 +840,8 @@ a {
 
 .terms-row {
   justify-content: flex-start;
-  color: #59647c;
-  font-size: 13px;
+  color: #111a31;
+  font-size: 16px;
 }
 
 .terms-row a {
@@ -849,6 +884,10 @@ a {
   .auth-page--signup .auth-heading h1,
   .auth-page--forgot-password .auth-heading h1 {
     font-size: clamp(36px, 9vw, 48px);
+  }
+
+  .auth-heading h1.auth-heading__title--login {
+    font-size: 32px;
   }
 
   .auth-heading p,
