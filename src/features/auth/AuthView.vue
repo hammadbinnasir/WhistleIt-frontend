@@ -126,7 +126,7 @@ async function submitForm() {
         typeof redirect === 'string' && redirect.startsWith('/') && !redirect.startsWith('//')
           ? redirect
           : { name: 'home' }
-      await router.push(destination)
+      await router.replace(destination)
     }
   } catch (error) {
     const validationErrors = error?.details?.errors
@@ -150,23 +150,20 @@ async function submitForm() {
   >
     <section class="auth-panel" aria-label="Account access">
       <RouterLink class="brand" to="/login" aria-label="Whistle It. home">
-        <svg class="brand-mark" viewBox="0 0 56 42" aria-hidden="true">
-          <path
-            d="M5 8.5 15.2 29l8.1-14.4L31 29l8.2-14.8M43.2 11.4l3.1-3.1"
-            fill="none"
-            stroke="currentColor"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            stroke-width="6.5"
-          />
-          <circle cx="49.5" cy="7" r="3.5" fill="currentColor" />
-        </svg>
-        <span>Whistle It.</span>
+        <img
+          class="brand-mark"
+          src="https://app.whistleit.io/img/whistle-logo.8554b9a3.svg"
+          alt=""
+        />
       </RouterLink>
 
       <div class="auth-content">
         <header class="auth-heading">
-          <h1>
+          <h1
+            :class="{
+              'auth-heading__title--login': !isSignup && !isForgotPassword && !isResetPassword,
+            }"
+          >
             {{
               isSignup
                 ? 'Create Account'
@@ -177,7 +174,13 @@ async function submitForm() {
                     : 'Log in'
             }}
           </h1>
-          <p>
+          <p
+            :class="{
+              'auth-heading__description--login':
+                !isSignup && !isForgotPassword && !isResetPassword,
+              'auth-heading__description--signup': isSignup,
+            }"
+          >
             {{
               isSignup
                 ? 'Fill the form below to create an account'
@@ -419,12 +422,12 @@ async function submitForm() {
             <RouterLink to="/forgot-password">Request one</RouterLink>
           </template>
           <template v-else-if="isSignup">
-            Already have an account?
-            <RouterLink to="/login">Login</RouterLink>
+            <span class="auth-switch__prompt">Already have an account?</span>
+            <RouterLink class="auth-switch__signup-link" to="/login">Login</RouterLink>
           </template>
           <template v-else>
-            Don't have an account?
-            <RouterLink to="/signup">Sign Up?</RouterLink>
+            <span class="auth-switch__prompt">Don't have an account?</span>
+            <RouterLink class="auth-switch__signup-link" to="/signup">Sign Up?</RouterLink>
           </template>
         </p>
       </div>
