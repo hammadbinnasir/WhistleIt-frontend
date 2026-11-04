@@ -772,7 +772,7 @@ onBeforeUnmount(() => {
                   <div class="composer-conversation__poll-meta">
                     <span
                       class="composer-conversation__poll-status"
-                      :class="{ 'is-closed': closedPolls.has(message.poll.id) || isPollScheduled(message.poll) }"
+                      :class="{ 'is-closed': isPollClosed(message.poll) }"
                     >
                       <i
                         class="composer-conversation__poll-status-icon"
@@ -821,7 +821,7 @@ onBeforeUnmount(() => {
                     <button
                       v-if="
                         !isPollScheduled(message.poll) &&
-                        !closedPolls.has(message.poll.id) &&
+                        !isPollClosed(message.poll) &&
                         !participatedPolls.has(message.poll.id)
                       "
                       type="button"
@@ -830,7 +830,7 @@ onBeforeUnmount(() => {
                       Participate
                     </button>
                     <button
-                      v-else-if="!isPollScheduled(message.poll) && !closedPolls.has(message.poll.id)"
+                      v-else-if="!isPollScheduled(message.poll) && !isPollClosed(message.poll)"
                       type="button"
                       class="is-done"
                       disabled
@@ -846,13 +846,17 @@ onBeforeUnmount(() => {
                       View All Results
                     </button>
                     <button
-                      v-if="closedPolls.has(message.poll.id)"
+                      v-if="isPollClosed(message.poll)"
                       type="button"
                       @click="exportPollResults(message.poll.id)"
                     >
                       Export To Csv
                     </button>
-                    <button v-else-if="!isPollScheduled(message.poll)" type="button" @click="closePoll(message.poll.id)">
+                    <button
+                      v-else-if="!isPollScheduled(message.poll) && !isPollClosed(message.poll)"
+                      type="button"
+                      @click="closePoll(message.poll.id)"
+                    >
                       Close Poll
                     </button>
                   </div>
