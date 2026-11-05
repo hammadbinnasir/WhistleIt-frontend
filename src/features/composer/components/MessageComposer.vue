@@ -284,6 +284,11 @@ function nodeToMarkdown(node) {
 function syncContent() {
   if (!editor.value) return
   if (!editor.value.textContent?.trim()) {
+    if (activeList.value && editor.value.querySelector('ol, ul')) {
+      content.value = ''
+      saveSelection(true)
+      return
+    }
     editor.value.innerHTML = ''
     content.value = ''
     saveSelection(true)
@@ -331,6 +336,15 @@ function unwrapFormat(fragment, name) {
   for (const element of [...fragment.querySelectorAll(selector)]) {
     element.replaceWith(...element.childNodes)
   }
+}
+
+function formatTagFor(name) {
+  return {
+    bold: 'strong',
+    italic: 'em',
+    strikethrough: 's',
+    underline: 'u',
+  }[name]
 }
 
 function insertAtSelection(text) {
@@ -423,9 +437,7 @@ function applyFormat(action) {
         range.setEndAfter(last)
       }
     } else {
-      const wrapper = document.createElement(
-        { bold: 'strong', italic: 'em', strikethrough: 's', underline: 'u' }[action.name],
-      )
+      const wrapper = document.createElement(formatTagFor(action.name))
       wrapper.append(fragment)
       range.insertNode(wrapper)
       range.selectNodeContents(wrapper)
@@ -449,12 +461,7 @@ function handleBeforeInput(event) {
   let node = document.createTextNode(event.data)
 
   for (const format of [...activeFormats.value].reverse()) {
-    const tag = {
-      bold: 'strong',
-      italic: 'em',
-      strikethrough: 's',
-      underline: 'u',
-    }[format]
+    const tag = formatTagFor(format)
     if (!tag) continue
     const wrapper = document.createElement(tag)
     wrapper.append(node)
@@ -895,6 +902,20 @@ function handleMediaAction(action, payload) {
 
 function handleKeydown(event) {
   if (event.key !== 'Enter') return
+
+  if (activeList.value && !event.shiftKey) {
+    const selection = document.getSelection()
+    const anchor = selection?.anchorNode
+    const currentElement =
+      anchor?.nodeType === Node.ELEMENT_NODE ? anchor : anchor?.parentElement
+    const currentList = currentElement?.closest('ol, ul')
+
+    if (!currentList || !editor.value?.contains(currentList)) {
+      activeList.value = ''
+    } else {
+      return
+    }
+  }
 
   const sendOnEnter = userStore.state.preferences.enterKey === 'send'
   const shouldSend = event.shiftKey ? !sendOnEnter : sendOnEnter
