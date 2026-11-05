@@ -44,6 +44,7 @@ import RemindersPanel from '@/features/search/RemindersPanel.vue'
 import PinnedMessagesPanel from '@/features/search/PinnedMessagesPanel.vue'
 import SearchPage from '@/features/search/SearchPage.vue'
 import PollHistoryPanel from '@/features/search/PollHistoryPanel.vue'
+import ProfilePanel from '@/features/search/ProfilePanel.vue'
 import SetReminderModal from '@/features/search/SetReminderModal.vue'
 
 const router = useRouter()
@@ -69,6 +70,7 @@ const { activeTeam, activeWorkspace } = storeToRefs(teamsStore)
 const isTeamSwitcherOpen = ref(false)
 const reminderModalOpen = ref(false)
 const inviteModalOpen = ref(false)
+const activeProfileMember = ref(null)
 const activeConversation = computed(
   () => dms.conversations.find((conversation) => conversation.id === activeDmId.value) || null,
 )
@@ -252,6 +254,23 @@ function openActivityUserChat(userId) {
   ui.closePanel()
 }
 
+function openMemberProfile(member) {
+  activeProfileMember.value = member
+  ui.activePanel = 'profile'
+}
+
+function closeMemberProfile() {
+  activeProfileMember.value = null
+  ui.closePanel()
+}
+
+function messageProfileMember(member) {
+  if (!member?.id || member.id === dms.meId) return
+  dms.startDm(member.id)
+  ui.selectChannel(null)
+  closeMemberProfile()
+}
+
 onMounted(async () => {
   void activity.init()
   await teamsStore.fetchTeams()
@@ -407,6 +426,7 @@ onBeforeUnmount(() => {
           v-if="selectedChannelId && !activeConversation"
           :channel-id="selectedChannelId"
           @members-click="ui.openChannelSettings('members')"
+          @profile="openMemberProfile"
         >
           <template #actions>
             <ChatHeaderActions :is-dm="false" :conversation-id="selectedChannelId" />
@@ -470,16 +490,27 @@ onBeforeUnmount(() => {
           v-else-if="!selectedChannelId"
           class="flex items-center justify-between border-b border-slate-200 bg-white px-5 py-3"
         >
-          <div class="flex items-center gap-3">
-            <button
-              class="cursor-pointer rounded border border-slate-200 px-2 py-1 text-xs text-slate-600 hover:bg-slate-50"
-              @click="ui.toggleSidebar()"
-            >
-              {{ sidebarOpen ? 'Hide' : 'Show' }} sidebar
-            </button>
-            <h2 class="text-sm font-semibold text-slate-700">Select a channel</h2>
+          <div
+            v-if="channelsStore.loading && !channelsStore.loaded"
+            class="flex flex-col gap-2"
+            role="status"
+            aria-label="Loading channel"
+          >
+            <span class="h-5 w-36 animate-pulse rounded bg-slate-200" aria-hidden="true" />
+            <span class="h-3 w-56 animate-pulse rounded bg-slate-200" aria-hidden="true" />
           </div>
-          <ChatHeaderActions :is-dm="true" conversation-id="" />
+          <template v-else>
+            <div class="flex items-center gap-3">
+              <button
+                class="cursor-pointer rounded border border-slate-200 px-2 py-1 text-xs text-slate-600 hover:bg-slate-50"
+                @click="ui.toggleSidebar()"
+              >
+                {{ sidebarOpen ? 'Hide' : 'Show' }} sidebar
+              </button>
+              <h2 class="text-sm font-semibold text-slate-700">Select a channel</h2>
+            </div>
+            <ChatHeaderActions :is-dm="true" conversation-id="" />
+          </template>
         </header>
 
         <!-- Chat area with composer & optional side panel -->
@@ -496,7 +527,9 @@ onBeforeUnmount(() => {
             v-if="ui.activePanel && ui.activePanel !== 'help'"
             class="min-h-0 w-full shrink-0 border-l border-slate-200 bg-white shadow-lg"
             :class="
-              ['reminders', 'pinned', 'poll-history'].includes(ui.activePanel)
+              ui.activePanel === 'profile'
+                ? 'md:w-[min(380px,35vw)]'
+                : ['reminders', 'pinned', 'poll-history'].includes(ui.activePanel)
                 ? 'md:w-[min(400px,35vw)]'
                 : 'md:w-[min(480px,40vw)]'
             "
@@ -508,6 +541,12 @@ onBeforeUnmount(() => {
               :conversation-type="activeConversation ? 'dm' : 'channel'"
             />
             <PollHistoryPanel v-else-if="ui.activePanel === 'poll-history'" />
+            <ProfilePanel
+              v-else-if="ui.activePanel === 'profile' && activeProfileMember"
+              :member="activeProfileMember"
+              @close="closeMemberProfile"
+              @message="messageProfileMember"
+            />
             <SearchPage
               v-else-if="ui.activePanel === 'search'"
               :channel-id="activeConversation ? '' : selectedChannelId || ''"

@@ -8,9 +8,13 @@ const STORAGE_KEY = 'whistleit:dm-messages'
 // localStorage: conversations ki list + users -> { [company]: { userId, me, conversations, users } }
 const CONVERSATIONS_KEY = 'whistleit:dm-conversations'
 const MAX_CACHED_MESSAGES = 200
+// Naye messages (dusre user ke) lane ke liye active conversation har itne ms baad check hoti hai
+const POLL_INTERVAL = 4000
+// Har itne polls baad conversations ki list bhi (naye DM / unread ke liye)
+const LIST_REFRESH_EVERY = 8
 
 // API in fields ko nahi bhejti/lauti, isliye ye local cache se wapas jodte hain
-const EXTRA_KEYS = ['reactions', 'replyTo', 'forwardedFrom', 'important']
+const EXTRA_KEYS = ['reactions', 'replyTo', 'forwardedFrom', 'important', 'editedAt']
 
 function errorMessage(error) {
   return error instanceof Error ? error.message : String(error?.message ?? error)
@@ -102,6 +106,12 @@ export const useDmStore = defineStore('dms', () => {
   const messageRequests = new Map()
   let initialization = null
   let localSeq = 0
+  // Polling ke dauran in-flight edit/delete/send: purani GET list inhe ulta na kar de
+  const pendingEdits = new Map() // messageId -> naya text
+  const pendingDeletes = new Set() // messageId
+  const sentDuringFetch = new Map() // conversationId -> Set(server message ids)
+  let pollTimer = null
+  let pollTicks = 0
   let learnedMe = '' // server ke jawab se seekha hua apna asli user id
 
   const companyId = computed(() => teamsStore.activeWorkspaceId)
@@ -181,6 +191,7 @@ export const useDmStore = defineStore('dms', () => {
 
   // Logout par call karein taake dusre user ko pichla data na dikhe
   function clearCache() {
+    stopPolling()
     learnedMe = ''
     try {
       localStorage.removeItem(STORAGE_KEY)
@@ -219,6 +230,7 @@ export const useDmStore = defineStore('dms', () => {
           if (previous.get(conversation.id)?.isFavorite || cachedFavorites.has(conversation.id)) {
             conversation.isFavorite = true
           }
+          if (conversation.id === activeId.value) conversation.unreadCount = 0 // khuli hui hai
           return conversation
         })
         resolveMe(Object.values(usersById.value))
@@ -307,21 +319,35 @@ export const useDmStore = defineStore('dms', () => {
   }
 
   // GET /v1/{company}/direct-channels/{channel}/messages
-  function fetchMessages(id) {
+  // silent: polling ke liye (loading/error UI nahi badalta)
+  function fetchMessages(id, { silent = false } = {}) {
     if (messageRequests.has(id)) return messageRequests.get(id)
 
-    messagesLoading.value = true
-    messagesError.value = ''
+    if (!silent) {
+      messagesLoading.value = true
+      messagesError.value = ''
+    }
+    const sentMeanwhile = new Set()
+    sentDuringFetch.set(id, sentMeanwhile)
     const request = (async () => {
       try {
-        const list = await dmApi.listMessages(companyId.value, id)
+        const list = (await dmApi.listMessages(companyId.value, id))
+          // jo abhi delete ho raha hai wo wapas na aaye
+          .filter((m) => !pendingDeletes.has(m.id))
         const target = findConversation(id)
         if (target) {
           const previous = new Map(target.messages.map((m) => [m.id, m]))
-          list.forEach((m) => carryExtras(m, previous.get(m.id)))
+          list.forEach((m) => {
+            carryExtras(m, previous.get(m.id))
+            // jo abhi edit ho raha hai uska naya text rakho
+            if (pendingEdits.has(m.id)) m.text = pendingEdits.get(m.id)
+          })
           const known = new Set(list.map((m) => m.id))
           // API wale messages + wo local/pending jo abhi server par nahi gaye
-          const pending = target.messages.filter((m) => isLocal(m) && !known.has(m.id))
+          // + wo jo is request ke dauran send hue (purani list mein nahi honge)
+          const pending = target.messages.filter(
+            (m) => !known.has(m.id) && (isLocal(m) || sentMeanwhile.has(m.id)),
+          )
           target.messages = [...list, ...pending]
           for (const m of list) {
             if (m.from && !target.members.includes(m.from)) target.members.push(m.from)
@@ -330,12 +356,14 @@ export const useDmStore = defineStore('dms', () => {
           persistConversations()
         }
         messagesLoaded.add(id)
+        messagesError.value = ''
       } catch (cause) {
         // cached messages screen par rehte hain, sirf error dikhta hai
-        messagesError.value = errorMessage(cause)
+        if (!silent) messagesError.value = errorMessage(cause)
       } finally {
-        messagesLoading.value = false
+        if (!silent) messagesLoading.value = false
         messageRequests.delete(id)
+        sentDuringFetch.delete(id)
       }
     })()
     messageRequests.set(id, request)
@@ -450,8 +478,11 @@ export const useDmStore = defineStore('dms', () => {
     return true
   }
 
+  // Channel select hone par: DM ko inactive karo (list mein rehta hai, sirf chat band)
   function deactivateConversation() {
     activeId.value = null
+    detailError.value = ''
+    messagesError.value = ''
   }
 
   function closeConversation(id) {
@@ -549,6 +580,7 @@ export const useDmStore = defineStore('dms', () => {
         persistConversations()
       }
 
+      sentDuringFetch.get(conversationId)?.add(saved.id)
       const index = conversation.messages.findIndex((m) => m.id === localId)
       if (index === -1) return // user ne beech mein delete kar diya
       if (conversation.messages.some((m) => m.id === saved.id)) {
@@ -659,8 +691,21 @@ export const useDmStore = defineStore('dms', () => {
   }
 
   async function syncEdit(conversationId, messageId, next, previous) {
+    pendingEdits.set(messageId, next)
     try {
-      await dmApi.updateMessage(companyId.value, conversationId, messageId, { body: next })
+      // PATCH ka jawab message na de to GET single message se server wala version lo
+      let saved = await dmApi.updateMessage(companyId.value, conversationId, messageId, {
+        body: next,
+      })
+      if (!saved) saved = await fetchSingleMessage(conversationId, messageId)
+
+      const found = findMessage(conversationId, messageId)
+      if (saved && found) {
+        found.message.text = saved.text || next
+        if ('content' in found.message) found.message.content = found.message.text
+        if (saved.editedAt) found.message.editedAt = saved.editedAt
+        persist(found.conversation)
+      }
     } catch (cause) {
       // fail hua to purana text wapas
       const found = findMessage(conversationId, messageId)
@@ -671,7 +716,30 @@ export const useDmStore = defineStore('dms', () => {
         persist(found.conversation)
       }
       actionError.value = errorMessage(cause)
+    } finally {
+      pendingEdits.delete(messageId)
     }
+  }
+
+  // GET /v1/{company}/direct-channels/{channel}/messages/{message}
+  async function fetchSingleMessage(conversationId, messageId) {
+    try {
+      return (await dmApi.getMessage?.(companyId.value, conversationId, messageId)) ?? null
+    } catch {
+      return null // edit to ho chuka, sirf confirm nahi ho saka
+    }
+  }
+
+  // Ek message server se dobara lao (jaise notification se khulne par)
+  async function refreshMessage(conversationId, messageId) {
+    const saved = await fetchSingleMessage(conversationId, messageId)
+    const conversation = findConversation(conversationId)
+    if (!saved || !conversation) return null
+    const index = conversation.messages.findIndex((m) => m.id === saved.id)
+    if (index === -1) conversation.messages.push(saved)
+    else conversation.messages.splice(index, 1, carryExtras(saved, conversation.messages[index]))
+    persist(conversation)
+    return saved
   }
 
   // DELETE /v1/{company}/direct-channels/{channel}/messages/{message}
@@ -689,6 +757,7 @@ export const useDmStore = defineStore('dms', () => {
   }
 
   async function syncDelete(conversationId, message, index) {
+    pendingDeletes.add(message.id)
     try {
       await dmApi.deleteMessage(companyId.value, conversationId, message.id)
     } catch (cause) {
@@ -699,6 +768,8 @@ export const useDmStore = defineStore('dms', () => {
         persist(conversation)
       }
       actionError.value = errorMessage(cause)
+    } finally {
+      pendingDeletes.delete(message.id)
     }
   }
 
@@ -718,6 +789,27 @@ export const useDmStore = defineStore('dms', () => {
     found.message.reactions = reactions.filter((r) => r.users.length)
     persist(found.conversation)
     return true
+  }
+
+  // ---------- polling: dusre user ke naye / edit / delete messages ----------
+  // Backend par abhi realtime (socket) nahi hai, isliye active conversation ko
+  // har POLL_INTERVAL ms baad GET .../messages se check karte hain
+  async function pollOnce() {
+    if (typeof document !== 'undefined' && document.hidden) return // tab chhupi hai
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) return
+    pollTicks += 1
+    if (pollTicks % LIST_REFRESH_EVERY === 0) await init() // naye DM / unread
+    if (activeId.value) await fetchMessages(activeId.value, { silent: true })
+  }
+
+  function startPolling(interval = POLL_INTERVAL) {
+    if (pollTimer) return
+    pollTimer = setInterval(() => void pollOnce(), interval)
+  }
+
+  function stopPolling() {
+    clearInterval(pollTimer)
+    pollTimer = null
   }
 
   // ---------- network wapas aaye ----------
@@ -752,9 +844,9 @@ export const useDmStore = defineStore('dms', () => {
     init,
     loadCompanyMembers,
     openConversation,
-    deactivateConversation,
     loadMessages,
     closeConversation,
+    deactivateConversation,
     startDm,
     startGroup,
     titleOf,
@@ -767,6 +859,10 @@ export const useDmStore = defineStore('dms', () => {
     editMessage,
     deleteMessage,
     toggleReaction,
+    refreshMessage,
+    pollOnce,
+    startPolling,
+    stopPolling,
     clearCache,
   }
 })
