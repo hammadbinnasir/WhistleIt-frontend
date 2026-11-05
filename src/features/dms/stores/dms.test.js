@@ -10,6 +10,10 @@ vi.mock('@/features/dms/dmApi', () => ({
     listTeamNonMembers: vi.fn(),
     getDirectChannel: vi.fn(),
     createDirectChannel: vi.fn(),
+    listMessages: vi.fn(),      // <- add
+    sendMessage: vi.fn(),       // <- add
+    updateMessage: vi.fn(),     // <- add
+    deleteMessage: vi.fn(), 
   }, 
 }))
 
@@ -37,7 +41,8 @@ function makeConversation(id, userId, messages = []) {
 
 describe('dms store', () => {
   beforeEach(() => {
-    localStorage.removeItem('whistleit:dm-messages')
+    // localStorage.removeItem('whistleit:dm-messages')
+    localStorage.clear()
     setActivePinia(createPinia())
     useTeamsStore().activeWorkspaceId = 'company-1'
     vi.clearAllMocks()
@@ -57,6 +62,17 @@ describe('dms store', () => {
     dmApi.createDirectChannel.mockImplementation(async (_companyId, payload) =>
       makeConversation('created-channel', payload.user_id),
     )
+    dmApi.listMessages.mockResolvedValue([
+    { id: 'm1', from: 'u2', text: 'Received', createdAt: '2026-01-01T10:00:00Z' },
+  ])
+  dmApi.sendMessage.mockImplementation(async (_companyId, _channelId, payload) => ({
+    id: 'server-1',
+    from: 'u1',
+    text: payload.content,
+    createdAt: new Date().toISOString(),
+  }))
+  dmApi.updateMessage.mockResolvedValue(null)
+  dmApi.deleteMessage.mockResolvedValue(null)
   })
 
   it('loads live conversations using the active company ID', async () => {

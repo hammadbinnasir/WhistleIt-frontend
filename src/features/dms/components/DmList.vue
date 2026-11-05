@@ -55,10 +55,13 @@ onMounted(() => {
     <NewDmPanel v-if="panelOpen" @close="panelOpen = false" />
 
     <template v-if="open">
-      <p v-if="dms.loading" class="px-4 py-1.5 text-sm text-slate-400">Loading…</p>
+      <p v-if="dms.loading && !dms.sorted.length" class="px-4 py-1.5 text-sm text-slate-400">
+        Loading…
+      </p>
 
       <p v-else-if="dms.error" class="px-4 py-1.5 text-sm text-slate-400">
-        {{ dms.error }}
+        <template v-if="dms.offline">Offline: showing saved messages.</template>
+        <template v-else>{{ dms.error }}</template>
         <button class="underline" @click="dms.init()">Retry</button>
       </p>
 

@@ -6,7 +6,7 @@ import NewDmPanel from './NewDmPanel.vue'
 
 describe('NewDmPanel', () => {
   beforeEach(() => setActivePinia(createPinia()))
-
+     localStorage.clear()  
   it('shows available member names when the dropdown arrow is clicked', async () => {
     const dms = useDmStore()
     await dms.init()
