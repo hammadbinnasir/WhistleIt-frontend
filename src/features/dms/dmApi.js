@@ -39,7 +39,7 @@ function meId() {
 }
 
 // ---- response helpers ----
-function unwrap(response) {
+export function unwrap(response) {
   if (response && response.success === false) {
     throw Object.assign(new Error(response.message || 'Request failed.'), { details: response })
   }
@@ -102,7 +102,7 @@ function normalizeParticipant(raw) {
   return { id, name, avatarUrl, ...(email ? { email } : {}) }
 }
 
-function normalizeMessage(raw) {
+export function normalizeMessage(raw) {
   const sender = raw.sender ?? raw.user ?? raw.author
   return {
     ...raw,
@@ -112,6 +112,11 @@ function normalizeMessage(raw) {
     ),
     text: raw.content ?? raw.text ?? raw.body ?? '',
     createdAt: raw.created_at ?? raw.createdAt ?? '',
+    // Edit hua ho to "edited" dikhane ke liye (dusre user ko bhi)
+    editedAt:
+      raw.edited_at ??
+      raw.editedAt ??
+      (raw.updated_at && raw.updated_at !== raw.created_at ? raw.updated_at : undefined),
   }
 }
 
@@ -310,5 +315,3 @@ export const dmApi = {
     return Promise.resolve({})
   },
 }
-  
-  

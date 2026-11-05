@@ -1,65 +1,70 @@
-import { defineStore } from 'pinia'
-import { computed, ref } from 'vue'
-import { useMembersStore } from './members'
-import { useTeamsStore } from './teams'
+// Purana mock-members wala DM store hata diya gaya hai.
+// Asli store (APIs + localStorage + polling) features/dms mein hai.
+// Ye line isliye hai taake '@/stores/dms' se import karne wali files bhi naya store hi lein.
+export { useDmStore } from '@/features/dms/stores/dms'
 
-export const useDmStore = defineStore('dms', () => {
-  const membersStore = useMembersStore()
-  const teamsStore = useTeamsStore()
+// import { defineStore } from 'pinia'
+// import { computed, ref } from 'vue'
+// import { useMembersStore } from './members'
+// import { useTeamsStore } from './teams'
 
-  const activeId = ref(null)
-  const loading = ref(false)
-  const error = ref(null)
-  const closedIds = ref(new Set())
+// export const useDmStore = defineStore('dms', () => {
+//   const membersStore = useMembersStore()
+//   const teamsStore = useTeamsStore()
 
-  const sorted = computed(() => {
-    const list = membersStore.members.filter((m) => !closedIds.value.has(m.id))
-    return [...list].sort((a, b) => {
-      if (a.status === 'online' && b.status !== 'online') return -1
-      if (a.status !== 'online' && b.status === 'online') return 1
-      return (a.name || '').localeCompare(b.name || '')
-    })
-  })
+//   const activeId = ref(null)
+//   const loading = ref(false)
+//   const error = ref(null)
+//   const closedIds = ref(new Set())
 
-  const activeConversation = computed(() => {
-    return membersStore.members.find((m) => m.id === activeId.value) || null
-  })
+//   const sorted = computed(() => {
+//     const list = membersStore.members.filter((m) => !closedIds.value.has(m.id))
+//     return [...list].sort((a, b) => {
+//       if (a.status === 'online' && b.status !== 'online') return -1
+//       if (a.status !== 'online' && b.status === 'online') return 1
+//       return (a.name || '').localeCompare(b.name || '')
+//     })
+//   })
 
-  async function init() {
-    loading.value = true
-    error.value = null
-    try {
-      if (!membersStore.members.length) {
-        const teamId = teamsStore.activeTeamId || 'team-1'
-        await membersStore.fetchMembers(teamId)
-      }
-    } catch (err) {
-      error.value = err.message || 'Failed to load conversations'
-    } finally {
-      loading.value = false
-    }
-  }
+//   const activeConversation = computed(() => {
+//     return membersStore.members.find((m) => m.id === activeId.value) || null
+//   })
 
-  function openConversation(id) {
-    closedIds.value.delete(id)
-    activeId.value = id
-  }
+//   async function init() {
+//     loading.value = true
+//     error.value = null
+//     try {
+//       if (!membersStore.members.length) {
+//         const teamId = teamsStore.activeTeamId || 'team-1'
+//         await membersStore.fetchMembers(teamId)
+//       }
+//     } catch (err) {
+//       error.value = err.message || 'Failed to load conversations'
+//     } finally {
+//       loading.value = false
+//     }
+//   }
 
-  function closeConversation(id) {
-    closedIds.value.add(id)
-    if (activeId.value === id) {
-      activeId.value = null
-    }
-  }
+//   function openConversation(id) {
+//     closedIds.value.delete(id)
+//     activeId.value = id
+//   }
 
-  return {
-    activeId,
-    activeConversation,
-    loading,
-    error,
-    sorted,
-    init,
-    openConversation,
-    closeConversation,
-  }
-})
+//   function closeConversation(id) {
+//     closedIds.value.add(id)
+//     if (activeId.value === id) {
+//       activeId.value = null
+//     }
+//   }
+
+//   return {
+//     activeId,
+//     activeConversation,
+//     loading,
+//     error,
+//     sorted,
+//     init,
+//     openConversation,
+//     closeConversation,
+//   }
+// })
