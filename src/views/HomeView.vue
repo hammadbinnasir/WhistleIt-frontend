@@ -470,16 +470,27 @@ onBeforeUnmount(() => {
           v-else-if="!selectedChannelId"
           class="flex items-center justify-between border-b border-slate-200 bg-white px-5 py-3"
         >
-          <div class="flex items-center gap-3">
-            <button
-              class="cursor-pointer rounded border border-slate-200 px-2 py-1 text-xs text-slate-600 hover:bg-slate-50"
-              @click="ui.toggleSidebar()"
-            >
-              {{ sidebarOpen ? 'Hide' : 'Show' }} sidebar
-            </button>
-            <h2 class="text-sm font-semibold text-slate-700">Select a channel</h2>
+          <div
+            v-if="channelsStore.loading && !channelsStore.loaded"
+            class="flex flex-col gap-2"
+            role="status"
+            aria-label="Loading channel"
+          >
+            <span class="h-5 w-36 animate-pulse rounded bg-slate-200" aria-hidden="true" />
+            <span class="h-3 w-56 animate-pulse rounded bg-slate-200" aria-hidden="true" />
           </div>
-          <ChatHeaderActions :is-dm="true" conversation-id="" />
+          <template v-else>
+            <div class="flex items-center gap-3">
+              <button
+                class="cursor-pointer rounded border border-slate-200 px-2 py-1 text-xs text-slate-600 hover:bg-slate-50"
+                @click="ui.toggleSidebar()"
+              >
+                {{ sidebarOpen ? 'Hide' : 'Show' }} sidebar
+              </button>
+              <h2 class="text-sm font-semibold text-slate-700">Select a channel</h2>
+            </div>
+            <ChatHeaderActions :is-dm="true" conversation-id="" />
+          </template>
         </header>
 
         <!-- Chat area with composer & optional side panel -->
