@@ -4,6 +4,7 @@ import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { login, register, requestPasswordReset, resetPassword } from './api'
 import { saveAuthToken } from './session'
 import authBackground from '@/assets/auth-background.svg'
+import LoadingSpinner from '@/components/LoadingSpinner.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -358,48 +359,36 @@ async function submitForm() {
             class="submit-button"
             :class="{
               'submit-button--login': !isSignup && !isForgotPassword && !isResetPassword,
-              'submit-button--loading': isSubmitting && isResetPassword,
+              'submit-button--loading': isSubmitting,
             }"
             type="submit"
             :disabled="isSubmitting"
-            :aria-busy="isSubmitting && isResetPassword"
+            :aria-busy="isSubmitting"
           >
-            <span
-              v-if="isSubmitting && isResetPassword"
-              class="auth-loader"
-              role="status"
-              aria-label="Resetting your password"
-            >
-              <svg class="auth-loader__ring" viewBox="0 0 64 64" aria-hidden="true">
-                <defs>
-                  <linearGradient id="reset-loader-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
-                    <stop offset="0%" stop-color="#00c6ff" />
-                    <stop offset="38%" stop-color="#126be8" />
-                    <stop offset="68%" stop-color="#5220df" />
-                    <stop offset="100%" stop-color="#ed00ff" />
-                  </linearGradient>
-                </defs>
-                <circle
-                  cx="32"
-                  cy="32"
-                  r="27"
-                  fill="none"
-                  stroke="url(#reset-loader-gradient)"
-                  stroke-width="10"
-                />
-              </svg>
-            </span>
-            {{
-              isSubmitting && !isResetPassword
-                ? 'Please wait...'
-                : isSignup
+            <LoadingSpinner
+              v-if="isSubmitting"
+              :size="20"
+              :label="
+                isSignup
+                  ? 'Creating account'
+                  : isForgotPassword
+                    ? 'Sending password reset instructions'
+                    : isResetPassword
+                      ? 'Resetting your password'
+                      : 'Logging in'
+              "
+            />
+            <template v-else>
+              {{
+                isSignup
                   ? 'Create Account'
                   : isForgotPassword
                     ? 'Send Instructions'
                     : isResetPassword
                       ? 'Reset Password'
                       : 'Login'
-            }}
+              }}
+            </template>
           </button>
 
           <p

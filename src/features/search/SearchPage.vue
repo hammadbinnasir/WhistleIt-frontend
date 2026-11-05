@@ -4,11 +4,16 @@
 import { ref, reactive, watch, computed, onMounted, onBeforeUnmount } from 'vue'
 import { useUiStore } from '@/stores/ui'
 import { useChannelsStore } from '@/features/channels'
+import { useDmStore } from '@/features/dms/stores/dms'
 import { searchMessages, searchFiles, searchLinks, searchUsers } from './search'
 
-const props = defineProps({ channelId: { type: String, default: '' } })
 const ui = useUiStore()
 const channelsStore = useChannelsStore()
+const dmsStore = useDmStore()
+const props = defineProps({
+  channelId: { type: String, default: '' },
+  dmConversationId: { type: String, default: '' },
+})
 
 // icon = SVG path drawn inside each tab button
 const tabs = [
@@ -48,13 +53,6 @@ const noun = computed(() => ({ text: 'messages', file: 'files', link: 'links' })
 const searchCategory = ref('Messages')
 const categories = ['Messages', 'Companies', 'Teams', 'Channels']
 const directoryItems = computed(() => [
-  { id: 'company-1', category: 'Companies', name: 'Whistle It', detail: 'Company workspace' },
-  {
-    id: 'team-1',
-    category: 'Teams',
-    name: 'Frontend & Backend Team Cmi 2',
-    detail: 'Development team',
-  },
   ...channelsStore.channels.map((channel) => ({
     id: channel.id,
     category: 'Channels',
@@ -63,6 +61,29 @@ const directoryItems = computed(() => [
   })),
 ])
 const hasFilters = computed(() => applied.userIds.length || applied.date || applied.webhooks)
+
+function dmSearchMessages() {
+  const conversations =
+    props.dmConversationId && scope.value === 'channel'
+      ? dmsStore.conversations.filter((conversation) => conversation.id === props.dmConversationId)
+      : dmsStore.conversations
+
+  return conversations.flatMap((conversation) =>
+    (conversation.messages || []).map((message) => ({
+      id: message.id,
+      text: message.text ?? message.content ?? '',
+      sender: dmsStore.usersById?.[message.from]?.name || message.sender || 'Unknown user',
+      userId: String(message.from || ''),
+      conversation: {
+        id: conversation.id,
+        name: dmsStore.titleOf?.(conversation) || conversation.name || 'Direct message',
+        kind: 'dm',
+      },
+      createdAt: message.createdAt || '',
+      webhook: false,
+    })),
+  )
+}
 
 async function run() {
   error.value = ''
@@ -93,11 +114,13 @@ async function run() {
       page: page.value,
       pageSize: 6,
       channelId: scope.value === 'channel' ? props.channelId : '',
+      dmConversationId: scope.value === 'channel' ? props.dmConversationId : '',
       userIds: applied.userIds,
       date: applied.date,
       dateEnd: applied.dateEnd,
       dateMode: applied.dateMode,
       webhooks: applied.webhooks,
+      dmMessages: dmSearchMessages(),
     }
     const fn = { text: searchMessages, file: searchFiles, link: searchLinks }[tab.value]
     const res = await fn(params)
@@ -117,7 +140,7 @@ watch(q, () => {
   clearTimeout(timer)
   timer = setTimeout(run, 350)
 })
-watch([tab, scope, searchCategory, () => props.channelId], () => {
+watch([tab, scope, searchCategory, () => props.channelId, () => props.dmConversationId], () => {
   page.value = 1
   items.value = []
   run()
