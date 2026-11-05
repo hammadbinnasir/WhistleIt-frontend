@@ -2,6 +2,96 @@ import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
 import api from '../api'
 
+const MANAGED_CHANNELS_STORAGE_KEY = 'whistleit-managed-channel-ids'
+const MUTED_CHANNELS_STORAGE_KEY = 'whistleit-muted-channel-ids'
+const FAVORITE_CHANNELS_STORAGE_KEY = 'whistleit-favorite-channel-ids'
+const managedChannelIds = new Set()
+
+function getManagedChannelIds() {
+  if (typeof localStorage === 'undefined') return new Set(managedChannelIds)
+  try {
+    const ids = JSON.parse(localStorage.getItem(MANAGED_CHANNELS_STORAGE_KEY) || '[]')
+    if (Array.isArray(ids)) ids.forEach((id) => managedChannelIds.add(String(id)))
+    return new Set(managedChannelIds)
+  } catch {
+    return new Set(managedChannelIds)
+  }
+}
+
+function rememberManagedChannel(id) {
+  const ids = getManagedChannelIds()
+  ids.add(String(id))
+  managedChannelIds.add(String(id))
+  if (typeof localStorage !== 'undefined') {
+    try {
+      localStorage.setItem(MANAGED_CHANNELS_STORAGE_KEY, JSON.stringify([...ids]))
+    } catch {
+      // Management still remains available for the current session.
+    }
+  }
+}
+
+function withPersistedManagement(channel) {
+  return {
+    ...channel,
+    canManage: Boolean(channel.canManage || getManagedChannelIds().has(String(channel.id))),
+  }
+}
+
+function getMutedChannelIds() {
+  if (typeof localStorage === 'undefined') return new Set()
+  try {
+    const ids = JSON.parse(localStorage.getItem(MUTED_CHANNELS_STORAGE_KEY) || '[]')
+    return new Set(Array.isArray(ids) ? ids.map(String) : [])
+  } catch {
+    return new Set()
+  }
+}
+
+function saveMutedChannelIds(ids) {
+  if (typeof localStorage === 'undefined') return
+  try {
+    localStorage.setItem(MUTED_CHANNELS_STORAGE_KEY, JSON.stringify([...ids]))
+  } catch {
+    // Keep mute state available in memory when storage is unavailable.
+  }
+}
+
+function withMutedPreference(channel) {
+  const mutedIds = getMutedChannelIds()
+  return {
+    ...channel,
+    isMuted: mutedIds.has(String(channel.id)) || Boolean(channel.isMuted),
+  }
+}
+
+function getFavoriteChannelIds() {
+  if (typeof localStorage === 'undefined') return new Set()
+  try {
+    const ids = JSON.parse(localStorage.getItem(FAVORITE_CHANNELS_STORAGE_KEY) || '[]')
+    return new Set(Array.isArray(ids) ? ids.map(String) : [])
+  } catch {
+    return new Set()
+  }
+}
+
+function saveFavoriteChannelIds(ids) {
+  if (typeof localStorage === 'undefined') return
+  try {
+    localStorage.setItem(FAVORITE_CHANNELS_STORAGE_KEY, JSON.stringify([...ids]))
+  } catch {
+    // Keep favorite state available in memory when storage is unavailable.
+  }
+}
+
+function withFavoritePreference(channel) {
+  const favoriteIds = getFavoriteChannelIds()
+  return {
+    ...channel,
+    isFavorite: favoriteIds.has(String(channel.id)) || Boolean(channel.isFavorite),
+  }
+}
+
 export const useChannelsStore = defineStore('channels', () => {
   // ---------- state ----------
   const channels = ref([]) // channels the current user is a member of
@@ -13,12 +103,17 @@ export const useChannelsStore = defineStore('channels', () => {
 
   let inflight = null
   let browseRequestId = 0
+  let channelsRequestId = 0
+  const memberRequestIds = new Map()
 
   // ---------- getters ----------
-  // Sidebar order: favorites first, then the server order. Archived channels are hidden.
+  // Keep the order supplied by the team API; channels without these fields remain supported.
   const visibleChannels = computed(() => {
-    const active = channels.value.filter((c) => !c.isArchived)
-    return [...active.filter((c) => c.isFavorite), ...active.filter((c) => !c.isFavorite)]
+    return channels.value
+      .filter((channel) => channel.isMember !== false && !channel.isArchived)
+      .map((channel) => ({ channel, index: channels.value.indexOf(channel) }))
+      .sort((a, b) => Number(Boolean(b.channel.isFavorite)) - Number(Boolean(a.channel.isFavorite)) || a.index - b.index)
+      .map(({ channel }) => channel)
   })
 
   function getById(id) {
@@ -37,20 +132,6 @@ export const useChannelsStore = defineStore('channels', () => {
     if (index !== -1) browse.value.items[index] = { ...browse.value.items[index], ...changes }
   }
 
-  // Apply a change immediately, call the API, roll back if it fails (error is re-thrown).
-  async function optimistic(id, changes, request) {
-    const channel = getById(id)
-    if (!channel) return
-    const previous = Object.fromEntries(Object.keys(changes).map((key) => [key, channel[key]]))
-    patch(id, changes)
-    try {
-      await request()
-    } catch (err) {
-      patch(id, previous)
-      throw err
-    }
-  }
-
   // ---------- actions: list ----------
   // Never rejects; check `error`. Concurrent callers share one request.
   function fetchChannels({ force = false } = {}) {
@@ -58,16 +139,24 @@ export const useChannelsStore = defineStore('channels', () => {
     if (loaded.value && !force) return Promise.resolve()
     loading.value = true
     error.value = null
+    const requestId = ++channelsRequestId
     inflight = api
-      .listMyChannels()
+      .listChannels()
       .then((list) => {
+        if (requestId !== channelsRequestId) return
         channels.value = list
+          .map(withPersistedManagement)
+          .map(withMutedPreference)
+          .map(withFavoritePreference)
+          .filter((channel) => channel.isMember && !channel.isArchived)
         loaded.value = true
       })
       .catch((err) => {
+        if (requestId !== channelsRequestId) return
         error.value = err?.message || 'Failed to load channels.'
       })
       .finally(() => {
+        if (requestId !== channelsRequestId) return
         loading.value = false
         inflight = null
       })
@@ -80,7 +169,11 @@ export const useChannelsStore = defineStore('channels', () => {
     try {
       const items = await api.browseChannels(query)
       if (requestId !== browseRequestId) return // a newer search superseded this one
-      browse.value = { items, loading: false, error: null }
+      browse.value = {
+        items: items.map(withMutedPreference).map(withFavoritePreference),
+        loading: false,
+        error: null,
+      }
     } catch (err) {
       if (requestId !== browseRequestId) return
       browse.value = {
@@ -93,27 +186,45 @@ export const useChannelsStore = defineStore('channels', () => {
 
   async function fetchMembers(id, { limit = 10 } = {}) {
     const key = String(id)
+    const requestId = (memberRequestIds.get(key) || 0) + 1
+    memberRequestIds.set(key, requestId)
     const previous = members.value[key] || { items: [], total: 0 }
     members.value[key] = { ...previous, loading: true, error: false }
     try {
       const { items, total } = await api.listMembers(key, { limit })
+      if (memberRequestIds.get(key) !== requestId) return
       members.value[key] = { items, total, loading: false, error: false }
     } catch {
+      if (memberRequestIds.get(key) !== requestId) return
       members.value[key] = { ...previous, loading: false, error: true }
     }
+  }
+
+  async function fetchChannel(id) {
+    const channel = await api.getChannel(id)
+    const manageableChannel = withPersistedManagement(channel)
+    const mutedChannel = withMutedPreference(manageableChannel)
+    upsertChannel(mutedChannel)
+    return mutedChannel
   }
 
   // ---------- actions: management ----------
   async function createChannel(payload) {
     const channel = await api.createChannel(payload)
+    channel.canManage = true
+    rememberManagedChannel(channel.id)
     upsertChannel(channel)
     return channel
   }
 
   async function updateChannel(id, payload) {
     const channel = await api.updateChannel(id, payload)
-    const editable = { name: channel.name, description: channel.description }
-    patch(id, editable) // only editable fields, so favorite/mute/unread flags are never overwritten
+    const editable = {
+      name: channel.name,
+      description: channel.description,
+      messagePermission: channel.messagePermission,
+    }
+    patch(id, editable)
     patchBrowse(id, editable)
     return getById(id) || channel
   }
@@ -131,32 +242,57 @@ export const useChannelsStore = defineStore('channels', () => {
     patchBrowse(id, { isMember: false })
   }
 
-  async function archiveChannel(id) {
-    await api.archiveChannel(id)
+  async function deleteChannel(id) {
+    await api.deleteChannel(id)
     removeChannel(id)
     browse.value.items = browse.value.items.filter((c) => c.id !== String(id))
   }
 
+  function addChannelMember(id, targetUser) {
+    return api.addChannelMember(id, targetUser)
+  }
+
+  function removeChannelMember(id, targetUser) {
+    return api.removeChannelMember(id, targetUser)
+  }
+
   function toggleFavorite(id) {
     const channel = getById(id)
-    if (!channel) return Promise.resolve()
-    const value = !channel.isFavorite
-    return optimistic(id, { isFavorite: value }, () => api.setFavorite(String(id), value))
+    if (!channel) return false
+
+    const isFavorite = !channel.isFavorite
+    const favoriteIds = getFavoriteChannelIds()
+    if (isFavorite) favoriteIds.add(String(id))
+    else favoriteIds.delete(String(id))
+    saveFavoriteChannelIds(favoriteIds)
+    patch(id, { isFavorite })
+    patchBrowse(id, { isFavorite })
+    return isFavorite
   }
 
   function toggleMute(id) {
     const channel = getById(id)
-    if (!channel) return Promise.resolve()
-    const value = !channel.isMuted
-    return optimistic(id, { isMuted: value }, () => api.setMuted(String(id), value))
-  }
+    if (!channel) return false
 
-  function markUnread(id) {
-    return optimistic(id, { isUnread: true }, () => api.markUnread(String(id)))
+    const isMuted = !channel.isMuted
+    const mutedIds = getMutedChannelIds()
+    if (isMuted) mutedIds.add(String(id))
+    else mutedIds.delete(String(id))
+    saveMutedChannelIds(mutedIds)
+    patch(id, { isMuted })
+    patchBrowse(id, { isMuted })
+    return isMuted
   }
 
   // ---------- local mutations (also usable by a realtime/socket handler) ----------
   function upsertChannel(channel) {
+    if (channel.isMember === false) {
+      removeChannel(channel.id)
+      return
+    }
+    channel = withPersistedManagement(channel)
+    channel = withMutedPreference(channel)
+    channel = withFavoritePreference(channel)
     const index = channels.value.findIndex((c) => c.id === channel.id)
     if (index === -1) channels.value.push(channel)
     else channels.value[index] = { ...channels.value[index], ...channel }
@@ -167,6 +303,9 @@ export const useChannelsStore = defineStore('channels', () => {
   }
 
   function reset() {
+    channelsRequestId += 1
+    browseRequestId += 1
+    memberRequestIds.clear()
     channels.value = []
     members.value = {}
     browse.value = { items: [], loading: false, error: null }
@@ -188,14 +327,16 @@ export const useChannelsStore = defineStore('channels', () => {
     fetchChannels,
     fetchBrowse,
     fetchMembers,
+    fetchChannel,
     createChannel,
     updateChannel,
     joinChannel,
     leaveChannel,
-    archiveChannel,
+    deleteChannel,
+    addChannelMember,
+    removeChannelMember,
     toggleFavorite,
     toggleMute,
-    markUnread,
     upsertChannel,
     removeChannel,
     reset,

@@ -1,6 +1,8 @@
 <script setup>
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useDmStore } from '@/features/dms/stores/dms'
+import { useTeamsStore } from '@/stores/teams'
+import { useUiStore } from '@/stores/ui'
 import { useChannelsStore } from '../store/channels.store'
 import { useChannelsUiStore } from '../store/channels.ui.store'
 import { useChannelActions } from '../composables/useChannelActions'
@@ -13,7 +15,9 @@ import ChannelDialogs from './ChannelDialogs.vue'
 import '../styles/tokens.css'
 
 const store = useChannelsStore()
+const teams = useTeamsStore()
 const dms = useDmStore()
+const appUi = useUiStore()
 const ui = useChannelsUiStore()
 const { activeId, select, clear } = useActiveChannel()
 const { menuItemsFor, run } = useChannelActions()
@@ -33,7 +37,7 @@ const shownChannels = computed(() => {
 const menuItems = computed(() => menuItemsFor(store.getById(menu.value.channelId)))
 
 // Keep the selection valid: pick the default (or first) channel when nothing is selected,
-// and recover if the selected channel no longer exists (left, archived, deleted).
+// and recover if the selected channel no longer exists (left or deleted).
 function ensureSelection() {
   if (!store.loaded) return
 
@@ -51,9 +55,27 @@ function ensureSelection() {
 function selectChannel(id) {
   dms.deactivateConversation()
   select(id)
+  appUi.closePanel()
 }
 
-onMounted(() => store.fetchChannels())
+let loadedScope = null
+watch(
+  () => [teams.activeWorkspaceId, teams.activeTeamId, teams.activeTeam?.id],
+  ([companyId, teamId]) => {
+    if (!companyId || !teamId || !teams.activeTeam) {
+      if (loadedScope) store.reset()
+      loadedScope = null
+      return
+    }
+
+    const scope = `${companyId}:${teamId}`
+    if (scope === loadedScope) return
+    loadedScope = scope
+    store.reset()
+    store.fetchChannels()
+  },
+  { immediate: true },
+)
 watch(() => [store.loaded, store.channels.length, dms.activeId, activeId.value], ensureSelection, {
   immediate: true,
 })

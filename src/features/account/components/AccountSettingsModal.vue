@@ -192,9 +192,9 @@ const onSave = () => {
 .modal {
   display: flex;
   flex-direction: column;
-  width: 1000px;
+  width: 860px;
   max-width: 100%;
-  height: 825px;
+  height: 700px;
   max-height: calc(100vh - 32px);
   background: #fff;
   border-radius: 6px;
@@ -214,24 +214,24 @@ const onSave = () => {
   display: flex;
   align-items: center;
   justify-content: center;
-  height: 70px;
+  height: 60px;
   border-bottom: 1px solid #e5e5e8;
   flex-shrink: 0;
 }
 
 .header-title {
   margin: 0;
-  font-size: 24px;
+  font-size: 22px;
   font-weight: 400;
   color: #1f1f2e;
 }
 
 .close {
   position: absolute;
-  top: 16px;
-  right: 24px;
-  width: 26px;
-  height: 26px;
+  top: 14px;
+  right: 20px;
+  width: 24px;
+  height: 24px;
   padding: 6px;
   border: none;
   border-radius: 50%;
@@ -259,7 +259,7 @@ const onSave = () => {
 
 /* Sidebar */
 .sidebar {
-  width: 252px;
+  width: 220px;
   flex-shrink: 0;
   border-right: 1px solid #e5e5e8;
   padding-top: 8px;
@@ -269,10 +269,10 @@ const onSave = () => {
 .tab {
   display: flex;
   align-items: center;
-  gap: 18px;
+  gap: 12px;
   width: 100%;
-  height: 50px;
-  padding: 0 22px;
+  height: 46px;
+  padding: 0 18px;
   background: transparent;
   border: none;
   border-left: 3px solid transparent;
@@ -292,8 +292,8 @@ const onSave = () => {
 }
 
 .tab-icon {
-  width: 30px;
-  height: 30px;
+  width: 26px;
+  height: 26px;
   flex-shrink: 0;
   color: #676879;
 }
@@ -302,7 +302,7 @@ const onSave = () => {
 }
 
 .tab-label {
-  font-size: 17px;
+  font-size: 15px;
   font-weight: 500;
 }
 
@@ -310,20 +310,20 @@ const onSave = () => {
 .content {
   flex: 1;
   overflow-y: auto;
-  padding: 26px 30px 30px;
+  padding: 22px 24px 24px;
   box-sizing: border-box;
 }
 
 .content-title {
-  margin: 0 0 34px;
-  font-size: 24px;
+  margin: 0 0 24px;
+  font-size: 21px;
   font-weight: 500;
   color: #323248;
 }
 
 .placeholder {
   color: #676879;
-  font-size: 17px;
+  font-size: 15px;
 }
 
 /* Footer */
@@ -331,9 +331,9 @@ const onSave = () => {
   display: flex;
   justify-content: flex-end;
   align-items: center;
-  gap: 18px;
-  height: 104px;
-  padding: 0 48px;
+  gap: 14px;
+  height: 76px;
+  padding: 0 32px;
   border-top: 1px solid #e5e5e8;
   flex-shrink: 0;
   box-sizing: border-box;
@@ -341,7 +341,7 @@ const onSave = () => {
 
 .btn {
   font-family: inherit;
-  font-size: 18px;
+  font-size: 16px;
   font-weight: 500;
   letter-spacing: 1px;
   cursor: pointer;
@@ -352,7 +352,7 @@ const onSave = () => {
 .cancel {
   background: transparent;
   color: #1f1f2e;
-  padding: 14px 20px;
+  padding: 12px 16px;
 }
 .cancel:hover {
   color: #5559f4;
@@ -361,8 +361,8 @@ const onSave = () => {
 .save {
   background: #5559f4;
   color: #fff;
-  width: 165px;
-  height: 45px;
+  width: 130px;
+  height: 40px;
 }
 .save:hover:not(:disabled) {
   background: #4448d9;

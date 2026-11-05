@@ -3,13 +3,16 @@ import { computed, ref, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { login, register, requestPasswordReset, resetPassword } from './api'
 import { saveAuthToken } from './session'
-import AuthIllustration from './AuthIllustration.vue'
+import authBackground from '@/assets/auth-background.svg'
+import LoadingSpinner from '@/components/LoadingSpinner.vue'
 
 const route = useRoute()
 const router = useRouter()
 const isSignup = computed(() => route.path === '/signup')
 const isForgotPassword = computed(() => route.path === '/forgot-password')
-const isResetPassword = computed(() => route.path === '/reset-password')
+const isResetPassword = computed(
+  () => route.name === 'reset-password' || route.path === '/reset-password',
+)
 const resetToken = computed(() => (typeof route.query.token === 'string' ? route.query.token : ''))
 const form = ref(null)
 const fullName = ref('')
@@ -31,15 +34,26 @@ watch(
     fullName.value = ''
     company.value = ''
     email.value =
-      isResetPassword.value && typeof route.query.email === 'string' ? route.query.email : ''
+      (isResetPassword.value || route.name === 'login') && typeof route.query.email === 'string'
+        ? route.query.email
+        : ''
     password.value = ''
     confirmPassword.value = ''
     rememberMe.value = false
     acceptedTerms.value = false
     showPassword.value = false
     showConfirmPassword.value = false
-    feedback.value = ''
-    feedbackIsSuccess.value = false
+    if (route.query.verified === 'true') {
+      feedback.value = 'Your email has been verified successfully! You can now log in.'
+      feedbackIsSuccess.value = true
+    } else if (route.query.registered === 'true') {
+      feedback.value =
+        'Account created successfully! Please check your email inbox to verify your account.'
+      feedbackIsSuccess.value = true
+    } else {
+      feedback.value = ''
+      feedbackIsSuccess.value = false
+    }
   },
   { immediate: true },
 )
@@ -49,6 +63,14 @@ async function submitForm() {
   feedbackIsSuccess.value = false
 
   if (!form.value.reportValidity()) return
+
+  if (
+    (isSignup.value || isResetPassword.value) &&
+    (password.value.length < 8 || confirmPassword.value.length < 8)
+  ) {
+    feedback.value = 'Passwords must be at least 8 characters long.'
+    return
+  }
 
   if ((isSignup.value || isResetPassword.value) && password.value !== confirmPassword.value) {
     feedback.value = 'Passwords do not match. Please check them and try again.'
@@ -71,14 +93,15 @@ async function submitForm() {
     }
 
     if (isResetPassword.value) {
-      await resetPassword({
-        email: email.value,
-        token: resetToken.value,
+      await resetPassword(resetToken.value, {
+        ...(email.value ? { email: email.value } : {}),
         password: password.value,
         password_confirmation: confirmPassword.value,
       })
-      feedback.value = 'Your password has been reset. You can now log in.'
-      feedbackIsSuccess.value = true
+      await router.replace({
+        name: 'login',
+        query: email.value ? { email: email.value } : {},
+      })
       return
     }
 
@@ -89,11 +112,12 @@ async function submitForm() {
           email: email.value,
           password: password.value,
           password_confirmation: confirmPassword.value,
+          frontend_url: typeof window !== 'undefined' ? window.location.origin : '',
         })
       : await login({ email: email.value, password: password.value })
 
     if (isSignup.value) {
-      await router.push({ name: 'login' })
+      await router.push({ name: 'login', query: { registered: 'true' } })
     } else {
       if (!saveAuthToken(response, rememberMe.value)) {
         throw new Error('Login response did not include an access token.')
@@ -103,7 +127,7 @@ async function submitForm() {
         typeof redirect === 'string' && redirect.startsWith('/') && !redirect.startsWith('//')
           ? redirect
           : { name: 'home' }
-      await router.push(destination)
+      await router.replace(destination)
     }
   } catch (error) {
     const validationErrors = error?.details?.errors
@@ -127,23 +151,20 @@ async function submitForm() {
   >
     <section class="auth-panel" aria-label="Account access">
       <RouterLink class="brand" to="/login" aria-label="Whistle It. home">
-        <svg class="brand-mark" viewBox="0 0 56 42" aria-hidden="true">
-          <path
-            d="M5 8.5 15.2 29l8.1-14.4L31 29l8.2-14.8M43.2 11.4l3.1-3.1"
-            fill="none"
-            stroke="currentColor"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            stroke-width="6.5"
-          />
-          <circle cx="49.5" cy="7" r="3.5" fill="currentColor" />
-        </svg>
-        <span>Whistle It.</span>
+        <img
+          class="brand-mark"
+          src="https://app.whistleit.io/img/whistle-logo.8554b9a3.svg"
+          alt=""
+        />
       </RouterLink>
 
       <div class="auth-content">
         <header class="auth-heading">
-          <h1>
+          <h1
+            :class="{
+              'auth-heading__title--login': !isSignup && !isForgotPassword && !isResetPassword,
+            }"
+          >
             {{
               isSignup
                 ? 'Create Account'
@@ -154,7 +175,13 @@ async function submitForm() {
                     : 'Log in'
             }}
           </h1>
-          <p>
+          <p
+            :class="{
+              'auth-heading__description--login':
+                !isSignup && !isForgotPassword && !isResetPassword,
+              'auth-heading__description--signup': isSignup,
+            }"
+          >
             {{
               isSignup
                 ? 'Fill the form below to create an account'
@@ -197,26 +224,18 @@ async function submitForm() {
             />
           </template>
 
-          <label class="sr-only" for="email">Email Address</label>
-          <input
-            id="email"
-            v-model.trim="email"
-            :name="
-              isSignup
-                ? 'new-account-email'
-                : isForgotPassword
-                  ? 'reset-email'
-                  : isResetPassword
-                    ? 'reset-email'
-                    : 'username'
-            "
-            type="email"
-            :autocomplete="
-              isSignup ? 'off' : isForgotPassword || isResetPassword ? 'email' : 'username'
-            "
-            placeholder="Email Address*"
-            required
-          />
+          <template v-if="!isResetPassword">
+            <label class="sr-only" for="email">Email Address</label>
+            <input
+              id="email"
+              v-model.trim="email"
+              :name="isSignup ? 'new-account-email' : isForgotPassword ? 'reset-email' : 'username'"
+              type="email"
+              :autocomplete="isSignup ? 'off' : isForgotPassword ? 'email' : 'username'"
+              placeholder="Email Address*"
+              required
+            />
+          </template>
 
           <div v-if="!isForgotPassword" class="password-field">
             <label class="sr-only" for="password">Password</label>
@@ -238,7 +257,26 @@ async function submitForm() {
               @click="showPassword = !showPassword"
             >
               <svg viewBox="0 0 24 24" aria-hidden="true">
+                <template v-if="showPassword">
+                  <path
+                    d="M2 12s3.3-7 10-7 10 7 10 7-3.3 7-10 7S2 12 2 12Z"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    stroke-width="1.8"
+                  />
+                  <circle
+                    cx="12"
+                    cy="12"
+                    r="3"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="1.8"
+                  />
+                </template>
                 <path
+                  v-else
                   d="M3 3 21 21M10.6 10.6a2 2 0 0 0 2.8 2.8M9.9 5.2A10.8 10.8 0 0 1 12 5c5.2 0 8.5 5.2 8.5 7s-1.2 3.2-3.1 4.5M6.2 6.2C3.7 7.7 2 10.5 2 12c0 1.8 3.3 7 10 7 1 0 1.9-.2 2.8-.5"
                   fill="none"
                   stroke="currentColor"
@@ -270,7 +308,26 @@ async function submitForm() {
               @click="showConfirmPassword = !showConfirmPassword"
             >
               <svg viewBox="0 0 24 24" aria-hidden="true">
+                <template v-if="showConfirmPassword">
+                  <path
+                    d="M2 12s3.3-7 10-7 10 7 10 7-3.3 7-10 7S2 12 2 12Z"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    stroke-width="1.8"
+                  />
+                  <circle
+                    cx="12"
+                    cy="12"
+                    r="3"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="1.8"
+                  />
+                </template>
                 <path
+                  v-else
                   d="M3 3 21 21M10.6 10.6a2 2 0 0 0 2.8 2.8M9.9 5.2A10.8 10.8 0 0 1 12 5c5.2 0 8.5 5.2 8.5 7s-1.2 3.2-3.1 4.5M6.2 6.2C3.7 7.7 2 10.5 2 12c0 1.8 3.3 7 10 7 1 0 1.9-.2 2.8-.5"
                   fill="none"
                   stroke="currentColor"
@@ -298,18 +355,40 @@ async function submitForm() {
             <RouterLink class="text-link" to="/forgot-password"> Forgot Password? </RouterLink>
           </div>
 
-          <button class="submit-button" type="submit" :disabled="isSubmitting">
-            {{
-              isSubmitting
-                ? 'Please wait...'
-                : isSignup
+          <button
+            class="submit-button"
+            :class="{
+              'submit-button--login': !isSignup && !isForgotPassword && !isResetPassword,
+              'submit-button--loading': isSubmitting,
+            }"
+            type="submit"
+            :disabled="isSubmitting"
+            :aria-busy="isSubmitting"
+          >
+            <LoadingSpinner
+              v-if="isSubmitting"
+              :size="20"
+              :label="
+                isSignup
+                  ? 'Creating account'
+                  : isForgotPassword
+                    ? 'Sending password reset instructions'
+                    : isResetPassword
+                      ? 'Resetting your password'
+                      : 'Logging in'
+              "
+            />
+            <template v-else>
+              {{
+                isSignup
                   ? 'Create Account'
                   : isForgotPassword
                     ? 'Send Instructions'
                     : isResetPassword
                       ? 'Reset Password'
                       : 'Login'
-            }}
+              }}
+            </template>
           </button>
 
           <p
@@ -332,26 +411,19 @@ async function submitForm() {
             <RouterLink to="/forgot-password">Request one</RouterLink>
           </template>
           <template v-else-if="isSignup">
-            Already have an account?
-            <RouterLink to="/login">Login</RouterLink>
+            <span class="auth-switch__prompt">Already have an account?</span>
+            <RouterLink class="auth-switch__signup-link" to="/login">Login</RouterLink>
           </template>
           <template v-else>
-            Don't have an account?
-            <RouterLink to="/signup">Sign Up?</RouterLink>
+            <span class="auth-switch__prompt">Don't have an account?</span>
+            <RouterLink class="auth-switch__signup-link" to="/signup">Sign Up?</RouterLink>
           </template>
         </p>
       </div>
     </section>
 
     <aside class="auth-art" aria-hidden="true">
-      <svg class="art-backdrop" viewBox="0 0 800 900" preserveAspectRatio="none">
-        <path d="M485 0h315v900H0c170-84 222-236 290-425C362 253 390 82 485 0Z" fill="#302d57" />
-        <path
-          d="M455 0h30c-95 82-123 253-195 475C222 664 170 816 0 900h-45c188-90 246-247 314-440C340 250 363 79 455 0Z"
-          fill="#433e70"
-        />
-      </svg>
-      <AuthIllustration />
+      <img class="auth-background" :src="authBackground" alt="" />
     </aside>
   </main>
 </template>

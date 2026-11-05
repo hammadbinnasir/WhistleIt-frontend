@@ -1,6 +1,26 @@
 <script setup>
-import { computed, nextTick, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import EmojiPicker from 'vue3-emoji-picker'
+import 'vue3-emoji-picker/css'
+import { useChannelsStore } from '@/features/channels'
 import { useDmStore } from '@/features/dms/stores/dms'
+import { getAuthUser } from '@/features/auth/session'
+import { useMessagesStore } from '@/features/messages/messages'
+import {
+  createLinkPreview,
+  dateLabel,
+  messageSegments,
+  sameDay,
+  timeLabel,
+} from '@/features/messages/message-utils'
+import { useUiStore } from '@/stores/ui'
+import { useUserStore } from '@/features/account/composables/useUserStore'
+import { addMockMessage, removeMockMessage, updateMockMessage } from '@/features/search/search'
+import SetReminderModal from '@/features/search/SetReminderModal.vue'
+import {
+  createScheduledMessage,
+  getScheduledMessages,
+} from '../api/scheduledMessagesApi'
 import MessageComposer from './MessageComposer.vue'
 
 const props = defineProps({
@@ -9,61 +29,737 @@ const props = defineProps({
 })
 
 const dms = useDmStore()
-const messages = ref([])
+const channelsStore = useChannelsStore()
+const ui = useUiStore()
+const userStore = useUserStore()
+const messageStore = useMessagesStore()
 const messagesContainer = ref(null)
+const editingId = ref(null)
+const editDraft = ref('')
+const replyTo = ref(null)
+const openMenuId = ref(null)
+const deleteTarget = ref(null)
+const scheduleDelete = ref(false)
+const scheduledDeleteAt = ref('')
+const openReactionId = ref(null)
+const reminderTarget = ref(null)
+const forwardTarget = ref(null)
+const forwardDestinationId = ref('')
+const dmVisibleCount = ref(20)
+const participatedPolls = ref(new Set())
+const activePoll = ref(null)
+const activePollMode = ref('respond')
+const pollResponses = ref({})
+const pollResults = ref({})
+const closedPolls = ref(new Set())
+const minimumDeleteDate = computed(() => toLocalDateTimeValue(new Date(Date.now() + 60_000)))
 
-const conversation = computed(() =>
-  props.conversationType === 'dm'
-    ? dms.conversations.find((item) => item.id === String(props.conversationId)) || null
-    : null,
+const currentUserName = computed(
+  () => dms.usersById[dms.meId]?.name || getAuthUser()?.fullName || 'You',
+)
+let messageClickTimer = null
+
+const pollClock = ref(Date.now())
+let pollClockTimer = null
+const channelId = computed(() => String(props.conversationId ?? 'general'))
+const conversation = computed(() => {
+  if (props.conversationType !== 'dm' || props.conversationId == null) return null
+  return dms.conversations.find((item) => String(item.id) === String(props.conversationId)) || null
+})
+const conversationLabel = computed(() =>
+  conversation.value ? dms.titleOf(conversation.value) : channelId.value.replaceAll('-', ' '),
+)
+
+const messagesLoading = computed(() => Boolean(conversation.value) && dms.messagesLoading)
+const messagesError = computed(() => (conversation.value ? dms.messagesError : ''))
+
+function retryConversationMessages() {
+  if (conversation.value) void dms.loadMessages(conversation.value.id, { force: true })
+}
+
+function retryMessage(message) {
+  if (conversation.value) dms.retryMessage(conversation.value.id, message.id)
+}
+
+// Edit/delete API fail ho to toast dikhao
+watch(
+  () => dms.actionError,
+  (message) => {
+    if (!message) return
+    ui.toast('Action failed', message, 'error')
+    dms.actionError = ''
+  },
+)
+
+const conversationMeta = computed(() => ({
+  id: channelId.value,
+  name: conversationLabel.value,
+  kind: props.conversationType === 'dm' ? 'dm' : 'public',
+}))
+const forwardDestinations = computed(() => [
+  ...channelsStore.visibleChannels.map((channel) => ({
+    id: channel.id,
+    name: `#${channel.name}`,
+    type: 'channel',
+  })),
+  ...dms.conversations
+    .filter((item) => item.id !== conversation.value?.id)
+    .map((item) => ({
+      id: item.id,
+      name: dms.titleOf(item),
+      type: 'dm',
+    })),
+])
+const allMessages = computed(() =>
+  conversation.value ? conversation.value.messages : messageStore.messagesFor(channelId.value),
+)
+const hasOlderMessages = computed(() =>
+  conversation.value
+    ? allMessages.value.length > dmVisibleCount.value
+    : messageStore.hasOlderMessages(channelId.value),
+)
+const visibleMessages = computed(() =>
+  conversation.value
+    ? allMessages.value.slice(-dmVisibleCount.value)
+    : messageStore.visibleMessagesFor(channelId.value),
 )
 const renderedMessages = computed(() => {
-  if (!conversation.value) return messages.value
-  const currentUser = dms.usersById[dms.meId]?.name || 'You'
-  return conversation.value.messages.map((message) => ({
-    ...message,
-    content: message.text ?? message.content ?? '',
-    author:
-      message.from === dms.meId
-        ? currentUser
-        : dms.usersById[message.from]?.name || dms.titleOf(conversation.value),
-    mine: message.from === dms.meId,
-  }))
+  const currentUser = currentUserName.value
+  let previous = null
+
+  return [...visibleMessages.value]
+    .sort((a, b) => new Date(a.createdAt || 0) - new Date(b.createdAt || 0))
+    .map((message) => {
+      const content = message.deleted
+        ? '(message deleted)'
+        : (message.text ?? message.content ?? '')
+      const author =
+        message.from === dms.meId
+          ? currentUser
+          : message.from
+            ? dms.usersById[message.from]?.name || conversationLabel.value
+            : message.author || currentUser
+      const authorId = message.from ?? message.authorId ?? author
+      const grouped =
+        previous &&
+        authorId === previous.authorId &&
+        sameDay(previous.createdAt, message.createdAt) &&
+        new Date(message.createdAt) - new Date(previous.createdAt) < 5 * 60_000
+      const rendered = {
+        ...message,
+        content,
+        author,
+        authorId,
+        mine: message.mine ?? message.from === dms.meId,
+        showDate: !previous || !sameDay(previous.createdAt, message.createdAt),
+        dateHeading: dateLabel(message.createdAt),
+        time: timeLabel(message.createdAt),
+        grouped: Boolean(grouped),
+        segments: messageSegments(content),
+        preview: createLinkPreview(content),
+        reply: message.replyTo
+          ? allMessages.value.find((item) => item.id === message.replyTo.id) ||
+            (typeof message.replyTo === 'object'
+              ? message.replyTo
+              : allMessages.value.find((item) => item.id === message.replyTo))
+          : null,
+        reactions: message.reactions || [],
+      }
+      previous = rendered
+      return rendered
+    })
+})
+const reminderMessage = computed(() => {
+  if (!reminderTarget.value) return null
+  return {
+    conversationId: channelId.value,
+    conversationName: conversationLabel.value,
+    conversationType: props.conversationType,
+    messageId: String(reminderTarget.value.id),
+    text: reminderTarget.value.text ?? reminderTarget.value.content ?? '',
+  }
 })
 
 watch(
-  () => conversation.value?.messages.length,
-  () => scrollMessagesToLatest(),
+  () => `${props.conversationType}:${props.conversationId}`,
+  () => {
+    dmVisibleCount.value = 20
+    editingId.value = null
+    replyTo.value = null
+    openMenuId.value = null
+    deleteTarget.value = null
+    openReactionId.value = null
+    reminderTarget.value = null
+    forwardTarget.value = null
+    nextTick(scrollMessagesToLatest)
+  },
 )
 
-function addMessage(message) {
-  if (conversation.value) {
-    dms.sendMessage(conversation.value.id, message)
-  } else {
-    messages.value.push({
-      ...message,
-      scheduledAt: null,
-      author: dms.usersById[dms.meId]?.name || 'You',
-      mine: true,
+watch(
+  () => allMessages.value.length,
+  (count, previousCount) => {
+    if (count > previousCount) scrollMessagesToLatest()
+  },
+)
+
+function isPinned(message) {
+  return ui.pinnedMessages.some(
+    (item) =>
+      String(item.id) === String(message.id) &&
+      String(item.conversation?.id ?? '') === String(conversationMeta.value.id) &&
+      (item.conversation?.kind === 'dm' || item.conversation?.type === 'dm') ===
+        (props.conversationType === 'dm'),
+  )
+}
+
+function messageAuthorUserId(message) {
+  if (message.mine || message.from === dms.meId) return null
+  const authorId = message.from ?? message.authorId
+  if (dms.usersById[authorId]) return authorId
+  return dms.users.find((user) => user.name === message.author)?.id || null
+}
+
+function openMessageAuthor(message) {
+  const userId = messageAuthorUserId(message)
+  if (!userId || userId === dms.meId) return
+  dms.startDm(userId)
+  ui.activePanel = null
+}
+
+function togglePin(message) {
+  ui.togglePinnedMessage(message, conversationMeta.value)
+}
+
+function addMessage(payload) {
+  const messagePayload = replyTo.value ? { ...payload, replyTo: { ...replyTo.value } } : payload
+  const sentMessage = conversation.value
+    ? dms.sendMessage(conversation.value.id, messagePayload)
+    : messageStore.sendMessage(
+        channelId.value,
+        messagePayload,
+        currentUserName.value,
+        conversationMeta.value.name,
+      )
+  if (!sentMessage) {
+    ui.toast('Message not sent', 'The conversation could not be found.', 'error')
+    return
+  }
+  if (payload.poll) sentMessage.poll = payload.poll
+  if (!conversation.value && !sentMessage.scheduled) {
+    ui.addPoll(sentMessage, conversationMeta.value)
+    addMockMessage({
+      id: sentMessage.id,
+      text: sentMessage.content,
+      sender: sentMessage.author,
+      conversation: conversationMeta.value,
     })
   }
+  replyTo.value = null
   scrollMessagesToLatest()
 }
 
 function addScheduledMessage(message) {
-  messages.value.push({ ...message, scheduled: true, author: ' ABDULLAH', mine: true })
-  scrollMessagesToLatest()
+  const payload = {
+    channel_id: channelId.value,
+    body: message.content,
+    scheduled_at: message.scheduledAt,
+    timezone: message.timeZone,
+    conversation_type: props.conversationType,
+    ...(message.important ? { important: true } : {}),
+    ...(message.attachments?.length ? { attachments: message.attachments } : {}),
+  }
+
+  createScheduledMessage(payload)
+    .then((response) => {
+      const scheduledMessage = normalizeScheduledMessage(response, message)
+      if (!scheduledMessage) {
+        throw new Error('Scheduled message response did not contain a message.')
+      }
+      appendScheduledMessage(scheduledMessage)
+      ui.toast('Message scheduled', 'Your message was scheduled successfully.', 'success')
+      scrollMessagesToLatest()
+    })
+    .catch((error) => {
+      console.error('Unable to schedule message:', error)
+      ui.toast('Message not scheduled', error.message || 'The scheduled message could not be created.', 'error')
+    })
+}
+
+function scheduledMessageFromResponse(response) {
+  if (!response || typeof response !== 'object') return null
+  return response.data || response.message || response.scheduled_message || response
+}
+
+function normalizeScheduledMessage(response, fallback = {}) {
+  const source = scheduledMessageFromResponse(response)
+  if (!source || typeof source !== 'object') return null
+  const id = source.id ?? source.message_id
+  if (id == null) return null
+  return {
+    ...source,
+    id,
+    content: source.content ?? source.text ?? fallback.content ?? '',
+    author: source.author ?? currentUserName.value,
+    authorId: source.authorId ?? source.author_id ?? dms.meId,
+    mine: true,
+    createdAt: source.createdAt ?? source.created_at ?? new Date().toISOString(),
+    scheduled: true,
+    scheduledAt: source.scheduledAt ?? source.scheduled_at ?? fallback.scheduledAt,
+    timeZone: source.timeZone ?? source.timezone ?? fallback.timeZone,
+    attachments: source.attachments ?? fallback.attachments ?? [],
+  }
+}
+
+function appendScheduledMessage(message) {
+  const messages = conversation.value
+    ? conversation.value.messages
+    : messageStore.messagesFor(channelId.value)
+  if (messages.some((item) => String(item.id) === String(message.id))) return
+  messages.push(message)
+}
+
+function loadScheduledMessages() {
+  getScheduledMessages()
+    .then((response) => {
+      const values = Array.isArray(response)
+        ? response
+        : response?.data || response?.messages || response?.scheduled_messages || []
+      values
+        .map((item) => normalizeScheduledMessage(item))
+        .filter(
+          (item) =>
+            item &&
+            String(item.conversation_id ?? item.conversationId ?? channelId.value) ===
+              channelId.value,
+        )
+        .forEach(appendScheduledMessage)
+    })
+    .catch((error) => {
+      console.error('Unable to load scheduled messages:', error)
+    })
 }
 
 function addGif(gif) {
-  messages.value.push({
-    content: '',
-    gif,
-    scheduledAt: null,
-    author: ' ABDULLAH',
-    mine: true,
-  })
+  const message = { content: '', gif }
+  const sentMessage = conversation.value
+    ? dms.sendMessage(conversation.value.id, message)
+    : messageStore.sendMessage(
+        channelId.value,
+        message,
+        currentUserName.value,
+        conversationMeta.value.name,
+      )
+  if (!sentMessage) {
+    ui.toast('GIF not sent', 'The conversation could not be found.', 'error')
+    return
+  }
   scrollMessagesToLatest()
+}
+
+function loadOlder() {
+  if (conversation.value) {
+    dmVisibleCount.value += 20
+    return
+  }
+  const container = messagesContainer.value
+  const previousHeight = container?.scrollHeight || 0
+  const previousTop = container?.scrollTop || 0
+  messageStore.loadOlder(channelId.value)
+  nextTick(() => {
+    if (container) container.scrollTop = previousTop + container.scrollHeight - previousHeight
+  })
+}
+
+function startEdit(message) {
+  editingId.value = message.id
+  editDraft.value = message.content
+  openMenuId.value = null
+}
+
+function cancelEdit() {
+  editingId.value = null
+  editDraft.value = ''
+}
+
+function saveEdit(message) {
+  if (!editDraft.value.trim()) {
+    ui.toast('Message not updated', 'A message cannot be empty.', 'error')
+    return
+  }
+  const updated = conversation.value
+    ? dms.editMessage(conversation.value.id, message.id, editDraft.value)
+    : messageStore.editMessage(channelId.value, message.id, editDraft.value)
+  if (!updated) {
+    ui.toast('Message not updated', 'Only your unscheduled messages can be edited.', 'error')
+    return
+  }
+  if (!conversation.value) updateMockMessage(message.id, editDraft.value.trim())
+  cancelEdit()
+}
+
+function deleteMessage(message) {
+  openMenuId.value = null
+  deleteTarget.value = message
+  scheduleDelete.value = false
+  scheduledDeleteAt.value = ''
+}
+
+function toLocalDateTimeValue(date) {
+  const localDate = new Date(date.getTime() - date.getTimezoneOffset() * 60_000)
+  return localDate.toISOString().slice(0, 16)
+}
+
+function confirmMessageDeletion() {
+  const message = deleteTarget.value
+  if (!message) return
+
+  let deleteAt = null
+  if (scheduleDelete.value) {
+    const date = new Date(scheduledDeleteAt.value)
+    if (
+      !scheduledDeleteAt.value ||
+      !Number.isFinite(date.getTime()) ||
+      date.getTime() <= Date.now()
+    ) {
+      ui.toast('Message not scheduled for deletion', 'Choose a future date and time.', 'error')
+      return
+    }
+    deleteAt = date.toISOString()
+  }
+
+  const deleted = conversation.value
+    ? dms.deleteMessage(conversation.value.id, message.id, deleteAt)
+    : messageStore.deleteMessage(channelId.value, message.id, deleteAt)
+  if (!deleted) {
+    ui.toast('Message not deleted', 'Only your unscheduled messages can be deleted.', 'error')
+    return
+  }
+  if (!conversation.value) removeMockMessage(message.id)
+  if (isPinned(message)) ui.togglePinnedMessage(message, conversationMeta.value)
+  deleteTarget.value = null
+}
+
+function closeDeleteDialog() {
+  deleteTarget.value = null
+}
+
+async function copyMessage(message) {
+  openMenuId.value = null
+  try {
+    let copied = false
+    try {
+      if (typeof navigator.clipboard?.writeText === 'function') {
+        await navigator.clipboard.writeText(message.content)
+        copied = true
+      }
+    } catch {
+      // Fall back to the browser's copy command when clipboard permissions are unavailable.
+    }
+
+    if (!copied) {
+      const input = document.createElement('textarea')
+      input.value = message.content
+      input.setAttribute('readonly', '')
+      input.style.position = 'fixed'
+      input.style.opacity = '0'
+      document.body.append(input)
+      input.select()
+      try {
+        if (typeof document.execCommand !== 'function' || !document.execCommand('copy')) {
+          throw new Error('Clipboard access is unavailable.')
+        }
+      } finally {
+        input.remove()
+      }
+    }
+    ui.toast('Copied', 'Message copied to clipboard.', 'success')
+  } catch (error) {
+    ui.toast(
+      'Unable to copy message',
+      error?.message || 'Clipboard access is unavailable.',
+      'error',
+    )
+  }
+}
+
+function toggleReaction(message, emoji) {
+  const updated = conversation.value
+    ? dms.toggleReaction(conversation.value.id, message.id, emoji)
+    : messageStore.toggleReaction(channelId.value, message.id, emoji)
+  if (!updated) ui.toast('Reaction not added', 'Please try again.', 'error')
+  openReactionId.value = null
+}
+
+function beginReply(message) {
+  replyTo.value = { id: message.id, author: message.author, content: message.content }
+  openMenuId.value = null
+  nextTick(() => document.querySelector('[contenteditable="true"]')?.focus())
+}
+
+function setReminder(message) {
+  reminderTarget.value = message
+  openMenuId.value = null
+}
+
+function handleMessageClick(event, message) {
+  if (
+    userStore.state.preferences.leftClick !== 'menu' ||
+    event.detail > 1 ||
+    event.target.closest('button, a, input')
+  ) {
+    return
+  }
+
+  clearTimeout(messageClickTimer)
+  messageClickTimer = setTimeout(() => {
+    openMenuId.value = message.id
+    messageClickTimer = null
+  }, 250)
+}
+
+function handleMessageDoubleClick(event, message) {
+  clearTimeout(messageClickTimer)
+  messageClickTimer = null
+  if (
+    userStore.state.preferences.doubleClick === 'reminder' &&
+    !message.deleted &&
+    !event.target.closest('button, a, input')
+  ) {
+    event.preventDefault()
+    setReminder(message)
+  }
+}
+
+function openForwardDialog(message) {
+  forwardTarget.value = message
+  openMenuId.value = null
+  forwardDestinationId.value =
+    forwardDestinations.value.find((destination) => destination.id !== channelId.value)?.id || ''
+}
+
+function forwardMessage() {
+  const destination = forwardDestinations.value.find(
+    (item) => item.id === forwardDestinationId.value,
+  )
+  if (!destination || !forwardTarget.value) {
+    ui.toast('Unable to forward message', 'Choose a destination first.', 'error')
+    return
+  }
+
+  const payload = {
+    content: forwardTarget.value.content,
+    forwardedFrom: `${forwardTarget.value.author} in ${conversationLabel.value}`,
+    ...(forwardTarget.value.attachments?.length
+      ? { attachments: forwardTarget.value.attachments }
+      : {}),
+    ...(forwardTarget.value.gif ? { gif: forwardTarget.value.gif } : {}),
+  }
+  const forwarded =
+    destination.type === 'dm'
+      ? dms.sendMessage(destination.id, payload)
+      : messageStore.sendMessage(
+          destination.id,
+          payload,
+          currentUserName.value,
+          destination.name.replace(/^#/, ''),
+        )
+
+  if (!forwarded) {
+    ui.toast('Unable to forward message', 'The destination is no longer available.', 'error')
+    return
+  }
+  if (destination.type === 'channel') {
+    addMockMessage({
+      id: forwarded.id,
+      text: forwarded.content,
+      sender: forwarded.author,
+      conversation: { id: destination.id, name: destination.name.slice(1), kind: 'public' },
+    })
+  }
+  forwardTarget.value = null
+  ui.toast('Message forwarded', `Sent to ${destination.name}.`, 'success')
+}
+
+function selectReaction(message, emoji) {
+  if (!emoji?.i) return
+  toggleReaction(message, emoji.i)
+}
+
+function closeMessageActions() {
+  openMenuId.value = null
+  openReactionId.value = null
+}
+
+function reminderSaved() {
+  ui.toast('Reminder set', 'You will be reminded about this message.', 'success')
+}
+
+function closeActionsOnOutsideClick(event) {
+  const target = event.target instanceof Element ? event.target : event.target?.parentElement
+  if (!target?.closest('.composer-conversation__actions')) closeMessageActions()
+}
+
+function participateInPoll(pollId) {
+  const message = renderedMessages.value.find((item) => item.poll?.id === pollId)
+  if (!message?.poll || !isPollActive(message.poll)) return
+  activePoll.value = message.poll
+  activePollMode.value = 'respond'
+  pollResponses.value = {}
+}
+
+function closePoll(pollId) {
+  closedPolls.value = new Set([...closedPolls.value, pollId])
+}
+
+function pollStartTime(poll) {
+  return poll.scheduleStart ? Date.parse(poll.scheduleStart) : NaN
+}
+
+function pollCloseTime(poll) {
+  return poll.scheduleClose ? Date.parse(poll.scheduleClose) : NaN
+}
+
+function isPollActive(poll) {
+  const now = pollClock.value
+  const startsAt = pollStartTime(poll)
+  const closesAt = pollCloseTime(poll)
+  return (
+    !closedPolls.value.has(poll.id) &&
+    (!Number.isFinite(startsAt) || startsAt <= now) &&
+    (!Number.isFinite(closesAt) || closesAt > now)
+  )
+}
+
+function isPollClosed(poll) {
+  return closedPolls.value.has(poll.id) || (
+    Number.isFinite(pollCloseTime(poll)) && pollCloseTime(poll) <= pollClock.value
+  )
+}
+
+function isPollScheduled(poll) {
+  const startsAt = pollStartTime(poll)
+  return Number.isFinite(startsAt) && startsAt > pollClock.value
+}
+
+function pollScheduleLabel(value) {
+  const timestamp = Date.parse(value || '')
+  if (!Number.isFinite(timestamp)) return ''
+  return new Intl.DateTimeFormat('en-US', {
+    weekday: 'short',
+    month: 'short',
+    day: '2-digit',
+    year: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  }).format(timestamp)
+}
+
+function exportPollResults(pollId) {
+  const message = renderedMessages.value.find((item) => item.poll?.id === pollId)
+  if (!message?.poll) return
+  const rows = ['Question,Option,Votes,Percentage']
+  message.poll.questions.forEach((question, questionIndex) => {
+    question.options.forEach((option, optionIndex) => {
+      const result = pollResultFor(pollId, questionIndex, optionIndex)
+      rows.push(
+        [question.text, option, result.votes, `${result.percentage}%`]
+          .map((value) => `"${String(value).replaceAll('"', '""')}"`)
+          .join(','),
+      )
+    })
+  })
+  const blob = new Blob([rows.join('\n')], { type: 'text/csv;charset=utf-8' })
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = `${message.poll.title || 'poll'}-results.csv`
+  link.click()
+  URL.revokeObjectURL(url)
+}
+
+function viewPollResults(pollId) {
+  const message = renderedMessages.value.find((item) => item.poll?.id === pollId)
+  if (!message?.poll) return
+  activePoll.value = message.poll
+  activePollMode.value = 'results'
+  pollResponses.value = {}
+}
+
+function closePollResponse() {
+  activePoll.value = null
+  activePollMode.value = 'respond'
+  pollResponses.value = {}
+}
+
+function pollResultFor(pollId, questionIndex, optionIndex) {
+  const result = pollResults.value[pollId]?.questions?.[questionIndex]
+  const votes = result?.votes?.[optionIndex] || 0
+  const totalVotes = pollResults.value[pollId]?.totalVotes || 0
+  return {
+    votes,
+    percentage: totalVotes ? Math.round((votes / totalVotes) * 100) : 0,
+  }
+}
+
+function pollResponseKey(questionIndex, optionIndex = '') {
+  return `${questionIndex}-${optionIndex}`
+}
+
+function togglePollResponse(question, questionIndex, optionIndex) {
+  if (question.multiple) {
+    const key = pollResponseKey(questionIndex, optionIndex)
+    pollResponses.value[key] = !pollResponses.value[key]
+    return
+  }
+  pollResponses.value = {
+    ...pollResponses.value,
+    [questionIndex]: optionIndex,
+  }
+}
+
+function submitPollResponse() {
+  if (!activePoll.value) return
+  const poll = activePoll.value
+  const missingRequiredResponse = poll.questions.some(
+    (question, questionIndex) =>
+      question.required &&
+      question.type === 'openEnded' &&
+      !String(pollResponses.value[questionIndex] || '').trim(),
+  )
+  if (missingRequiredResponse) return
+  const existingResult = pollResults.value[poll.id] || {
+    totalVotes: 0,
+    questions: poll.questions.map((question) => ({
+      votes: Array(question.options.length).fill(0),
+    })),
+    responses: poll.questions.map(() => []),
+  }
+  if (!existingResult.responses) {
+    existingResult.responses = poll.questions.map(() => [])
+  }
+  existingResult.totalVotes += 1
+  poll.questions.forEach((question, questionIndex) => {
+    if (question.type === 'openEnded') {
+      const response = String(pollResponses.value[questionIndex] || '').trim()
+      if (response) existingResult.responses[questionIndex].push(response)
+      return
+    }
+    if (question.multiple) {
+      question.options.forEach((_, optionIndex) => {
+        if (pollResponses.value[pollResponseKey(questionIndex, optionIndex)]) {
+          existingResult.questions[questionIndex].votes[optionIndex] += 1
+        }
+      })
+      return
+    }
+    const optionIndex = pollResponses.value[questionIndex]
+    if (typeof optionIndex === 'number') {
+      existingResult.questions[questionIndex].votes[optionIndex] += 1
+    }
+  })
+  pollResults.value = { ...pollResults.value, [poll.id]: existingResult }
+  participatedPolls.value = new Set([...participatedPolls.value, activePoll.value.id])
+  closePollResponse()
 }
 
 async function scrollMessagesToLatest() {
@@ -71,173 +767,921 @@ async function scrollMessagesToLatest() {
   const container = messagesContainer.value
   if (container) container.scrollTop = container.scrollHeight
 }
+
+onMounted(() => {
+  document.addEventListener('pointerdown', closeActionsOnOutsideClick)
+  loadScheduledMessages()
+  pollClockTimer = window.setInterval(() => {
+    pollClock.value = Date.now()
+  }, 1000)
+})
+onBeforeUnmount(() => {
+  document.removeEventListener('pointerdown', closeActionsOnOutsideClick)
+  clearTimeout(messageClickTimer)
+  if (pollClockTimer) window.clearInterval(pollClockTimer)
+})
 </script>
 
 <template>
-  <section class="composer-conversation">
+  <section class="composer-conversation" @keydown.esc="closeMessageActions">
     <div ref="messagesContainer" class="composer-conversation__messages" aria-live="polite">
-      <article
-        v-for="(message, index) in renderedMessages"
-        :key="message.id || `${message.content}-${index}`"
-        class="composer-conversation__message"
+      <button
+        v-if="hasOlderMessages"
+        type="button"
+        class="composer-conversation__load-older"
+        @click="loadOlder"
       >
-        <span class="composer-conversation__avatar" aria-hidden="true">
-          {{
-            message.author
-              ?.split(/\s+/)
-              .map((part) => part[0])
-              .slice(0, 2)
-              .join('')
-              .toUpperCase()
-          }}
-        </span>
+        Load older messages
+      </button>
+      <p v-if="messagesLoading" class="composer-conversation__status">Loading messages…</p>
+      <p v-else-if="messagesError" class="composer-conversation__status composer-conversation__status--error">
+          {{ messagesError }}
+       <button type="button" @click="retryConversationMessages">Retry</button>
+      </p>
+      <p v-else-if="conversation && !renderedMessages.length" class="composer-conversation__status">
+          No messages yet.
+      </p>
+      <template v-for="message in renderedMessages" :key="message.id">
+        <div v-if="message.showDate" class="composer-conversation__date">
+          <span>{{ message.dateHeading }}</span>
+        </div>
 
-        <div class="composer-conversation__message-content">
-          <header class="composer-conversation__message-heading">
-            <strong>{{ message.author }}</strong>
+        <article
+          class="composer-conversation__message"
+          :class="{ 'composer-conversation__message--grouped': message.grouped }"
+          :data-message-id="message.id"
+        >
+          <span v-if="!message.grouped" class="composer-conversation__avatar" aria-hidden="true">
+            {{
+              message.author
+                ?.split(/\s+/)
+                .map((part) => part[0])
+                .slice(0, 2)
+                .join('')
+                .toUpperCase()
+            }}
+          </span>
+          <span v-else class="composer-conversation__avatar-spacer" aria-hidden="true"></span>
 
-            <time>just now</time>
-          </header>
+          <div class="composer-conversation__message-content">
+            <header v-if="!message.grouped" class="composer-conversation__message-heading">
+              <button
+                v-if="messageAuthorUserId(message)"
+                type="button"
+                class="composer-conversation__author"
+                :aria-label="`Open direct message with ${message.author}`"
+                @click="openMessageAuthor(message)"
+              >
+                {{ message.author }}
+              </button>
+              <strong v-else>{{ message.author }}</strong>
+              <time :datetime="message.createdAt">{{ message.time }}</time>
+              <span v-if="message.editedAt" class="composer-conversation__edited">(edited)</span>
+            </header>
 
-          <div class="composer-conversation__message-bubble">
-            <span v-if="message.important" class="composer-conversation__important">
-              IMPORTANT!
+            <div
+              class="composer-conversation__message-bubble"
+              :class="{ 'composer-conversation__message-bubble--deleted': message.deleted }"
+              :data-poll-title="message.content?.match(/^Poll:\s*(.+)$/m)?.[1]?.trim()"
+              @click="handleMessageClick($event, message)"
+              @dblclick="handleMessageDoubleClick($event, message)"
+            >
+              <template v-if="!message.deleted">
+                <span v-if="message.forwardedFrom" class="composer-conversation__forwarded">
+                  Forwarded from {{ message.forwardedFrom }}
+                </span>
+                <span v-if="message.important" class="composer-conversation__important">
+                  IMPORTANT!
+                </span>
+                <section v-if="message.poll" class="composer-conversation__poll-card">
+                  <h2>{{ message.poll.title }}</h2>
+                  <div
+                    v-if="message.poll.description"
+                    class="composer-conversation__poll-description"
+                  >
+                    {{ message.poll.description }}
+                  </div>
+                  <div class="composer-conversation__poll-meta">
+                    <span
+                      class="composer-conversation__poll-status"
+                      :class="{ 'is-closed': isPollClosed(message.poll) }"
+                    >
+                      <i
+                        class="composer-conversation__poll-status-icon"
+                        :class="
+                          isPollClosed(message.poll)
+                            ? 'is-closed'
+                            : isPollScheduled(message.poll)
+                              ? 'is-scheduled'
+                              : 'is-open'
+                        "
+                        aria-hidden="true"
+                      >
+                        {{ isPollClosed(message.poll) ? '×' : isPollScheduled(message.poll) ? '◷' : '✓' }}
+                      </i>
+                      {{ isPollClosed(message.poll) ? 'Closed' : isPollScheduled(message.poll) ? 'Scheduled' : 'Open' }}
+                    </span>
+                    <span
+                      class="composer-conversation__poll-meta-divider"
+                      aria-hidden="true"
+                    ></span>
+                    <span class="composer-conversation__poll-visibility">
+                      <i aria-hidden="true">◉</i>
+                      {{ message.poll.audience === 'anonymous' ? 'Anonymous' : 'Public' }}
+                    </span>
+                  </div>
+                  <div
+                    v-if="message.poll.scheduleStart || message.poll.scheduleClose"
+                    class="composer-conversation__poll-schedule-info"
+                  >
+                    <div v-if="message.poll.scheduleStart" class="composer-conversation__poll-schedule-item">
+                      <span class="composer-conversation__poll-schedule-icon">◷</span>
+                      <span>
+                        <small>Starts</small>
+                        <strong>{{ pollScheduleLabel(message.poll.scheduleStart) }}</strong>
+                      </span>
+                    </div>
+                    <div v-if="message.poll.scheduleClose" class="composer-conversation__poll-schedule-item">
+                      <span class="composer-conversation__poll-schedule-icon">×</span>
+                      <span>
+                        <small>Ends</small>
+                        <strong>{{ pollScheduleLabel(message.poll.scheduleClose) }}</strong>
+                      </span>
+                    </div>
+                  </div>
+                  <div class="composer-conversation__poll-actions">
+                    <button
+                      v-if="
+                        !isPollScheduled(message.poll) &&
+                        !isPollClosed(message.poll) &&
+                        !participatedPolls.has(message.poll.id)
+                      "
+                      type="button"
+                      @click="participateInPoll(message.poll.id)"
+                    >
+                      Participate
+                    </button>
+                    <button
+                      v-else-if="!isPollScheduled(message.poll) && !isPollClosed(message.poll)"
+                      type="button"
+                      class="is-done"
+                      disabled
+                      aria-label="You're done"
+                    >
+                      You're Done
+                    </button>
+                    <button
+                      v-if="!isPollScheduled(message.poll)"
+                      type="button"
+                      @click="viewPollResults(message.poll.id)"
+                    >
+                      View All Results
+                    </button>
+                    <button
+                      v-if="isPollClosed(message.poll)"
+                      type="button"
+                      @click="exportPollResults(message.poll.id)"
+                    >
+                      Export To Csv
+                    </button>
+                    <button
+                      v-else-if="!isPollScheduled(message.poll) && !isPollClosed(message.poll)"
+                      type="button"
+                      @click="closePoll(message.poll.id)"
+                    >
+                      Close Poll
+                    </button>
+                  </div>
+                </section>
+
+                <div v-if="message.reply" class="composer-conversation__reply-quote">
+                  <strong>{{ message.reply.author || 'Message' }}</strong>
+                  <span>{{
+                    message.reply.deleted
+                      ? '(message deleted)'
+                      : (message.reply.content ?? message.reply.text)
+                  }}</span>
+                </div>
+
+                <form
+                  v-if="editingId === message.id"
+                  class="composer-conversation__edit-form"
+                  @submit.prevent="saveEdit(message)"
+                >
+                  <textarea v-model="editDraft" aria-label="Edit message" rows="2"></textarea>
+                  <div>
+                    <button type="button" @click="cancelEdit">Cancel</button>
+                    <button type="submit">Save</button>
+                  </div>
+                </form>
+
+                <template v-else>
+                  <p v-if="message.content">
+                    <template v-for="(segment, index) in message.segments" :key="index">
+                      <a
+                        v-if="segment.href"
+                        :href="segment.href"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        >{{ segment.text }}</a
+                      >
+                      <template v-else>{{ segment.text }}</template>
+                    </template>
+                  </p>
+                  <img
+                    v-if="message.gif"
+                    class="composer-conversation__gif"
+                    :src="message.gif.url"
+                    :alt="message.gif.title"
+                  />
+                </template>
+
+                <a
+                  v-if="message.preview && editingId !== message.id"
+                  class="composer-conversation__link-preview"
+                  :href="message.preview.href"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  <span class="composer-conversation__link-preview-host">{{
+                    message.preview.hostname
+                  }}</span>
+                  <strong>{{ message.preview.title }}</strong>
+                  <span>{{ message.preview.description }}</span>
+                  <span class="composer-conversation__link-preview-url">{{
+                    message.preview.href
+                  }}</span>
+                </a>
+
+                <span v-if="message.scheduled" class="composer-conversation__scheduled">
+                  Scheduled for {{ message.scheduledAt }} ({{ message.timeZone || 'local time' }})
+                </span>
+                <span v-if="message.deleteScheduledAt" class="composer-conversation__scheduled">
+                  Scheduled to delete {{ new Date(message.deleteScheduledAt).toLocaleString() }}
+                </span>
+
+                <ul
+                  v-if="message.attachments?.length"
+                  class="composer-conversation__attachment-list"
+                >
+                  <li
+                    v-for="(file, fileIndex) in message.attachments"
+                    :key="file.id || `${file.name}-${file.size}-${fileIndex}`"
+                  >
+                    {{ file.name }}
+                  </li>
+                </ul>
+
+                <div v-if="message.reactions.length" class="composer-conversation__reactions">
+                  <button
+                    v-for="reaction in message.reactions"
+                    :key="reaction.emoji"
+                    type="button"
+                    :aria-label="`${reaction.emoji} reaction, ${reaction.users.length} people`"
+                    :aria-pressed="reaction.users.includes(dms.meId || 'current-user')"
+                    @click="toggleReaction(message, reaction.emoji)"
+                  >
+                    {{ reaction.emoji }} {{ reaction.users.length }}
+                  </button>
+                </div>
+              </template>
+              <p v-else class="composer-conversation__deleted-message">(message deleted)</p>
+            </div>
+
+            <div
+              v-if="!message.deleted"
+              class="composer-conversation__actions"
+              role="group"
+              :aria-label="`Actions for ${message.author}'s message`"
+            >
+              <div
+                v-if="openReactionId === message.id"
+                class="composer-conversation__reaction-picker"
+              >
+                <EmojiPicker
+                  :native="false"
+                  :hide-search="false"
+                  :hide-group-names="true"
+                  :disable-skin-tones="true"
+                  :disable-sticky-group-names="true"
+                  :display-recent="true"
+                  :static-texts="{ placeholder: 'Search emoji' }"
+                  @select="selectReaction(message, $event)"
+                />
+              </div>
+              <div class="composer-conversation__action-toolbar">
+                <button
+                  type="button"
+                  aria-label="Add reaction"
+                  title="Add reaction"
+                  @click="openReactionId = openReactionId === message.id ? null : message.id"
+                >
+                  <svg
+                    aria-hidden="true"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="1.8"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  >
+                    <circle cx="12" cy="12" r="9" />
+                    <path d="M8 14s1.5 2 4 2 4-2 4-2" />
+                    <path d="M9 9h.01M15 9h.01" />
+                  </svg>
+                </button>
+                <button
+                  type="button"
+                  aria-label="Copy message"
+                  title="Copy message"
+                  @click="copyMessage(message)"
+                >
+                  <svg
+                    aria-hidden="true"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="1.8"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  >
+                    <rect x="8" y="8" width="13" height="13" rx="2" />
+                    <path d="M16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h3" />
+                  </svg>
+                </button>
+                <button
+                  type="button"
+                  :aria-label="isPinned(message) ? 'Unpin message' : 'Pin message'"
+                  :title="isPinned(message) ? 'Unpin message' : 'Pin message'"
+                  @click="togglePin(message)"
+                >
+                  📌
+                </button>
+                <button
+                  type="button"
+                  aria-label="More message actions"
+                  title="More actions"
+                  :aria-expanded="openMenuId === message.id"
+                  @click="openMenuId = openMenuId === message.id ? null : message.id"
+                >
+                  ⋯
+                </button>
+              </div>
+              <div v-if="openMenuId === message.id" class="composer-conversation__menu">
+                <button type="button" @click="copyMessage(message)">
+                  <svg
+                    aria-hidden="true"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="1.8"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  >
+                    <rect x="8" y="8" width="13" height="13" rx="2" />
+                    <path d="M16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h3" />
+                  </svg>
+                  <span>Copy</span>
+                  <span class="composer-conversation__shortcuts"><kbd>⌘</kbd><kbd>G</kbd></span>
+                </button>
+                <button
+                  v-if="message.mine && !message.scheduled && !message.deleteScheduledAt"
+                  type="button"
+                  title="Edit message"
+                  @click="startEdit(message)"
+                >
+                  <svg
+                    aria-hidden="true"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="1.8"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  >
+                    <path d="m16 5 3 3M4 20l4.5-1 10-10a2.1 2.1 0 0 0-3-3l-10 10L4 20Z" />
+                  </svg>
+                  <span>Edit</span>
+                  <span class="composer-conversation__shortcuts"><kbd>⌘</kbd><kbd>E</kbd></span>
+                </button>
+                <button
+                  v-if="message.mine && !message.scheduled && !message.deleteScheduledAt"
+                  type="button"
+                  class="composer-conversation__delete-action"
+                  title="Delete message"
+                  @click="deleteMessage(message)"
+                >
+                  <svg
+                    aria-hidden="true"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="1.8"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  >
+                    <path d="M4 7h16M10 11v6M14 11v6M5 7l1 14h12l1-14M9 7V4h6v3" />
+                  </svg>
+                  <span>Delete</span>
+                  <span class="composer-conversation__shortcuts"><kbd>⌘</kbd><kbd>D</kbd></span>
+                </button>
+                <button type="button" @click="openForwardDialog(message)">
+                  <svg
+                    aria-hidden="true"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="1.8"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  >
+                    <path d="m14 5 7 7-7 7" />
+                    <path d="M21 12H9a4 4 0 0 0-4 4v3" />
+                  </svg>
+                  <span>Forward</span>
+                  <span class="composer-conversation__shortcuts"><kbd>⌘</kbd><kbd>H</kbd></span>
+                </button>
+                <button type="button" @click="beginReply(message)">
+                  <span aria-hidden="true">↩</span>
+                  <span>Reply</span>
+                  <span class="composer-conversation__shortcuts"><kbd>⌘</kbd><kbd>J</kbd></span>
+                </button>
+                <button type="button" @click="setReminder(message)">
+                  <span aria-hidden="true">◷</span>
+                  <span>Set Reminder</span>
+                  <span class="composer-conversation__shortcuts"><kbd>⌘</kbd><kbd>A</kbd></span>
+                </button>
+              </div>
+            </div>
+            
+            <span
+              v-if="message.status === 'sending'"
+              class="composer-conversation__sent-status composer-conversation__sent-status--sending"
+              aria-label="Sending"
+            >
+              Sending…
             </span>
-
-            <p v-if="message.content">{{ message.content }}</p>
-            <img
-              v-if="message.gif"
-              class="composer-conversation__gif"
-              :src="message.gif.url"
-              :alt="message.gif.title"
-            />
-
-            <span v-if="message.scheduled" class="composer-conversation__scheduled">
-              Scheduled for {{ message.scheduledAt }} ({{ message.timeZone || 'local time' }})
-            </span>
+            <button
+              v-if="message.status === 'failed'"
+              type="button"
+              class="composer-conversation__sent-status composer-conversation__sent-status--failed"
+              :title="message.error"
+              @click="retryMessage(message)"
+            >
+              Not sent · Retry
+            </button>
 
             <span
-              v-if="message.mine && !message.scheduled"
+              v-if="message.mine && !message.scheduled && !message.deleted"
               class="composer-conversation__sent-status"
               aria-label="Sent"
             >
               ✓✓
             </span>
-            <ul v-if="message.attachments?.length" class="composer-conversation__attachment-list">
-              <li
-                v-for="(file, fileIndex) in message.attachments"
-                :key="file.id || `${file.name}-${file.size}-${fileIndex}`"
-              >
-                {{ file.name }}
-              </li>
-            </ul>
           </div>
-        </div>
-      </article>
+        </article>
+      </template>
     </div>
 
-    <MessageComposer
-      @send="addMessage"
-      @schedule="addScheduledMessage"
-      @gif="addGif"
+    <div v-if="replyTo" class="composer-conversation__replying">
+      <div>
+        <strong>Replying to {{ replyTo.author }}</strong>
+        <p>{{ replyTo.content }}</p>
+      </div>
+      <button type="button" aria-label="Cancel reply" @click="replyTo = null">×</button>
+    </div>
+    <MessageComposer @send="addMessage" @schedule="addScheduledMessage" @gif="addGif" />
+
+    <SetReminderModal
+      v-if="reminderMessage"
+      :message="reminderMessage"
+      @close="reminderTarget = null"
+      @saved="reminderSaved"
     />
 
+    <Teleport to="body">
+      <div
+        v-if="deleteTarget"
+        class="composer-conversation__delete-backdrop"
+        @mousedown.self="closeDeleteDialog"
+      >
+        <section
+          class="composer-conversation__delete-dialog"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="composer-delete-title"
+        >
+          <header class="composer-conversation__delete-header">
+            <h2 id="composer-delete-title">Delete Message</h2>
+            <button type="button" aria-label="Close" @click="closeDeleteDialog">&times;</button>
+          </header>
+          <div class="composer-conversation__delete-body">
+            <p>Are you sure you want to delete this Message?</p>
+            <label class="composer-conversation__schedule-delete">
+              <input v-model="scheduleDelete" type="checkbox" />
+              <span>Schedule Delete</span>
+            </label>
+            <label v-if="scheduleDelete" class="composer-conversation__delete-date">
+              <span>Delete on</span>
+              <input
+                v-model="scheduledDeleteAt"
+                type="datetime-local"
+                :min="minimumDeleteDate"
+                required
+              />
+              <small>Your local time</small>
+            </label>
+          </div>
+          <footer class="composer-conversation__delete-footer">
+            <button type="button" class="is-cancel" @click="closeDeleteDialog">Cancel</button>
+            <button type="button" class="is-delete" @click="confirmMessageDeletion">Delete</button>
+          </footer>
+        </section>
+      </div>
+
+      <div
+        v-if="activePoll"
+        class="composer-conversation__poll-backdrop"
+        @mousedown.self="closePollResponse"
+      >
+        <section
+          class="composer-conversation__poll-response-modal"
+          role="dialog"
+          aria-modal="true"
+          :aria-label="`${activePoll.title} poll ${activePollMode === 'results' ? 'results' : 'response'}`"
+        >
+          <header class="composer-conversation__poll-response-header">
+            <h2>{{ activePoll.title }}</h2>
+            <button type="button" aria-label="Close poll response" @click="closePollResponse">
+              &times;
+            </button>
+          </header>
+          <div class="composer-conversation__poll-response-summary">
+            <span>Creator: {{ activePoll.creator || 'You' }}</span>
+            <span
+              class="composer-conversation__poll-status"
+              :class="{ 'is-closed': isPollClosed(activePoll) }"
+            >
+              <i
+                class="composer-conversation__poll-status-icon"
+                :class="isPollClosed(activePoll) ? 'is-closed' : isPollScheduled(activePoll) ? 'is-scheduled' : 'is-open'"
+                aria-hidden="true"
+              >
+                {{ isPollClosed(activePoll) ? '×' : isPollScheduled(activePoll) ? '◷' : '✓' }}
+              </i>
+              {{ isPollClosed(activePoll) ? 'Closed' : isPollScheduled(activePoll) ? 'Scheduled' : 'Open' }}
+            </span>
+            <span class="composer-conversation__poll-meta-divider" aria-hidden="true"></span>
+            <span class="composer-conversation__poll-visibility">
+              <i aria-hidden="true">◉</i>
+              {{ activePoll.audience === 'anonymous' ? 'Anonymous' : 'Public' }}
+            </span>
+            <strong>* Required</strong>
+          </div>
+          <p v-if="activePoll.description" class="composer-conversation__poll-response-description">
+            Description: {{ activePoll.description }}
+          </p>
+          <div
+            v-for="(question, questionIndex) in activePoll.questions"
+            :key="questionIndex"
+            class="composer-conversation__poll-response-question"
+          >
+            <h3>Q{{ questionIndex + 1 }}. {{ question.text }}<b v-if="question.required"> *</b></h3>
+            <template v-if="activePollMode === 'results'">
+              <div
+                v-if="question.type === 'openEnded'"
+                class="composer-conversation__poll-text-results"
+              >
+                <p v-if="pollResults[activePoll.id]?.responses?.[questionIndex]?.length">
+                  Responses
+                </p>
+                <blockquote
+                  v-for="response in pollResults[activePoll.id].responses[questionIndex]"
+                  :key="response"
+                >
+                  {{ response }}
+                </blockquote>
+                <strong class="composer-conversation__poll-total-votes">
+                  Total Responses:
+                  {{ pollResults[activePoll.id]?.responses?.[questionIndex]?.length || 0 }}
+                </strong>
+              </div>
+              <div v-else class="composer-conversation__poll-results-options">
+                <div
+                  v-for="(option, optionIndex) in question.options"
+                  :key="option"
+                  class="composer-conversation__poll-result"
+                >
+                  <span>{{ option }}</span>
+                  <div class="composer-conversation__poll-result-row">
+                    <div class="composer-conversation__poll-result-bar">
+                      <span
+                        class="composer-conversation__poll-result-fill"
+                        :style="{
+                          width: `${pollResultFor(activePoll.id, questionIndex, optionIndex).percentage}%`,
+                        }"
+                      ></span>
+                      <strong>
+                        {{ pollResultFor(activePoll.id, questionIndex, optionIndex).percentage }}%
+                      </strong>
+                    </div>
+                    <span class="composer-conversation__poll-result-votes">
+                      {{ pollResultFor(activePoll.id, questionIndex, optionIndex).votes }} VOTE
+                    </span>
+                  </div>
+                </div>
+                <strong class="composer-conversation__poll-total-votes">
+                  Total Votes: {{ pollResults[activePoll.id]?.totalVotes || 0 }}
+                </strong>
+              </div>
+            </template>
+            <template v-else-if="question.type === 'rating'">
+              <div class="composer-conversation__poll-rating-labels">
+                <span>Weak</span><span>Strong</span>
+              </div>
+              <div class="composer-conversation__poll-rating-options">
+                <label v-for="(option, optionIndex) in question.options" :key="option">
+                  <span>{{ option }}</span>
+                  <input
+                    type="radio"
+                    :name="`poll-${activePoll.id}-question-${questionIndex}`"
+                    :checked="pollResponses[questionIndex] === optionIndex"
+                    @change="togglePollResponse(question, questionIndex, optionIndex)"
+                  />
+                </label>
+              </div>
+            </template>
+            <textarea
+              v-else-if="question.type === 'openEnded'"
+              v-model="pollResponses[questionIndex]"
+              class="composer-conversation__poll-open-ended-input"
+              :aria-label="`Response to question ${questionIndex + 1}`"
+              :placeholder="
+                question.required
+                  ? 'Write your response (required)'
+                  : 'Write your response (optional)'
+              "
+              rows="4"
+            ></textarea>
+            <div v-else class="composer-conversation__poll-choice-options">
+              <label v-for="(option, optionIndex) in question.options" :key="option">
+                <input
+                  :type="question.multiple ? 'checkbox' : 'radio'"
+                  :name="`poll-${activePoll.id}-question-${questionIndex}`"
+                  :checked="
+                    question.multiple
+                      ? pollResponses[pollResponseKey(questionIndex, optionIndex)]
+                      : pollResponses[questionIndex] === optionIndex
+                  "
+                  @change="togglePollResponse(question, questionIndex, optionIndex)"
+                />
+                <span>{{ option }}</span>
+              </label>
+            </div>
+          </div>
+          <footer class="composer-conversation__poll-response-footer">
+            <button v-if="activePollMode !== 'results'" type="button" @click="submitPollResponse">
+              Submit Response
+            </button>
+            <button type="button" class="is-close" @click="closePollResponse">Close</button>
+          </footer>
+        </section>
+      </div>
+    </Teleport>
+
+    <div
+      v-if="forwardTarget"
+      class="composer-conversation__forward-overlay"
+      @click.self="forwardTarget = null"
+    >
+      <form class="composer-conversation__forward-dialog" @submit.prevent="forwardMessage">
+        <h2>Forward message</h2>
+        <p>{{ forwardTarget.content || 'Attachment or GIF' }}</p>
+        <label for="forward-destination">Send to</label>
+        <select id="forward-destination" v-model="forwardDestinationId" required>
+          <option value="" disabled>Select a conversation</option>
+          <option
+            v-for="destination in forwardDestinations"
+            :key="`${destination.type}:${destination.id}`"
+            :value="destination.id"
+          >
+            {{ destination.name }}
+          </option>
+        </select>
+        <footer>
+          <button type="button" @click="forwardTarget = null">Cancel</button>
+          <button type="submit" :disabled="!forwardDestinationId">Forward</button>
+        </footer>
+      </form>
+    </div>
   </section>
 </template>
 
 <style scoped>
 .composer-conversation {
   display: flex;
-
   min-height: 0;
-
   flex: 1;
-
   flex-direction: column;
-
   background: #f8f9fc;
 }
 
 .composer-conversation__messages {
   flex: 1;
-
   overflow-y: auto;
-
   padding: 16px;
+}
+
+.composer-conversation__load-older {
+  display: block;
+  margin: 0 auto 16px;
+  padding: 7px 12px;
+  border: 1px solid #dfe1ea;
+  border-radius: 6px;
+  background: white;
+  color: #5552c7;
+  cursor: pointer;
+}
+
+.composer-conversation__date {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 18px 0 12px;
+  color: #717487;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.composer-conversation__date::before,
+.composer-conversation__date::after {
+  height: 1px;
+  flex: 1;
+  background: #e4e6ed;
+  content: '';
 }
 
 .composer-conversation__message {
   display: grid;
-
   grid-template-columns: 32px minmax(0, 1fr);
-
   gap: 10px;
-
   margin: 0 0 12px;
+}
+
+.composer-conversation__message--grouped {
+  margin-top: -8px;
+}
+
+.composer-conversation__avatar,
+.composer-conversation__avatar-spacer {
+  width: 30px;
+  height: 30px;
 }
 
 .composer-conversation__avatar {
   display: grid;
-
-  width: 30px;
-
-  height: 30px;
-
   place-items: center;
-
   border-radius: 50%;
-
   background: #77c941;
-
   color: #25263a;
-
   font-size: 11px;
-
   font-weight: 600;
 }
 
 .composer-conversation__message-content {
+  position: relative;
   min-width: 0;
 }
 
 .composer-conversation__message-heading {
   display: flex;
-
   align-items: baseline;
-
-  gap: 14px;
-
+  gap: 10px;
   margin: 0 0 5px;
-
   color: #25263a;
-
   font-size: 14px;
 }
 
-.composer-conversation__message-heading time {
-  color: #696d81;
+.composer-conversation__author {
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
 
+.composer-conversation__author:hover {
+  color: #514bc7;
+  text-decoration: underline;
+}
+
+.composer-conversation__message-heading time,
+.composer-conversation__edited {
+  color: #696d81;
   font-size: 12px;
 }
 
 .composer-conversation__message-bubble {
   position: relative;
-
   min-height: 36px;
-
-  padding: 8px 30px 8px 8px;
-
+  padding: 8px 10px;
   background: #edeef6;
-
   color: #25263a;
-
   overflow-wrap: anywhere;
+}
+
+.composer-conversation__message-bubble--deleted {
+  color: #777987;
+  font-style: italic;
+}
+
+.composer-conversation__deleted-message {
+  margin: 0;
+  color: #777987;
+  font-style: italic;
 }
 
 .composer-conversation__message-bubble p {
   margin: 0;
-
   white-space: pre-wrap;
+}
+
+.composer-conversation__message-bubble a {
+  color: #514bc7;
+  text-decoration: underline;
+}
+
+.composer-conversation__reply-quote {
+  display: grid;
+  gap: 2px;
+  margin-bottom: 7px;
+  padding-left: 9px;
+  border-left: 3px solid #7771dc;
+  color: #626579;
+  font-size: 12px;
+}
+
+.composer-conversation__reply-quote span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.composer-conversation__edit-form textarea {
+  width: 100%;
+  resize: vertical;
+  border: 1px solid #a6a4e0;
+  border-radius: 5px;
+  padding: 7px;
+  background: white;
+  color: #25263a;
+}
+
+.composer-conversation__edit-form div {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.composer-conversation__edit-form button {
+  border-radius: 4px;
+  padding: 4px 9px;
+  color: #5552c7;
+  cursor: pointer;
+}
+
+.composer-conversation__edit-form button[type='submit'] {
+  background: #5b5be2;
+  color: white;
+}
+
+.composer-conversation__link-preview {
+  display: grid;
+  gap: 4px;
+  max-width: 440px;
+  margin-top: 10px;
+  padding: 12px;
+  border: 1px solid #dfe1ea;
+  border-left: 4px solid #7771dc;
+  border-radius: 6px;
+  background: white;
+  color: #25263a !important;
+  text-decoration: none !important;
+}
+
+.composer-conversation__link-preview-host,
+.composer-conversation__link-preview-url {
+  color: #717487;
+  font-size: 11px;
+}
+
+.composer-conversation__link-preview-url {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .composer-conversation__gif {
@@ -248,57 +1692,948 @@ async function scrollMessagesToLatest() {
   object-fit: contain;
 }
 
+.composer-conversation__actions {
+  position: absolute;
+  z-index: 2;
+  top: -12px;
+  right: 4px;
+  display: grid;
+  justify-items: end;
+}
+.composer-conversation__poll-card {
+  overflow: hidden;
+  border-left: 4px solid #1717ff;
+  background: #edeef6;
+}
 
+.composer-conversation__poll-card h2 {
+  margin: 0;
+  padding: 18px 16px 12px;
+  border-bottom: 1px solid #d5d7e2;
+  font-size: 23px;
+  font-weight: 600;
+}
+
+.composer-conversation__poll-description {
+  padding: 12px 16px 0;
+  color: #696d81;
+  font-size: 14px;
+}
+
+.composer-conversation__poll-meta {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 12px 16px 9px;
+  color: #696d81;
+  font-size: 14px;
+}
+
+.composer-conversation__poll-status,
+.composer-conversation__poll-visibility {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.composer-conversation__poll-status-icon {
+  display: inline-grid;
+  width: 15px;
+  height: 15px;
+  place-items: center;
+  border-radius: 3px;
+  background: #4caf50;
+  color: #fff;
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.composer-conversation__poll-status-icon.is-closed {
+  background: #f04444;
+}
+
+.composer-conversation__poll-status-icon.is-scheduled {
+  background: #5962ff;
+}
+
+.composer-conversation__poll-status.is-closed {
+  color: #696d81;
+}
+
+.composer-conversation__poll-visibility i {
+  color: #696d81;
+  font-size: 16px;
+  font-style: normal;
+}
+
+.composer-conversation__poll-meta-divider {
+  width: 1px;
+  height: 18px;
+  background: #c9cbd6;
+}
+
+.composer-conversation__poll-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 0 12px 14px;
+}
+
+.composer-conversation__poll-schedule-info {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0;
+  margin: 4px 12px 14px;
+  border: 1px solid #d5d7e2;
+  border-radius: 6px;
+  background: #fff;
+  color: #25263a;
+}
+
+.composer-conversation__poll-schedule-item {
+  display: flex;
+  min-width: 220px;
+  flex: 1 1 220px;
+  align-items: center;
+  gap: 9px;
+  padding: 10px 12px;
+}
+
+.composer-conversation__poll-schedule-item + .composer-conversation__poll-schedule-item {
+  border-left: 1px solid #e1e2ea;
+}
+
+.composer-conversation__poll-schedule-icon {
+  display: inline-grid;
+  width: 24px;
+  height: 24px;
+  place-items: center;
+  border-radius: 50%;
+  background: #eef0ff;
+  color: #5962ff;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.composer-conversation__poll-schedule-item > span:last-child {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.composer-conversation__poll-schedule-item small {
+  color: #696d81;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.composer-conversation__poll-schedule-item strong {
+  overflow: hidden;
+  color: #25263a;
+  font-size: 12px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-width: 620px) {
+  .composer-conversation__poll-schedule-item + .composer-conversation__poll-schedule-item {
+    border-top: 1px solid #e1e2ea;
+    border-left: 0;
+  }
+}
+
+.composer-conversation__poll-actions button {
+  padding: 7px 10px;
+  border: 1px solid #5962ff;
+  border-radius: 4px;
+  background: #fff;
+  color: #5962ff;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.composer-conversation__poll-actions button.is-done {
+  border-color: #929bff;
+  background: #929bff;
+  color: #fff;
+  cursor: default;
+}
+
+.composer-conversation__poll-backdrop {
+  position: fixed;
+  z-index: 2200;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background: rgb(20 16 40 / 50%);
+}
+
+.composer-conversation__poll-response-modal {
+  width: min(840px, 100%);
+  max-height: min(90vh, 680px);
+  overflow: auto;
+  background: #fff;
+  box-shadow: 0 12px 40px rgb(0 0 0 / 28%);
+  color: #25263a;
+}
+
+.composer-conversation__delete-backdrop {
+  position: fixed;
+  z-index: 2300;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background: rgb(20 16 40 / 42%);
+}
+
+.composer-conversation__delete-dialog {
+  width: min(500px, 100%);
+  overflow: hidden;
+  border-radius: 5px;
+  background: #fff;
+  box-shadow: 0 12px 40px rgb(0 0 0 / 28%);
+  color: #414354;
+}
+
+.composer-conversation__delete-header {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  padding: 26px 52px 18px;
+}
+
+.composer-conversation__delete-header h2 {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 600;
+}
+
+.composer-conversation__delete-header button {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: #f0f0f7;
+  color: #414354;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.composer-conversation__delete-body {
+  min-height: 126px;
+  padding: 12px 24px 24px;
+}
+
+.composer-conversation__delete-body > p {
+  margin: 0 0 24px;
+  font-size: 14px;
+}
+
+.composer-conversation__schedule-delete {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: #696d75;
+  cursor: pointer;
+}
+
+.composer-conversation__schedule-delete input {
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  accent-color: #5962ff;
+}
+
+.composer-conversation__delete-date {
+  display: grid;
+  gap: 6px;
+  margin-top: 18px;
+  font-size: 13px;
+}
+
+.composer-conversation__delete-date input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 8px;
+  border: 1px solid #c9ccda;
+  border-radius: 4px;
+  color: #25263a;
+  font: inherit;
+}
+
+.composer-conversation__delete-date small {
+  color: #696d81;
+}
+
+.composer-conversation__delete-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 20px 16px;
+  border-top: 1px solid #dedfe4;
+}
+
+.composer-conversation__delete-footer button {
+  min-width: 90px;
+  padding: 10px 16px;
+  border: 0;
+  background: transparent;
+  color: #414354;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.composer-conversation__delete-footer button.is-delete {
+  background: #ff334b;
+  color: #fff;
+}
+
+.composer-conversation__delete-footer button.is-delete:hover {
+  background: #e8273f;
+}
+
+.composer-conversation__poll-response-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 18px 28px;
+  border-bottom: 1px solid #d5d7e2;
+}
+
+.composer-conversation__poll-response-header h2 {
+  margin: 0;
+  font-size: 27px;
+  font-weight: 500;
+}
+
+.composer-conversation__poll-response-header button {
+  border: 0;
+  background: transparent;
+  color: #777;
+  font-size: 30px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.composer-conversation__poll-response-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 16px 28px 8px;
+  color: #696d81;
+  font-size: 15px;
+}
+
+.composer-conversation__poll-response-summary strong {
+  color: #ff2e3b;
+}
+
+.composer-conversation__poll-response-description {
+  margin: 0;
+  padding: 0 28px 14px;
+  color: #696d81;
+}
+
+.composer-conversation__poll-response-question {
+  margin: 0 28px 14px;
+  padding: 0 10px 24px;
+  background: #edeef6;
+}
+
+.composer-conversation__poll-response-question h3 {
+  margin: 0;
+  padding: 15px 0;
+  border-bottom: 1px solid #d5d7e2;
+  color: #5962ff;
+  font-size: 23px;
+  font-weight: 600;
+}
+
+.composer-conversation__poll-response-question h3 b {
+  color: #ff2e3b;
+}
+
+.composer-conversation__poll-choice-options {
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+  padding: 20px 4px 0;
+}
+
+.composer-conversation__poll-open-ended-input {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  margin-top: 20px;
+  padding: 12px;
+  border: 1px solid #c9ccda;
+  border-radius: 4px;
+  background: #fff;
+  color: #25263a;
+  font: inherit;
+  resize: vertical;
+}
+
+.composer-conversation__poll-open-ended-input:focus {
+  border-color: #5962ff;
+  outline: 2px solid rgb(89 98 255 / 20%);
+}
+
+.composer-conversation__poll-text-results {
+  padding: 18px 4px 0;
+  color: #696d81;
+}
+
+.composer-conversation__poll-text-results p {
+  margin: 0 0 8px;
+  font-weight: 600;
+}
+
+.composer-conversation__poll-text-results blockquote {
+  margin: 8px 0;
+  padding: 10px 12px;
+  border-left: 3px solid #929bff;
+  background: #fff;
+}
+
+.composer-conversation__poll-choice-options label {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: #696d81;
+  font-size: 17px;
+}
+
+.composer-conversation__poll-choice-options input,
+.composer-conversation__poll-rating-options input {
+  width: 20px;
+  height: 20px;
+  accent-color: #5962ff;
+}
+
+.composer-conversation__poll-rating-labels {
+  display: flex;
+  justify-content: space-between;
+  padding: 32px 0 24px;
+  color: #696d81;
+  font-size: 16px;
+}
+
+.composer-conversation__poll-rating-options {
+  display: flex;
+  justify-content: space-evenly;
+  gap: 12px;
+}
+
+.composer-conversation__poll-rating-options label {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  font-size: 18px;
+}
+
+.composer-conversation__poll-results-options {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding: 18px 4px 0;
+}
+
+.composer-conversation__poll-result > span {
+  display: block;
+  margin-bottom: 5px;
+  color: #696d81;
+  font-size: 16px;
+}
+
+.composer-conversation__poll-result-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.composer-conversation__poll-result-bar {
+  position: relative;
+  display: flex;
+  min-width: 0;
+  height: 24px;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  background: #d9dcfa;
+  color: #25263a;
+}
+
+.composer-conversation__poll-result-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  min-width: 0;
+  background: #5962ff;
+  transition: width 180ms ease;
+}
+
+.composer-conversation__poll-result-bar strong {
+  position: relative;
+  z-index: 1;
+  font-size: 14px;
+}
+
+.composer-conversation__poll-result-votes {
+  min-width: 68px;
+  padding: 6px 8px;
+  border: 1px solid #5962ff;
+  border-radius: 4px;
+  color: #5962ff;
+  font-size: 12px;
+  text-align: center;
+}
+
+.composer-conversation__poll-total-votes {
+  display: block;
+  padding-top: 2px;
+  color: #696d81;
+  font-size: 14px;
+}
+
+.composer-conversation__poll-response-footer {
+  display: flex;
+  gap: 12px;
+  justify-content: flex-end;
+  border-top: 1px solid #d5d7e2;
+  padding: 28px;
+}
+
+.composer-conversation__poll-response-footer button {
+  padding: 12px 16px;
+  border: 1px solid #5962ff;
+  border-radius: 2px;
+  background: #929bff;
+  color: #fff;
+  font: inherit;
+  font-size: 16px;
+  font-weight: 700;
+  cursor: pointer;
+  transition:
+    background-color 120ms ease,
+    border-color 120ms ease,
+    color 120ms ease;
+}
+
+.composer-conversation__poll-response-footer button:hover,
+.composer-conversation__poll-actions button:not(.is-done):hover {
+  border-color: #27338f;
+  background: #27338f;
+  color: #fff;
+}
+
+.composer-conversation__poll-response-footer button.is-close {
+  border-color: transparent;
+  background: transparent;
+  color: #25263a;
+  text-transform: uppercase;
+}
+
+.composer-conversation__poll-response-footer button.is-close:hover {
+  border-color: #27338f;
+  background: #27338f;
+  color: #fff;
+}
+
+.composer-conversation__action-toolbar {
+  display: flex;
+  border: 1px solid #d9dbe5;
+  border-radius: 7px;
+  background: white;
+  box-shadow: 0 2px 6px #27243b1a;
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+
+.composer-conversation__message-content:hover .composer-conversation__action-toolbar,
+.composer-conversation__action-toolbar:focus-within,
+.composer-conversation__actions:focus-within .composer-conversation__action-toolbar {
+  opacity: 1;
+}
+
+.composer-conversation__action-toolbar button,
+.composer-conversation__reaction-picker button {
+  min-width: 34px;
+  height: 34px;
+  border-radius: 5px;
+  color: #414258;
+  font-size: 18px;
+  cursor: pointer;
+}
+
+.composer-conversation__action-toolbar button {
+  display: grid;
+  place-items: center;
+}
+
+.composer-conversation__action-toolbar button svg {
+  width: 20px;
+  height: 20px;
+}
+
+.composer-conversation__action-toolbar button:hover,
+.composer-conversation__reaction-picker button:hover {
+  background: #f1f0fa;
+}
+
+.composer-conversation__menu {
+  display: grid;
+  min-width: 160px;
+  margin-top: 4px;
+  padding: 5px;
+  border: 1px solid #e6e7ed;
+  border-radius: 7px;
+  background: white;
+  box-shadow: 0 8px 24px #14141f2e;
+}
+
+.composer-conversation__menu button {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 4px;
+  color: #303044;
+  text-align: left;
+  cursor: pointer;
+}
+
+.composer-conversation__menu button:hover {
+  background: #f2f2f8;
+}
+
+.composer-conversation__menu button:disabled {
+  color: #a4a5b0;
+  cursor: not-allowed;
+}
+
+.composer-conversation__menu button:disabled:hover {
+  background: transparent;
+}
+
+.composer-conversation__menu button svg {
+  width: 20px;
+  height: 20px;
+}
+
+.composer-conversation__menu .composer-conversation__delete-action {
+  color: #c92f43;
+}
+
+.composer-conversation__menu .composer-conversation__delete-action:disabled {
+  color: #c6a9ad;
+}
+
+.composer-conversation__shortcuts {
+  display: flex;
+  gap: 3px;
+}
+
+.composer-conversation__shortcuts kbd {
+  min-width: 20px;
+  border-radius: 5px;
+  padding: 2px 4px;
+  background: #414253;
+  color: white;
+  font: inherit;
+  font-size: 11px;
+  text-align: center;
+}
+
+.composer-conversation__reaction-picker {
+  position: absolute;
+  top: 40px;
+  right: 0;
+  z-index: 3;
+  width: min(320px, calc(100vw - 32px));
+  overflow: hidden;
+  border: 1px solid #d9dbe5;
+  border-radius: 8px;
+  background: white;
+  box-shadow: 0 8px 24px #14141f2e;
+}
+
+.composer-conversation__reaction-picker :deep(.v3-emoji-picker) {
+  box-sizing: border-box;
+  width: 100% !important;
+  min-width: 100%;
+  max-width: 100%;
+  height: 320px;
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  --v3-picker-bg: #ffffff;
+  --v3-picker-fg: #34364b;
+  --v3-picker-border: #e2e2e8;
+  --v3-picker-input-bg: #f8f8f9;
+  --v3-picker-input-border: #dedee4;
+  --v3-picker-input-focus-border: #741cff;
+  --v3-picker-emoji-hover: #eeeef4;
+}
+
+.composer-conversation__reaction-picker :deep(.v3-header) {
+  padding: 8px 8px 6px;
+}
+
+.composer-conversation__reaction-picker :deep(.v3-search) {
+  padding: 0 8px;
+}
+
+.composer-conversation__reaction-picker :deep(.v3-search input) {
+  box-sizing: border-box;
+  width: 100%;
+  height: 32px;
+}
+
+.composer-conversation__reaction-picker :deep(.v3-body) {
+  min-height: 0;
+  padding: 0 8px 8px;
+  overflow: hidden;
+}
+
+.composer-conversation__reaction-picker :deep(.v3-body-inner) {
+  height: 100%;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+.composer-conversation__reaction-picker :deep(.v3-footer) {
+  display: none !important;
+}
+
+.composer-conversation__reaction-picker :deep(.v3-body-inner .v3-group .v3-emojis button) {
+  flex-basis: 20%;
+  max-width: 20%;
+  font-size: 18px;
+}
+
+.composer-conversation__reaction-picker :deep(.v3-body-inner .v3-group .v3-emojis button img) {
+  width: 32px;
+  height: 32px;
+  max-width: 32px;
+  padding: 0;
+  object-fit: contain;
+}
+
+.composer-conversation__reactions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 8px;
+}
+
+.composer-conversation__reactions button {
+  padding: 3px 8px;
+  border: 1px solid #c9c7eb;
+  border-radius: 999px;
+  background: white;
+  color: #45445f;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.composer-conversation__reactions button[aria-pressed='true'] {
+  border-color: #6761d5;
+  background: #efeeff;
+}
 
 .composer-conversation__sent-status {
   position: absolute;
-
   right: 8px;
-
   bottom: 7px;
-
   color: #afb5d1;
-
   font-size: 13px;
-
   letter-spacing: -4px;
 }
 
 .composer-conversation__important {
   display: inline-block;
-
   margin-bottom: 6px;
-
   padding: 1px 10px;
-
   border-radius: 999px;
-
   background: #f04444;
-
   color: #fff;
-
   font-size: 10px;
-
   font-weight: 700;
+}
+
+.composer-conversation__forwarded {
+  display: block;
+  margin-bottom: 5px;
+  color: #717487;
+  font-size: 11px;
+  font-style: italic;
 }
 
 .composer-conversation__scheduled {
   display: block;
-
   margin-top: 6px;
-
   color: #696d81;
-
   font-size: 12px;
 }
 
 .composer-conversation__attachment-list {
   margin: 6px 0 0;
-
   padding-left: 20px;
-
   color: #696d81;
-
   font-size: 13px;
+}
+
+.composer-conversation__replying {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 9px 16px;
+  border-top: 1px solid #e4e6ed;
+  background: white;
+  color: #414258;
+  font-size: 12px;
+}
+
+.composer-conversation__replying p {
+  max-width: 70vw;
+  margin: 3px 0 0;
+  overflow: hidden;
+  color: #717487;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.composer-conversation__replying button {
+  font-size: 20px;
+  cursor: pointer;
+}
+
+.composer-conversation__forward-overlay {
+  position: fixed;
+  z-index: 60;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background: #0006;
+}
+
+.composer-conversation__forward-dialog {
+  display: grid;
+  width: min(420px, 100%);
+  gap: 10px;
+  border-radius: 8px;
+  padding: 22px;
+  background: white;
+  box-shadow: 0 12px 32px #0003;
+}
+
+.composer-conversation__forward-dialog h2 {
+  margin: 0;
+  font-size: 20px;
+}
+
+.composer-conversation__forward-dialog p {
+  margin: 0;
+  overflow: hidden;
+  color: #717487;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.composer-conversation__forward-dialog select {
+  min-height: 40px;
+  border: 1px solid #dfe1ea;
+  border-radius: 5px;
+  padding: 6px 9px;
+  background: white;
+}
+
+.composer-conversation__forward-dialog footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.composer-conversation__forward-dialog footer button {
+  border-radius: 4px;
+  padding: 8px 12px;
+  color: #5552c7;
+  cursor: pointer;
+}
+
+.composer-conversation__forward-dialog footer button[type='submit'] {
+  background: #5b5be2;
+  color: white;
+}
+
+.composer-conversation__forward-dialog footer button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.composer-conversation__status {
+  margin: 12px 0;
+  color: #717487;
+  font-size: 13px;
+  text-align: center;
+}
+.composer-conversation__status--error {
+  color: #c92f43;
+}
+.composer-conversation__status button {
+  margin-left: 6px;
+  color: #5552c7;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+@media (hover: none) {
+  .composer-conversation__action-toolbar {
+    opacity: 1;
+  }
+}
+
+.composer-conversation__sent-status--sending,
+.composer-conversation__sent-status--failed {
+  font-size: 11px;
+  letter-spacing: normal;
+}
+.composer-conversation__sent-status--failed {
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: #c92f43;
+  text-decoration: underline;
+  cursor: pointer;
+}
+/* Sending / Not sent dikhe to purana ✓✓ chhup jaye */
+.composer-conversation__sent-status--sending ~ .composer-conversation__sent-status,
+.composer-conversation__sent-status--failed ~ .composer-conversation__sent-status {
+  display: none;
 }
 </style>

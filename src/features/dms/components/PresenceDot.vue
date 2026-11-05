@@ -7,7 +7,9 @@ const props = defineProps({
   ring: { type: String, default: 'border-slate-900' }, // background ke rang ka border
 })
 
-const color = computed(() => ({ online: 'bg-green-500', away: 'bg-amber-400' })[props.state] ?? 'bg-slate-500')
+const color = computed(
+  () => ({ online: 'bg-green-500', away: 'bg-amber-400' })[props.state] ?? 'bg-slate-500',
+)
 </script>
 
 <template>

@@ -1,10 +1,13 @@
 <script setup>
-import { ref } from 'vue'
+import { onBeforeUnmount, onMounted, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import { useTeamsStore } from '@/stores/teams'
 import { useUiStore } from '@/stores/ui'
+import { USE_SHELL_MOCKS } from '@/features/shell/api/config'
 
 const teamsStore = useTeamsStore()
 const ui = useUiStore()
+const router = useRouter()
 
 const teamName = ref('')
 const selectedColor = ref('#7C3AED')
@@ -14,22 +17,33 @@ const errorMessage = ref('')
 const presetColors = ['#7C3AED', '#2DD4BF', '#F97316', '#EC4899', '#3B82F6', '#10B981']
 
 async function handleSubmit() {
-  if (!teamName.value.trim()) {
-    errorMessage.value = 'Please enter a workspace name.'
+  const name = teamName.value.trim()
+  if (!name) {
+    errorMessage.value = 'Please enter a team name.'
+    return
+  }
+  if (!/^[\p{L}\s]+$/u.test(name)) {
+    errorMessage.value = 'Team names may only contain letters and spaces.'
     return
   }
 
   isSubmitting.value = true
   errorMessage.value = ''
   try {
-    await teamsStore.createTeam({
-      name: teamName.value.trim(),
+    const team = await teamsStore.createTeam({
+      name,
       color: selectedColor.value,
     })
     teamName.value = ''
     ui.toggleTeamCreateModal()
+    if (teamsStore.activeWorkspaceId) {
+      await router.push({
+        name: 'workspace-team',
+        params: { workspaceId: teamsStore.activeWorkspaceId, teamId: team.id },
+      })
+    }
   } catch (err) {
-    errorMessage.value = err?.message || 'Failed to create workspace. Try again.'
+    errorMessage.value = err?.message || 'Failed to create team. Try again.'
   } finally {
     isSubmitting.value = false
   }
@@ -39,20 +53,30 @@ function handleClose() {
   if (isSubmitting.value) return
   ui.toggleTeamCreateModal()
 }
+
+function handleKeydown(event) {
+  if (event.key === 'Escape' && ui.teamCreateModalOpen) {
+    event.preventDefault()
+    handleClose()
+  }
+}
+
+onMounted(() => document.addEventListener('keydown', handleKeydown))
+onBeforeUnmount(() => document.removeEventListener('keydown', handleKeydown))
 </script>
 
 <template>
   <div
-    v-if="ui.teamCreateModalOpen"
-    class="modal-backdrop"
+    v-if="ui.teamCreateModalOpen && teamsStore.isAdmin"
+    class="modal-backdrop shell-modal-backdrop"
     @click.self="handleClose"
     role="dialog"
     aria-modal="true"
     aria-labelledby="create-team-title"
   >
-    <div class="modal-card">
+    <div class="modal-card shell-surface">
       <div class="modal-header">
-        <h3 id="create-team-title" class="modal-title">Create a new Workspace</h3>
+        <h3 id="create-team-title" class="modal-title">Create a new team</h3>
         <button type="button" class="close-btn" aria-label="Close dialog" @click="handleClose">
           <svg
             width="18"
@@ -70,7 +94,7 @@ function handleClose() {
 
       <form @submit.prevent="handleSubmit" class="modal-body">
         <p class="modal-desc">
-          Workspaces are shared spaces where teams communicate in channels and direct messages.
+          Teams belong to the active workspace and have their own channels and members.
         </p>
 
         <div v-if="errorMessage" class="error-banner" role="alert">
@@ -78,20 +102,20 @@ function handleClose() {
         </div>
 
         <div class="form-group">
-          <label for="team-name" class="form-label">Workspace Name</label>
+          <label for="team-name" class="form-label">Team Name</label>
           <input
             id="team-name"
             v-model="teamName"
             type="text"
-            class="form-input"
-            placeholder="e.g. Acme Corp or Engineering"
+            class="form-input shell-input"
+            placeholder="e.g. Frontend or Design"
             maxlength="40"
             autofocus
             required
           />
         </div>
 
-        <div class="form-group">
+        <div v-if="USE_SHELL_MOCKS" class="form-group">
           <label class="form-label">Theme Color</label>
           <div class="color-palette">
             <button
@@ -113,7 +137,7 @@ function handleClose() {
           </button>
           <button type="submit" class="btn-primary" :disabled="isSubmitting">
             <span v-if="isSubmitting">Creating...</span>
-            <span v-else>Create Workspace</span>
+            <span v-else>Create Team</span>
           </button>
         </div>
       </form>
@@ -123,25 +147,15 @@ function handleClose() {
 
 <style scoped>
 .modal-backdrop {
-  position: fixed;
-  inset: 0;
-  background: rgba(10, 8, 18, 0.75);
-  backdrop-filter: blur(4px);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 50;
-  padding: 16px;
+  z-index: var(--shell-z-modal);
 }
 
 .modal-card {
   width: 100%;
   max-width: 440px;
-  background: #1e1b2e;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 12px;
-  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.45);
-  color: #f1f5f9;
+  max-height: calc(100vh - 2rem);
+  display: flex;
+  flex-direction: column;
   overflow: hidden;
 }
 
@@ -150,20 +164,20 @@ function handleClose() {
   align-items: center;
   justify-content: space-between;
   padding: 16px 20px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  border-bottom: 1px solid var(--color-slate-200);
 }
 
 .modal-title {
   font-size: 16px;
   font-weight: 700;
   margin: 0;
-  color: #fff;
+  color: var(--color-slate-900);
 }
 
 .close-btn {
   background: transparent;
   border: none;
-  color: rgba(255, 255, 255, 0.4);
+  color: var(--color-slate-500);
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -172,11 +186,13 @@ function handleClose() {
   transition: all 0.15s ease;
 }
 .close-btn:hover {
-  color: #fff;
-  background: rgba(255, 255, 255, 0.08);
+  color: var(--color-slate-900);
+  background: var(--color-slate-100);
 }
 
 .modal-body {
+  min-height: 0;
+  overflow-y: auto;
   padding: 20px;
   display: flex;
   flex-direction: column;
@@ -185,15 +201,15 @@ function handleClose() {
 
 .modal-desc {
   font-size: 13px;
-  color: rgba(255, 255, 255, 0.6);
+  color: var(--color-slate-600);
   margin: 0;
   line-height: 1.4;
 }
 
 .error-banner {
-  background: rgba(239, 68, 68, 0.15);
-  border: 1px solid rgba(239, 68, 68, 0.4);
-  color: #fca5a5;
+  background: var(--color-red-50);
+  border: 1px solid var(--color-red-200);
+  color: var(--color-red-800);
   padding: 10px 12px;
   border-radius: 8px;
   font-size: 13px;
@@ -208,24 +224,24 @@ function handleClose() {
 .form-label {
   font-size: 12px;
   font-weight: 600;
-  color: rgba(255, 255, 255, 0.7);
+  color: var(--color-slate-700);
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
 
 .form-input {
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: var(--color-white);
+  border: 1px solid var(--color-slate-300);
   border-radius: 8px;
   padding: 10px 12px;
-  color: #fff;
+  color: var(--color-slate-900);
   font-size: 14px;
   outline: none;
   transition: border-color 0.15s ease;
 }
 .form-input:focus {
-  border-color: #7c3aed;
-  background: rgba(255, 255, 255, 0.08);
+  border-color: var(--color-indigo-600);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-indigo-600) 16%, transparent);
 }
 
 .color-palette {
@@ -247,7 +263,7 @@ function handleClose() {
   transform: scale(1.15);
 }
 .color-swatch--active {
-  border-color: #ffffff;
+  border-color: var(--color-indigo-600);
   transform: scale(1.15);
 }
 
@@ -259,9 +275,9 @@ function handleClose() {
 }
 
 .btn-secondary {
-  background: transparent;
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  color: rgba(255, 255, 255, 0.8);
+  background: var(--color-white);
+  border: 1px solid var(--color-slate-300);
+  color: var(--color-slate-800);
   padding: 8px 14px;
   border-radius: 8px;
   font-size: 13px;
@@ -270,14 +286,13 @@ function handleClose() {
   transition: all 0.15s ease;
 }
 .btn-secondary:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.08);
-  color: #fff;
+  background: var(--color-slate-50);
 }
 
 .btn-primary {
-  background: #7c3aed;
+  background: var(--color-indigo-600);
   border: none;
-  color: #fff;
+  color: var(--color-white);
   padding: 8px 16px;
   border-radius: 8px;
   font-size: 13px;
@@ -288,11 +303,19 @@ function handleClose() {
     opacity 0.15s ease;
 }
 .btn-primary:hover:not(:disabled) {
-  background: #6d28d9;
+  background: var(--color-indigo-700);
 }
 .btn-primary:disabled,
 .btn-secondary:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+.close-btn:focus-visible,
+.color-swatch:focus-visible,
+.btn-primary:focus-visible,
+.btn-secondary:focus-visible {
+  outline: 2px solid var(--color-indigo-400);
+  outline-offset: 2px;
 }
 </style>

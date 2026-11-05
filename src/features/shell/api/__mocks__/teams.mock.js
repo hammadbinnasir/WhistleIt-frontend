@@ -3,15 +3,21 @@
  * Simulates a ~300ms network delay for realistic loading states.
  */
 
-let _nextId = 100
+const MOCK_DATA_KEY = 'whistleit:shell-mock-data'
 
-const _userTeams = [
+const initialWorkspaces = [
+  { id: 'workspace-1', name: 'WhistleIt', initials: 'WI' },
+  { id: 'workspace-2', name: 'Design', initials: 'DE' },
+]
+
+const initialUserTeams = [
   {
     id: 'team-1',
     name: 'Programmers Force',
     initials: 'PF',
     color: '#7C3AED',
     memberCount: 24,
+    workspaceId: 'workspace-1',
   },
   {
     id: 'team-2',
@@ -19,6 +25,7 @@ const _userTeams = [
     initials: 'CI',
     color: '#2DD4BF',
     memberCount: 18,
+    workspaceId: 'workspace-1',
   },
   {
     id: 'team-3',
@@ -26,24 +33,27 @@ const _userTeams = [
     initials: 'TT',
     color: '#F97316',
     memberCount: 6,
+    workspaceId: 'workspace-2',
   },
-]
-
-const _allTeams = [
-  ..._userTeams,
   {
     id: 'team-4',
     name: 'Design Guild',
     initials: 'DG',
     color: '#EC4899',
     memberCount: 12,
+    workspaceId: 'workspace-2',
   },
+]
+
+const initialDiscoverableTeams = [
+  ...initialUserTeams,
   {
     id: 'team-5',
     name: 'Backend Crew',
     initials: 'BC',
     color: '#3B82F6',
     memberCount: 9,
+    workspaceId: 'workspace-2',
   },
   {
     id: 'team-6',
@@ -51,8 +61,53 @@ const _allTeams = [
     initials: 'QW',
     color: '#EAB308',
     memberCount: 7,
+    workspaceId: 'workspace-2',
   },
 ]
+
+function loadMockData() {
+  try {
+    const stored = localStorage.getItem(MOCK_DATA_KEY)
+    if (stored) {
+      const parsed = JSON.parse(stored)
+      if (
+        Array.isArray(parsed.workspaces) &&
+        Array.isArray(parsed.userTeams) &&
+        Array.isArray(parsed.discoverableTeams)
+      ) {
+        return parsed
+      }
+    }
+  } catch (error) {
+    console.warn('Could not load persisted shell mock data:', error)
+  }
+
+  return {
+    workspaces: initialWorkspaces,
+    userTeams: initialUserTeams,
+    discoverableTeams: initialDiscoverableTeams,
+  }
+}
+
+const mockData = loadMockData()
+let _workspaces = mockData.workspaces
+let _userTeams = mockData.userTeams
+let _allTeams = mockData.discoverableTeams
+
+function persistMockData() {
+  try {
+    localStorage.setItem(
+      MOCK_DATA_KEY,
+      JSON.stringify({
+        workspaces: _workspaces,
+        userTeams: _userTeams,
+        discoverableTeams: _allTeams,
+      }),
+    )
+  } catch (error) {
+    console.warn('Could not persist shell mock data:', error)
+  }
+}
 
 function delay(ms = 300) {
   return new Promise((r) => setTimeout(r, ms))
@@ -63,9 +118,21 @@ export async function mockTeams() {
   return [..._userTeams]
 }
 
+export async function mockWorkspaces() {
+  await delay()
+  return _workspaces.map((workspace) => ({ ...workspace }))
+}
+
+export async function mockWorkspaceTeams(workspaceId) {
+  await delay()
+  return _userTeams.filter((team) => team.workspaceId === workspaceId).map((team) => ({ ...team }))
+}
+
 export async function mockCreateTeam(payload) {
   await delay(400)
-  const id = `team-${++_nextId}`
+  const nextId =
+    Math.max(100, ..._allTeams.map((team) => Number(String(team.id).replace('team-', '')) || 0)) + 1
+  const id = `team-${nextId}`
   const initials = payload.name
     .split(' ')
     .map((w) => w[0])
@@ -78,20 +145,31 @@ export async function mockCreateTeam(payload) {
     initials,
     color: payload.color || '#7C3AED',
     memberCount: 1,
+    workspaceId: payload.workspaceId,
   }
   _userTeams.push(team)
   _allTeams.push(team)
+  persistMockData()
   return team
 }
 
-export async function mockJoinTeam(teamId) {
-  await delay(400)
-  const team = _allTeams.find((t) => t.id === teamId)
-  if (!team) throw { status: 404, message: 'Team not found' }
-  if (!_userTeams.find((t) => t.id === teamId)) {
-    _userTeams.push(team)
-  }
-  return team
+export async function mockUpdateTeam(workspaceId, teamId, payload) {
+  await delay(300)
+  const team = _userTeams.find((item) => item.id === teamId && item.workspaceId === workspaceId)
+  if (!team) throw new Error('The team could not be found.')
+  Object.assign(team, payload, { workspaceId })
+  persistMockData()
+  return { ...team }
+}
+
+export async function mockDeleteTeam(workspaceId, teamId) {
+  await delay(300)
+  const team = _userTeams.find((item) => item.id === teamId && item.workspaceId === workspaceId)
+  if (!team) throw new Error('The team could not be found.')
+  _userTeams = _userTeams.filter((item) => item !== team)
+  _allTeams = _allTeams.filter((item) => item.id !== teamId)
+  persistMockData()
+  return { success: true }
 }
 
 export async function mockSearchTeams(query) {

@@ -1,106 +1,291 @@
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 import {
-  getTeams,
   createTeam as apiCreateTeam,
-  joinTeam as apiJoinTeam,
-  searchTeams as apiSearchTeams,
+  deleteTeam as apiDeleteTeam,
+  updateTeam as apiUpdateTeam,
 } from '@/features/shell/api/teamsApi'
+import { getWorkspaces, getWorkspaceTeams } from '@/features/shell/api/workspacesApi'
+
+const LAST_TEAM_KEY = 'whistleit:last-team'
 
 /**
- * Teams / Workspaces store.
- * Owns the list of teams the current user belongs to,
- * the active team selection, and team-level CRUD.
+ * Owns workspace membership, the active workspace/team, and team-level CRUD.
  */
 export const useTeamsStore = defineStore('teams', () => {
-  // ── state ──────────────────────────────────────────────
-  const teams = ref([])
+  const workspaces = ref([])
+  const activeWorkspaceId = ref(null)
+  const teamsByWorkspaceId = ref({})
   const activeTeamId = ref(null)
   const searchQuery = ref('')
-  const loading = ref(false)
-  const error = ref(null)
-
-  // search-specific state (external teams to discover/join)
+  const workspacesLoading = ref(false)
+  const workspacesError = ref(null)
+  const teamsLoadingByWorkspaceId = ref({})
+  const teamsErrorByWorkspaceId = ref({})
+  const actionLoading = ref(false)
+  const actionError = ref(null)
   const searchResults = ref([])
   const searchLoading = ref(false)
 
-  // ── getters ────────────────────────────────────────────
-  const activeTeam = computed(() => teams.value.find((t) => t.id === activeTeamId.value) ?? null)
+  let workspacesRequestVersion = 0
+  const teamRequestVersions = new Map()
+
+  const activeWorkspace = computed(
+    () =>
+      workspaces.value.find(
+        (workspace) => String(workspace.id) === String(activeWorkspaceId.value),
+      ) ?? null,
+  )
+  const activeWorkspaceRole = computed(() => activeWorkspace.value?.role ?? null)
+  const isAdmin = computed(() => activeWorkspaceRole.value === 'admin')
+  const teamsOfActiveWorkspace = computed(
+    () => teamsByWorkspaceId.value[activeWorkspaceId.value] ?? [],
+  )
+  const teams = computed(() => teamsOfActiveWorkspace.value)
+  const activeTeam = computed(
+    () => teams.value.find((team) => String(team.id) === String(activeTeamId.value)) ?? null,
+  )
+  const teamsLoading = computed(() =>
+    Boolean(teamsLoadingByWorkspaceId.value[activeWorkspaceId.value]),
+  )
+  const teamsError = computed(() => teamsErrorByWorkspaceId.value[activeWorkspaceId.value] ?? null)
+  const loading = computed(
+    () => workspacesLoading.value || teamsLoading.value || actionLoading.value,
+  )
+  const error = computed(() => workspacesError.value || teamsError.value || actionError.value)
 
   const filteredTeams = computed(() => {
     if (!searchQuery.value) return teams.value
-    const q = searchQuery.value.toLowerCase()
-    return teams.value.filter((t) => t.name.toLowerCase().includes(q))
+    const query = searchQuery.value.toLowerCase()
+    return teams.value.filter((team) => team.name.toLowerCase().includes(query))
   })
 
-  // ── actions ────────────────────────────────────────────
-
-  /** Fetch all teams the current user belongs to. */
-  async function fetchTeams() {
-    loading.value = true
-    error.value = null
+  function readLastTeamId(workspaceId) {
     try {
-      teams.value = await getTeams()
-      // auto-select first team if nothing is selected
-      if (!activeTeamId.value && teams.value.length > 0) {
-        activeTeamId.value = teams.value[0].id
-      }
-    } catch (err) {
-      error.value = err.message ?? 'Failed to load teams'
-    } finally {
-      loading.value = false
+      return localStorage.getItem(`${LAST_TEAM_KEY}:${workspaceId}`)
+    } catch (storageError) {
+      console.warn('Could not read the last active team from local storage:', storageError)
+      return null
     }
   }
 
-  /** Switch the active team. */
+  function rememberTeam(workspaceId, teamId) {
+    try {
+      if (workspaceId && teamId) {
+        localStorage.setItem(`${LAST_TEAM_KEY}:${workspaceId}`, String(teamId))
+      }
+    } catch (storageError) {
+      console.warn('Could not remember the last active team in local storage:', storageError)
+    }
+  }
+
+  function selectAvailableTeam(workspaceId) {
+    const workspaceTeams = teamsByWorkspaceId.value[workspaceId] ?? []
+    const rememberedId = readLastTeamId(workspaceId)
+    const rememberedTeam = workspaceTeams.find((team) => String(team.id) === rememberedId)
+    activeTeamId.value = rememberedTeam?.id ?? workspaceTeams[0]?.id ?? null
+    if (activeTeamId.value) rememberTeam(workspaceId, activeTeamId.value)
+  }
+
+  function removeTeamFromWorkspace(teamId, workspaceId = activeWorkspaceId.value) {
+    if (!workspaceId) return null
+
+    const workspaceTeams = teamsByWorkspaceId.value[workspaceId] ?? []
+    const removedIndex = workspaceTeams.findIndex((team) => String(team.id) === String(teamId))
+    const remainingTeams = workspaceTeams.filter((team) => String(team.id) !== String(teamId))
+    const isActiveTeam = String(activeTeamId.value) === String(teamId)
+    const rememberedId = readLastTeamId(workspaceId)
+    const shouldUpdateRememberedTeam = isActiveTeam || String(rememberedId) === String(teamId)
+
+    teamsByWorkspaceId.value = {
+      ...teamsByWorkspaceId.value,
+      [workspaceId]: remainingTeams,
+    }
+
+    if (isActiveTeam) {
+      const nextTeamIndex = Math.min(Math.max(removedIndex, 0), remainingTeams.length - 1)
+      activeTeamId.value = remainingTeams[nextTeamIndex]?.id ?? null
+    }
+
+    if (shouldUpdateRememberedTeam) {
+      const nextTeamId = isActiveTeam ? activeTeamId.value : remainingTeams[0]?.id
+      if (nextTeamId) {
+        rememberTeam(workspaceId, nextTeamId)
+      } else {
+        try {
+          localStorage.removeItem(`${LAST_TEAM_KEY}:${workspaceId}`)
+        } catch (storageError) {
+          console.warn('Could not clear the last active team from local storage:', storageError)
+        }
+      }
+    }
+
+    return activeTeamId.value
+  }
+
+  async function fetchWorkspaces() {
+    const requestVersion = ++workspacesRequestVersion
+    workspacesLoading.value = true
+    workspacesError.value = null
+    actionError.value = null
+    try {
+      const result = await getWorkspaces()
+      if (requestVersion !== workspacesRequestVersion) return
+      if (!Array.isArray(result)) throw new Error('The workspaces response must be an array.')
+      workspaces.value = result
+      if (
+        !workspaces.value.some(
+          (workspace) => String(workspace.id) === String(activeWorkspaceId.value),
+        )
+      ) {
+        activeWorkspaceId.value = workspaces.value[0]?.id ?? null
+        activeTeamId.value = null
+      }
+    } catch (err) {
+      if (requestVersion === workspacesRequestVersion) {
+        workspacesError.value = err?.message ?? 'Failed to load workspaces.'
+      }
+    } finally {
+      if (requestVersion === workspacesRequestVersion) workspacesLoading.value = false
+    }
+  }
+
+  async function fetchTeams(workspaceId = null) {
+    if (!workspaces.value.length) await fetchWorkspaces()
+    const id = workspaceId ?? activeWorkspaceId.value
+    if (!id) return []
+
+    const requestVersion = (teamRequestVersions.get(String(id)) ?? 0) + 1
+    teamRequestVersions.set(String(id), requestVersion)
+    teamsLoadingByWorkspaceId.value = { ...teamsLoadingByWorkspaceId.value, [id]: true }
+    teamsErrorByWorkspaceId.value = { ...teamsErrorByWorkspaceId.value, [id]: null }
+    actionError.value = null
+    try {
+      const result = await getWorkspaceTeams(id)
+      if (
+        teamRequestVersions.get(String(id)) !== requestVersion ||
+        String(activeWorkspaceId.value) !== String(id)
+      ) {
+        return teamsByWorkspaceId.value[id] ?? []
+      }
+      if (!Array.isArray(result)) throw new Error('The teams response must be an array.')
+      teamsByWorkspaceId.value = { ...teamsByWorkspaceId.value, [id]: result }
+      if (!result.some((team) => String(team.id) === String(activeTeamId.value))) {
+        selectAvailableTeam(id)
+      }
+      return result
+    } catch (err) {
+      if (
+        teamRequestVersions.get(String(id)) === requestVersion &&
+        String(activeWorkspaceId.value) === String(id)
+      ) {
+        teamsErrorByWorkspaceId.value = {
+          ...teamsErrorByWorkspaceId.value,
+          [id]: err?.message ?? 'Failed to load teams.',
+        }
+      }
+      return teamsByWorkspaceId.value[id] ?? []
+    } finally {
+      if (teamRequestVersions.get(String(id)) === requestVersion) {
+        teamsLoadingByWorkspaceId.value = { ...teamsLoadingByWorkspaceId.value, [id]: false }
+      }
+    }
+  }
+
+  async function selectWorkspace(id) {
+    const workspace = workspaces.value.find((item) => String(item.id) === String(id))
+    if (!workspace) throw new Error('The selected workspace is not available.')
+    activeWorkspaceId.value = workspace.id
+    activeTeamId.value = null
+    actionError.value = null
+    await fetchTeams(workspace.id)
+    return activeWorkspace.value
+  }
+
+  function selectTeam(id) {
+    const selected = teams.value.find((team) => String(team.id) === String(id))
+    if (!selected) return false
+    activeTeamId.value = selected.id
+    rememberTeam(activeWorkspaceId.value, selected.id)
+    return true
+  }
+
   function switchTeam(id) {
-    activeTeamId.value = id
+    selectTeam(id)
   }
 
-  /** Create a new team and auto-select it. */
   async function createTeam(payload) {
-    loading.value = true
-    error.value = null
+    actionLoading.value = true
+    actionError.value = null
     try {
-      const newTeam = await apiCreateTeam(payload)
-      teams.value.push(newTeam)
-      activeTeamId.value = newTeam.id
-      return newTeam
-    } catch (err) {
-      error.value = err.message ?? 'Failed to create team'
-      throw err
-    } finally {
-      loading.value = false
-    }
-  }
-
-  /** Join an existing team by ID and auto-select it. */
-  async function joinTeam(teamId) {
-    loading.value = true
-    error.value = null
-    try {
-      const team = await apiJoinTeam(teamId)
-      // avoid duplicates if already in the list
-      if (!teams.value.find((t) => t.id === team.id)) {
-        teams.value.push(team)
+      if (!activeWorkspaceId.value) await fetchWorkspaces()
+      if (!activeWorkspaceId.value) throw new Error('Select a workspace before creating a team.')
+      const workspaceId = activeWorkspaceId.value
+      const newTeam = await apiCreateTeam({ ...payload, workspaceId })
+      const team = { ...newTeam, workspaceId: newTeam.workspaceId ?? workspaceId }
+      const workspaceTeams = teamsByWorkspaceId.value[workspaceId] ?? []
+      teamsByWorkspaceId.value = {
+        ...teamsByWorkspaceId.value,
+        [workspaceId]: [...workspaceTeams, team],
       }
-      activeTeamId.value = team.id
+      selectTeam(team.id)
       return team
     } catch (err) {
-      error.value = err.message ?? 'Failed to join team'
+      actionError.value = err?.message ?? 'Failed to create team.'
       throw err
     } finally {
-      loading.value = false
+      actionLoading.value = false
     }
   }
 
-  /** Search for teams to discover/join. */
+  async function updateTeam(teamId, payload) {
+    const workspaceId = activeWorkspaceId.value
+    if (!workspaceId) throw new Error('Select a workspace before editing a team.')
+    actionLoading.value = true
+    actionError.value = null
+    try {
+      const updatedTeam = await apiUpdateTeam(workspaceId, teamId, payload)
+      const workspaceTeams = teamsByWorkspaceId.value[workspaceId] ?? []
+      teamsByWorkspaceId.value = {
+        ...teamsByWorkspaceId.value,
+        [workspaceId]: workspaceTeams.map((team) =>
+          String(team.id) === String(teamId) ? { ...team, ...updatedTeam, workspaceId } : team,
+        ),
+      }
+      return updatedTeam
+    } catch (err) {
+      actionError.value = err?.message ?? 'Failed to update team.'
+      throw err
+    } finally {
+      actionLoading.value = false
+    }
+  }
+
+  async function deleteTeam(teamId) {
+    const workspaceId = activeWorkspaceId.value
+    if (!workspaceId) throw new Error('Select a workspace before deleting a team.')
+    actionLoading.value = true
+    actionError.value = null
+    try {
+      await apiDeleteTeam(workspaceId, teamId)
+      removeTeamFromWorkspace(teamId, workspaceId)
+    } catch (err) {
+      actionError.value = err?.message ?? 'Failed to delete team.'
+      throw err
+    } finally {
+      actionLoading.value = false
+    }
+  }
+
   async function searchAvailableTeams(query) {
     searchLoading.value = true
     try {
-      searchResults.value = await apiSearchTeams(query)
-    } catch {
-      searchResults.value = []
+      const search = String(query ?? '')
+        .trim()
+        .toLowerCase()
+      searchResults.value = search
+        ? teams.value.filter((team) => team.name.toLowerCase().includes(search))
+        : [...teams.value]
     } finally {
       searchLoading.value = false
     }
@@ -112,22 +297,35 @@ export const useTeamsStore = defineStore('teams', () => {
   }
 
   return {
-    // state
+    workspaces,
+    activeWorkspaceId,
+    teamsByWorkspaceId,
     teams,
     activeTeamId,
     searchQuery,
     loading,
     error,
+    workspacesLoading,
+    workspacesError,
+    teamsLoading,
+    teamsError,
     searchResults,
     searchLoading,
-    // getters
+    activeWorkspace,
+    activeWorkspaceRole,
+    isAdmin,
     activeTeam,
+    teamsOfActiveWorkspace,
     filteredTeams,
-    // actions
+    fetchWorkspaces,
     fetchTeams,
+    selectWorkspace,
+    selectTeam,
     switchTeam,
     createTeam,
-    joinTeam,
+    updateTeam,
+    deleteTeam,
+    removeTeamFromWorkspace,
     searchAvailableTeams,
     clearSearch,
   }

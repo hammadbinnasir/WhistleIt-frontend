@@ -1,10 +1,21 @@
 <script setup>
 // Right side of the channel/DM header.
-// Channel: Reminders + Search + Settings.  DM: Reminders + Search only.
+import { computed } from 'vue'
 import { useUiStore } from '@/stores/ui'
 
-defineProps({ isDm: { type: Boolean, default: false } })
+const props = defineProps({
+  isDm: { type: Boolean, default: false },
+  conversationId: { type: [String, Number], default: '' },
+})
 const ui = useUiStore()
+const hasCurrentConversationPins = computed(() =>
+  ui.pinnedMessages.some((item) => {
+    const conversation = item.conversation || {}
+    const kind = conversation.kind === 'dm' || conversation.type === 'dm' ? 'dm' : 'channel'
+    return kind === (props.isDm ? 'dm' : 'channel') &&
+      String(conversation.id ?? '') === String(props.conversationId ?? '')
+  }),
+)
 </script>
 
 <template>
@@ -20,7 +31,21 @@ const ui = useUiStore()
         <path d="M12 9v4l2 2M5 3 2 6M19 3l3 3" />
       </svg>
     </button>
-    <button class="icon-btn" title="Search" aria-label="Search" @click="ui.openPanel('search')">
+    <button
+      v-if="hasCurrentConversationPins"
+      class="icon-btn"
+      title="Pinned messages"
+      aria-label="Pinned messages"
+      @click="ui.openPanel('pinned')"
+    >
+      <i class="fa-vellum fa-solid fa-thumbtack" aria-hidden="true"></i>
+    </button>
+    <button
+      class="icon-btn"
+      title="Search"
+      aria-label="Search"
+      @click="ui.openPanel('search')"
+    >
       <svg viewBox="0 0 24 24" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="2">
         <circle cx="11" cy="11" r="7" />
         <path d="m20 20-3.5-3.5" />
@@ -45,8 +70,7 @@ const ui = useUiStore()
 
 <style scoped>
 @reference "../../assets/main.css";
-
 .icon-btn {
-  @apply flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 text-slate-600 hover:bg-indigo-50 hover:text-indigo-600;
+  @apply flex h-9 w-9 cursor-pointer items-center justify-center rounded-full border border-slate-200 text-slate-600 hover:bg-indigo-50 hover:text-indigo-600;
 }
 </style>

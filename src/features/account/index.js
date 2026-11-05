@@ -14,3 +14,4 @@ export { default as BaseModal } from './components/BaseModal.vue'
 
 export { useUserStore } from './composables/useUserStore'
 export { DURATIONS, computeExpiry } from './composables/statusExpiry'
+export * as accountApi from './api'

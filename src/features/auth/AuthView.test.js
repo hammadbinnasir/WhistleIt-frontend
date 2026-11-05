@@ -20,6 +20,20 @@ async function mountAuthView(path = '/login') {
       { path: '/signup', name: 'signup', component: AuthView },
       { path: '/forgot-password', name: 'forgot-password', component: AuthView },
       { path: '/reset-password', name: 'reset-password', component: AuthView },
+      {
+        path: '/forgetpassword/:token',
+        redirect: (to) => ({
+          path: '/reset-password',
+          query: { ...to.query, token: to.params.token },
+        }),
+      },
+      {
+        path: '/forgetpassword:token',
+        redirect: (to) => ({
+          path: '/reset-password',
+          query: { ...to.query, token: to.params.token },
+        }),
+      },
       { path: '/app', name: 'home', component: { template: '<main>Workspace</main>' } },
     ],
   })
@@ -45,6 +59,7 @@ describe('auth view', () => {
 
     expect(wrapper.get('h1').text()).toBe('Log in')
     expect(wrapper.find('input[name="rememberMe"]').exists()).toBe(true)
+    expect(wrapper.get('.auth-background').attributes('src')).toContain('auth-background.svg')
 
     await wrapper.get('#email').setValue('previous@example.com')
     await wrapper.get('#password').setValue('previous-password')
@@ -66,8 +81,24 @@ describe('auth view', () => {
     const password = wrapper.get('#password')
 
     expect(password.attributes('type')).toBe('password')
+    expect(wrapper.get('.password-toggle path').attributes('d')).toContain('21 21')
     await wrapper.get('button[aria-label="Show password"]').trigger('click')
     expect(password.attributes('type')).toBe('text')
+    expect(wrapper.get('.password-toggle path').attributes('d')).not.toContain('21 21')
+    await wrapper.get('button[aria-label="Hide password"]').trigger('click')
+    expect(wrapper.get('.password-toggle path').attributes('d')).toContain('21 21')
+  })
+
+  it('removes the crossed-eye line when showing the confirmation password', async () => {
+    const { wrapper } = await mountAuthView('/signup')
+    const confirmPasswordToggle = wrapper.get('button[aria-label="Show confirm password"]')
+
+    expect(confirmPasswordToggle.get('path').attributes('d')).toContain('21 21')
+    await confirmPasswordToggle.trigger('click')
+    expect(wrapper.get('#confirm-password').attributes('type')).toBe('text')
+    expect(
+      wrapper.get('button[aria-label="Hide confirm password"] path').attributes('d'),
+    ).not.toContain('21 21')
   })
 
   it('allows the browser to suggest saved credentials on the login page', async () => {
@@ -106,28 +137,101 @@ describe('auth view', () => {
     expect(wrapper.get('[role="status"]').text()).toContain('Reset endpoint unavailable')
   })
 
-  it('resets the password using the token and email from the reset link', async () => {
+  it('resets the password without showing the email and redirects to login afterward', async () => {
     const { router, wrapper } = await mountAuthView(
       '/reset-password?token=reset-token&email=sam%40example.com',
     )
 
     expect(wrapper.get('h1').text()).toBe('Reset Password')
-    expect(wrapper.get('#email').element.value).toBe('sam@example.com')
+    expect(wrapper.find('#email').exists()).toBe(false)
     expect(wrapper.get('#password').attributes('autocomplete')).toBe('new-password')
     await wrapper.get('#password').setValue('new-password-123')
     await wrapper.get('#confirm-password').setValue('new-password-123')
     await wrapper.get('form').trigger('submit')
     await flushPromises()
 
-    expect(resetPassword).toHaveBeenCalledWith({
+    expect(resetPassword).toHaveBeenCalledWith('reset-token', {
       email: 'sam@example.com',
-      token: 'reset-token',
       password: 'new-password-123',
       password_confirmation: 'new-password-123',
     })
-    expect(wrapper.get('[role="status"]').text()).toContain('Your password has been reset')
-    expect(router.currentRoute.value.path).toBe('/reset-password')
+    expect(router.currentRoute.value.path).toBe('/login')
+    expect(wrapper.get('#email').element.value).toBe('sam@example.com')
   })
+
+  it.each([
+    ['/login', login, 'Logging in'],
+    ['/signup', register, 'Creating account'],
+    ['/forgot-password', requestPasswordReset, 'Sending password reset instructions'],
+    ['/reset-password?token=reset-token', resetPassword, 'Resetting your password'],
+  ])(
+    'shows the custom loader instead of button text while submitting %s',
+    async (path, action, label) => {
+      let finishSubmission
+      action.mockReturnValueOnce(
+        new Promise((resolve) => {
+          finishSubmission = resolve
+        }),
+      )
+      const { router, wrapper } = await mountAuthView(path)
+
+      if (!path.startsWith('/reset-password')) {
+        await wrapper.get('#email').setValue('sam@example.com')
+      }
+      if (path === '/signup') {
+        await wrapper.get('#full-name').setValue('Sam Example')
+        await wrapper.get('#company').setValue('Example Co')
+        await wrapper.get('#password').setValue('correct-password')
+        await wrapper.get('#confirm-password').setValue('correct-password')
+        await wrapper.get('#terms').setValue(true)
+      } else if (path.startsWith('/reset-password')) {
+        await wrapper.get('#password').setValue('correct-password')
+        await wrapper.get('#confirm-password').setValue('correct-password')
+      } else if (path === '/login') {
+        await wrapper.get('#password').setValue('correct-password')
+      }
+
+      await wrapper.get('form').trigger('submit')
+
+      expect(wrapper.get('.submit-button').attributes('disabled')).toBeDefined()
+      expect(wrapper.get('.submit-button').attributes('aria-busy')).toBe('true')
+      expect(wrapper.get('.loading-spinner[role="status"]').attributes('aria-label')).toBe(label)
+      expect(wrapper.get('.loading-spinner__dot').attributes('fill')).toBe('#fff')
+      expect(wrapper.get('.loading-spinner').attributes('style')).toContain(
+        '--loading-spinner-size: 20px',
+      )
+      expect(wrapper.get('.submit-button').text()).not.toContain('Please wait')
+
+      finishSubmission(path === '/login' ? { access_token: 'test-token' } : {})
+      await flushPromises()
+
+      expect(wrapper.find('.loading-spinner').exists()).toBe(false)
+      if (path.startsWith('/reset-password')) {
+        expect(router.currentRoute.value.path).toBe('/login')
+      }
+    },
+  )
+
+  it('does not show a Go to Login button on the reset-password page', async () => {
+    const { wrapper } = await mountAuthView('/reset-password?token=reset-token')
+
+    expect(wrapper.find('.auth-reset-login-button').exists()).toBe(false)
+    expect(
+      wrapper.findAll('.submit-button').some((button) => button.text().includes('Go to Login')),
+    ).toBe(false)
+  })
+
+  it.each(['/forgetpassword/reset-token', '/forgetpasswordreset-token'])(
+    'opens the reset form from a backend reset link: %s',
+    async (path) => {
+      const { router, wrapper } = await mountAuthView(`${path}?email=sam%40example.com`)
+
+      expect(router.currentRoute.value.name).toBe('reset-password')
+      expect(router.currentRoute.value.query.token).toBe('reset-token')
+      expect(wrapper.find('#email').exists()).toBe(false)
+      expect(wrapper.get('#password').attributes('placeholder')).toBe('New Password*')
+    },
+  )
 
   it('does not submit a reset without a token', async () => {
     const { wrapper } = await mountAuthView('/reset-password?email=sam%40example.com')
@@ -142,15 +246,31 @@ describe('auth view', () => {
   })
 
   it('rejects mismatched passwords when resetting a password', async () => {
-    const { wrapper } = await mountAuthView('/reset-password?token=reset-token')
+    const { wrapper } = await mountAuthView(
+      '/reset-password?token=reset-token&email=sam%40example.com',
+    )
 
-    await wrapper.get('#email').setValue('sam@example.com')
     await wrapper.get('#password').setValue('new-password-123')
     await wrapper.get('#confirm-password').setValue('different-password')
     await wrapper.get('form').trigger('submit')
 
     expect(resetPassword).not.toHaveBeenCalled()
     expect(wrapper.get('[role="status"]').text()).toContain('Passwords do not match')
+  })
+
+  it('resets the password using the token when the reset link has no email', async () => {
+    const { router, wrapper } = await mountAuthView('/reset-password?token=reset-token')
+
+    await wrapper.get('#password').setValue('new-password-123')
+    await wrapper.get('#confirm-password').setValue('new-password-123')
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+
+    expect(resetPassword).toHaveBeenCalledWith('reset-token', {
+      password: 'new-password-123',
+      password_confirmation: 'new-password-123',
+    })
+    expect(router.currentRoute.value.path).toBe('/login')
   })
 
   it('logs in and navigates to the workspace after a valid form submission', async () => {
@@ -202,10 +322,41 @@ describe('auth view', () => {
       email: 'sam@example.com',
       password: 'correct-password',
       password_confirmation: 'correct-password',
+      frontend_url: window.location.origin,
     })
     expect(router.currentRoute.value.path).toBe('/login')
     expect(wrapper.get('#email').element.value).toBe('')
     expect(wrapper.get('#password').element.value).toBe('')
+  })
+
+  it('requires at least eight password characters without setting a maximum on sign up', async () => {
+    const { wrapper } = await mountAuthView('/signup')
+    const longPassword = 'a'.repeat(256)
+
+    await wrapper.get('#full-name').setValue('Sam Example')
+    await wrapper.get('#company').setValue('Example Co')
+    await wrapper.get('#email').setValue('sam@example.com')
+    await wrapper.get('#password').setValue('short7!')
+    await wrapper.get('#confirm-password').setValue('short7!')
+    await wrapper.get('#terms').setValue(true)
+    await wrapper.get('form').trigger('submit')
+
+    expect(register).not.toHaveBeenCalled()
+    expect(wrapper.get('#password').element.minLength).toBe(8)
+    expect(wrapper.get('#password').attributes('maxlength')).toBeUndefined()
+    expect(wrapper.get('#confirm-password').attributes('maxlength')).toBeUndefined()
+
+    await wrapper.get('#password').setValue(longPassword)
+    await wrapper.get('#confirm-password').setValue(longPassword)
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+
+    expect(register).toHaveBeenCalledWith(
+      expect.objectContaining({
+        password: longPassword,
+        password_confirmation: longPassword,
+      }),
+    )
   })
 
   it('shows authentication errors and stays on the form', async () => {

@@ -1,18 +1,31 @@
 <script setup>
-import { onMounted, ref } from 'vue'
+import { onBeforeUnmount, onMounted, ref } from 'vue'
 import { useDmStore } from '@/features/dms/stores/dms'
 import { usePresenceStore } from '@/features/dms/stores/presence'
+import { useUiStore } from '@/stores/ui'
 import DmListItem from './DmListItem.vue'
 import NewDmPanel from './NewDmPanel.vue'
 
 const dms = useDmStore()
 const presence = usePresenceStore()
+const ui = useUiStore()
 const open = ref(true)
 const panelOpen = ref(false)
+
+function openConversation(conversationId) {
+  if (!dms.openConversation(conversationId)) return
+  ui.selectChannel(null)
+  ui.closePanel()
+}
 
 onMounted(() => {
   void dms.init()
   void presence.init()
+  dms.startPolling() // dusre user ke naye / edit / delete messages khud aate rahein
+})
+
+onBeforeUnmount(() => {
+  dms.stopPolling()
 })
 </script>
 
@@ -47,10 +60,13 @@ onMounted(() => {
     <NewDmPanel v-if="panelOpen" @close="panelOpen = false" />
 
     <template v-if="open">
-      <p v-if="dms.loading" class="px-4 py-1.5 text-sm text-slate-400">Loading…</p>
+      <p v-if="dms.loading && !dms.sorted.length" class="px-4 py-1.5 text-sm text-slate-400">
+        Loading…
+      </p>
 
       <p v-else-if="dms.error" class="px-4 py-1.5 text-sm text-slate-400">
-        {{ dms.error }}
+        <template v-if="dms.offline">Offline: showing saved messages.</template>
+        <template v-else>{{ dms.error }}</template>
         <button class="underline" @click="dms.init()">Retry</button>
       </p>
 
@@ -59,7 +75,7 @@ onMounted(() => {
         :key="c.id"
         :conversation="c"
         :active="c.id === dms.activeId"
-        @select="dms.openConversation"
+        @select="openConversation"
         @close="dms.closeConversation"
       />
     </template>

@@ -1,11 +1,16 @@
 // Public entry point of the Shell & Teams module.
 // Other modules should import from here.
+import './styles/surfaces.css'
+
 export { default as TeamRail } from './components/TeamRail.vue'
 export { default as TeamSwitcher } from './components/TeamSwitcher.vue'
+export { default as WorkspaceSwitcher } from './components/WorkspaceSwitcher.vue'
+export { default as ConfirmDialog } from './components/ConfirmDialog.vue'
 export { default as CreateTeamModal } from './components/CreateTeamModal.vue'
-export { default as JoinTeamModal } from './components/JoinTeamModal.vue'
+export { default as EditTeamModal } from './components/EditTeamModal.vue'
 export { default as HelpModal } from './components/HelpModal.vue'
 export { default as HelpDrawer } from './components/HelpDrawer.vue'
 export { default as MemberManageModal } from './components/MemberManageModal.vue'
+export { default as InviteUsersModal } from './components/InviteUsersModal.vue'
 export { useTeamsStore } from '@/stores/teams'
 export { useMembersStore } from '@/stores/members'

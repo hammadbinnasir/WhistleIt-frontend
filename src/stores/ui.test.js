@@ -24,6 +24,19 @@ describe('ui store', () => {
     expect(ui.sidebarOpen).toBe(false)
   })
 
+  it('scopes pinned messages to their conversation', () => {
+    const ui = useUiStore()
+    const message = { id: 'same-id', content: 'Pinned' }
+
+    ui.togglePinnedMessage(message, { id: 'general', name: 'General' })
+    ui.togglePinnedMessage(message, { id: 'random', name: 'Random' })
+    expect(ui.pinnedMessages).toHaveLength(2)
+
+    ui.togglePinnedMessage(message, { id: 'general', name: 'General' })
+    expect(ui.pinnedMessages).toHaveLength(1)
+    expect(ui.pinnedMessages[0].conversation.name).toBe('Random')
+  })
+
   it('opens and closes search panels and channel settings', () => {
     const ui = useUiStore()
 
@@ -34,12 +47,18 @@ describe('ui store', () => {
 
     ui.openChannelSettings()
     expect(ui.channelSettingsOpen).toBe(true)
+    expect(ui.channelSettingsTab).toBe('settings')
     ui.closeChannelSettings()
     expect(ui.channelSettingsOpen).toBe(false)
+
+    ui.openChannelSettings('members')
+    expect(ui.channelSettingsOpen).toBe(true)
+    expect(ui.channelSettingsTab).toBe('members')
   })
 
   it('toggles modals properly', () => {
     const ui = useUiStore()
+
     expect(ui.helpModalOpen).toBe(false)
     ui.toggleHelpModal()
     expect(ui.helpModalOpen).toBe(true)
@@ -47,10 +66,6 @@ describe('ui store', () => {
     expect(ui.teamCreateModalOpen).toBe(false)
     ui.toggleTeamCreateModal()
     expect(ui.teamCreateModalOpen).toBe(true)
-
-    expect(ui.teamJoinModalOpen).toBe(false)
-    ui.toggleTeamJoinModal()
-    expect(ui.teamJoinModalOpen).toBe(true)
 
     expect(ui.memberManageModalOpen).toBe(false)
     ui.toggleMemberManageModal()

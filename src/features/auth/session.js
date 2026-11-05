@@ -7,13 +7,24 @@ function getFullName(user) {
     user.full_name ??
     user.fullName ??
     user.name ??
-    [
-      user.first_name ?? user.firstName,
-      user.last_name ?? user.lastName,
-    ]
+    [user.first_name ?? user.firstName, user.last_name ?? user.lastName]
       .filter((part) => typeof part === 'string')
       .join(' ')
   return typeof fullName === 'string' ? fullName.trim() : ''
+}
+
+function getUserId(user) {
+  if (!user || typeof user !== 'object') return null
+  const id = user.id ?? user.user_id ?? user.userId ?? user.sub
+  return typeof id === 'string' || typeof id === 'number' ? String(id) : null
+}
+
+function normalizeUser(user) {
+  if (!user || typeof user !== 'object') return null
+  const id = getUserId(user)
+  const fullName = getFullName(user)
+  if (!id && !fullName) return null
+  return { ...(id ? { id } : {}), ...(fullName ? { fullName } : {}) }
 }
 
 function getUserFromResponse(response) {
@@ -26,8 +37,8 @@ function getUserFromResponse(response) {
     response?.data,
   ]
   for (const candidate of candidates) {
-    const fullName = getFullName(candidate)
-    if (fullName) return { fullName }
+    const user = normalizeUser(candidate)
+    if (user) return user
   }
   return null
 }
@@ -38,8 +49,7 @@ function getUserFromToken(token) {
 
   try {
     const decoded = JSON.parse(atob(payload.replace(/-/g, '+').replace(/_/g, '/')))
-    const fullName = getFullName(decoded)
-    return fullName ? { fullName } : null
+    return normalizeUser(decoded)
   } catch {
     return null
   }
@@ -69,10 +79,14 @@ export function getAuthUser() {
 
   try {
     const user = JSON.parse(storedUser)
-    return typeof user?.fullName === 'string' ? user : null
+    return normalizeUser(user)
   } catch {
     return null
   }
+}
+
+export function getAuthUserId() {
+  return getAuthUser()?.id ?? null
 }
 
 export function getAuthToken() {

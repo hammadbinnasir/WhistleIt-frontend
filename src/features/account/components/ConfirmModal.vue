@@ -41,10 +41,10 @@ const emit = defineEmits(['confirm', 'cancel'])
 
 <style scoped>
 .confirm {
-  width: 626px;
+  width: 446px;
   max-width: 100%;
   box-sizing: border-box;
-  padding: 18px 24px 34px;
+  padding: 24px 24px 20px;
   text-align: center;
   background: #fff;
   border-radius: 6px;
@@ -61,29 +61,29 @@ const emit = defineEmits(['confirm', 'cancel'])
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 62px;
-  height: 62px;
+  width: 44px;
+  height: 44px;
   margin: 0 auto;
   border-radius: 50%;
   background: #efeff7;
 }
 .icon-circle svg {
-  width: 34px;
-  height: 34px;
+  width: 24px;
+  height: 24px;
 }
 
 .title {
-  margin: 44px 0 0;
-  font-size: 22px;
+  margin: 18px 0 0;
+  font-size: 18px;
   font-weight: 500;
-  line-height: 28px;
+  line-height: 24px;
   color: #1f1f2e;
 }
 
 .message {
-  margin: 36px 0 0;
-  font-size: 18px;
-  line-height: 24px;
+  margin: 20px 0 0;
+  font-size: 14px;
+  line-height: 20px;
   color: #4a4a5a;
 }
 
@@ -91,15 +91,15 @@ const emit = defineEmits(['confirm', 'cancel'])
   display: flex;
   justify-content: center;
   gap: 12px;
-  margin-top: 33px;
+  margin-top: 24px;
 }
 
 .btn {
-  min-width: 134px;
-  height: 40px;
-  padding: 0 20px;
+  min-width: 96px;
+  height: 33px;
+  padding: 0 14px;
   font-family: inherit;
-  font-size: 17px;
+  font-size: 12px;
   font-weight: 500;
   letter-spacing: 1px;
   border-radius: 4px;

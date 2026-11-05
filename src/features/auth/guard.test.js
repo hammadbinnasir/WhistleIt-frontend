@@ -1,4 +1,4 @@
-import { createMemoryHistory, createRouter } from 'vue-router'
+import { createMemoryHistory, createRouter, createWebHistory } from 'vue-router'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { installAuthGuard } from './guard'
 import { clearAuthSession, saveAuthToken } from './session'
@@ -12,6 +12,12 @@ function createTestRouter() {
       { path: '/login', name: 'login', component: EmptyPage, meta: { guestOnly: true } },
       { path: '/signup', name: 'signup', component: EmptyPage, meta: { guestOnly: true } },
       { path: '/app', name: 'home', component: EmptyPage, meta: { requiresAuth: true } },
+      {
+        path: '/app/:workspaceId/:teamId?/:channelId?',
+        name: 'workspace-team',
+        component: EmptyPage,
+        meta: { requiresAuth: true },
+      },
     ],
   })
   installAuthGuard(router)
@@ -32,6 +38,16 @@ describe('auth route guard', () => {
     expect(router.currentRoute.value.query.redirect).toBe('/app')
   })
 
+  it('redirects unauthenticated users away from workspace routes', async () => {
+    const router = createTestRouter()
+    const requestedPath = '/app/workspace-1/team-2/channel-3'
+
+    await router.push(requestedPath)
+
+    expect(router.currentRoute.value.name).toBe('login')
+    expect(router.currentRoute.value.query.redirect).toBe(requestedPath)
+  })
+
   it('redirects authenticated users away from login and signup pages', async () => {
     saveAuthToken({ token: 'valid-token' })
     const router = createTestRouter()
@@ -39,5 +55,41 @@ describe('auth route guard', () => {
     await router.push('/signup')
 
     expect(router.currentRoute.value.name).toBe('home')
+  })
+
+  it('redirects authenticated users away from the login page', async () => {
+    saveAuthToken({ token: 'valid-token' })
+    const router = createTestRouter()
+
+    await router.push('/login')
+
+    expect(router.currentRoute.value.name).toBe('home')
+  })
+
+  it('keeps authenticated users on the protected page when browser back reaches the same route', async () => {
+    window.history.replaceState(null, '', '/')
+    saveAuthToken({ token: 'valid-token' })
+    const router = createRouter({
+      history: createWebHistory(),
+      routes: [
+        { path: '/login', name: 'login', component: EmptyPage, meta: { guestOnly: true } },
+        { path: '/app', name: 'home', component: EmptyPage, meta: { requiresAuth: true } },
+      ],
+    })
+    installAuthGuard(router)
+    await router.push('/app')
+    await router.isReady()
+
+    let anotherPopstateListenerRan = false
+    const anotherPopstateListener = () => {
+      anotherPopstateListenerRan = true
+    }
+    window.addEventListener('popstate', anotherPopstateListener)
+    window.dispatchEvent(new PopStateEvent('popstate', { state: { current: '/app' } }))
+    window.removeEventListener('popstate', anotherPopstateListener)
+
+    expect(router.currentRoute.value.name).toBe('home')
+    expect(window.history.state.current).toBe('/app')
+    expect(anotherPopstateListenerRan).toBe(false)
   })
 })

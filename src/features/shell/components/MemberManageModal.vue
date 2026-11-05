@@ -1,130 +1,249 @@
 <script setup>
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
 import { storeToRefs } from 'pinia'
+import { useRouter } from 'vue-router'
 import { useTeamsStore } from '@/stores/teams'
 import { useMembersStore } from '@/stores/members'
 import { useUiStore } from '@/stores/ui'
-import { searchUsers } from '@/features/shell/api/membersApi'
+import { getAuthUserId } from '@/features/auth/session'
+import ConfirmDialog from './ConfirmDialog.vue'
 
 const teamsStore = useTeamsStore()
 const membersStore = useMembersStore()
 const ui = useUiStore()
+const router = useRouter()
 
-const { activeTeam, activeTeamId } = storeToRefs(teamsStore)
-const { members, loading: membersLoading } = storeToRefs(membersStore)
+const { activeTeam, activeTeamId, activeWorkspaceId, isAdmin } = storeToRefs(teamsStore)
+const {
+  members,
+  notMembers,
+  loading: membersLoading,
+  notMembersLoading,
+  writing: membersWriting,
+  error: membersError,
+  notMembersError,
+  permissionDenied,
+} = storeToRefs(membersStore)
+const currentUserId = getAuthUserId()
 
 const searchMemberQuery = ref('')
-const newMemberInput = ref('')
-const isAdding = ref(false)
-const removingMemberId = ref(null)
+const pickerOpen = ref(false)
+const pickerQuery = ref('')
+const debouncedPickerQuery = ref('')
+const selectedUserIds = ref(new Set())
+const removingUserId = ref(null)
+const confirmation = ref(null)
+const confirmationLoading = ref(false)
+const confirmationError = ref('')
 const actionError = ref('')
 const successNotice = ref('')
+let debounceTimer = null
 
-const searchSuggestions = ref([])
-const isSearchingSuggestions = ref(false)
+function isCurrentUser(member) {
+  return (
+    currentUserId != null &&
+    member.userId != null &&
+    String(member.userId) === String(currentUserId)
+  )
+}
 
 // Fetch members whenever modal opens
 watch(
   () => ui.memberManageModalOpen,
   (isOpen) => {
-    if (isOpen && activeTeamId.value) {
-      membersStore.fetchMembers(activeTeamId.value)
+    if (isOpen && activeWorkspaceId.value && activeTeamId.value) {
+      membersStore.fetchMembers(activeWorkspaceId.value, activeTeamId.value)
     }
   },
   { immediate: true },
 )
 
-const filteredMembers = computed(() => {
-  if (!searchMemberQuery.value.trim()) return members.value
-  const q = searchMemberQuery.value.toLowerCase().trim()
-  return members.value.filter(
-    (m) => m.name.toLowerCase().includes(q) || (m.email && m.email.toLowerCase().includes(q)),
-  )
+watch(pickerQuery, (query) => {
+  clearTimeout(debounceTimer)
+  debounceTimer = setTimeout(() => {
+    debouncedPickerQuery.value = query.trim().toLocaleLowerCase()
+  }, 200)
 })
 
-let debounceTimer = null
-async function onAddInputChange() {
-  clearTimeout(debounceTimer)
-  const q = newMemberInput.value.trim()
-  if (!q) {
-    searchSuggestions.value = []
-    return
+const filteredMembers = computed(() => {
+  const q = searchMemberQuery.value.trim().toLocaleLowerCase()
+  if (!q) return members.value
+  return members.value.filter((member) => (member.name ?? '').toLocaleLowerCase().includes(q))
+})
+
+const eligibleUsers = computed(() =>
+  notMembers.value.filter(
+    (user) =>
+      user.userId != null &&
+      String(user.userId) !== String(currentUserId) &&
+      !members.value.some((member) => String(member.userId) === String(user.userId)),
+  ),
+)
+
+const filteredPickerUsers = computed(() => {
+  const query = debouncedPickerQuery.value
+  if (!query) return eligibleUsers.value
+  return eligibleUsers.value.filter((user) => (user.name ?? '').toLocaleLowerCase().includes(query))
+})
+
+async function openPicker() {
+  pickerOpen.value = true
+  pickerQuery.value = ''
+  debouncedPickerQuery.value = ''
+  selectedUserIds.value = new Set()
+  actionError.value = ''
+  if (activeWorkspaceId.value && activeTeamId.value) {
+    await membersStore.fetchNotMembers(activeWorkspaceId.value, activeTeamId.value)
   }
-
-  debounceTimer = setTimeout(async () => {
-    isSearchingSuggestions.value = true
-    try {
-      const results = await searchUsers(q)
-      // filter out existing members
-      searchSuggestions.value = results.filter((u) => !members.value.some((m) => m.id === u.id))
-    } catch {
-      searchSuggestions.value = []
-    } finally {
-      isSearchingSuggestions.value = false
-    }
-  }, 200)
 }
 
-function selectSuggestion(user) {
-  newMemberInput.value = user.name
-  searchSuggestions.value = []
-  handleAddUser(user.id)
+function toggleUserSelection(userId) {
+  const selected = new Set(selectedUserIds.value)
+  if (selected.has(userId)) selected.delete(userId)
+  else selected.add(userId)
+  selectedUserIds.value = selected
 }
 
-async function handleAddUser(userId = null) {
-  if (!newMemberInput.value.trim() && !userId) return
-  if (!activeTeamId.value) return
+async function handleAddSelected() {
+  const userIds = [...selectedUserIds.value]
+  if (!userIds.length || !activeWorkspaceId.value || !activeTeamId.value) return
 
-  isAdding.value = true
   actionError.value = ''
   successNotice.value = ''
 
   try {
-    const added = await membersStore.addMember(
-      activeTeamId.value,
-      userId || newMemberInput.value.trim(),
-    )
-    successNotice.value = `Added ${added.name} to ${activeTeam.value?.name || 'workspace'}.`
-    newMemberInput.value = ''
-    searchSuggestions.value = []
+    const response =
+      userIds.length === 1
+        ? await membersStore.addMember(activeWorkspaceId.value, activeTeamId.value, userIds[0])
+        : await membersStore.addMembers(activeWorkspaceId.value, activeTeamId.value, userIds)
+    successNotice.value =
+      response?.message || `Member${userIds.length === 1 ? '' : 's'} added successfully.`
+    selectedUserIds.value = new Set()
+    pickerOpen.value = false
   } catch (err) {
-    actionError.value = err?.message || 'Could not add member.'
-  } finally {
-    isAdding.value = false
+    actionError.value = membersStore.error || err?.message || 'Could not add member.'
   }
 }
 
 async function handleRemove(member) {
-  if (!confirm(`Are you sure you want to remove ${member.name} from this workspace?`)) {
+  if (
+    permissionDenied.value ||
+    !member.userId ||
+    String(member.userId) === String(currentUserId) ||
+    !activeWorkspaceId.value ||
+    !activeTeamId.value
+  ) {
     return
   }
-
-  removingMemberId.value = member.id
+  confirmationError.value = ''
   actionError.value = ''
   successNotice.value = ''
+  confirmation.value = {
+    kind: 'remove',
+    member,
+    workspaceId: activeWorkspaceId.value,
+    teamId: activeTeamId.value,
+    title: 'Remove member',
+    message: `Remove ${member.name || 'this member'} from ${activeTeam.value?.name || 'this team'}?`,
+    confirmLabel: 'Remove member',
+  }
+}
+
+async function handleConfirmAction() {
+  const action = confirmation.value
+  if (!action || confirmationLoading.value) return
+  confirmationLoading.value = true
+  confirmationError.value = ''
 
   try {
-    await membersStore.removeMember(activeTeamId.value, member.id)
-    successNotice.value = `Removed ${member.name}.`
-  } catch (err) {
-    actionError.value = err?.message || 'Failed to remove member.'
+    if (action.kind === 'remove') {
+      removingUserId.value = action.member.userId
+      const response = await membersStore.removeMember(
+        action.workspaceId,
+        action.teamId,
+        action.member.userId,
+      )
+      confirmation.value = null
+      if (membersStore.error) actionError.value = membersStore.error
+      else successNotice.value = response?.message || `Removed ${action.member.name || 'member'}.`
+      return
+    }
+
+    const response = await membersStore.leaveTeam(action.workspaceId, action.teamId, currentUserId)
+    const nextTeamId = teamsStore.activeTeamId
+    confirmation.value = null
+    handleClose()
+    ui.toast('Left team', response?.message || 'You left the team.', 'success')
+    if (nextTeamId) {
+      await router.push({
+        name: 'workspace-team',
+        params: { workspaceId: action.workspaceId, teamId: nextTeamId },
+      })
+    } else {
+      await router.push({ path: `/app/${encodeURIComponent(action.workspaceId)}` })
+    }
+  } catch (error) {
+    confirmationError.value =
+      error?.message ||
+      membersStore.error ||
+      (action.kind === 'remove' ? 'Failed to remove member.' : 'Could not leave this team.')
   } finally {
-    removingMemberId.value = null
+    removingUserId.value = null
+    confirmationLoading.value = false
   }
+}
+
+function handleLeaveTeam() {
+  const team = activeTeam.value
+  if (!team || !activeWorkspaceId.value || !activeTeamId.value || membersWriting.value) return
+  confirmationError.value = ''
+  actionError.value = ''
+  successNotice.value = ''
+  confirmation.value = {
+    kind: 'leave',
+    workspaceId: activeWorkspaceId.value,
+    teamId: team.id,
+    title: 'Leave team',
+    message: `Leave ${team.name}? You will lose access to this team.`,
+    confirmLabel: 'Leave team',
+  }
+}
+
+function cancelConfirmation() {
+  if (confirmationLoading.value) return
+  confirmation.value = null
+  confirmationError.value = ''
 }
 
 function handleClose() {
   ui.toggleMemberManageModal()
   searchMemberQuery.value = ''
-  newMemberInput.value = ''
+  pickerOpen.value = false
+  pickerQuery.value = ''
+  selectedUserIds.value = new Set()
   actionError.value = ''
   successNotice.value = ''
-  searchSuggestions.value = []
+  clearTimeout(debounceTimer)
 }
 
+function handleKeydown(event) {
+  if (event.key === 'Escape' && ui.memberManageModalOpen && !confirmation.value) {
+    event.preventDefault()
+    handleClose()
+  }
+}
+
+onMounted(() => document.addEventListener('keydown', handleKeydown))
+onBeforeUnmount(() => {
+  document.removeEventListener('keydown', handleKeydown)
+  clearTimeout(debounceTimer)
+})
+
 function getInitials(name) {
-  return name
-    .split(' ')
+  return String(name || 'Member')
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
     .map((w) => w[0])
     .join('')
     .toUpperCase()
@@ -135,13 +254,13 @@ function getInitials(name) {
 <template>
   <div
     v-if="ui.memberManageModalOpen"
-    class="modal-backdrop"
+    class="modal-backdrop shell-modal-backdrop"
     @click.self="handleClose"
     role="dialog"
     aria-modal="true"
     aria-labelledby="member-manage-title"
   >
-    <div class="modal-card">
+    <div class="modal-card shell-surface shell-member-modal">
       <div class="modal-header">
         <div>
           <h3 id="member-manage-title" class="modal-title">Manage Workspace Members</h3>
@@ -171,50 +290,91 @@ function getInitials(name) {
         <div v-if="actionError" class="error-banner" role="alert">
           {{ actionError }}
         </div>
-
-        <!-- Add Member section -->
-        <div class="add-section">
-          <label class="section-label">Add New Member</label>
-          <div class="add-input-wrapper">
-            <input
-              v-model="newMemberInput"
-              type="text"
-              class="add-input"
-              placeholder="Enter name or email..."
-              @input="onAddInputChange"
-              @keydown.enter.prevent="handleAddUser()"
-            />
-            <button
-              type="button"
-              class="add-btn"
-              :disabled="!newMemberInput.trim() || isAdding"
-              @click="handleAddUser()"
-            >
-              <span v-if="isAdding">Adding...</span>
-              <span v-else>Add Member</span>
-            </button>
-          </div>
-
-          <!-- Autocomplete Suggestions -->
-          <div v-if="searchSuggestions.length > 0" class="suggestions-dropdown">
-            <button
-              v-for="user in searchSuggestions"
-              :key="user.id"
-              type="button"
-              class="suggestion-row"
-              @click="selectSuggestion(user)"
-            >
-              <div class="suggestion-avatar">
-                {{ getInitials(user.name) }}
-              </div>
-              <div class="suggestion-meta">
-                <span class="suggestion-name">{{ user.name }}</span>
-                <span class="suggestion-email">{{ user.email }}</span>
-              </div>
-              <span class="invite-label">+ Add</span>
-            </button>
-          </div>
+        <div v-if="membersError && membersError !== actionError" class="error-banner" role="alert">
+          {{ membersError }}
+          <button
+            type="button"
+            class="retry-members"
+            @click="membersStore.fetchMembers(activeWorkspaceId, activeTeamId)"
+          >
+            Retry
+          </button>
         </div>
+        <p v-if="permissionDenied" class="not-available-banner" role="status">
+          You do not have permission to manage this team’s members. The list is read-only.
+        </p>
+
+        <section class="add-section" aria-label="Add team members">
+          <button
+            v-if="isAdmin"
+            type="button"
+            class="add-btn"
+            :disabled="membersWriting || (permissionDenied && !pickerOpen)"
+            :aria-expanded="pickerOpen"
+            @click="pickerOpen ? (pickerOpen = false) : openPicker()"
+          >
+            {{ pickerOpen ? 'Close member picker' : 'Add members' }}
+          </button>
+
+          <div v-if="pickerOpen && isAdmin" class="member-picker">
+            <label class="section-label" for="member-picker-search">Search by user name</label>
+            <input
+              id="member-picker-search"
+              v-model="pickerQuery"
+              type="search"
+              class="add-input"
+              placeholder="Search by user name"
+              :disabled="notMembersLoading || permissionDenied"
+              @keydown.enter.prevent="handleAddSelected"
+            />
+            <div v-if="notMembersLoading" class="loading-state" role="status">Loading users...</div>
+            <div v-else-if="notMembersError" class="error-banner" role="alert">
+              {{ notMembersError }}
+              <button
+                type="button"
+                class="retry-members"
+                @click="membersStore.fetchNotMembers(activeWorkspaceId, activeTeamId)"
+              >
+                Retry
+              </button>
+            </div>
+            <div v-else-if="notMembers.length === 0" class="empty-state" role="status">
+              No users available to add.
+            </div>
+            <div v-else-if="filteredPickerUsers.length === 0" class="empty-state" role="status">
+              No users found
+            </div>
+            <ul v-else class="picker-list" aria-label="Available users">
+              <li v-for="user in filteredPickerUsers" :key="user.userId" class="picker-row">
+                <label class="picker-user">
+                  <input
+                    type="checkbox"
+                    :checked="selectedUserIds.has(user.userId)"
+                    :disabled="membersWriting || permissionDenied"
+                    @change="toggleUserSelection(user.userId)"
+                  />
+                  <span class="suggestion-avatar">{{ getInitials(user.name) }}</span>
+                  <span class="suggestion-meta">
+                    <span class="suggestion-name">{{ user.name }}</span>
+                    <span v-if="user.email" class="suggestion-email">{{ user.email }}</span>
+                  </span>
+                </label>
+              </li>
+            </ul>
+            <div class="picker-footer">
+              <span>{{ selectedUserIds.size }} selected</span>
+              <button
+                type="button"
+                class="add-btn"
+                :disabled="selectedUserIds.size === 0 || membersWriting || permissionDenied"
+                @click="handleAddSelected"
+              >
+                <span v-if="membersWriting">Adding...</span>
+                <span v-else>Add selected</span>
+              </button>
+            </div>
+          </div>
+        </section>
 
         <!-- Member list header & search -->
         <div class="list-section">
@@ -245,10 +405,19 @@ function getInitials(name) {
             <div v-if="membersLoading" class="loading-state">Loading members...</div>
             <div v-else-if="filteredMembers.length === 0" class="empty-state">No members found</div>
             <ul v-else class="members-table">
-              <li v-for="member in filteredMembers" :key="member.id" class="member-row">
+              <li
+                v-for="member in filteredMembers"
+                :key="member.userId || member.membershipId"
+                class="member-row"
+              >
                 <div class="member-user-info">
                   <div class="member-avatar">
-                    {{ getInitials(member.name) }}
+                    <img
+                      v-if="member.avatarUrl || member.avatar"
+                      :src="member.avatarUrl || member.avatar"
+                      alt=""
+                    />
+                    <template v-else>{{ getInitials(member.name || 'Member') }}</template>
                     <span
                       class="status-indicator"
                       :class="
@@ -259,26 +428,48 @@ function getInitials(name) {
                     />
                   </div>
                   <div class="member-details">
-                    <span class="member-name">{{ member.name }}</span>
-                    <span class="member-email">{{ member.email || 'team-member' }}</span>
+                    <span class="member-name">
+                      {{ member.name || 'Member' }}<span v-if="isCurrentUser(member)"> (You)</span>
+                    </span>
                   </div>
                 </div>
 
                 <div class="member-actions">
-                  <span class="role-badge" :class="`role-badge--${member.role}`">
+                  <button
+                    v-if="isCurrentUser(member)"
+                    type="button"
+                    class="leave-btn"
+                    :disabled="membersWriting"
+                    @click="handleLeaveTeam"
+                  >
+                    Leave team
+                  </button>
+                  <span v-if="member.isCreator" class="role-badge role-badge--admin">
+                    Creator
+                  </span>
+                  <span
+                    v-else-if="member.role"
+                    class="role-badge"
+                    :class="`role-badge--${member.role}`"
+                  >
                     {{ member.role }}
                   </span>
 
                   <!-- Remove button -->
                   <button
-                    v-if="member.role !== 'admin'"
+                    v-if="
+                      isAdmin &&
+                      member.userId &&
+                      String(member.userId) !== String(currentUserId) &&
+                      !permissionDenied
+                    "
                     type="button"
                     class="remove-btn"
-                    :disabled="removingMemberId === member.id"
+                    :disabled="membersWriting || removingUserId === member.userId"
                     title="Remove user"
                     @click="handleRemove(member)"
                   >
-                    <span v-if="removingMemberId === member.id">...</span>
+                    <span v-if="removingUserId === member.userId">...</span>
                     <svg
                       v-else
                       width="14"
@@ -306,30 +497,38 @@ function getInitials(name) {
       </div>
     </div>
   </div>
+  <ConfirmDialog
+    v-if="confirmation"
+    :is-open="Boolean(confirmation)"
+    :title="confirmation.title"
+    :message="confirmation.message"
+    :confirm-label="confirmation.confirmLabel"
+    :variant="confirmation.kind === 'remove' ? 'danger' : 'default'"
+    :loading="confirmationLoading"
+    :error-message="confirmationError"
+    @confirm="handleConfirmAction"
+    @cancel="cancelConfirmation"
+  />
 </template>
 
 <style scoped>
 .modal-backdrop {
-  position: fixed;
-  inset: 0;
-  background: rgba(10, 8, 18, 0.75);
-  backdrop-filter: blur(4px);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 50;
-  padding: 16px;
+  z-index: var(--shell-z-modal);
 }
 
 .modal-card {
   width: 100%;
   max-width: 540px;
-  background: #1e1b2e;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 12px;
-  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.45);
-  color: #f1f5f9;
+  max-height: calc(100vh - 2rem);
+  display: flex;
+  flex-direction: column;
   overflow: hidden;
+}
+
+.modal-card button:focus-visible,
+.modal-card input:focus-visible {
+  outline: 2px solid var(--color-indigo-400);
+  outline-offset: 2px;
 }
 
 .modal-header {
@@ -337,25 +536,25 @@ function getInitials(name) {
   align-items: center;
   justify-content: space-between;
   padding: 16px 20px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  border-bottom: 1px solid var(--color-slate-200);
 }
 
 .modal-title {
   font-size: 16px;
   font-weight: 700;
   margin: 0;
-  color: #fff;
+  color: var(--color-slate-900);
 }
 
 .modal-subtitle {
   font-size: 12px;
-  color: rgba(255, 255, 255, 0.45);
+  color: var(--color-slate-600);
 }
 
 .close-btn {
   background: transparent;
   border: none;
-  color: rgba(255, 255, 255, 0.4);
+  color: var(--color-slate-500);
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -364,30 +563,44 @@ function getInitials(name) {
   transition: all 0.15s ease;
 }
 .close-btn:hover {
-  color: #fff;
-  background: rgba(255, 255, 255, 0.08);
+  color: var(--color-slate-900);
+  background: var(--color-slate-100);
 }
 
 .modal-body {
+  min-height: 0;
+  overflow-y: auto;
   padding: 20px;
   display: flex;
   flex-direction: column;
   gap: 16px;
+  scrollbar-color: var(--color-slate-400) transparent;
+  scrollbar-width: thin;
+}
+
+.not-available-banner {
+  margin: 0;
+  border: 1px solid var(--color-amber-200);
+  border-radius: 0.5rem;
+  padding: 0.625rem 0.75rem;
+  background: var(--color-amber-50);
+  color: var(--color-amber-900);
+  font-size: 0.8125rem;
 }
 
 .success-banner {
-  background: rgba(34, 197, 94, 0.15);
-  border: 1px solid rgba(34, 197, 94, 0.4);
-  color: #86efac;
+  background: var(--color-green-50);
+  border: 1px solid var(--color-green-200);
+  color: var(--color-green-800);
   padding: 8px 12px;
   border-radius: 6px;
   font-size: 12px;
 }
 
 .error-banner {
-  background: rgba(239, 68, 68, 0.15);
-  border: 1px solid rgba(239, 68, 68, 0.4);
-  color: #fca5a5;
+  background: var(--color-red-50);
+  border: 1px solid var(--color-red-200);
+  color: var(--color-red-800);
   padding: 8px 12px;
   border-radius: 6px;
   font-size: 12px;
@@ -398,7 +611,7 @@ function getInitials(name) {
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.05em;
-  color: rgba(255, 255, 255, 0.5);
+  color: var(--color-slate-700);
 }
 
 .add-section {
@@ -408,6 +621,67 @@ function getInitials(name) {
   position: relative;
 }
 
+.member-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  border: 1px solid var(--color-slate-200);
+  border-radius: 8px;
+  padding: 10px;
+}
+
+.picker-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 180px;
+  overflow-y: auto;
+  margin: 0;
+  padding: 0;
+}
+
+.picker-row {
+  border-radius: 6px;
+}
+
+.picker-row:hover {
+  background: var(--color-slate-50);
+}
+
+.picker-user {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px;
+  cursor: pointer;
+}
+
+.picker-user input {
+  accent-color: var(--color-indigo-400);
+}
+
+.picker-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.picker-footer > span {
+  font-size: 12px;
+  color: var(--color-slate-600);
+}
+
+.retry-members {
+  margin-left: 8px;
+  border: 0;
+  background: transparent;
+  color: var(--color-indigo-300);
+  cursor: pointer;
+  text-decoration: underline;
+}
+
 .add-input-wrapper {
   display: flex;
   gap: 8px;
@@ -415,23 +689,23 @@ function getInitials(name) {
 
 .add-input {
   flex: 1;
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: var(--color-white);
+  border: 1px solid var(--color-slate-300);
   border-radius: 8px;
   padding: 8px 12px;
-  color: #fff;
+  color: var(--color-slate-900);
   font-size: 13px;
   outline: none;
   transition: border-color 0.15s ease;
 }
 .add-input:focus {
-  border-color: #7c3aed;
-  background: rgba(255, 255, 255, 0.08);
+  border-color: var(--color-indigo-600);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-indigo-600) 16%, transparent);
 }
 
 .add-btn {
-  background: #7c3aed;
-  color: #fff;
+  background: var(--color-indigo-600);
+  color: var(--color-white);
   border: none;
   padding: 8px 14px;
   border-radius: 8px;
@@ -442,7 +716,7 @@ function getInitials(name) {
   white-space: nowrap;
 }
 .add-btn:hover:not(:disabled) {
-  background: #6d28d9;
+  background: var(--color-indigo-700);
 }
 .add-btn:disabled {
   opacity: 0.5;
@@ -454,13 +728,13 @@ function getInitials(name) {
   top: 64px;
   left: 0;
   right: 0;
-  background: #252238;
-  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: var(--color-white);
+  border: 1px solid var(--color-slate-200);
   border-radius: 8px;
-  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.4);
+  box-shadow: var(--shell-surface-shadow);
   max-height: 180px;
   overflow-y: auto;
-  z-index: 10;
+  z-index: var(--shell-z-popover);
   padding: 4px;
 }
 
@@ -473,20 +747,20 @@ function getInitials(name) {
   border-radius: 6px;
   border: none;
   background: transparent;
-  color: #fff;
+  color: var(--color-slate-800);
   cursor: pointer;
   text-align: left;
   transition: background 0.15s ease;
 }
 .suggestion-row:hover {
-  background: rgba(124, 58, 237, 0.2);
+  background: var(--color-indigo-50);
 }
 
 .suggestion-avatar {
   width: 26px;
   height: 26px;
   border-radius: 50%;
-  background: #7c3aed;
+  background: var(--color-indigo-600);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -505,12 +779,12 @@ function getInitials(name) {
 }
 .suggestion-email {
   font-size: 11px;
-  color: rgba(255, 255, 255, 0.4);
+  color: var(--color-slate-600);
 }
 
 .invite-label {
   font-size: 11px;
-  color: #a78bfa;
+  color: var(--color-indigo-700);
   font-weight: 600;
 }
 
@@ -530,28 +804,35 @@ function getInitials(name) {
   display: flex;
   align-items: center;
   gap: 6px;
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: var(--color-white);
+  border: 1px solid var(--color-slate-300);
   border-radius: 6px;
   padding: 4px 8px;
-  color: rgba(255, 255, 255, 0.4);
+  color: var(--color-slate-500);
 }
 
 .filter-input {
   background: transparent;
   border: none;
-  color: #fff;
+  color: var(--color-slate-900);
   font-size: 11px;
   outline: none;
   width: 110px;
 }
 
+.filter-input::placeholder {
+  color: var(--color-slate-500);
+  opacity: 1;
+}
+
 .members-table-container {
   max-height: 240px;
   overflow-y: auto;
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--color-slate-200);
   border-radius: 8px;
-  background: rgba(0, 0, 0, 0.15);
+  background: var(--color-white);
+  scrollbar-color: var(--color-slate-400) transparent;
+  scrollbar-width: thin;
 }
 
 .members-table {
@@ -564,6 +845,7 @@ function getInitials(name) {
 }
 
 .member-row {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -572,7 +854,104 @@ function getInitials(name) {
   transition: background 0.15s ease;
 }
 .member-row:hover {
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--color-slate-50);
+}
+
+.member-hover-card {
+  position: absolute;
+  left: 50%;
+  top: -18px;
+  transform: translateX(-50%);
+  width: 260px;
+  background: var(--color-white);
+  color: var(--color-slate-900);
+  border: 1px solid var(--color-slate-200);
+  border-radius: 16px;
+  box-shadow: var(--shell-surface-shadow);
+  padding: 14px 14px 12px;
+  z-index: var(--shell-z-popover);
+  pointer-events: none;
+}
+
+.member-hover-card__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.member-hover-card__avatar {
+  width: 82px;
+  height: 82px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, var(--color-indigo-600), var(--color-indigo-500));
+  color: var(--color-white);
+  font-size: 22px;
+  font-weight: 700;
+  margin: 0 auto;
+}
+
+.member-hover-card__status {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: var(--color-slate-100);
+}
+.member-hover-card__status--online {
+  color: var(--color-green-800);
+  background: var(--color-green-100);
+}
+.member-hover-card__status--offline {
+  color: var(--color-slate-700);
+  background: var(--color-slate-100);
+}
+
+.member-hover-card__body {
+  text-align: center;
+  margin-bottom: 12px;
+}
+
+.member-hover-card__body h4 {
+  margin: 0;
+  font-size: 20px;
+  line-height: 1.2;
+  font-weight: 700;
+}
+
+.member-hover-card__body p {
+  margin: 4px 0 0;
+  font-size: 13px;
+  color: var(--color-slate-700);
+}
+
+.member-hover-card__actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.member-hover-card__action {
+  border-radius: 10px;
+  border: 1px solid var(--color-slate-300);
+  background: transparent;
+  padding: 9px 10px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.member-hover-card__action--primary {
+  background: var(--color-white);
+  color: var(--color-slate-900);
+}
+.member-hover-card__action--secondary {
+  background: var(--color-slate-50);
+  color: var(--color-slate-900);
 }
 
 .member-user-info {
@@ -586,13 +965,13 @@ function getInitials(name) {
   width: 28px;
   height: 28px;
   border-radius: 50%;
-  background: #475569;
+  background: var(--color-slate-600);
   display: flex;
   align-items: center;
   justify-content: center;
   font-size: 10px;
   font-weight: 700;
-  color: #fff;
+  color: var(--color-white);
 }
 
 .status-indicator {
@@ -602,13 +981,13 @@ function getInitials(name) {
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  border: 1.5px solid #1e1b2e;
+  border: 1.5px solid var(--color-white);
 }
 .status-indicator--online {
-  background: #22c55e;
+  background: var(--color-green-500);
 }
 .status-indicator--offline {
-  background: #64748b;
+  background: var(--color-slate-500);
 }
 
 .member-details {
@@ -619,12 +998,12 @@ function getInitials(name) {
 .member-name {
   font-size: 13px;
   font-weight: 500;
-  color: #f1f5f9;
+  color: var(--color-slate-900);
 }
 
 .member-email {
   font-size: 11px;
-  color: rgba(255, 255, 255, 0.4);
+  color: var(--color-slate-600);
 }
 
 .member-actions {
@@ -641,19 +1020,19 @@ function getInitials(name) {
   border-radius: 4px;
 }
 .role-badge--admin {
-  background: rgba(124, 58, 237, 0.2);
-  color: #c4b5fd;
-  border: 1px solid rgba(124, 58, 237, 0.4);
+  background: var(--color-indigo-50);
+  color: var(--color-indigo-800);
+  border: 1px solid var(--color-indigo-200);
 }
 .role-badge--member {
-  background: rgba(255, 255, 255, 0.06);
-  color: rgba(255, 255, 255, 0.6);
+  background: var(--color-slate-100);
+  color: var(--color-slate-700);
 }
 
 .remove-btn {
   background: transparent;
   border: none;
-  color: rgba(239, 68, 68, 0.6);
+  color: var(--color-red-600);
   cursor: pointer;
   padding: 4px;
   border-radius: 4px;
@@ -661,9 +1040,25 @@ function getInitials(name) {
   align-items: center;
   transition: all 0.15s ease;
 }
+.leave-btn {
+  border: 0;
+  border-radius: 4px;
+  padding: 4px 6px;
+  background: transparent;
+  color: var(--color-indigo-700);
+  cursor: pointer;
+  font-size: 11px;
+}
+.leave-btn:hover:not(:disabled) {
+  background: var(--color-indigo-50);
+}
+.leave-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
 .remove-btn:hover:not(:disabled) {
-  color: #ef4444;
-  background: rgba(239, 68, 68, 0.1);
+  color: var(--color-red-700);
+  background: var(--color-red-50);
 }
 .remove-btn:disabled {
   opacity: 0.5;
@@ -675,21 +1070,21 @@ function getInitials(name) {
   padding: 30px;
   text-align: center;
   font-size: 12px;
-  color: rgba(255, 255, 255, 0.4);
+  color: var(--color-slate-600);
 }
 
 .modal-footer {
   display: flex;
   justify-content: flex-end;
   padding: 12px 20px;
-  background: rgba(0, 0, 0, 0.15);
-  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  background: var(--color-slate-50);
+  border-top: 1px solid var(--color-slate-200);
 }
 
 .btn-done {
-  background: rgba(255, 255, 255, 0.1);
-  color: #fff;
-  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: var(--color-white);
+  color: var(--color-slate-800);
+  border: 1px solid var(--color-slate-300);
   padding: 6px 16px;
   border-radius: 6px;
   font-size: 13px;
@@ -698,6 +1093,6 @@ function getInitials(name) {
   transition: background 0.15s ease;
 }
 .btn-done:hover {
-  background: rgba(255, 255, 255, 0.15);
+  background: var(--color-slate-50);
 }
 </style>

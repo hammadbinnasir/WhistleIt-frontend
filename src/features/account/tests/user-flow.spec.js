@@ -23,6 +23,13 @@ const setValue = async (el, value) => {
   await flushPromises()
 }
 
+const addResponsibility = async (value) => {
+  const input = $('.responsibility-input')
+  await setValue(input, value)
+  input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+  await flushPromises()
+}
+
 const openMenu = () => click($('.avatar-btn'))
 const openStatusMenu = async () => {
   await openMenu()
@@ -36,8 +43,26 @@ const tab = (label) => byText(label, '[role=tab]')
 
 beforeEach(() => {
   resetUserStore()
+  sessionStorage.setItem('authUser', JSON.stringify({ id: 'test-user', fullName: 'Hammad Haider' }))
   URL.createObjectURL = vi.fn(() => 'blob:mock')
   URL.revokeObjectURL = vi.fn()
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (url, options) => ({
+      ok: true,
+      status: 200,
+      statusText: 'OK',
+      json: async () =>
+        options.method === 'POST' && String(url).endsWith('/avatar')
+          ? {
+              data: {
+                avatar_url:
+                  'http://10.0.105.90:8000/api/v1/avatars/avatars/test-user/avatar.jpg',
+              },
+            }
+          : {},
+    })),
+  )
   wrapper = mount(UserModule, {
     props: { user: { profile: { fullName: 'Hammad Haider' } } },
     attachTo: document.body,
@@ -47,6 +72,8 @@ beforeEach(() => {
 afterEach(() => {
   wrapper.unmount()
   document.body.innerHTML = ''
+  vi.unstubAllGlobals()
+  sessionStorage.clear()
 })
 
 describe('avatar and user menu', () => {
@@ -54,7 +81,9 @@ describe('avatar and user menu', () => {
     expect($('.avatar-btn')).toBeTruthy()
     expect($('.initials').textContent).toBe('HH')
     expect($('.badge.online')).toBeTruthy()
-    expect($('.avatar-btn').title).toBe('Hammad Haider')
+    expect($('.avatar-tooltip-name').textContent.trim()).toBe('Hammad Haider')
+    expect($('.avatar-tooltip-title')).toBeNull()
+    expect($('.avatar-btn').getAttribute('aria-describedby')).toBe('user-avatar-tooltip')
     expect($('[role=menu]')).toBeNull()
   })
 
@@ -153,6 +182,29 @@ describe('status menu', () => {
     expect($('.badge.online')).toBeNull()
     expect($('[role=menu]')).toBeNull()
     expect(wrapper.emitted('status-change')[0]).toEqual(['away'])
+    const [url, options] = fetch.mock.calls.find(
+      ([requestUrl, request]) =>
+        request.method === 'PUT' && String(requestUrl).endsWith('/v1/users/test-user/status'),
+    )
+    expect(url).toContain('/v1/users/test-user/status')
+    expect(JSON.parse(options.body)).toEqual({ mode: 'away' })
+  })
+
+  it('keeps the previous status and emits an error when the status update fails', async () => {
+    fetch.mockResolvedValueOnce({
+      ok: false,
+      status: 500,
+      statusText: 'Internal Server Error',
+      json: async () => ({ message: 'Status update failed' }),
+    })
+
+    await openStatusMenu()
+    await click(byText('Away', '.status-menu .label').closest('button'))
+
+    expect(store.state.status).toBe('online')
+    expect($('.badge.online')).toBeTruthy()
+    expect(wrapper.emitted('status-change')).toBeUndefined()
+    expect(wrapper.emitted('error')[0][0].message).toContain('Status update failed')
   })
 
   it('supports Do Not Disturb and Offline', async () => {
@@ -197,9 +249,32 @@ describe('custom status modal', () => {
     await openStatusModal()
     await setValue($('.input'), 'emergency')
     expect($('.subtitle')).toBeTruthy()
+    expect($('.status-emoji').textContent).toBe('☕')
     await click(byText('SAVE'))
     expect(store.state.customStatus).toBe('emergency')
+    expect(store.state.customStatusEmoji).toBe('☕')
     expect(store.state.customStatusExpiresAt).toBeNull()
+    const [url, options] = fetch.mock.calls.find(
+      ([requestUrl, request]) =>
+        request.method === 'PUT' && String(requestUrl).endsWith('/v1/users/test-user/status'),
+    )
+    expect(url).toContain('/v1/users/test-user/status')
+    expect(options.method).toBe('PUT')
+    expect(JSON.parse(options.body)).toEqual({
+      custom_status: { emoji: '☕', text: 'emergency' },
+    })
+  })
+
+  it('shows preset status emojis and does not render an emoji picker', async () => {
+    await openStatusModal()
+    expect($$('.row .icon').map((item) => item.textContent.trim())).toEqual([
+      '📅',
+      '🚌',
+      '🤒',
+      '🌴',
+      '🏠',
+    ])
+    expect($('button[aria-label="Choose status emoji"]')).toBeNull()
   })
 
   it('picking a predefined status shows the "Remove status after" view', async () => {
@@ -252,7 +327,7 @@ describe('custom status modal', () => {
     expect(store.state.customStatusExpiresAt).toBeGreaterThanOrEqual(before + 30 * 60 * 1000)
     expect(store.state.customStatusExpiresAt).toBeLessThan(Date.now() + 30 * 60 * 1000 + 1000)
     expect(wrapper.emitted('custom-status-change')[0][0]).toBe('In a meeting')
-    expect($('.avatar-btn').title).toContain('In a meeting')
+    expect($('.avatar-btn').getAttribute('aria-label')).toContain('In a meeting')
   })
 
   it('"Today" expires at the end of the current day', async () => {
@@ -358,6 +433,13 @@ describe('custom status modal', () => {
     expect(store.state.customStatus).toBe('')
     expect(store.state.customStatusDuration).toBe('never')
     expect(store.state.customStatusExpiresAt).toBeNull()
+    const [url, options] = fetch.mock.calls.find(
+      ([requestUrl, request]) =>
+        request.method === 'DELETE' &&
+        String(requestUrl).endsWith('/v1/users/test-user/status/custom'),
+    )
+    expect(url).toContain('/v1/users/test-user/status/custom')
+    expect(options.method).toBe('DELETE')
     expect($('[role=dialog]')).toBeNull()
   })
 
@@ -421,10 +503,19 @@ describe('account settings modal', () => {
 
   it('contains the new Job Responsibilities field after Designation', async () => {
     await openSettings()
-    const inputs = $$('#settings-panel-general input[type=text]').map((i) => i.placeholder)
-    expect(inputs.indexOf('Enter Job Responsibilities')).toBe(
-      inputs.indexOf('Enter Designation') + 1,
+    const fields = $$('#settings-panel-general input[type=text], #settings-panel-general input[type=search]')
+    const placeholders = fields.map((field) => field.placeholder)
+    expect(placeholders.indexOf('Enter Job Responsibilities')).toBe(
+      placeholders.indexOf('Enter Designation') + 1,
     )
+    expect($('.field-hint').textContent.trim()).toBe('Press enter to add (Maximum 5 allowed)')
+    expect($('.responsibility-input').name).toBe('job-responsibility-entry')
+    expect($('.responsibility-input').autocomplete).toBe('new-password')
+    expect($('.responsibility-input').readOnly).toBe(true)
+    expect($('.responsibility-input').value).toBe('')
+    await $('.responsibility-input').focus()
+    await flushPromises()
+    expect($('.responsibility-input').readOnly).toBe(false)
   })
 
   it('contains the workspace switching section after left click', async () => {
@@ -447,16 +538,62 @@ describe('account settings modal', () => {
     await openSettings()
     await setValue($('input[placeholder="Full name"]'), 'Sara Khan')
     await setValue($('input[placeholder="Enter Designation"]'), 'Engineer')
-    await setValue($('input[placeholder="Enter Job Responsibilities"]'), 'Build things')
+    await addResponsibility('Build things')
+    await addResponsibility('Support team')
     $('input[placeholder="Old Password"]').dispatchEvent(new Event('blur'))
     await click(byText('SAVE'))
 
     expect($('[role=dialog]')).toBeNull()
     expect(store.state.profile.fullName).toBe('Sara Khan')
     expect(store.state.profile.designation).toBe('Engineer')
-    expect(store.state.profile.jobResponsibilities).toBe('Build things')
+    expect(store.state.profile.jobResponsibilities).toBe('Build things\nSupport team')
     expect($('.initials').textContent).toBe('SK')
     expect(wrapper.emitted('settings-saved')).toHaveLength(1)
+    const [url, options] = fetch.mock.calls.find(([, request]) => request.method === 'PATCH')
+    expect(url).toContain('/v1/users/test-user/profile')
+    expect(options.method).toBe('PATCH')
+    expect(JSON.parse(options.body)).toEqual({
+      name: 'Sara Khan',
+      display_name: '',
+      two_factor: 'inactive',
+      title: 'Engineer',
+      job_responsibilities: ['Build things', 'Support team'],
+    })
+  })
+
+  it('adds responsibilities as removable chips and limits the list to five', async () => {
+    await openSettings()
+    for (const item of ['One', 'Two', 'Three', 'Four', 'Five']) {
+      await addResponsibility(item)
+    }
+
+    expect($$('.responsibility-chip')).toHaveLength(5)
+    expect(
+      $$('.responsibility-chip').map((chip) => chip.textContent.replace('×', '').trim()),
+    ).toEqual(['One', 'Two', 'Three', 'Four', 'Five'])
+    expect($('.responsibility-input').disabled).toBe(true)
+    expect($('.field-error')).toBeNull()
+    await click($('button[aria-label="Remove One"]'))
+    expect($$('.responsibility-chip')).toHaveLength(4)
+    expect($('.responsibility-input').disabled).toBe(false)
+  })
+
+  it('does not update profile state or close settings when profile save fails', async () => {
+    await openSettings()
+    await setValue($('input[placeholder="Full name"]'), 'Unsaved Name')
+    fetch.mockResolvedValueOnce({
+      ok: false,
+      status: 422,
+      statusText: 'Unprocessable Entity',
+      json: async () => ({ message: 'Profile update failed' }),
+    })
+
+    await click(byText('SAVE'))
+
+    expect($('[role=dialog]')).toBeTruthy()
+    expect(store.state.profile.fullName).toBe('Hammad Haider')
+    expect(wrapper.emitted('settings-saved')).toBeUndefined()
+    expect(wrapper.emitted('error')[0][0].message).toContain('Profile update failed')
   })
 
   it('saves preferences without validating or redirecting to unrelated tabs', async () => {
@@ -476,12 +613,50 @@ describe('account settings modal', () => {
     await openSettings()
     await click(tab('User Preferences'))
     await click($('input[name="pref-enterKey"][value="newline"]'))
+    await click($('input[name="pref-leftClick"][value="default"]'))
     await click($('input[name="pref-workspaceSwitch"][value="new"]'))
     await click(byText('SAVE'))
 
     expect(store.state.preferences.enterKey).toBe('newline')
     expect(store.state.preferences.workspaceSwitch).toBe('new')
     expect(store.state.preferences.doubleClick).toBe('default')
+    const [url, options] = fetch.mock.calls.find(([, request]) => request.method === 'PATCH')
+    expect(url).toContain('/v1/users/test-user/preferences')
+    expect(options.method).toBe('PATCH')
+    expect(JSON.parse(options.body)).toEqual({
+      enter_key: 'newline',
+      double_click: 'default',
+      left_click: 'default_click',
+      workspace_switch: 'new',
+    })
+  })
+
+  it('sends the API enum for the Open Menu left-click preference', async () => {
+    await openSettings()
+    await click(tab('User Preferences'))
+    await click($('input[name="pref-leftClick"][value="menu"]'))
+    await click(byText('SAVE'))
+
+    const [, options] = fetch.mock.calls.find(([, request]) => request.method === 'PATCH')
+    expect(JSON.parse(options.body).left_click).toBe('open_menu')
+  })
+
+  it('keeps preferences unchanged and settings open when the API update fails', async () => {
+    await openSettings()
+    await click(tab('User Preferences'))
+    await click($('input[name="pref-enterKey"][value="newline"]'))
+    fetch.mockResolvedValueOnce({
+      ok: false,
+      status: 422,
+      statusText: 'Unprocessable Entity',
+      json: async () => ({ message: 'Preferences update failed' }),
+    })
+
+    await click(byText('SAVE'))
+
+    expect($('[role=dialog]')).toBeTruthy()
+    expect(store.state.preferences.enterKey).toBe('send')
+    expect(wrapper.emitted('error')[0][0].message).toContain('Preferences update failed')
   })
 
   it('keeps unsaved input when switching tabs', async () => {
@@ -507,6 +682,11 @@ describe('account settings modal', () => {
     await openSettings()
     await click(tab('Security'))
     const old = $('input[placeholder="Old Password"]')
+    expect(old.autocomplete).toBe('new-password')
+    expect(old.readOnly).toBe(true)
+    old.focus()
+    await flushPromises()
+    expect(old.readOnly).toBe(false)
     old.dispatchEvent(new Event('blur'))
     await flushPromises()
     expect($('.pw-error').textContent).toBe('Required.')
@@ -544,7 +724,38 @@ describe('account settings modal', () => {
 
     expect($('[role=dialog]')).toBeNull()
     const payload = wrapper.emitted('settings-saved')[0][0]
-    expect(payload.password).toEqual({ oldPassword: 'oldpass123', newPassword: 'abcdefgh' })
+    expect(payload.password).toEqual({
+      oldPassword: 'oldpass123',
+      newPassword: 'abcdefgh',
+      newPasswordConfirmation: 'abcdefgh',
+    })
+    const [url, options] = fetch.mock.calls.find(([, request]) => request.method === 'PUT')
+    expect(url).toContain('/v1/users/test-user/password')
+    expect(options.method).toBe('PUT')
+    expect(JSON.parse(options.body)).toEqual({
+      old_password: 'oldpass123',
+      new_password: 'abcdefgh',
+      new_password_confirmation: 'abcdefgh',
+    })
+  })
+
+  it('keeps the Security form open and emits an error when the password update fails', async () => {
+    await openSettings()
+    await click(tab('Security'))
+    await setValue($('input[placeholder="Old Password"]'), 'oldpass123')
+    await setValue($('input[placeholder="Enter New Password"]'), 'abcdefgh')
+    await setValue($('input[placeholder="Confirm New Password"]'), 'abcdefgh')
+    fetch.mockResolvedValueOnce({
+      ok: false,
+      status: 400,
+      json: async () => ({ message: 'Current password is incorrect' }),
+    })
+
+    await click(byText('SAVE'))
+
+    expect($('[role=dialog]')).toBeTruthy()
+    expect(wrapper.emitted('error')[0][0].message).toContain('Current password is incorrect')
+    expect(wrapper.emitted('settings-saved')).toBeUndefined()
   })
 
   it('does not require a password when the user is not changing it', async () => {
@@ -604,7 +815,106 @@ describe('account settings modal', () => {
     await click(byText('SAVE'))
     expect(store.state.profile.photoUrl).toBe('blob:mock')
     expect($('.avatar-btn img')).toBeTruthy()
+    expect($('.avatar-btn img').getAttribute('src')).toBe('blob:mock')
     expect(wrapper.emitted('settings-saved')[0][0].photoAction).toBe('added')
+
+    const [url, options] = fetch.mock.calls.find(([requestUrl]) =>
+      requestUrl.endsWith('/v1/users/test-user/avatar'),
+    )
+    expect(url).toContain('/v1/users/test-user/avatar')
+    expect(options.method).toBe('POST')
+    expect(options.body.get('avatar').name).toBe('me.png')
+    expect(options.headers['Content-Type']).toBeUndefined()
+  })
+
+  it('shows the uploaded image in the profile icon when the upload response omits a URL', async () => {
+    fetch.mockImplementation(async (_url, options) => ({
+      ok: true,
+      status: 200,
+      statusText: 'OK',
+      json: async () => (options.method === 'POST' ? { message: 'Avatar uploaded' } : {}),
+    }))
+    await openSettings()
+    const fileInput = $('input[type=file]')
+    Object.defineProperty(fileInput, 'files', {
+      value: [new File(['image'], 'me.png', { type: 'image/png' })],
+      configurable: true,
+    })
+    fileInput.dispatchEvent(new Event('change', { bubbles: true }))
+    await flushPromises()
+
+    await click(byText('SAVE'))
+
+    expect(store.state.profile.photoUrl).toBe('blob:mock')
+    expect($('.avatar-btn img').getAttribute('src')).toBe('blob:mock')
+  })
+
+  it('loads the user profile and saved image URL', async () => {
+    fetch.mockClear()
+    fetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        success: true,
+        message: 'User retrieved successfully.',
+        data: {
+          id: 'test-user',
+          name: 'Saved User',
+          display_name: 'saved',
+          title: 'Engineer',
+          job_responsibilities: ['Design systems', 'Build things'],
+          avatar_url: 'http://10.0.105.90:8000//api//v1//avatars//avatars//test-user//saved.png',
+          presence: 'away',
+          custom_status: 'Working remotely',
+          preferences: {
+            enter_key: 'newline',
+            double_click: 'reminder',
+            left_click: 'default_click',
+            workspace_switch: 'new',
+          },
+        },
+      }),
+    })
+
+    await store.loadUserProfile()
+    await flushPromises()
+
+    const [url, options] = fetch.mock.calls.at(-1)
+    expect(url).toContain('/v1/users/test-user/profile')
+    expect(options.method).toBe('GET')
+    expect(store.state.profile.fullName).toBe('Saved User')
+    expect(store.state.profile.alias).toBe('saved')
+    expect(store.state.profile.designation).toBe('Engineer')
+    expect(store.state.profile.jobResponsibilities).toBe('Design systems\nBuild things')
+    expect(store.state.profile.photoUrl).toBe(
+      'http://10.0.105.90:8000/api/v1/avatars/avatars/test-user/saved.png',
+    )
+    expect(store.state.status).toBe('away')
+    expect(store.state.customStatus).toBe('Working remotely')
+    expect(store.state.preferences).toEqual({
+      enterKey: 'newline',
+      doubleClick: 'reminder',
+      leftClick: 'default',
+      workspaceSwitch: 'new',
+    })
+    expect($('.avatar-btn img').getAttribute('src')).toBe(
+      'http://10.0.105.90:8000/api/v1/avatars/avatars/test-user/saved.png',
+    )
+    expect($('.avatar-tooltip-name').textContent.trim()).toBe('Saved User')
+    expect($('.avatar-tooltip-title').textContent.trim()).toBe('Engineer')
+  })
+
+  it('requests the user profile automatically when the account module mounts', () => {
+    const request = fetch.mock.calls.find(([url]) =>
+      String(url).includes('/v1/users/test-user/profile'),
+    )
+
+    expect(request).toBeTruthy()
+    expect(request[0]).toContain('/v1/users/test-user/profile')
+    expect(request[1].method).toBe('GET')
+    expect(fetch.mock.calls.some(([url]) => String(url).includes('/v1/users/test-user/settings'))).toBe(
+      false,
+    )
   })
 
   it('removes a saved profile photo and restores initials in the account icon', async () => {
@@ -615,7 +925,7 @@ describe('account settings modal', () => {
     await openSettings()
 
     await click(byText('REMOVE PHOTO'))
-    expect($('.avatar img')).toBeNull()
+    expect($('.panel .general .avatar img')).toBeNull()
     expect($('.remove-btn')).toBeNull()
 
     await click(byText('SAVE'))
@@ -624,6 +934,49 @@ describe('account settings modal', () => {
     expect($('.avatar-btn img')).toBeNull()
     expect($('.avatar-btn .initials').textContent).toBe('HH')
     expect(wrapper.emitted('settings-saved')[0][0].photoAction).toBe('removed')
+    const [url, options] = fetch.mock.calls.find(([, request]) => request.method === 'DELETE')
+    expect(url).toContain('/v1/users/test-user/avatar')
+    expect(options.method).toBe('DELETE')
+  })
+
+  it('does not clear the stored avatar when the delete request fails', async () => {
+    store.hydrate({ profile: { photoUrl: 'https://example.test/old.png' } })
+    await openSettings()
+    await click(byText('REMOVE PHOTO'))
+    fetch.mockResolvedValueOnce({
+      ok: false,
+      status: 500,
+      json: async () => ({ message: 'Avatar delete failed' }),
+    })
+
+    await click(byText('SAVE'))
+
+    expect(store.state.profile.photoUrl).toBe('https://example.test/old.png')
+    expect($('[role=dialog]')).toBeTruthy()
+    expect(wrapper.emitted('error')[0][0].message).toContain('Avatar delete failed')
+  })
+
+  it('does not replace the stored avatar when upload fails', async () => {
+    store.hydrate({ profile: { photoUrl: 'https://example.test/old.png' } })
+    await openSettings()
+    const fileInput = $('input[type=file]')
+    Object.defineProperty(fileInput, 'files', {
+      value: [new File(['image'], 'new.png', { type: 'image/png' })],
+      configurable: true,
+    })
+    fileInput.dispatchEvent(new Event('change', { bubbles: true }))
+    await flushPromises()
+    fetch.mockResolvedValueOnce({
+      ok: false,
+      status: 500,
+      json: async () => ({ message: 'Avatar upload failed' }),
+    })
+
+    await click(byText('SAVE'))
+
+    expect(store.state.profile.photoUrl).toBe('https://example.test/old.png')
+    expect($('[role=dialog]')).toBeTruthy()
+    expect(wrapper.emitted('error')[0][0].message).toContain('Avatar upload failed')
   })
 })
 

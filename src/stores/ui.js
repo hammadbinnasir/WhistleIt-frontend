@@ -11,29 +11,24 @@ export const useUiStore = defineStore('ui', () => {
   const channelSettingsOpen = ref(false)
   const channelSettingsTab = ref('settings')
   const toasts = ref([])
+  const pinnedMessages = ref([])
+  const polls = ref([])
   let nextToastId = 0
 
   // modal visibility flags
-  const helpModalOpen = ref(false)
   const teamCreateModalOpen = ref(false)
-  const teamJoinModalOpen = ref(false)
   const memberManageModalOpen = ref(false)
 
   // getters
   const hasSelection = computed(() => selectedChannelId.value !== null)
+  const helpModalOpen = computed(() => activePanel.value === 'help')
 
   // actions
   function selectChannel(id) {
     selectedChannelId.value = id
   }
-  function openPanel(panel) {
-    activePanel.value = panel
-  }
-  function closePanel() {
-    activePanel.value = null
-  }
-  function openChannelSettings() {
-    channelSettingsTab.value = 'settings'
+  function openChannelSettings(tab = 'settings') {
+    channelSettingsTab.value = tab
     channelSettingsOpen.value = true
   }
   function closeChannelSettings() {
@@ -49,6 +44,43 @@ export const useUiStore = defineStore('ui', () => {
   function dismissToast(id) {
     toasts.value = toasts.value.filter((item) => item.id !== id)
   }
+  function addPoll(message, conversation) {
+    const content = message.content || message.text || ''
+    const titleMatch = content.match(/^Poll:\s*(.+)$/m)
+    if (!titleMatch) return
+    const existing = polls.value.some((poll) => poll.id === String(message.id))
+    if (existing) return
+    polls.value.unshift({
+      id: String(message.id || Date.now()),
+      title: titleMatch[1].trim(),
+      content,
+      conversation,
+      createdAt: message.createdAt || new Date().toISOString(),
+      status: 'Open',
+    })
+  }
+  function togglePinnedMessage(message, conversation) {
+    const id = String(message.id)
+    const conversationId = String(conversation?.id ?? message.conversation?.id ?? '')
+    const conversationKind =
+      conversation?.kind === 'dm' || conversation?.type === 'dm' ? 'dm' : 'channel'
+    const existingIndex = pinnedMessages.value.findIndex((item) => {
+      const itemConversation = item.conversation || {}
+      const itemKind =
+        itemConversation.kind === 'dm' || itemConversation.type === 'dm' ? 'dm' : 'channel'
+      return (
+        String(item.id) === id &&
+        String(itemConversation.id ?? '') === conversationId &&
+        itemKind === conversationKind
+      )
+    })
+    if (existingIndex !== -1) {
+      pinnedMessages.value.splice(existingIndex, 1)
+      return false
+    }
+    pinnedMessages.value.unshift({ ...message, conversation })
+    return true
+  }
   function toggleSidebar() {
     sidebarOpen.value = !sidebarOpen.value
   }
@@ -63,14 +95,10 @@ export const useUiStore = defineStore('ui', () => {
 
   // modal & drawer toggles
   function toggleHelpModal() {
-    activePanel.value = activePanel.value === 'help' ? null : 'help'
-    helpModalOpen.value = activePanel.value === 'help'
+    openPanel('help')
   }
   function toggleTeamCreateModal() {
     teamCreateModalOpen.value = !teamCreateModalOpen.value
-  }
-  function toggleTeamJoinModal() {
-    teamJoinModalOpen.value = !teamJoinModalOpen.value
   }
   function toggleMemberManageModal() {
     memberManageModalOpen.value = !memberManageModalOpen.value
@@ -83,6 +111,10 @@ export const useUiStore = defineStore('ui', () => {
     channelSettingsOpen,
     channelSettingsTab,
     toasts,
+    pinnedMessages,
+    polls,
+    addPoll,
+    togglePinnedMessage,
     hasSelection,
     selectChannel,
     openPanel,
@@ -94,12 +126,9 @@ export const useUiStore = defineStore('ui', () => {
     toggleSidebar,
     helpModalOpen,
     teamCreateModalOpen,
-    teamJoinModalOpen,
-    openPanel,
-    closePanel,
+    memberManageModalOpen,
     toggleHelpModal,
     toggleTeamCreateModal,
-    toggleTeamJoinModal,
     toggleMemberManageModal,
   }
 })

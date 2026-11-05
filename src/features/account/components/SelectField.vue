@@ -16,7 +16,7 @@ const openUp = ref(false)
 const activeIndex = ref(-1)
 
 const uid = `sf-${Math.random().toString(36).slice(2, 8)}`
-const ITEM_HEIGHT = 50
+const ITEM_HEIGHT = 38
 
 const selectedIndex = computed(() => props.options.findIndex((o) => o.value === props.modelValue))
 const selectedLabel = computed(() => props.options[selectedIndex.value]?.label ?? '')
@@ -161,11 +161,11 @@ onBeforeUnmount(() => document.removeEventListener('mousedown', onDocMouseDown))
   align-items: center;
   justify-content: space-between;
   width: 100%;
-  height: 50px;
+  height: 38px;
   box-sizing: border-box;
   padding: 0 10px 0 14px;
   font-family: inherit;
-  font-size: 20px;
+  font-size: 15px;
   color: #1f1f2e;
   text-align: left;
   background: #fff;
@@ -181,8 +181,8 @@ onBeforeUnmount(() => document.removeEventListener('mousedown', onDocMouseDown))
 
 .caret {
   flex-shrink: 0;
-  width: 26px;
-  height: 26px;
+  width: 20px;
+  height: 20px;
   color: #5a5b6a;
 }
 
@@ -222,9 +222,9 @@ onBeforeUnmount(() => document.removeEventListener('mousedown', onDocMouseDown))
 .option {
   display: flex;
   align-items: center;
-  height: 50px;
-  padding: 0 19px;
-  font-size: 18px;
+  height: 38px;
+  padding: 0 14px;
+  font-size: 14px;
   color: #1f1f2e;
   cursor: pointer;
 }
