@@ -62,19 +62,17 @@ const glowFilterId = `${loaderId}-glow`
           cy="50"
           r="43"
           :stroke="`url(#${segmentGradientId})`"
-          stroke-width="10"
-          stroke-dasharray="105 165.18"
           stroke-linecap="round"
         />
         <circle
-          cx="50"
-          cy="93"
+          cx="36.3"
+          cy="90.8"
           r="7"
           :fill="`url(#${endpointGradientId})`"
           :filter="`url(#${glowFilterId})`"
         />
-        <circle cx="50" cy="93" r="5" :fill="`url(#${endpointGradientId})`" />
-        <circle class="loading-spinner__dot" cx="50" cy="93" r="4" fill="#fff" />
+        <circle cx="36.3" cy="90.8" r="5" :fill="`url(#${endpointGradientId})`" />
+        <circle class="loading-spinner__dot" cx="36.3" cy="90.8" r="4" fill="#fff" />
       </g>
     </svg>
   </span>
@@ -99,7 +97,7 @@ const glowFilterId = `${loaderId}-glow`
 .loading-spinner__track,
 .loading-spinner__segment {
   fill: none;
-  stroke-width: 10;
+  stroke-width: 12;
 }
 
 .loading-spinner__arc {
@@ -109,7 +107,7 @@ const glowFilterId = `${loaderId}-glow`
 }
 
 .loading-spinner__segment {
-  stroke-dasharray: 68 202.18;
+  stroke-dasharray: 82 188.18;
   stroke-linecap: round;
 }
 
