@@ -91,12 +91,21 @@ describe('team rail workspace preference', () => {
     await wrapper.get('.test-workspace-select').trigger('click')
 
     expect(routerMock.resolve).toHaveBeenCalledWith({ path: '/app/workspace-2' })
-    expect(openMock).toHaveBeenCalledWith(
-      '/app/workspace-2',
-      '_blank',
-      'noopener,noreferrer',
-    )
+    expect(openMock).toHaveBeenCalledWith('/app/workspace-2', '_blank', 'noopener,noreferrer')
     expect(selectWorkspace).not.toHaveBeenCalled()
     expect(routerMock.push).not.toHaveBeenCalled()
+  })
+
+  it('shows the invite tooltip above the adjacent sidebar', async () => {
+    wrapper = mount(TeamRail)
+    const inviteButton = wrapper.get('.team-rail__add--invite')
+
+    await inviteButton.trigger('mouseenter')
+
+    const tooltip = document.body.querySelector('.team-rail__tooltip')
+    expect(tooltip?.textContent).toBe('Invite People')
+
+    await inviteButton.trigger('mouseleave')
+    expect(document.body.querySelector('.team-rail__tooltip')).toBeNull()
   })
 })

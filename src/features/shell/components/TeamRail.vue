@@ -526,17 +526,16 @@ function hideRailTooltip() {
 
 .team-rail__tooltip {
   position: fixed;
-  z-index: var(--shell-z-sidebar);
+  z-index: var(--shell-z-popover);
   transform: translateY(-50%);
-  border-radius: 0.35rem;
-  padding: 0.4rem 0.75rem;
-  border: 1px solid var(--shell-surface-border);
-  background: var(--shell-surface-background);
-  color: var(--shell-surface-foreground);
-  box-shadow: var(--shell-surface-shadow);
-  font-size: 0.8125rem;
+  border-radius: 4px;
+  padding: 6px 10px;
+  background: #55545d;
+  color: #fff;
+  box-shadow: 0 2px 6px rgb(0 0 0 / 20%);
+  font-size: 16px;
   font-weight: 500;
-  line-height: 1.25rem;
+  line-height: 22px;
   white-space: nowrap;
   pointer-events: none;
 }
