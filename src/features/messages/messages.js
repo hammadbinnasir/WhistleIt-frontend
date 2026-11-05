@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { useActivityStore } from '@/stores/activity'
+import { sendChannelMessage } from '@/features/channels/api/channels.api'
 
 const STORAGE_KEY = 'whistleit:channel-messages'
 const PAGE_SIZE = 20
@@ -104,6 +105,7 @@ export const useMessagesStore = defineStore('messages', () => {
     const key = String(channelId)
     const message = {
       id: createId(),
+      backendSynced: false,
       content: payload.content,
       author,
       authorId: 'current-user',
@@ -134,7 +136,30 @@ export const useMessagesStore = defineStore('messages', () => {
       })
     }
     persist()
+    if (!message.scheduled) {
+      void syncMessage(channelId, message, payload)
+    }
     return message
+  }
+
+  async function syncMessage(channelId, message, payload) {
+    try {
+      const saved = await sendChannelMessage(channelId, {
+        body: payload.content ?? payload.body ?? '',
+      })
+      if (!saved.id) throw new Error('The server did not return a message ID.')
+
+      const current = messagesFor(channelId).find((item) => item.id === message.id)
+      if (!current) return
+      current.id = saved.id
+      current.backendSynced = true
+      current.createdAt = saved.created_at ?? saved.createdAt ?? current.createdAt
+      persist()
+    } catch (error) {
+      console.error('Unable to sync channel message:', error)
+      message.syncError = error.message || 'Unable to sync channel message.'
+      persist()
+    }
   }
 
   function editMessage(channelId, messageId, content) {

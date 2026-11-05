@@ -773,6 +773,18 @@ export const useDmStore = defineStore('dms', () => {
     }
   }
 
+  function listPinnedMessages(conversationId, messageId) {
+    return dmApi.listPinnedMessages(companyId.value, conversationId, messageId)
+  }
+
+  function pinMessage(conversationId, messageId) {
+    return dmApi.pinMessage(companyId.value, conversationId, messageId)
+  }
+
+  function unpinMessage(conversationId, messageId) {
+    return dmApi.unpinMessage(companyId.value, conversationId, messageId)
+  }
+
   function toggleReaction(conversationId, messageId, emoji) {
     const found = findMessage(conversationId, messageId)
     if (!found || !emoji) return false
@@ -858,6 +870,9 @@ export const useDmStore = defineStore('dms', () => {
     cancelScheduledMessage,
     editMessage,
     deleteMessage,
+    listPinnedMessages,
+    pinMessage,
+    unpinMessage,
     toggleReaction,
     refreshMessage,
     pollOnce,

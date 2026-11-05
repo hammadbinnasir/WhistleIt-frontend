@@ -44,6 +44,7 @@ const connectionCopied = ref(false)
 const confirmLeave = ref(false)
 const showMessagePermissions = ref(false)
 const confirmArchive = ref(false)
+const memberToRemove = ref(null)
 const confirmConnectionUpdate = ref(false)
 const connectionUrl = ref('')
 const connectionUrlDraft = ref('')
@@ -194,8 +195,15 @@ async function addSelected() {
   }
 }
 async function remove(m) {
+  memberToRemove.value = m
+}
+
+async function confirmRemoveMember() {
+  const m = memberToRemove.value
+  if (!m) return
   await removeMember(m.id, props.channel.id)
   await refresh()
+  memberToRemove.value = null
 }
 
 async function copy() {
@@ -282,6 +290,44 @@ const showSample = ref(false)
             @click="updateConnectionUrl"
           >
             Update
+          </button>
+        </div>
+      </section>
+    </div>
+    <div
+      v-if="memberToRemove"
+      class="fixed inset-0 z-[90] flex items-center justify-center bg-slate-900/40 p-4"
+      @click.self="memberToRemove = null"
+    >
+      <section
+        class="w-[450px] max-w-full rounded-lg bg-white px-6 py-6 text-center shadow-2xl"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="remove-member-title"
+      >
+        <div class="mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-full bg-red-50 text-red-500">
+          <span class="text-4xl font-bold leading-none">i</span>
+        </div>
+        <h3 id="remove-member-title" class="text-xl font-bold text-slate-700">
+          Remove Member
+        </h3>
+        <p class="mt-7 text-base text-slate-600">
+          Are you sure you want to remove this member?
+        </p>
+        <div class="mt-6 flex justify-center gap-4">
+          <button
+            type="button"
+            class="cursor-pointer rounded border border-slate-300 px-7 py-2.5 font-semibold uppercase text-slate-600 hover:bg-slate-50"
+            @click="memberToRemove = null"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            class="cursor-pointer rounded bg-red-500 px-7 py-2.5 font-semibold uppercase text-white hover:bg-red-600"
+            @click="confirmRemoveMember"
+          >
+            Remove
           </button>
         </div>
       </section>
@@ -693,7 +739,11 @@ const showSample = ref(false)
                 >
                 <span class="text-sm text-slate-800">{{ m.name }}</span>
               </div>
-              <button class="invisible text-xs text-red-600 group-hover:visible" @click="remove(m)">
+              <button
+                type="button"
+                class="invisible cursor-pointer text-xs text-red-600 group-hover:visible hover:text-red-700"
+                @click="remove(m)"
+              >
                 Remove
               </button>
             </li>

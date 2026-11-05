@@ -59,6 +59,9 @@ async function jumpToMessage(message) {
   await nextTick()
   const target = document.querySelector(`[data-message-id="${CSS.escape(String(message.id))}"]`)
   target?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  if (!target) return
+  target.classList.add('pinned-jump-highlight')
+  setTimeout(() => target.classList.remove('pinned-jump-highlight'), 3000)
 }
 </script>
 
@@ -124,7 +127,7 @@ async function jumpToMessage(message) {
               </div>
               <button
                 type="button"
-                class="cursor-pointer rounded border border-indigo-400 px-1.5 py-0.5 text-[10px] font-semibold leading-4 tracking-wide text-indigo-600"
+                class="jump-button"
                 @click="jumpToMessage(message)"
               >
                 JUMP
@@ -137,3 +140,36 @@ async function jumpToMessage(message) {
     </ul>
   </aside>
 </template>
+
+<style scoped>
+:global(.jump-button) {
+  min-width: 36px;
+  height: 20px;
+  border: 1px solid #818cf8;
+  border-radius: 2px;
+  padding: 0 8px;
+  background: transparent;
+  color: #4f46e5;
+  font-size: 0.625rem;
+  font-weight: 600;
+  line-height: 18px;
+  cursor: pointer;
+}
+
+:global(.pinned-jump-highlight) {
+  border-radius: 8px;
+  background-color: rgba(250, 204, 21, 0.28);
+  box-shadow: 0 0 0 4px rgba(250, 204, 21, 0.28);
+  animation: pinned-message-pulse 600ms ease-in-out;
+}
+
+@keyframes pinned-message-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.006);
+  }
+}
+</style>

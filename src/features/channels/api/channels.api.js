@@ -138,3 +138,37 @@ export async function removeChannelMember(id, targetUser) {
     method: 'DELETE',
   })
 }
+
+export async function sendChannelMessage(channelId, payload) {
+  const response = await http(`${channelsPath(channelId)}/messages`, {
+    method: 'POST',
+    body: payload,
+  })
+  const source = response?.data?.message ?? response?.message ?? response?.data ?? response
+  const id = source?.id ?? source?.message_id ?? source?.uuid
+  return {
+    ...source,
+    id: id == null ? null : String(id),
+    content: source?.content ?? source?.body ?? source?.text ?? payload.content ?? payload.body ?? '',
+  }
+}
+
+export async function listPinnedMessages(channelId, messageId) {
+  const res = await http(
+    `${channelsPath(channelId)}/messages/${encodeURIComponent(messageId)}/pinned-messages`,
+  )
+  return asList(res).items
+}
+
+export async function pinMessage(channelId, messageId) {
+  return http(
+    `${channelsPath(channelId)}/messages/${encodeURIComponent(messageId)}/pin`,
+    { method: 'POST' },
+  )
+}
+
+export async function unpinMessage(channelId, messageId) {
+  await http(`${channelsPath(channelId)}/messages/${encodeURIComponent(messageId)}/pin`, {
+    method: 'DELETE',
+  })
+}
