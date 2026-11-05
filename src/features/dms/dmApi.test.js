@@ -280,4 +280,97 @@ describe('DM API', () => {
     )
     expect(apiRequest).not.toHaveBeenCalled()
   })
+
+  // ---------------- Messages ----------------
+
+  it('lists messages of a direct channel', async () => {
+    apiRequest.mockResolvedValue({
+      success: true,
+      data: { messages: [{ id: 'm1', sender_id: 'user-2', body: 'Hello' }] },
+    })
+
+    await expect(dmApi.listMessages('company-1', 'channel-1')).resolves.toMatchObject([
+      { id: 'm1', from: 'user-2', text: 'Hello' },
+    ])
+    expect(apiRequest).toHaveBeenCalledWith('/v1/company-1/direct-channels/channel-1/messages')
+  })
+
+  it('URL-encodes IDs when loading messages', async () => {
+    apiRequest.mockResolvedValue({ success: true, data: { messages: [] } })
+
+    await dmApi.listMessages('company 1', 'channel/1')
+
+    expect(apiRequest).toHaveBeenCalledWith(
+      '/v1/company%201/direct-channels/channel%2F1/messages',
+    )
+  })
+
+  it('gets one message of a direct channel', async () => {
+    apiRequest.mockResolvedValue({
+      success: true,
+      data: { message: { id: 'm1', sender_id: 'user-2', body: 'Hello' } },
+    })
+
+    await expect(dmApi.getMessage('company-1', 'channel-1', 'm1')).resolves.toMatchObject({
+      id: 'm1',
+      from: 'user-2',
+      text: 'Hello',
+    })
+    expect(apiRequest).toHaveBeenCalledWith('/v1/company-1/direct-channels/channel-1/messages/m1')
+  })
+
+  it('sends a message to a direct channel', async () => {
+    apiRequest.mockResolvedValue({
+      success: true,
+      data: { message: { id: 'm9', sender_id: 'user-1', body: 'Hi' } },
+    })
+
+    await expect(
+      dmApi.sendMessage('company-1', 'channel-1', { body: 'Hi' }),
+    ).resolves.toMatchObject({ id: 'm9', from: 'user-1', text: 'Hi' })
+    expect(apiRequest).toHaveBeenCalledWith('/v1/company-1/direct-channels/channel-1/messages', {
+      method: 'POST',
+      body: JSON.stringify({ body: 'Hi' }),
+    })
+  })
+
+  it('updates a message of a direct channel', async () => {
+    apiRequest.mockResolvedValue({ success: true, data: null })
+
+    await expect(
+      dmApi.updateMessage('company-1', 'channel-1', 'm9', { body: 'Edited' }),
+    ).resolves.toBeNull()
+    expect(apiRequest).toHaveBeenCalledWith(
+      '/v1/company-1/direct-channels/channel-1/messages/m9',
+      { method: 'PATCH', body: JSON.stringify({ body: 'Edited' }) },
+    )
+  })
+
+  it('deletes a message of a direct channel', async () => {
+    apiRequest.mockResolvedValue({ success: true, data: null })
+
+    await dmApi.deleteMessage('company-1', 'channel-1', 'm9')
+
+    expect(apiRequest).toHaveBeenCalledWith(
+      '/v1/company-1/direct-channels/channel-1/messages/m9',
+      { method: 'DELETE' },
+    )
+  })
+
+  it('requires the IDs for message requests', () => {
+    expect(() => dmApi.listMessages('', 'channel-1')).toThrow(
+      'A company ID is required to load messages.',
+    )
+    expect(() => dmApi.listMessages('company-1', '')).toThrow(
+      'A channel ID is required to load a direct conversation.',
+    )
+    expect(() => dmApi.updateMessage('company-1', 'channel-1', '', { body: 'x' })).toThrow(
+      'A message ID is required.',
+    )
+    expect(() => dmApi.deleteMessage('company-1', 'channel-1', '')).toThrow(
+      'A message ID is required.',
+    )
+    expect(apiRequest).not.toHaveBeenCalled()
+  })
 })
+

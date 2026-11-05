@@ -69,6 +69,28 @@ const conversation = computed(() => {
 const conversationLabel = computed(() =>
   conversation.value ? dms.titleOf(conversation.value) : channelId.value.replaceAll('-', ' '),
 )
+
+const messagesLoading = computed(() => Boolean(conversation.value) && dms.messagesLoading)
+const messagesError = computed(() => (conversation.value ? dms.messagesError : ''))
+
+function retryConversationMessages() {
+  if (conversation.value) void dms.loadMessages(conversation.value.id, { force: true })
+}
+
+function retryMessage(message) {
+  if (conversation.value) dms.retryMessage(conversation.value.id, message.id)
+}
+
+// Edit/delete API fail ho to toast dikhao
+watch(
+  () => dms.actionError,
+  (message) => {
+    if (!message) return
+    ui.toast('Action failed', message, 'error')
+    dms.actionError = ''
+  },
+)
+
 const conversationMeta = computed(() => ({
   id: channelId.value,
   name: conversationLabel.value,
@@ -1191,6 +1213,23 @@ onBeforeUnmount(() => {
                 </button>
               </div>
             </div>
+            
+            <span
+              v-if="message.status === 'sending'"
+              class="composer-conversation__sent-status composer-conversation__sent-status--sending"
+              aria-label="Sending"
+            >
+              Sending…
+            </span>
+            <button
+              v-if="message.status === 'failed'"
+              type="button"
+              class="composer-conversation__sent-status composer-conversation__sent-status--failed"
+              :title="message.error"
+              @click="retryMessage(message)"
+            >
+              Not sent · Retry
+            </button>
 
             <span
               v-if="message.mine && !message.scheduled && !message.deleted"
@@ -2577,5 +2616,24 @@ onBeforeUnmount(() => {
   .composer-conversation__action-toolbar {
     opacity: 1;
   }
+}
+
+.composer-conversation__sent-status--sending,
+.composer-conversation__sent-status--failed {
+  font-size: 11px;
+  letter-spacing: normal;
+}
+.composer-conversation__sent-status--failed {
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: #c92f43;
+  text-decoration: underline;
+  cursor: pointer;
+}
+/* Sending / Not sent dikhe to purana ✓✓ chhup jaye */
+.composer-conversation__sent-status--sending ~ .composer-conversation__sent-status,
+.composer-conversation__sent-status--failed ~ .composer-conversation__sent-status {
+  display: none;
 }
 </style>

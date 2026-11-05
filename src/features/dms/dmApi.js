@@ -1,37 +1,13 @@
-// import { CONVERSATIONS, NOTIFICATIONS, PRESENCE, USERS, ME_ID } from './mockData'
-
-// const delay = (ms = 200) => new Promise((r) => setTimeout(r, ms))
-// const clone = (v) => structuredClone(v)
-
-// // Backend nahi hai, isliye yeh sirf starting data deta hai.
-// // Baad mein backend aaye to har function mein http('/...') call lagegi.
-// export const dmApi = {
-//   meId: () => ME_ID,
-//   async users() {
-//     await delay()
-//     return clone(USERS)
-//   },
-//   async presence() {
-//     await delay()
-//     return clone(PRESENCE)
-//   },
-//   async conversations() {
-//     await delay()
-//     return clone(CONVERSATIONS)
-//   },
-//   async notifications() {
-//     await delay()
-//     return clone(NOTIFICATIONS)
-//   },
-// }
-
-
 import { apiRequest } from '@/lib/api/client'
 
 const encode = encodeURIComponent
 
 // TODO: Group DM ka endpoint abhi nahi mila. Backend se confirm karke yahan badlein.
 const groupChannelsPath = (companyId) => `/v1/${encode(companyId)}/group-channels`
+
+// Direct channel ke messages: /v1/{company}/direct-channels/{channel}/messages
+const messagesPath = (companyId, channelId) =>
+  `/v1/${encode(companyId)}/direct-channels/${encode(channelId)}/messages`
 
 // ---- validation (sync throw, request se pehle) ----
 function requireCompany(companyId, action = 'load direct channels') {
@@ -42,6 +18,9 @@ function requireChannel(channelId) {
 }
 function requireTeam(teamId) {
   if (!teamId) throw new Error('A team ID is required to load team members.')
+}
+function requireMessage(messageId) {
+  if (!messageId) throw new Error('A message ID is required.')
 }
 
 // ---- current user (login ke baad sessionStorage mein hota hai) ----
@@ -76,6 +55,15 @@ function membersFrom(data) {
       data?.users ??
       [])
   return Array.isArray(list) ? list : []
+}
+
+function messagesFrom(data) {
+  const list = Array.isArray(data) ? data : (data?.messages ?? data?.direct_messages ?? [])
+  return Array.isArray(list) ? list : []
+}
+
+function messageFrom(data) {
+  return data?.message ?? data?.direct_message ?? data
 }
 
 function nameOf(source = {}) {
@@ -261,9 +249,66 @@ export const dmApi = {
     )
   },
 
+  // ---------------- Messages ----------------
+
+  // GET /v1/{company}/direct-channels/{channel}/messages
+  listMessages(companyId, channelId) {
+    requireCompany(companyId, 'load messages')
+    requireChannel(channelId)
+    return apiRequest(messagesPath(companyId, channelId)).then((response) =>
+      messagesFrom(unwrap(response)).map(normalizeMessage),
+    )
+  },
+
+  // GET /v1/{company}/direct-channels/{channel}/messages/{message}
+  getMessage(companyId, channelId, messageId) {
+    requireCompany(companyId, 'load a message')
+    requireChannel(channelId)
+    requireMessage(messageId)
+    return apiRequest(`${messagesPath(companyId, channelId)}/${encode(messageId)}`).then(
+      (response) => normalizeMessage(messageFrom(unwrap(response))),
+    )
+  },
+
+  // POST /v1/{company}/direct-channels/{channel}/messages
+  sendMessage(companyId, channelId, payload) {
+    requireCompany(companyId, 'send a message')
+    requireChannel(channelId)
+    return apiRequest(messagesPath(companyId, channelId), {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }).then((response) => normalizeMessage(messageFrom(unwrap(response))))
+  },
+
+  // PATCH /v1/{company}/direct-channels/{channel}/messages/{message}
+  updateMessage(companyId, channelId, messageId, payload) {
+    requireCompany(companyId, 'update a message')
+    requireChannel(channelId)
+    requireMessage(messageId)
+    return apiRequest(`${messagesPath(companyId, channelId)}/${encode(messageId)}`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    }).then((response) => {
+      const data = messageFrom(unwrap(response))
+      return data && typeof data === 'object' && data.id ? normalizeMessage(data) : null
+    })
+  },
+
+  // DELETE /v1/{company}/direct-channels/{channel}/messages/{message}
+  deleteMessage(companyId, channelId, messageId) {
+    requireCompany(companyId, 'delete a message')
+    requireChannel(channelId)
+    requireMessage(messageId)
+    return apiRequest(`${messagesPath(companyId, channelId)}/${encode(messageId)}`, {
+      method: 'DELETE',
+    }).then(unwrap)
+  },
+
   // Presence ka abhi koi API endpoint nahi hai. Mock data hata diya gaya hai,
   // isliye khali object (sab offline, apna user online). Endpoint mile to yahan lagayein.
   presence() {
     return Promise.resolve({})
   },
 }
+  
+  
