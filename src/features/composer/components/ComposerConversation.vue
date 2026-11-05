@@ -17,6 +17,10 @@ import { useUiStore } from '@/stores/ui'
 import { useUserStore } from '@/features/account/composables/useUserStore'
 import { addMockMessage, removeMockMessage, updateMockMessage } from '@/features/search/search'
 import SetReminderModal from '@/features/search/SetReminderModal.vue'
+import {
+  createScheduledMessage,
+  getScheduledMessages,
+} from '../api/scheduledMessagesApi'
 import MessageComposer from './MessageComposer.vue'
 
 const props = defineProps({
@@ -233,19 +237,84 @@ function addMessage(payload) {
 }
 
 function addScheduledMessage(message) {
-  const scheduledMessage = conversation.value
-    ? dms.sendMessage(conversation.value.id, message)
-    : messageStore.sendMessage(
-        channelId.value,
-        message,
-        currentUserName.value,
-        conversationMeta.value.name,
-      )
-  if (!scheduledMessage) {
-    ui.toast('Message not scheduled', 'The conversation could not be found.', 'error')
-    return
+  const payload = {
+    channel_id: channelId.value,
+    body: message.content,
+    scheduled_at: message.scheduledAt,
+    timezone: message.timeZone,
+    conversation_type: props.conversationType,
+    ...(message.important ? { important: true } : {}),
+    ...(message.attachments?.length ? { attachments: message.attachments } : {}),
   }
-  scrollMessagesToLatest()
+
+  createScheduledMessage(payload)
+    .then((response) => {
+      const scheduledMessage = normalizeScheduledMessage(response, message)
+      if (!scheduledMessage) {
+        throw new Error('Scheduled message response did not contain a message.')
+      }
+      appendScheduledMessage(scheduledMessage)
+      ui.toast('Message scheduled', 'Your message was scheduled successfully.', 'success')
+      scrollMessagesToLatest()
+    })
+    .catch((error) => {
+      console.error('Unable to schedule message:', error)
+      ui.toast('Message not scheduled', error.message || 'The scheduled message could not be created.', 'error')
+    })
+}
+
+function scheduledMessageFromResponse(response) {
+  if (!response || typeof response !== 'object') return null
+  return response.data || response.message || response.scheduled_message || response
+}
+
+function normalizeScheduledMessage(response, fallback = {}) {
+  const source = scheduledMessageFromResponse(response)
+  if (!source || typeof source !== 'object') return null
+  const id = source.id ?? source.message_id
+  if (id == null) return null
+  return {
+    ...source,
+    id,
+    content: source.content ?? source.text ?? fallback.content ?? '',
+    author: source.author ?? currentUserName.value,
+    authorId: source.authorId ?? source.author_id ?? dms.meId,
+    mine: true,
+    createdAt: source.createdAt ?? source.created_at ?? new Date().toISOString(),
+    scheduled: true,
+    scheduledAt: source.scheduledAt ?? source.scheduled_at ?? fallback.scheduledAt,
+    timeZone: source.timeZone ?? source.timezone ?? fallback.timeZone,
+    attachments: source.attachments ?? fallback.attachments ?? [],
+  }
+}
+
+function appendScheduledMessage(message) {
+  const messages = conversation.value
+    ? conversation.value.messages
+    : messageStore.messagesFor(channelId.value)
+  if (messages.some((item) => String(item.id) === String(message.id))) return
+  messages.push(message)
+}
+
+function loadScheduledMessages() {
+  getScheduledMessages()
+    .then((response) => {
+      const values = Array.isArray(response)
+        ? response
+        : response?.data || response?.messages || response?.scheduled_messages || []
+      values
+        .map((item) => normalizeScheduledMessage(item))
+        .filter(
+          (item) =>
+            item &&
+            String(item.conversation_id ?? item.conversationId ?? channelId.value) ===
+              channelId.value,
+        )
+        .forEach(appendScheduledMessage)
+    })
+    .catch((error) => {
+      console.error('Unable to load scheduled messages:', error)
+    })
 }
 
 function addGif(gif) {
@@ -679,6 +748,7 @@ async function scrollMessagesToLatest() {
 
 onMounted(() => {
   document.addEventListener('pointerdown', closeActionsOnOutsideClick)
+  loadScheduledMessages()
   pollClockTimer = window.setInterval(() => {
     pollClock.value = Date.now()
   }, 1000)
