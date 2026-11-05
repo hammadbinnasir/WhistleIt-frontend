@@ -6,7 +6,7 @@ const props = defineProps({
   total: { type: Number, default: 0 },
   max: { type: Number, default: 10 },
 })
-const emit = defineEmits(['click'])
+const emit = defineEmits(['click', 'profile'])
 
 const PALETTE = ['#7b2fd0', '#5a45d8', '#3f6bd9', '#8e3fb8', '#6a3fd0', '#2f7fb8']
 const hoveredMember = ref(null)
@@ -47,6 +47,12 @@ function scheduleHoverClose() {
     hoveredMember.value = null
     hoverCloseTimer = null
   }, 150)
+}
+
+function openProfile(member) {
+  clearTimeout(hoverCloseTimer)
+  emit('profile', member)
+  hoveredMember.value = null
 }
 </script>
 
@@ -97,7 +103,13 @@ function scheduleHoverClose() {
 
       <div class="ch-stack__preview-actions">
         <span class="ch-stack__preview-action ch-stack__preview-action--primary">Message</span>
-        <span class="ch-stack__preview-action ch-stack__preview-action--secondary">Profile</span>
+        <button
+          type="button"
+          class="ch-stack__preview-action ch-stack__preview-action--secondary"
+          @click.stop="openProfile(hoveredMember)"
+        >
+          Profile
+        </button>
       </div>
     </div>
   </div>
@@ -253,11 +265,13 @@ function scheduleHoverClose() {
   display: flex;
   align-items: center;
   justify-content: center;
+  font: inherit;
   border-radius: 10px;
   border: 1px solid #cbd5e1;
   background: transparent;
   padding: 9px 10px;
   font-weight: 600;
+  cursor: pointer;
 }
 .ch-stack__preview-action--primary {
   background: #fff;
@@ -266,5 +280,12 @@ function scheduleHoverClose() {
 .ch-stack__preview-action--secondary {
   background: #f8fafc;
   color: #0f172a;
+}
+.ch-stack__preview-action--secondary:hover {
+  background: #f1f5f9;
+}
+.ch-stack__preview-action--secondary:focus-visible {
+  outline: 2px solid #5962ff;
+  outline-offset: 2px;
 }
 </style>

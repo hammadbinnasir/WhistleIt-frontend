@@ -49,7 +49,11 @@ describe('ChannelHeader', () => {
     })
     await flushPromises()
 
-    expect(wrapper.find('.ch-stack__avatar').attributes('title')).toBe('channel-one member')
+    const firstMemberAvatar = wrapper.find('.ch-stack__avatar')
+    expect(firstMemberAvatar.attributes('title')).toBe('channel-one member')
+    await firstMemberAvatar.trigger('mouseenter')
+    await wrapper.get('button.ch-stack__preview-action--secondary').trigger('click')
+    expect(wrapper.emitted('profile')[0][0].id).toBe('channel-one-member')
 
     await wrapper.setProps({ channelId: 'channel-two' })
     await flushPromises()
