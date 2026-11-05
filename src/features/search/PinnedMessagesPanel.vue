@@ -158,7 +158,7 @@ async function jumpToMessage(message) {
 
 :global(.pinned-jump-highlight) {
   border-radius: 8px;
-  background-color: rgba(250, 204, 21, 0.28);
+  background-color: transparent;
   box-shadow: 0 0 0 4px rgba(250, 204, 21, 0.28);
   animation: pinned-message-pulse 600ms ease-in-out;
 }

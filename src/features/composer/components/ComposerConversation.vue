@@ -23,6 +23,8 @@ import {
   getScheduledMessages,
 } from '../api/scheduledMessagesApi'
 import MessageComposer from './MessageComposer.vue'
+import pinChatIcon from '@/assets/pin-chat.svg'
+import unpinChatIcon from '@/assets/unpin-chat.svg'
 
 const props = defineProps({
   conversationId: { type: [String, Number], default: null },
@@ -1143,7 +1145,14 @@ onBeforeUnmount(() => {
                   :title="isPinned(message) ? 'Unpin message' : 'Pin message'"
                   @click="togglePin(message)"
                 >
-                  📌
+                  <span>
+                    <img
+                      class="composer-conversation__pin-icon"
+                      :src="isPinned(message) ? unpinChatIcon : pinChatIcon"
+                      alt=""
+                      aria-hidden="true"
+                    />
+                  </span>
                 </button>
                 <button
                   type="button"
@@ -2328,9 +2337,10 @@ onBeforeUnmount(() => {
   place-items: center;
 }
 
-.composer-conversation__action-toolbar button svg {
-  width: 20px;
-  height: 20px;
+.composer-conversation__action-toolbar button svg,
+.composer-conversation__action-toolbar button img {
+  width: 19px;
+  height: 19px;
 }
 
 .composer-conversation__action-toolbar button:hover,
