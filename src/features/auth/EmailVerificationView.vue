@@ -2,7 +2,8 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { resendVerificationEmail, verifyEmail } from './api'
-import AuthIllustration from './AuthIllustration.vue'
+import authBackground from '@/assets/auth-background.svg'
+import LoadingSpinner from '@/components/LoadingSpinner.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -145,36 +146,27 @@ onBeforeUnmount(() => {
   <main class="auth-page auth-page--verification">
     <section class="auth-panel" aria-label="Email verification">
       <RouterLink class="brand" to="/login" aria-label="Whistle It. home">
-        <svg class="brand-mark" viewBox="0 0 56 42" aria-hidden="true">
-          <path
-            d="M5 8.5 15.2 29l8.1-14.4L31 29l8.2-14.8M43.2 11.4l3.1-3.1"
-            fill="none"
-            stroke="currentColor"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            stroke-width="6.5"
-          />
-          <circle cx="49.5" cy="7" r="3.5" fill="currentColor" />
-        </svg>
-        <span>Whistle It.</span>
+        <img
+          class="brand-mark"
+          src="https://app.whistleit.io/img/whistle-logo.8554b9a3.svg"
+          alt=""
+        />
       </RouterLink>
 
       <div class="auth-content verification-box">
-        <!-- Loading State -->
         <div
           v-if="status === 'loading'"
           class="verification-status"
           role="status"
           aria-live="polite"
         >
-          <div class="status-spinner" aria-hidden="true"></div>
+          <LoadingSpinner :size="52" label="Verifying your email" />
           <header class="auth-heading">
             <h1>Verifying your email</h1>
             <p>Please wait a moment while we confirm your account details...</p>
           </header>
         </div>
 
-        <!-- Success State -->
         <div
           v-else-if="status === 'success'"
           class="verification-status"
@@ -203,7 +195,6 @@ onBeforeUnmount(() => {
           </button>
         </div>
 
-        <!-- Error State -->
         <div v-else class="verification-status" role="alert" aria-live="assertive">
           <div class="status-icon status-icon--error" aria-hidden="true">
             <svg
@@ -231,7 +222,6 @@ onBeforeUnmount(() => {
             </button>
           </div>
 
-          <!-- Resend Section -->
           <form v-if="showResend" class="resend-form" @submit.prevent="handleResend">
             <label class="sr-only" for="resend-email">Email Address</label>
             <input
@@ -253,8 +243,10 @@ onBeforeUnmount(() => {
               class="submit-button submit-button--resend"
               type="submit"
               :disabled="isResending"
+              :aria-busy="isResending"
             >
-              {{ isResending ? 'Sending...' : 'Send Verification Email' }}
+              <LoadingSpinner v-if="isResending" :size="20" label="Sending verification email" />
+              <template v-else>Send Verification Email</template>
             </button>
           </form>
         </div>
@@ -267,22 +259,14 @@ onBeforeUnmount(() => {
     </section>
 
     <aside class="auth-art" aria-hidden="true">
-      <svg class="art-backdrop" viewBox="0 0 800 900" preserveAspectRatio="none">
-        <path d="M485 0h315v900H0c170-84 222-236 290-425C362 253 390 82 485 0Z" fill="#302d57" />
-        <path
-          d="M455 0h30c-95 82-123 253-195 475C222 664 170 816 0 900h-45c188-90 246-247 314-440C340 250 363 79 455 0Z"
-          fill="#433e70"
-        />
-      </svg>
-      <AuthIllustration />
+      <img class="auth-background" :src="authBackground" alt="" />
     </aside>
   </main>
 </template>
 
 <style scoped>
 .verification-box {
-  display: flex;
-  flex-direction: column;
+  width: min(100%, 500px);
 }
 
 .verification-status {
@@ -291,29 +275,17 @@ onBeforeUnmount(() => {
   align-items: flex-start;
 }
 
-.status-spinner {
-  width: 52px;
-  height: 52px;
-  margin-bottom: 24px;
-  border: 4px solid #ede9fe;
-  border-top-color: #5416d7;
-  border-radius: 50%;
-  animation: spin 0.9s cubic-bezier(0.4, 0, 0.2, 1) infinite;
-}
-
-@keyframes spin {
-  to {
-    transform: rotate(360deg);
-  }
+.verification-status > .loading-spinner {
+  margin-bottom: 20px;
 }
 
 .status-icon {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 56px;
-  height: 56px;
-  margin-bottom: 24px;
+  width: 52px;
+  height: 52px;
+  margin-bottom: 20px;
   border-radius: 50%;
 }
 
@@ -334,40 +306,40 @@ onBeforeUnmount(() => {
 
 .verification-actions {
   display: flex;
-  align-items: center;
-  gap: 14px;
+  flex-wrap: wrap;
+  gap: 12px;
   width: 100%;
-  margin-top: 12px;
+  margin-top: 4px;
 }
 
-.verification-actions .submit-button {
-  flex: 1;
-  height: 52px;
+.verification-actions .submit-button,
+.retry-button {
+  flex: 1 1 180px;
+  min-height: 52px;
   margin: 0;
 }
 
 .retry-button {
-  flex: 1;
-  height: 52px;
   padding: 0 16px;
-  border: 1.5px solid #d1d5db;
-  border-radius: 6px;
-  background: #fff;
-  color: #374151;
-  font-size: 16px;
+  border: 1px solid #d8dced;
+  border-radius: 14px;
+  background: rgb(255 255 255 / 62%);
+  color: #5c57dc;
+  font-size: 15px;
   font-weight: 600;
   cursor: pointer;
-  transition: all 150ms ease;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   text-align: center;
+  transition:
+    border-color 150ms ease,
+    background-color 150ms ease;
 }
 
 .retry-button:hover {
-  background: #f8f7ff;
-  border-color: #5416d7;
-  color: #5416d7;
+  border-color: #7772f5;
+  background: #fff;
 }
 
 .resend-form {
@@ -375,28 +347,64 @@ onBeforeUnmount(() => {
   flex-direction: column;
   gap: 14px;
   width: 100%;
-  margin-top: 24px;
+  margin-top: 20px;
   padding: 18px;
-  border: 1px solid #e5e7eb;
-  border-radius: 8px;
-  background: #fafafa;
+  border: 1px solid rgb(119 114 245 / 16%);
+  border-radius: 16px;
+  background: rgb(255 255 255 / 52%);
 }
 
 .resend-form input {
-  height: 46px;
-  padding: 0 14px;
-  border: 1px solid #d1d5db;
-  border-radius: 5px;
-  font-size: 15px;
+  width: 100%;
+  height: 52px;
+  padding: 0 16px;
+  border: 1px solid #e1e5ef;
+  border-radius: 14px;
   outline: none;
+  background: #fbfcff;
+  color: #17213a;
+  font-size: 15px;
 }
 
 .resend-form input:focus {
-  border-color: #5416d7;
+  border-color: #7772f5;
+  background: #fff;
+  box-shadow: 0 0 0 4px rgb(119 114 245 / 13%);
 }
 
 .submit-button--resend {
-  height: 44px;
-  font-size: 15px;
+  min-height: 48px;
+  margin: 0;
+  font-size: 16px;
+}
+
+.verification-box .auth-heading h1 {
+  font-size: clamp(30px, 3vw, 38px);
+  letter-spacing: -1px;
+}
+
+.verification-box .auth-heading p {
+  margin: 12px 0 22px;
+  font-size: 16px;
+}
+
+.verification-box .auth-switch {
+  margin-top: 22px;
+}
+
+@media (max-width: 760px) {
+  .verification-box .auth-heading h1 {
+    font-size: clamp(30px, 8vw, 38px);
+  }
+
+  .verification-actions {
+    flex-direction: column;
+  }
+
+  .verification-actions .submit-button,
+  .retry-button {
+    width: 100%;
+    flex-basis: auto;
+  }
 }
 </style>
