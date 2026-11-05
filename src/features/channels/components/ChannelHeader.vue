@@ -13,7 +13,7 @@ const props = defineProps({
   maxAvatars: { type: Number, default: HEADER_AVATAR_MAX },
 })
 // 'members-click' lets the owner of the members panel open it. Extra header icons go in the #actions slot.
-const emit = defineEmits(['members-click'])
+const emit = defineEmits(['members-click', 'profile'])
 
 const store = useChannelsStore()
 const profileStatusByUserId = ref({})
@@ -118,6 +118,7 @@ function toggleFavorite() {
         :total="channelMembers?.total ?? channel.memberCount"
         :max="maxAvatars"
         @click="emit('members-click')"
+        @profile="emit('profile', $event)"
       />
 
       <div class="ch-header__actions">

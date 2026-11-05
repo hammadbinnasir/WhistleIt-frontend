@@ -1,4 +1,4 @@
-import { reactive, readonly } from 'vue'
+import { reactive, readonly, ref } from 'vue'
 import { getAuthUserId } from '@/features/auth/session'
 import {
   deleteUserAvatar,
@@ -51,6 +51,7 @@ const MAX_TIMEOUT = 2147483647 // setTimeout limit (~24.8 days)
 
 const state = reactive(defaultState())
 const readonlyState = readonly(state)
+const profileLoaded = ref(false)
 
 const revokeBlob = (url) => {
   if (typeof url === 'string' && url.startsWith('blob:')) URL.revokeObjectURL(url)
@@ -170,7 +171,10 @@ function scheduleExpiry() {
 
 /** Merge server data (same shape as the state) into the store. */
 function hydrate(data = {}) {
-  if (data.profile) Object.assign(state.profile, data.profile)
+  if (data.profile) {
+    Object.assign(state.profile, data.profile)
+    profileLoaded.value = true
+  }
   if (data.status && VALID_STATUSES.includes(data.status)) state.status = data.status
   const customStatusValue = data.customStatus ?? data.custom_status
   if (customStatusValue !== undefined) {
@@ -283,6 +287,7 @@ async function saveSettings({ profile, photo, removePhoto, preferences, security
       ...profile,
       jobResponsibilities: jobResponsibilities.join('\n'),
     })
+    profileLoaded.value = true
   }
 
   if (password) await updateUserPassword(requireUserId(), password)
@@ -313,6 +318,7 @@ async function leaveTeam() {
 export function useUserStore() {
   return {
     state: readonlyState,
+    profileLoaded,
     hydrate,
     loadUserProfile,
     setStatus,
