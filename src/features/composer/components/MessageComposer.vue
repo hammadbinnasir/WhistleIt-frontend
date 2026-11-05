@@ -160,7 +160,7 @@ const customScheduleDateDisplay = computed(() => {
 const customScheduleTimeDisplay = computed(() => {
   if (!customScheduleTime.value) return ''
   const [hours, minutes] = customScheduleTime.value.split(':').map(Number)
-  const period = hours >= 12 ? 'pm' : 'am'
+  const period = hours >= 12 ? 'PM' : 'AM'
   return `${hours % 12 || 12}:${String(minutes).padStart(2, '0')} ${period}`
 })
 const customScheduleMinTime = computed(() =>
@@ -641,6 +641,11 @@ function closeCustomSchedule() {
   customScheduleOpen.value = false
 }
 
+function selectCompleteScheduleTime(event) {
+  const input = event.currentTarget
+  requestAnimationFrame(() => input.select())
+}
+
 function saveCustomSchedule() {
   if (!customScheduleIsValid.value) return
   scheduledAt.value = customScheduledAt.value
@@ -1048,6 +1053,8 @@ function handleKeydown(event) {
                   :min="customScheduleMinTime"
                   step="60"
                   aria-label="Select time"
+                  @focus="selectCompleteScheduleTime"
+                  @click="selectCompleteScheduleTime"
                 />
               </div>
             </div>
@@ -1981,9 +1988,17 @@ function handleKeydown(event) {
   border: 0;
   background: transparent;
   color: transparent;
+  -webkit-text-fill-color: transparent;
   font: inherit;
+  text-transform: uppercase;
   cursor: pointer;
   caret-color: transparent;
+}
+
+.message-composer__schedule-input-wrap span {
+  position: relative;
+  z-index: 1;
+  pointer-events: none;
 }
 
 .message-composer__schedule-input-wrap input:focus-visible {
