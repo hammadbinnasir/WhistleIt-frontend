@@ -8,7 +8,6 @@ const props = defineProps({
 const defaults = {
   fullName: '',
   alias: '',
-  twoFactor: 'inactive',
   designation: '',
   jobResponsibilities: [],
 }
@@ -37,15 +36,6 @@ const general = reactive(
 const fields = [
   { key: 'fullName', label: 'Full name', placeholder: 'Full name' },
   { key: 'alias', label: 'Alias', placeholder: 'Alias' },
-  {
-    key: 'twoFactor',
-    label: 'Two-Factor Authentication',
-    type: 'select',
-    options: [
-      { value: 'inactive', label: 'Inactive' },
-      { value: 'active', label: 'Active' },
-    ],
-  },
   { key: 'designation', label: 'Designation', placeholder: 'Enter Designation' },
   {
     key: 'jobResponsibilities',
