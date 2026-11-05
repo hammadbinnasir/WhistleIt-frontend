@@ -510,7 +510,8 @@ onBeforeUnmount(() => {
             <PollHistoryPanel v-else-if="ui.activePanel === 'poll-history'" />
             <SearchPage
               v-else-if="ui.activePanel === 'search'"
-              :channel-id="selectedChannelId || ''"
+              :channel-id="activeConversation ? '' : selectedChannelId || ''"
+              :dm-conversation-id="activeConversation?.id || ''"
             />
           </aside>
         </div>
