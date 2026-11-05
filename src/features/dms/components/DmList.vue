@@ -1,5 +1,5 @@
 <script setup>
-import { onMounted, ref } from 'vue'
+import { onBeforeUnmount, onMounted, ref } from 'vue'
 import { useDmStore } from '@/features/dms/stores/dms'
 import { usePresenceStore } from '@/features/dms/stores/presence'
 import { useUiStore } from '@/stores/ui'
@@ -21,6 +21,11 @@ function openConversation(conversationId) {
 onMounted(() => {
   void dms.init()
   void presence.init()
+  dms.startPolling() // dusre user ke naye / edit / delete messages khud aate rahein
+})
+
+onBeforeUnmount(() => {
+  dms.stopPolling()
 })
 </script>
 
