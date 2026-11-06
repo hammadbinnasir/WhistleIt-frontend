@@ -1,5 +1,43 @@
 const LINK_PATTERN = /https?:\/\/[^\s<>"']+/gi
 
+function escapeHtml(value) {
+  return String(value)
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#039;')
+}
+
+function linkifyHtml(value) {
+  return value.replace(LINK_PATTERN, (rawUrl) => {
+    const trailing = rawUrl.match(/[),.!?;:]+$/)?.[0] || ''
+    const value = trailing ? rawUrl.slice(0, -trailing.length) : rawUrl
+    const url = validHttpUrl(value)
+    if (!url) return rawUrl
+    return `<a href="${escapeHtml(url.href)}" target="_blank" rel="noopener noreferrer">${value}</a>${trailing}`
+  })
+}
+
+export function formattedMessageHtml(content = '') {
+  let html = escapeHtml(content)
+  const codeBlocks = []
+
+  html = html.replace(/```([\s\S]*?)```/g, (_, code) => {
+    codeBlocks.push(`<pre><code>${code.trim()}</code></pre>`)
+    return `__WHISTLE_CODE_${codeBlocks.length - 1}__`
+  })
+  html = html.replace(/`([^`\n]+)`/g, '<code>$1</code>')
+  html = html.replace(/&lt;(u|b|strong|i|em|s|del|strike)&gt;([\s\S]*?)&lt;\/\1&gt;/gi, '<$1>$2</$1>')
+  html = html.replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>')
+  html = html.replace(/~~([^~\n]+)~~/g, '<s>$1</s>')
+  html = html.replace(/(^|[^*])[*]([^*\n]+)[*](?![*])/g, '$1<em>$2</em>')
+  html = linkifyHtml(html)
+  html = html.replace(/\n/g, '<br>')
+
+  return html.replace(/__WHISTLE_CODE_(\d+)__/g, (_, index) => codeBlocks[Number(index)])
+}
+
 export function validHttpUrl(value) {
   try {
     const url = new URL(value)

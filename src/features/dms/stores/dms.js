@@ -346,7 +346,9 @@ export const useDmStore = defineStore('dms', () => {
           // API wale messages + wo local/pending jo abhi server par nahi gaye
           // + wo jo is request ke dauran send hue (purani list mein nahi honge)
           const pending = target.messages.filter(
-            (m) => !known.has(m.id) && (isLocal(m) || sentMeanwhile.has(m.id)),
+            (m) =>
+              !known.has(m.id) &&
+              (isLocal(m) || sentMeanwhile.has(m.id) || m.scheduledAt),
           )
           target.messages = [...list, ...pending]
           for (const m of list) {

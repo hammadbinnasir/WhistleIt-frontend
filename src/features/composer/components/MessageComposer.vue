@@ -253,6 +253,7 @@ const formatTags = {
   italic: ['em', 'i'],
   strikethrough: ['s', 'del', 'strike'],
   underline: ['u'],
+  code: ['code'],
 }
 
 function nodeToMarkdown(node) {
@@ -312,7 +313,6 @@ function saveSelection(preservePendingFormats = false) {
     activeList.value = list?.tagName === 'OL' ? 'numbered' : list ? 'bulleted' : ''
     activeFormats.value = formatActions
       .filter((action) => {
-        if (action.name === 'code') return false
         return Boolean(node?.closest(formatTags[action.name]?.join(', ')))
       })
       .map((action) => action.name)
@@ -344,6 +344,7 @@ function formatTagFor(name) {
     italic: 'em',
     strikethrough: 's',
     underline: 'u',
+    code: 'code',
   }[name]
 }
 
@@ -372,10 +373,6 @@ function insertAtSelection(text) {
 
 function applyFormat(action) {
   if (!editor.value) return
-  if (action.name === 'code') {
-    codeMode.value = !codeMode.value
-    return
-  }
 
   const selection = document.getSelection()
   const range = getSelectionRange()
@@ -384,7 +381,7 @@ function applyFormat(action) {
     selection.removeAllRanges()
     selection.addRange(range)
   }
-  if (!selection) return
+  if (!selection || !formatTags[action.name]) return
 
   if (!range || range.collapsed) {
     const isActive = activeFormats.value.includes(action.name)
@@ -448,6 +445,7 @@ function applyFormat(action) {
       ? activeFormats.value.filter((format) => format !== action.name)
       : [...new Set([...activeFormats.value, action.name])]
   }
+  codeMode.value = activeFormats.value.includes('code')
   syncContent()
 }
 
