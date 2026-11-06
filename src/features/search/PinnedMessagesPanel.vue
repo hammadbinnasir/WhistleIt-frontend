@@ -1,7 +1,8 @@
 <script setup>
-import { computed, nextTick } from 'vue'
+import { computed, nextTick, onBeforeUnmount } from 'vue'
 import { useUiStore } from '@/stores/ui'
 import { useDmStore } from '@/stores/dms'
+import pinnedMessagesEmptyIcon from '@/assets/pinned-messages-empty.svg'
 
 const props = defineProps({
   conversationId: { type: [String, Number], default: '' },
@@ -23,6 +24,7 @@ const currentPinnedMessages = computed(() =>
   }),
 )
 const hasPinnedMessages = computed(() => currentPinnedMessages.value.length > 0)
+let highlightTimer
 
 function initials(name) {
   return String(name || 'You')
@@ -60,9 +62,17 @@ async function jumpToMessage(message) {
   const target = document.querySelector(`[data-message-id="${CSS.escape(String(message.id))}"]`)
   target?.scrollIntoView({ behavior: 'smooth', block: 'center' })
   if (!target) return
+  document.querySelectorAll('.pinned-jump-highlight').forEach((element) => {
+    element.classList.remove('pinned-jump-highlight')
+  })
+  clearTimeout(highlightTimer)
   target.classList.add('pinned-jump-highlight')
-  setTimeout(() => target.classList.remove('pinned-jump-highlight'), 3000)
+  highlightTimer = setTimeout(() => {
+    target.classList.remove('pinned-jump-highlight')
+  }, 3000)
 }
+
+onBeforeUnmount(() => clearTimeout(highlightTimer))
 </script>
 
 <template>
@@ -82,10 +92,11 @@ async function jumpToMessage(message) {
       v-if="!hasPinnedMessages"
       class="flex flex-1 flex-col items-center px-6 pt-16 text-slate-500"
     >
-      <i
-        class="fa-vellum fa-solid fa-thumbtack mb-6 text-[96px] text-[#8079a3]"
+      <img
+        class="mb-6 h-24 w-24 text-[#8079a3]"
+        :src="pinnedMessagesEmptyIcon"
         aria-hidden="true"
-      ></i>
+      />
       <div class="self-start text-base leading-8">
         <p class="flex gap-3"><span>•</span><span>There are no pinned messages yet.</span></p>
         <p class="flex gap-3">
@@ -158,18 +169,10 @@ async function jumpToMessage(message) {
 
 :global(.pinned-jump-highlight) {
   border-radius: 8px;
-  background-color: transparent;
-  box-shadow: 0 0 0 4px rgba(250, 204, 21, 0.28);
-  animation: pinned-message-pulse 600ms ease-in-out;
+  background-color: #fef1bd;
 }
 
-@keyframes pinned-message-pulse {
-  0%,
-  100% {
-    transform: scale(1);
-  }
-  50% {
-    transform: scale(1.006);
-  }
+:global(.pinned-jump-highlight .composer-conversation__message-bubble) {
+  background-color: #fef1bd;
 }
 </style>
