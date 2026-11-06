@@ -2,14 +2,22 @@
 // Search page: Text / File / Link tabs, scope (current channel | over Whistle It),
 // filter popover (user, date, webhooks) and a paginated file grid.
 import { ref, reactive, watch, computed, onMounted, onBeforeUnmount } from 'vue'
+import { useRouter } from 'vue-router'
 import { useUiStore } from '@/stores/ui'
 import { useChannelsStore } from '@/features/channels'
 import { useDmStore } from '@/features/dms/stores/dms'
 import { searchMessages, searchFiles, searchLinks, searchUsers } from './search'
+import { useMembersStore } from '@/stores/members'
+import { useTeamsStore } from '@/stores/teams'
+import { useActiveChannel } from '@/features/channels/composables/useActiveChannel'
 
 const ui = useUiStore()
 const channelsStore = useChannelsStore()
 const dmsStore = useDmStore()
+const membersStore = useMembersStore()
+const teamsStore = useTeamsStore()
+const router = useRouter()
+const activeChannel = useActiveChannel()
 const props = defineProps({
   channelId: { type: String, default: '' },
   dmConversationId: { type: String, default: '' },
@@ -49,18 +57,118 @@ const draft = reactive({ userIds: [], date: '', dateEnd: '', dateMode: 'on', web
 const applied = reactive({ userIds: [], date: '', dateEnd: '', dateMode: 'on', webhooks: false })
 const userQuery = ref('')
 const userOptions = ref([])
+const selectedUserOptions = computed(() =>
+  draft.userIds
+    .map((id) => [...userOptions.value, ...workspaceUsers.value].find((user) => String(user.id) === String(id)))
+    .filter(Boolean),
+)
+const workspaceUsers = computed(() =>
+  membersStore.members.map((member) => ({
+    id: String(member.userId ?? member.id),
+    name: member.name || member.fullName || member.email || 'Unknown user',
+    avatarUrl: member.avatarUrl || member.avatar || '',
+  })),
+)
 const noun = computed(() => ({ text: 'messages', file: 'files', link: 'links' })[tab.value])
 const searchCategory = ref('Messages')
 const categories = ['Messages', 'Companies', 'Teams', 'Channels']
+const categoryCounts = reactive({
+  Messages: 0,
+  Companies: 0,
+  Teams: 0,
+  Channels: 0,
+})
 const directoryItems = computed(() => [
+  ...teamsStore.workspaces.map((workspace) => ({
+    id: workspace.id,
+    category: 'Companies',
+    name: workspace.name,
+    detail: workspace.description || 'Company',
+    workspaceId: workspace.id,
+    memberCount: workspace.memberCount ?? workspace.membersCount,
+  })),
+  ...teamsStore.teams.map((team) => ({
+    id: team.id,
+    category: 'Teams',
+    name: team.name,
+    detail: team.description || 'Team',
+    workspaceId: team.workspaceId || teamsStore.activeWorkspaceId,
+    memberCount: team.memberCount ?? team.membersCount,
+  })),
   ...channelsStore.channels.map((channel) => ({
     id: channel.id,
     category: 'Channels',
     name: channel.name,
     detail: channel.description || (channel.isPrivate ? 'Private channel' : 'Public channel'),
+    workspaceId: channel.workspaceId || teamsStore.activeWorkspaceId,
+    memberCount: channel.memberCount,
+    unreadCount: channel.unreadCount,
+  })),
+  ...dmsStore.conversations.map((conversation) => ({
+    id: conversation.id,
+    category: 'Channels',
+    kind: 'dm',
+    name: dmsStore.titleOf?.(conversation) || conversation.name || 'Direct message',
+    detail: 'Direct message',
+    unreadCount: conversation.unreadCount,
+    messages: conversation.messages || [],
   })),
 ])
 const hasFilters = computed(() => applied.userIds.length || applied.date || applied.webhooks)
+const DIRECTORY_PAGE_SIZE = 10
+
+function workspaceTeams(workspaceId) {
+  return teamsStore.workspaces.length
+    ? teamsStore.teams.filter((team) => String(team.workspaceId ?? teamsStore.activeWorkspaceId) === String(workspaceId))
+    : []
+}
+
+function workspaceChannelCount(workspaceId) {
+  return channelsStore.channels.filter(
+    (channel) => String(channel.workspaceId ?? teamsStore.activeWorkspaceId) === String(workspaceId),
+  ).length
+}
+
+function workspaceMemberCount(item) {
+  if (Number(item.memberCount) > 0) return Number(item.memberCount)
+  return String(item.id) === String(teamsStore.activeWorkspaceId)
+    ? membersStore.members.length
+    : (Number(item.memberCount) || 0)
+}
+
+function teamChannelCount(item) {
+  return channelsStore.channels.filter(
+    (channel) => String(channel.teamId ?? channel.team?.id ?? teamsStore.activeTeamId) === String(item.id),
+  ).length
+}
+
+function storedChannelMessagesForSearch() {
+  if (typeof localStorage === 'undefined') return {}
+  try {
+    const stored = JSON.parse(localStorage.getItem('whistleit:channel-messages') || '{}')
+    return stored && typeof stored === 'object' && !Array.isArray(stored) ? stored : {}
+  } catch {
+    return {}
+  }
+}
+
+function channelMatchesQuery(channel, needle) {
+  if (!needle) return true
+  const channelName = `${channel.name} ${channel.detail || channel.description || ''}`.toLowerCase()
+  if (channelName.includes(needle)) return true
+  if (channel.kind === 'dm') {
+    return (channel.messages || []).some((message) =>
+      String(message.text ?? message.content ?? '').toLowerCase().includes(needle),
+    )
+  }
+
+  const messages = storedChannelMessagesForSearch()[String(channel.id)]
+  return Array.isArray(messages) &&
+    messages.some((message) =>
+      !message.deleted &&
+      String(message.content ?? message.text ?? '').toLowerCase().includes(needle),
+    )
+}
 
 function dmSearchMessages() {
   const conversations =
@@ -87,15 +195,31 @@ function dmSearchMessages() {
 
 async function run() {
   error.value = ''
+  const needle = q.value.trim().toLowerCase()
+  categoryCounts.Messages = 0
+  categoryCounts.Companies = directoryItems.value.filter((item) =>
+    item.category === 'Companies' &&
+    (!needle || `${item.name} ${item.detail}`.toLowerCase().includes(needle))
+  ).length
+  categoryCounts.Teams = directoryItems.value.filter((item) =>
+    item.category === 'Teams' &&
+    (!needle || `${item.name} ${item.detail}`.toLowerCase().includes(needle))
+  ).length
+  categoryCounts.Channels = directoryItems.value.filter((item) =>
+    item.category === 'Channels' && channelMatchesQuery(item, needle)
+  ).length
   if (searchCategory.value !== 'Messages') {
-    const needle = q.value.trim().toLowerCase()
-    items.value = directoryItems.value.filter((item) => {
+    const matches = directoryItems.value.filter((item) => {
       return (
         item.category === searchCategory.value &&
-        (!needle || `${item.name} ${item.detail}`.toLowerCase().includes(needle))
+        (searchCategory.value === 'Channels'
+          ? channelMatchesQuery(item, needle)
+          : !needle || `${item.name} ${item.detail}`.toLowerCase().includes(needle))
       )
     })
-    totalPages.value = 1
+    totalPages.value = Math.max(1, Math.ceil(matches.length / DIRECTORY_PAGE_SIZE))
+    const start = (page.value - 1) * DIRECTORY_PAGE_SIZE
+    items.value = matches.slice(start, start + DIRECTORY_PAGE_SIZE)
     searched.value = Boolean(needle)
     return
   }
@@ -127,6 +251,7 @@ async function run() {
     items.value = res.items
     totalPages.value = res.totalPages
     searched.value = true
+    categoryCounts.Messages = Number(res.total ?? res.items.length)
   } catch {
     error.value = 'Search failed. Check your connection and try again.'
   } finally {
@@ -147,23 +272,105 @@ watch([tab, scope, searchCategory, () => props.channelId, () => props.dmConversa
 })
 watch(page, run)
 const searchInput = ref(null)
-onMounted(() => {
+onMounted(async () => {
   searchInput.value?.focus()
   run()
+  if (!teamsStore.workspaces.length) await teamsStore.fetchWorkspaces()
+  if (!teamsStore.teams.length && teamsStore.activeWorkspaceId) {
+    await teamsStore.fetchTeams(teamsStore.activeWorkspaceId)
+  }
+  if (teamsStore.activeWorkspaceId && teamsStore.activeTeamId) {
+    await membersStore.fetchMembers(
+      teamsStore.activeWorkspaceId,
+      teamsStore.activeTeamId,
+    )
+    await refreshUserOptions()
+  }
 })
 onBeforeUnmount(() => clearTimeout(timer))
 
 watch(
   userQuery,
   async (v) => {
-    userOptions.value = await searchUsers(v)
+    userOptions.value = await refreshUserOptions(v)
   },
   { immediate: true },
 )
 
+async function refreshUserOptions(query = userQuery.value) {
+  const dmUsers = Object.entries(dmsStore.usersById || {}).map(([id, user]) => ({
+    id: String(id),
+    name: user.name || user.fullName || user.email || 'Unknown user',
+  }))
+  const availableUsers = [...workspaceUsers.value, ...dmUsers].reduce((users, user) => {
+    if (user.id && !users.some((item) => item.id === user.id)) users.push(user)
+    return users
+  }, [])
+  const needle = query.trim().toLowerCase()
+  const localUsers = needle
+    ? availableUsers.filter((user) => user.name.toLowerCase().includes(needle))
+    : availableUsers
+
+  try {
+    const apiUsers = await searchUsers(query)
+    const merged = [...localUsers, ...apiUsers].reduce((users, user) => {
+      const id = String(user.id)
+      if (id && !users.some((item) => item.id === id)) users.push({ ...user, id })
+      return users
+    }, [])
+    userOptions.value = merged.filter((user) =>
+      !needle ||
+      `${user.name || ''}`.toLowerCase().includes(needle) ||
+      `${user.email || ''}`.toLowerCase().includes(needle)
+    )
+  } catch {
+    userOptions.value = localUsers
+  }
+  return userOptions.value
+}
+
 function toggleUser(id) {
   const i = draft.userIds.indexOf(id)
   i === -1 ? draft.userIds.push(id) : draft.userIds.splice(i, 1)
+}
+function removeUser(id) {
+  draft.userIds = draft.userIds.filter((userId) => String(userId) !== String(id))
+}
+
+function jumpToMessage(message) {
+  const conversation = message.conversation
+  if (!conversation?.kind || conversation.kind === 'public' || conversation.kind === 'private') {
+    activeChannel.select(conversation.id)
+    router.push({
+      name: 'workspace-team',
+      params: {
+        workspaceId: teamsStore.activeWorkspaceId,
+        teamId: teamsStore.activeTeamId,
+        channelId: conversation.id,
+      },
+    })
+  } else if (conversation.kind === 'dm') {
+    dmsStore.openConversation(conversation.id)
+  }
+
+  ui.closePanel()
+  setTimeout(() => {
+    document
+      .querySelector(`[data-message-id="${CSS.escape(String(message.id))}"]`)
+      ?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  }, 500)
+}
+
+async function openDirectoryItem(item) {
+  if (item.category === 'Companies') {
+    await teamsStore.selectWorkspace(item.id)
+  } else if (item.category === 'Teams') {
+    await teamsStore.selectTeam(item.id)
+  } else if (item.category === 'Channels') {
+    if (item.kind === 'dm') dmsStore.openConversation(item.id)
+    else activeChannel.select(item.id)
+  }
+  ui.closePanel()
 }
 function applyFilters() {
   Object.assign(applied, { ...draft, userIds: [...draft.userIds] })
@@ -387,6 +594,22 @@ const senderInitials = (name = '') =>
                   <circle cx="11" cy="11" r="7" />
                   <path d="m20 20-3.5-3.5" />
                 </svg>
+                <span
+                  v-for="user in selectedUserOptions"
+                  :key="user.id"
+                  class="mr-1 flex max-w-36 items-center gap-1 rounded-full bg-indigo-50 px-2 py-1 text-xs text-indigo-700"
+                >
+                  <span class="truncate">{{ user.name }}</span>
+                  <button
+                    type="button"
+                    class="shrink-0 text-indigo-400 hover:text-indigo-700"
+                    :aria-label="`Remove ${user.name}`"
+                    @mousedown.prevent
+                    @click.stop="removeUser(user.id)"
+                  >
+                    ×
+                  </button>
+                </span>
                 <input
                   v-model="userQuery"
                   type="text"
@@ -417,14 +640,24 @@ const senderInitials = (name = '') =>
                 class="absolute left-0 right-0 top-full z-30 mt-1 max-h-48 overflow-y-auto rounded border border-slate-200 bg-white shadow-lg"
               >
                 <li v-for="u in userOptions" :key="u.id">
-                  <label class="flex cursor-pointer items-center gap-2 px-3 py-2 hover:bg-slate-50">
-                    <input
-                      type="checkbox"
-                      :checked="draft.userIds.includes(u.id)"
-                      @change="toggleUser(u.id)"
-                    />
-                    {{ u.name }}
-                  </label>
+                  <button
+                    type="button"
+                    class="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-slate-50"
+                    @mousedown.prevent
+                    @click="toggleUser(u.id); userListOpen = true"
+                  >
+                    <span
+                      class="flex h-8 w-8 items-center justify-center rounded-full bg-indigo-100 text-xs font-bold text-indigo-700"
+                    >
+                      {{ senderInitials(u.name) }}
+                    </span>
+                    <span>{{ u.name }}</span>
+                    <span
+                      v-if="draft.userIds.includes(u.id)"
+                      class="ml-auto text-indigo-600"
+                      aria-hidden="true"
+                    >✓</span>
+                  </button>
                 </li>
               </ul>
             </div>
@@ -690,10 +923,10 @@ const senderInitials = (name = '') =>
       >
         {{ category }}
         <span
-          v-if="category === 'Messages' && items.length && searchCategory === category"
+          v-if="categoryCounts[category] > 0"
           class="ml-1 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-red-500 px-1 text-xs text-white"
         >
-          {{ items.length }}
+          {{ categoryCounts[category] }}
         </span>
         <span
           v-if="searchCategory === category"
@@ -730,8 +963,52 @@ const senderInitials = (name = '') =>
       <!-- company, team, and channel results -->
       <ul v-else-if="searchCategory !== 'Messages'" class="divide-y divide-slate-100">
         <li v-for="item in items" :key="item.id" class="py-4">
-          <p class="font-bold text-slate-900">{{ item.name }}</p>
-          <p class="mt-1 text-sm text-slate-500">{{ item.detail }}</p>
+          <button type="button" class="w-full rounded-sm border border-slate-200 text-left hover:bg-slate-50" @click="openDirectoryItem(item)">
+            <div class="flex items-start gap-3 p-4">
+              <span
+                class="flex h-10 w-10 shrink-0 items-center justify-center rounded bg-orange-500 text-sm font-bold text-white"
+                :class="item.kind === 'dm' ? 'bg-indigo-100 text-indigo-700' : 'bg-orange-500 text-white'"
+              >
+                {{ senderInitials(item.name).slice(0, 2) }}
+              </span>
+              <div class="min-w-0 flex-1">
+                <p class="font-bold text-slate-900">{{ item.name }}</p>
+                <p v-if="item.detail && item.detail !== 'Company' && item.detail !== 'Team'" class="mt-1 text-sm text-slate-500">
+                  {{ item.detail }}
+                </p>
+                <div class="mt-3 flex flex-wrap gap-2 text-xs text-slate-600">
+                  <template v-if="item.category === 'Companies'">
+                    <span class="rounded border border-slate-300 px-2 py-1">
+                      {{ workspaceMemberCount(item) }} Members
+                    </span>
+                    <span class="rounded border border-slate-300 px-2 py-1">
+                      {{ workspaceTeams(item.id).length }} Teams
+                    </span>
+                    <span class="rounded border border-slate-300 px-2 py-1">
+                      {{ workspaceChannelCount(item.id) }} Channels
+                    </span>
+                  </template>
+                  <template v-else-if="item.category === 'Teams'">
+                    <span v-if="Number(item.memberCount) > 0" class="rounded border border-slate-300 px-2 py-1">
+                      {{ item.memberCount }} Members
+                    </span>
+                    <span class="rounded border border-slate-300 px-2 py-1">
+                      {{ teamChannelCount(item) }} Channels
+                    </span>
+                  </template>
+                  <template v-else-if="item.category === 'Channels'">
+                    <span class="text-slate-500">{{ item.kind === 'dm' ? '👤' : '🌐' }} {{ item.detail }}</span>
+                    <span v-if="Number(item.memberCount) > 0" class="rounded border border-slate-300 px-2 py-1">
+                      {{ item.memberCount }} Members
+                    </span>
+                    <span v-if="Number(item.unreadCount) > 0" class="rounded border border-slate-300 px-2 py-1">
+                      {{ item.unreadCount }} unread messages
+                    </span>
+                  </template>
+                </div>
+              </div>
+            </div>
+          </button>
         </li>
       </ul>
 
@@ -762,6 +1039,12 @@ const senderInitials = (name = '') =>
       <!-- text + link results -->
       <ul v-else class="divide-y divide-slate-100">
         <li v-for="m in items" :key="m.id" class="group relative flex gap-3 py-3 text-sm">
+          <button
+            type="button"
+            class="absolute inset-0 cursor-pointer"
+            :aria-label="`Open message from ${m.sender}`"
+            @click="jumpToMessage(m)"
+          ></button>
           <div
             class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-violet-600 text-sm font-bold text-white"
           >
@@ -775,12 +1058,6 @@ const senderInitials = (name = '') =>
               }}</span>
             </p>
           </div>
-          <button
-            type="button"
-            class="absolute right-0 top-3 cursor-pointer rounded border border-indigo-400 px-2 py-1 text-xs font-semibold tracking-wide text-indigo-600"
-          >
-            JUMP
-          </button>
           <a
             v-if="tab === 'link'"
             :href="m.url"
@@ -791,9 +1068,6 @@ const senderInitials = (name = '') =>
           >
           <div class="absolute left-[52px] right-0 top-[34px] min-w-0">
             <p v-if="tab !== 'link'" class="mt-1 break-words text-slate-800">{{ m.text }}</p>
-            <p class="mt-1 text-xs text-slate-500">
-              {{ kindIcon[m.conversation.kind] }} {{ m.conversation.name }}
-            </p>
           </div>
         </li>
       </ul>

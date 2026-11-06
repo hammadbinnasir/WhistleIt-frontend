@@ -48,7 +48,7 @@ export async function http(
   try {
     payload = await response.json()
   } catch {
-    payload = null
+    // ignore JSON parse failures and leave payload as null
   }
   if (response.status === 401) clearAuthSession()
   if (!response.ok) {

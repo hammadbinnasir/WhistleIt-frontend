@@ -3,6 +3,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import EmojiPicker from 'vue3-emoji-picker'
 import 'vue3-emoji-picker/css'
 import { useChannelsStore } from '@/features/channels'
+import { pinMessage, unpinMessage } from '@/features/channels/api/channels.api'
 import { useDmStore } from '@/features/dms/stores/dms'
 import { getAuthUser } from '@/features/auth/session'
 import { useMessagesStore } from '@/features/messages/messages'
@@ -22,6 +23,8 @@ import {
   getScheduledMessages,
 } from '../api/scheduledMessagesApi'
 import MessageComposer from './MessageComposer.vue'
+import pinChatIcon from '@/assets/pin-chat.svg'
+import unpinChatIcon from '@/assets/unpin-chat.svg'
 
 const props = defineProps({
   conversationId: { type: [String, Number], default: null },
@@ -226,8 +229,31 @@ function openMessageAuthor(message) {
   ui.activePanel = null
 }
 
-function togglePin(message) {
-  ui.togglePinnedMessage(message, conversationMeta.value)
+async function togglePin(message) {
+  if (props.conversationType === 'dm') {
+    if (!message.backendSynced) {
+      ui.toast('Unable to pin message', 'This direct message is not available on the server yet.', 'error')
+      return
+    }
+  } else if (message.backendSynced !== true) {
+    ui.toast('Unable to pin message', 'This channel message is not available on the server yet.', 'error')
+    return
+  }
+
+  const pinned = isPinned(message)
+  try {
+    if (props.conversationType === 'dm') {
+      if (pinned) await dms.unpinMessage(props.conversationId, message.id)
+      else await dms.pinMessage(props.conversationId, message.id)
+    } else if (pinned) {
+      await unpinMessage(channelId.value, message.id)
+    } else {
+      await pinMessage(channelId.value, message.id)
+    }
+    ui.togglePinnedMessage(message, conversationMeta.value)
+  } catch (error) {
+    ui.toast('Unable to update pin', error.message || 'Please try again.', 'error')
+  }
 }
 
 function addMessage(payload) {
@@ -824,7 +850,10 @@ onBeforeUnmount(() => {
           <span v-else class="composer-conversation__avatar-spacer" aria-hidden="true"></span>
 
           <div class="composer-conversation__message-content">
-            <header v-if="!message.grouped" class="composer-conversation__message-heading">
+            <header
+              v-if="!message.grouped || isPinned(message)"
+              class="composer-conversation__message-heading"
+            >
               <button
                 v-if="messageAuthorUserId(message)"
                 type="button"
@@ -837,6 +866,7 @@ onBeforeUnmount(() => {
               <strong v-else>{{ message.author }}</strong>
               <time :datetime="message.createdAt">{{ message.time }}</time>
               <span v-if="message.editedAt" class="composer-conversation__edited">(edited)</span>
+              <span v-if="isPinned(message)" class="composer-conversation__pinned">PINNED</span>
             </header>
 
             <div
@@ -1115,7 +1145,14 @@ onBeforeUnmount(() => {
                   :title="isPinned(message) ? 'Unpin message' : 'Pin message'"
                   @click="togglePin(message)"
                 >
-                  📌
+                  <span>
+                    <img
+                      class="composer-conversation__pin-icon"
+                      :src="isPinned(message) ? unpinChatIcon : pinChatIcon"
+                      alt=""
+                      aria-hidden="true"
+                    />
+                  </span>
                 </button>
                 <button
                   type="button"
@@ -1581,6 +1618,16 @@ onBeforeUnmount(() => {
 .composer-conversation__edited {
   color: #696d81;
   font-size: 12px;
+}
+
+.composer-conversation__pinned {
+  border-radius: 3px;
+  background: #6159d8;
+  padding: 2px 6px;
+  color: #fff;
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 12px;
 }
 
 .composer-conversation__message-bubble {
@@ -2290,9 +2337,10 @@ onBeforeUnmount(() => {
   place-items: center;
 }
 
-.composer-conversation__action-toolbar button svg {
-  width: 20px;
-  height: 20px;
+.composer-conversation__action-toolbar button svg,
+.composer-conversation__action-toolbar button img {
+  width: 19px;
+  height: 19px;
 }
 
 .composer-conversation__action-toolbar button:hover,
