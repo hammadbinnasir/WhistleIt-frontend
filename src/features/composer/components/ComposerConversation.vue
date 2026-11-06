@@ -66,7 +66,6 @@ let channelMessagesRefreshTimer = null
 
 const pollClock = ref(Date.now())
 let pollClockTimer = null
-let scheduledMessagesTimer = null
 const LOCAL_SCHEDULED_MESSAGES_KEY = 'whistleit:composer-scheduled-messages'
 const channelId = computed(() => String(props.conversationId ?? 'general'))
 const conversation = computed(() => {
@@ -698,11 +697,6 @@ function loadScheduledMessages() {
     })
 }
 
-function startScheduledMessagesRefresh() {
-  loadScheduledMessages()
-  scheduledMessagesTimer = window.setInterval(loadScheduledMessages, 10_000)
-}
-
 function addGif(gif) {
   const message = { content: '', gif }
   const sentMessage = conversation.value
@@ -1172,7 +1166,6 @@ async function scrollMessagesToLatest() {
 
 onMounted(() => {
   document.addEventListener('pointerdown', closeActionsOnOutsideClick)
-  startScheduledMessagesRefresh()
   pollClockTimer = window.setInterval(() => {
     pollClock.value = Date.now()
   }, 1000)
@@ -1182,7 +1175,6 @@ onBeforeUnmount(() => {
   clearTimeout(messageClickTimer)
   clearInterval(channelMessagesRefreshTimer)
   if (pollClockTimer) window.clearInterval(pollClockTimer)
-  if (scheduledMessagesTimer) window.clearInterval(scheduledMessagesTimer)
 })
 </script>
 
