@@ -186,14 +186,18 @@ export const useChannelsStore = defineStore('channels', () => {
 
   async function fetchMembers(id, { limit = 10 } = {}) {
     const key = String(id)
+    const previous = members.value[key] || { items: [], total: 0, loaded: false }
+    const hasEnoughMembers = previous.items.length >= limit || previous.total <= previous.items.length
+    if (previous.loaded && hasEnoughMembers) return
+    if (previous.loading && (previous.limit ?? 0) >= limit) return
+
     const requestId = (memberRequestIds.get(key) || 0) + 1
     memberRequestIds.set(key, requestId)
-    const previous = members.value[key] || { items: [], total: 0 }
-    members.value[key] = { ...previous, loading: true, error: false }
+    members.value[key] = { ...previous, limit, loading: true, error: false }
     try {
       const { items, total } = await api.listMembers(key, { limit })
       if (memberRequestIds.get(key) !== requestId) return
-      members.value[key] = { items, total, loading: false, error: false }
+      members.value[key] = { items, total, limit, loaded: true, loading: false, error: false }
     } catch {
       if (memberRequestIds.get(key) !== requestId) return
       members.value[key] = { ...previous, loading: false, error: true }
@@ -230,7 +234,10 @@ export const useChannelsStore = defineStore('channels', () => {
   }
 
   async function joinChannel(id) {
-    const channel = await api.joinChannel(id)
+    const result = await api.joinChannel(id)
+    const existing = getById(id) || browse.value.items.find((channel) => channel.id === String(id))
+    const channel = { ...existing, ...result, id: String(id), isMember: true }
+    if (result.memberCount == null) channel.memberCount = (existing?.memberCount ?? 0) + 1
     upsertChannel(channel)
     patchBrowse(id, { isMember: true, memberCount: channel.memberCount })
     return channel
