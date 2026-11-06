@@ -36,7 +36,6 @@ async function resolveChannelMembership(records, { includeMemberCount = false } 
           String(channel.createdById ?? channel.createdBy) === String(userId)
         channel.canManage = channel.canManage || channel.isOwner
       }
-      await resolveCreatorName(channel)
       if (source.isMember != null || source.is_member != null) {
         if (includeMemberCount && !hasMemberCount) {
           try {
@@ -118,7 +117,14 @@ export async function deleteChannel(id) {
 
 export async function joinChannel(id) {
   const res = await http(`${channelsPath(id)}/join`, { method: 'POST' })
-  return normalizeChannel({ ...asObject(res), isMember: true })
+  const response = asObject(res)
+  const rawMemberCount = response.memberCount ?? response.member_count
+  const memberCount = rawMemberCount == null ? undefined : Number(rawMemberCount)
+  return {
+    id: String(id),
+    isMember: true,
+    ...(Number.isFinite(memberCount) ? { memberCount } : {}),
+  }
 }
 
 export async function leaveChannel(id, newAdminId) {
