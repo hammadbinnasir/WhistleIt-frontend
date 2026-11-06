@@ -103,12 +103,34 @@ export async function createChannel({ name, description, isPrivate }) {
   })
 }
 
-export async function updateChannel(id, { name, description, messagePermission }) {
+export async function updateChannel(
+  id,
+  { name, description, messagePermission, allowedSenderIds } = {},
+) {
+  const body = {}
+  if (name !== undefined) body.name = name
+  if (description !== undefined) body.description = description
+  if (messagePermission !== undefined) body.message_permission = messagePermission
+  if (messagePermission !== undefined || allowedSenderIds !== undefined) {
+    body.allowed_sender_ids = allowedSenderIds ?? []
+  }
+
   const res = await http(channelsPath(id), {
     method: 'PATCH',
-    body: { name, description, message_permission: messagePermission },
+    body,
   })
-  return normalizeChannel(asObject(res))
+  const updated = asObject(res)
+  return normalizeChannel({
+    ...updated,
+    id: updated.id ?? updated.channel_id ?? id,
+    name: updated.name ?? updated.channel_name ?? name ?? String(id),
+    ...(messagePermission !== undefined && updated.message_permission == null
+      ? { message_permission: messagePermission }
+      : {}),
+    ...(allowedSenderIds !== undefined && updated.allowed_sender_ids == null
+      ? { allowed_sender_ids: allowedSenderIds }
+      : {}),
+  })
 }
 
 export async function deleteChannel(id) {
