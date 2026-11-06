@@ -1,6 +1,6 @@
 import { shallowMount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
-import { beforeEach, describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { useDmStore } from '@/features/dms/stores/dms'
 import { useUiStore } from '@/stores/ui'
 import DmList from './DmList.vue'
@@ -11,7 +11,17 @@ describe('DmList', () => {
 
   it('closes the activity panel and clears channel selection when a DM is selected', async () => {
     const dms = useDmStore()
-    await dms.init()
+    dms.conversations = [
+      {
+        id: 'c1',
+        type: 'dm',
+        members: [dms.meId, 'u2'],
+        messages: [],
+        unreadCount: 0,
+      },
+    ]
+    vi.spyOn(dms, 'init').mockResolvedValue()
+    vi.spyOn(dms, 'loadCustomStatuses').mockResolvedValue()
     const ui = useUiStore()
     ui.selectChannel('general')
     ui.activePanel = 'activity'

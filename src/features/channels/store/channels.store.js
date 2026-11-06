@@ -236,8 +236,8 @@ export const useChannelsStore = defineStore('channels', () => {
     return channel
   }
 
-  async function leaveChannel(id) {
-    await api.leaveChannel(id)
+  async function leaveChannel(id, newAdminId) {
+    await api.leaveChannel(id, newAdminId)
     removeChannel(id)
     patchBrowse(id, { isMember: false })
   }

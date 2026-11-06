@@ -27,17 +27,28 @@ async function jumpToPoll(poll) {
 
 <template>
   <aside class="flex h-full w-full flex-col bg-white">
-    <header class="flex items-center justify-between border-b border-slate-200 px-5 py-4">
-      <h2 class="text-xl text-slate-700">
+    <header class="flex h-14 shrink-0 items-center justify-between border-b border-slate-200 px-5">
+      <h2 class="text-xl font-normal text-slate-800">
         Polls in {{ polls[0]?.conversation?.name || 'this channel' }}
       </h2>
       <button
         type="button"
-        class="cursor-pointer text-2xl text-slate-700"
+        class="flex h-6 w-6 cursor-pointer items-center justify-center rounded-full bg-indigo-50 text-slate-600 transition-colors hover:text-slate-900"
+        title="Close Poll History"
         aria-label="Close poll history"
         @click="ui.closePanel()"
       >
-        ×
+        <svg
+          class="h-3.5 w-3.5"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.75"
+          stroke-linecap="round"
+          aria-hidden="true"
+        >
+          <path d="M5 5l14 14M19 5 5 19" />
+        </svg>
       </button>
     </header>
 
