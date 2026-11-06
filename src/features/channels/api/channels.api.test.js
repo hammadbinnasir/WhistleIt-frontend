@@ -56,6 +56,24 @@ describe('channel API routes', () => {
     expect(browseResults.map(({ memberCount }) => memberCount)).toEqual([7, 3])
   })
 
+  it('does not fetch members per channel just to resolve creator names while listing', async () => {
+    http.mockResolvedValue({
+      items: [
+        {
+          id: 'channel-3',
+          name: 'Engineering',
+          is_member: true,
+          creator_id: '5e884898da28047151d0e56f8dc62927',
+        },
+      ],
+    })
+
+    await listChannels()
+
+    expect(http).toHaveBeenCalledTimes(1)
+    expect(http).toHaveBeenCalledWith(collectionPath)
+  })
+
   it('loads missing member counts for browse results', async () => {
     http.mockImplementation(async (path) => {
       if (path === collectionPath) {
@@ -250,6 +268,15 @@ describe('channel API routes', () => {
 
     await removeChannelMember('channel-3', 'user-4')
     expect(http).toHaveBeenLastCalledWith(`${channelPath}/members/user-4`, { method: 'DELETE' })
+  })
+
+  it('accepts a join response without a full channel record', async () => {
+    http.mockResolvedValue({ success: true, message: 'Joined channel successfully.' })
+
+    await expect(joinChannel('channel-3')).resolves.toEqual({
+      id: 'channel-3',
+      isMember: true,
+    })
   })
 
   it('loads and normalizes channel available members', async () => {

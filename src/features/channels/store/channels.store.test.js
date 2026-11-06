@@ -7,6 +7,8 @@ vi.mock('../api', () => ({
   default: {
     listChannels: vi.fn(),
     browseChannels: vi.fn(),
+    joinChannel: vi.fn(),
+    listMembers: vi.fn(),
   },
 }))
 
@@ -15,6 +17,8 @@ describe('channels store membership visibility', () => {
     setActivePinia(createPinia())
     api.listChannels.mockReset()
     api.browseChannels.mockReset()
+    api.joinChannel.mockReset()
+    api.listMembers.mockReset()
   })
 
   it('keeps only joined channels in the main channel list', async () => {
@@ -47,5 +51,35 @@ describe('channels store membership visibility', () => {
       { id: 'joined', isMember: false },
       { id: 'available', isMember: false },
     ])
+  })
+
+  it('merges a successful join into the existing browse channel', async () => {
+    api.browseChannels.mockResolvedValue([
+      { id: 'available', name: 'Available', isMember: false, memberCount: 4 },
+    ])
+    api.joinChannel.mockResolvedValue({ id: 'available', isMember: true })
+
+    const store = useChannelsStore()
+    await store.fetchBrowse()
+    await store.joinChannel('available')
+
+    expect(store.browse.items[0]).toMatchObject({
+      id: 'available',
+      name: 'Available',
+      isMember: true,
+      memberCount: 5,
+    })
+    expect(store.channels[0]).toMatchObject({ id: 'available', name: 'Available' })
+  })
+
+  it('reuses loaded members on repeated fetches', async () => {
+    api.listMembers.mockResolvedValue({ items: [{ id: 'member-1' }], total: 1 })
+
+    const store = useChannelsStore()
+    await store.fetchMembers('channel-1', { limit: 5 })
+    await store.fetchMembers('channel-1', { limit: 5 })
+
+    expect(api.listMembers).toHaveBeenCalledTimes(1)
+    expect(api.listMembers).toHaveBeenCalledWith('channel-1', { limit: 5 })
   })
 })

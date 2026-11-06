@@ -35,7 +35,7 @@ watch(
   (channelId) => {
     profileRequestVersion += 1
     profileStatusByUserId.value = {}
-    void store.fetchMembers(channelId)
+    void store.fetchMembers(channelId, { limit: props.maxAvatars })
   },
   { immediate: true },
 )
