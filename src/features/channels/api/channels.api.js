@@ -20,15 +20,16 @@ export async function listChannels() {
 
 export async function browseChannels(query = '') {
   const res = await http(channelsPath(), { params: { q: query } })
-  return resolveChannelMembership(asList(res).items)
+  return resolveChannelMembership(asList(res).items, { includeMemberCount: true })
 }
 
-async function resolveChannelMembership(records) {
+async function resolveChannelMembership(records, { includeMemberCount = false } = {}) {
   const userId = getAuthUserId()
   return Promise.all(
     records.map(async (record) => {
       const channel = normalizeChannel(record)
       const source = record?.channel ?? record
+      const hasMemberCount = source.memberCount != null || source.member_count != null
       if (userId && (channel.createdById != null || channel.createdBy != null)) {
         channel.isOwner =
           channel.isOwner ||
@@ -36,7 +37,17 @@ async function resolveChannelMembership(records) {
         channel.canManage = channel.canManage || channel.isOwner
       }
       await resolveCreatorName(channel)
-      if (source.isMember != null || source.is_member != null) return channel
+      if (source.isMember != null || source.is_member != null) {
+        if (includeMemberCount && !hasMemberCount) {
+          try {
+            const { total } = await listMembers(channel.id, { limit: 100 })
+            channel.memberCount = total
+          } catch {
+            // Keep browsing available if the member count cannot be loaded.
+          }
+        }
+        return channel
+      }
       if (!userId) {
         throw new Error(
           'The channel response does not include membership and the signed-in user ID is unavailable.',
@@ -48,6 +59,7 @@ async function resolveChannelMembership(records) {
         total > items.length ? (await listMembers(channel.id, { limit: total })).items : items
       return {
         ...channel,
+        ...(includeMemberCount && !hasMemberCount ? { memberCount: total } : {}),
         isMember: completeMembers.some((member) => member.id === String(userId)),
       }
     }),
