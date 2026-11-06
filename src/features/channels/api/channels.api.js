@@ -109,8 +109,11 @@ export async function joinChannel(id) {
   return normalizeChannel({ ...asObject(res), isMember: true })
 }
 
-export async function leaveChannel(id) {
-  await http(`${channelsPath(id)}/leave`, { method: 'DELETE' })
+export async function leaveChannel(id, newAdminId) {
+  await http(`${channelsPath(id)}/leave`, {
+    method: 'DELETE',
+    ...(newAdminId ? { body: { new_admin_id: newAdminId } } : {}),
+  })
 }
 
 export async function listMembers(id, { limit = 10 } = {}) {

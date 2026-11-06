@@ -212,6 +212,12 @@ describe('channel API routes', () => {
     await leaveChannel('channel-3')
     expect(http).toHaveBeenLastCalledWith(`${channelPath}/leave`, { method: 'DELETE' })
 
+    await leaveChannel('channel-3', 'user-4')
+    expect(http).toHaveBeenLastCalledWith(`${channelPath}/leave`, {
+      method: 'DELETE',
+      body: { new_admin_id: 'user-4' },
+    })
+
     http.mockResolvedValue({ items: [], total: 0 })
     await listMembers('channel-3')
     expect(http).toHaveBeenLastCalledWith(`${channelPath}/members`, { params: { limit: 10 } })

@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { addMockMessage, searchMessages, updateMockMessage, removeMockMessage } from './search'
+import {
+  addMockMessage,
+  searchLinks,
+  searchMessages,
+  updateMockMessage,
+  removeMockMessage,
+} from './search'
 
 describe('search date filters', () => {
   it('filters messages before and after a selected date', async () => {
@@ -50,6 +56,76 @@ describe('persisted channel messages', () => {
     })
 
     expect(result.items.map((item) => item.id)).toContain('persisted-message')
+  })
+
+  it('finds links in persisted channel messages with conversation and sender details', async () => {
+    localStorage.setItem(
+      'whistleit:channel-messages',
+      JSON.stringify({
+        general: [
+          {
+            id: 'channel-link',
+            content: 'Check this https://example.com/shared.',
+            author: 'Channel User',
+            authorId: 'user-2',
+            createdAt: '2026-11-05T10:00:00.000Z',
+          },
+        ],
+        other: [
+          {
+            id: 'other-link',
+            content: 'https://other.example/path',
+            author: 'Other User',
+            createdAt: '2026-11-05T10:00:00.000Z',
+          },
+        ],
+      }),
+    )
+
+    const result = await searchLinks({ channelId: 'general' })
+
+    expect(result.items).toMatchObject([
+      {
+        id: 'channel-link',
+        url: 'https://example.com/shared',
+        sender: 'Channel User',
+        userId: 'user-2',
+        conversation: { id: 'general' },
+      },
+    ])
+    expect(result.total).toBe(1)
+  })
+
+  it('finds links in direct-message results and applies the search query', async () => {
+    const result = await searchLinks({
+      q: 'localhost',
+      dmConversationId: 'dm-1',
+      dmMessages: [
+        {
+          id: 'dm-link',
+          text: 'http://localhost:5173/app/shared',
+          sender: 'DM User',
+          userId: 'user-3',
+          createdAt: '2026-11-05T10:00:00.000Z',
+          conversation: { id: 'dm-1', name: 'DM User', kind: 'dm' },
+        },
+        {
+          id: 'other-dm-link',
+          text: 'https://example.com',
+          conversation: { id: 'dm-2', kind: 'dm' },
+        },
+      ],
+    })
+
+    expect(result.items).toMatchObject([
+      {
+        id: 'dm-link',
+        url: 'http://localhost:5173/app/shared',
+        sender: 'DM User',
+        conversation: { id: 'dm-1', kind: 'dm' },
+      },
+    ])
+    expect(result.total).toBe(1)
   })
 
   it('reflects in-memory edits and deletions', async () => {
