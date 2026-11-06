@@ -27,6 +27,8 @@ export const useRemindersStore = defineStore('reminders', {
   state: () => ({ items: load(), deletedItems: loadDeleted(), timer: null }),
   getters: {
     sorted: (s) => [...s.items].sort((a, b) => new Date(a.remindAt) - new Date(b.remindAt)),
+    dueItems: (s) =>
+      s.deletedItems.filter((reminder) => reminder.fired && reminder.firedAt && !reminder.dismissed),
   },
   actions: {
     persist() {
@@ -45,7 +47,13 @@ export const useRemindersStore = defineStore('reminders', {
     },
     // reminder = { conversationId, conversationName, conversationType: 'channel'|'dm', messageId, text, remindAt }
     add(reminder) {
-      this.items.push({ id: crypto.randomUUID(), fired: false, ...reminder })
+      this.items.push({
+        ...reminder,
+        id: crypto.randomUUID(),
+        fired: false,
+        conversationId: String(reminder.conversationId ?? 'general'),
+        conversationType: reminder.conversationType === 'dm' ? 'dm' : 'channel',
+      })
       this.persist()
     },
     update(id, patch) {
@@ -56,9 +64,77 @@ export const useRemindersStore = defineStore('reminders', {
       }
     },
     remove(id) {
-      const reminder = this.items.find((i) => i.id === id)
-      if (reminder) this.deletedItems.unshift({ ...reminder, deletedAt: new Date().toISOString() })
+      const deletedAt = new Date().toISOString()
+      const reminder = this.items.find((item) => item.id === id)
+      if (reminder) {
+        this.deletedItems.unshift({ ...reminder, deletedAt, dismissed: true })
+      } else {
+        const firedReminder = this.deletedItems.find((item) => item.id === id && item.firedAt)
+        if (firedReminder) {
+          firedReminder.deletedAt = deletedAt
+          firedReminder.dismissed = true
+        }
+      }
       this.items = this.items.filter((i) => i.id !== id)
+      this.persist()
+      this.persistDeleted()
+    },
+    dismissDue(id) {
+      const reminder = this.deletedItems.find((item) => item.id === id && item.fired && item.firedAt)
+      if (!reminder) return
+      reminder.dismissed = true
+      this.persistDeleted()
+    },
+    snooze(id, duration = 5 * 60_000) {
+      const reminderIndex = this.deletedItems.findIndex(
+        (item) => item.id === id && item.fired && item.firedAt && !item.dismissed,
+      )
+      if (reminderIndex === -1) return
+      const [reminder] = this.deletedItems.splice(reminderIndex, 1)
+      const scheduledReminder = { ...reminder }
+      delete scheduledReminder.deletedAt
+      delete scheduledReminder.firedAt
+      delete scheduledReminder.dismissed
+      this.items.push({
+        ...scheduledReminder,
+        fired: false,
+        remindAt: new Date(Date.now() + duration).toISOString(),
+      })
+      this.persist()
+      this.persistDeleted()
+    },
+    checkDueReminders() {
+      const now = Date.now()
+      const dueReminders = this.items.filter(
+        (reminder) => new Date(reminder.remindAt).getTime() <= now,
+      )
+      if (!dueReminders.length) return
+
+      const dueIds = new Set(dueReminders.map((reminder) => reminder.id))
+      this.items = this.items.filter((reminder) => !dueIds.has(reminder.id))
+      const ui = useUiStore()
+      for (const reminder of dueReminders) {
+        const firedAt = new Date(now).toISOString()
+        if (!reminder.fired) {
+          const title = reminder.title || `Reminder: ${reminder.conversationName}`
+          ui.toast(title, reminder.text)
+          if ('Notification' in window && Notification.permission === 'granted') {
+            new Notification(title, { body: reminder.text })
+          }
+        }
+
+        const dueReminder = {
+          ...reminder,
+          fired: true,
+          firedAt: reminder.firedAt || firedAt,
+          deletedAt: firedAt,
+          dismissed: false,
+        }
+        const existingIndex = this.deletedItems.findIndex((item) => item.id === reminder.id)
+        if (existingIndex === -1) this.deletedItems.unshift(dueReminder)
+        else this.deletedItems[existingIndex] = dueReminder
+      }
+
       this.persist()
       this.persistDeleted()
     },
@@ -68,19 +144,7 @@ export const useRemindersStore = defineStore('reminders', {
       if ('Notification' in window && Notification.permission === 'default')
         Notification.requestPermission()
       const tick = () => {
-        const ui = useUiStore()
-        const now = Date.now()
-        this.items.forEach((r) => {
-          if (!r.fired && new Date(r.remindAt).getTime() <= now) {
-            r.fired = true
-            const title = r.title || `Reminder: ${r.conversationName}`
-            ui.toast(title, r.text)
-            if ('Notification' in window && Notification.permission === 'granted') {
-              new Notification(title, { body: r.text })
-            }
-            this.persist()
-          }
-        })
+        this.checkDueReminders()
       }
       tick()
       this.timer = setInterval(tick, 15000)

@@ -1,15 +1,27 @@
 <script setup>
-// Right-side "Reminders" drawer. Shows every reminder set on a message.
+// Right-side "Reminders" drawer. Shows reminders for the selected conversation.
 import { computed, ref } from 'vue'
 import { useRemindersStore } from './reminders'
 import { useUiStore } from '@/stores/ui'
 
+const props = defineProps({
+  conversationId: { type: [String, Number], default: '' },
+  conversationType: { type: String, default: 'channel' },
+})
 const store = useRemindersStore()
 const ui = useUiStore()
 const editingId = ref(null)
 const editText = ref('')
 const deletedExpanded = ref(true)
-const hasDeleted = computed(() => store.deletedItems.length > 0)
+const hasConversation = computed(() => props.conversationId !== '' && props.conversationId != null)
+const matchesConversation = (reminder) =>
+  !hasConversation.value ||
+  (String(reminder.conversationId ?? 'general') === String(props.conversationId) &&
+    (reminder.conversationType === 'dm' ? 'dm' : 'channel') ===
+      (props.conversationType === 'dm' ? 'dm' : 'channel'))
+const visibleReminders = computed(() => store.sorted.filter(matchesConversation))
+const visibleDeletedReminders = computed(() => store.deletedItems.filter(matchesConversation))
+const hasDeleted = computed(() => visibleDeletedReminders.value.length > 0)
 
 const fmt = (iso) => {
   const d = new Date(iso)
@@ -57,7 +69,7 @@ const saveEdit = (r) => {
     </header>
 
     <div
-      v-if="!store.sorted.length && !hasDeleted"
+      v-if="!visibleReminders.length && !hasDeleted"
       class="flex flex-1 flex-col items-center justify-center px-8"
     >
       <svg
@@ -82,7 +94,7 @@ const saveEdit = (r) => {
     </div>
     <div v-else class="flex-1 space-y-3 overflow-y-auto p-4">
       <div
-        v-for="r in store.sorted"
+        v-for="r in visibleReminders"
         :key="r.id"
         class="relative border-l-4 bg-slate-50 p-3"
         :class="r.fired ? 'border-amber-400' : 'border-red-500'"
@@ -145,7 +157,7 @@ const saveEdit = (r) => {
         </button>
         <div v-if="deletedExpanded" class="space-y-3">
           <div
-            v-for="r in store.deletedItems"
+            v-for="r in visibleDeletedReminders"
             :key="r.id"
             class="border-l-4 border-red-500 bg-slate-50 px-4 py-4"
           >
