@@ -3,7 +3,10 @@ import { createPinia, setActivePinia } from 'pinia'
 import { useUiStore } from './ui'
 
 describe('ui store', () => {
-  beforeEach(() => setActivePinia(createPinia()))
+  beforeEach(() => {
+    localStorage.clear()
+    setActivePinia(createPinia())
+  })
 
   it('starts with no channel selected', () => {
     const ui = useUiStore()
@@ -35,6 +38,25 @@ describe('ui store', () => {
     ui.togglePinnedMessage(message, { id: 'general', name: 'General' })
     expect(ui.pinnedMessages).toHaveLength(1)
     expect(ui.pinnedMessages[0].conversation.name).toBe('Random')
+  })
+
+  it('persists pinned messages across store refreshes', () => {
+    localStorage.clear()
+    const ui = useUiStore()
+    ui.togglePinnedMessage(
+      { id: 'message-1', content: 'Keep this pin' },
+      { id: 'general', name: 'General' },
+    )
+
+    setActivePinia(createPinia())
+    const refreshedStore = useUiStore()
+    expect(refreshedStore.pinnedMessages).toEqual([
+      expect.objectContaining({
+        id: 'message-1',
+        content: 'Keep this pin',
+        conversation: { id: 'general', name: 'General' },
+      }),
+    ])
   })
 
   it('opens and closes search panels and channel settings', () => {

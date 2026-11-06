@@ -1,9 +1,13 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 import { usePresenceStore } from './presence'
+import { setupDmsTestState } from '@/features/dms/test-utils'
 
 describe('presence store', () => {
-  beforeEach(() => setActivePinia(createPinia()))
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    setupDmsTestState()
+  })
 
   it('loads presence and updates the current user status', async () => {
     const presence = usePresenceStore()

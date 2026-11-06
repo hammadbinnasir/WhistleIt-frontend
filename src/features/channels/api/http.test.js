@@ -9,6 +9,7 @@ describe('http', () => {
   })
 
   it('omits cookies by default for wildcard-CORS APIs', async () => {
+    sessionStorage.setItem('authToken', 'session-token')
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
       status: 200,
@@ -22,6 +23,7 @@ describe('http', () => {
   })
 
   it('allows cookie credentials when explicitly requested', async () => {
+    sessionStorage.setItem('authToken', 'session-token')
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
       status: 200,
@@ -52,6 +54,7 @@ describe('http', () => {
   })
 
   it('sends multipart data without setting a JSON content type', async () => {
+    sessionStorage.setItem('authToken', 'session-token')
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
       status: 200,
@@ -80,6 +83,47 @@ describe('http', () => {
     window.addEventListener('auth:expired', expiredHandler)
 
     await expect(http('/channels')).rejects.toThrow('Unauthenticated')
+
+    expect(sessionStorage.getItem('authToken')).toBeNull()
+    expect(expiredHandler).toHaveBeenCalledOnce()
+    window.removeEventListener('auth:expired', expiredHandler)
+  })
+
+  it('does not send an authenticated request when no token is stored', async () => {
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+    const expiredHandler = vi.fn()
+    window.addEventListener('auth:expired', expiredHandler)
+
+    await expect(http('/channels')).rejects.toMatchObject({
+      status: 401,
+      message: 'Your login session is missing. Please sign in again.',
+    })
+
+    expect(fetchMock).not.toHaveBeenCalled()
+    expect(expiredHandler).toHaveBeenCalledOnce()
+    window.removeEventListener('auth:expired', expiredHandler)
+  })
+
+  it('expires the session when the API reports a missing authentication token', async () => {
+    sessionStorage.setItem('authToken', 'session-token')
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 403,
+      statusText: 'Forbidden',
+      json: vi.fn().mockResolvedValue({
+        success: false,
+        message: 'Missing authentication token.',
+      }),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const expiredHandler = vi.fn()
+    window.addEventListener('auth:expired', expiredHandler)
+
+    await expect(http('/channels')).rejects.toMatchObject({
+      status: 403,
+      message: 'Missing authentication token.',
+    })
 
     expect(sessionStorage.getItem('authToken')).toBeNull()
     expect(expiredHandler).toHaveBeenCalledOnce()

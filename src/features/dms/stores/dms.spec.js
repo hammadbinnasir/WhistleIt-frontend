@@ -2,6 +2,11 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 
 vi.mock('@/features/dms/dmApi', () => ({
+  normalizePublicCustomStatus: vi.fn((response, id) => ({
+    id,
+    customStatus: response.data.customStatus,
+    customStatusLoaded: true,
+  })),
   dmApi: {
     meId: vi.fn(() => 'u1'),
     listDirectChannels: vi.fn(),
@@ -17,7 +22,9 @@ vi.mock('@/features/dms/dmApi', () => ({
     deleteMessage: vi.fn(),
   },
 }))
+vi.mock('@/features/account/api', () => ({ getUser: vi.fn() }))
 
+import { getUser } from '@/features/account/api'
 import { dmApi } from '@/features/dms/dmApi'
 import { useDmStore } from './dms'
 import { useTeamsStore } from '@/stores/teams'
@@ -47,6 +54,9 @@ describe('dms store', () => {
     setActivePinia(createPinia())
     useTeamsStore().activeWorkspaceId = 'company-1'
     vi.clearAllMocks()
+    getUser.mockResolvedValue({
+      data: { customStatus: { emoji: '📅', text: 'In a meeting' } },
+    })
     dmApi.listDirectChannels.mockResolvedValue([
       makeConversation('c1', 'u2', [
         { id: 'm1', from: 'u2', text: 'Received', createdAt: '2026-01-01T10:00:00Z' },
@@ -87,6 +97,18 @@ describe('dms store', () => {
     expect(dms.usersById.u2.name).toBe('User u2')
     expect(dms.sorted).toHaveLength(1)
     expect(dmApi.listDirectChannels).toHaveBeenCalledWith('company-1')
+  })
+
+  it('loads missing public custom statuses for DM participants', async () => {
+    const dms = useDmStore()
+    await dms.init()
+
+    await dms.loadCustomStatuses(['u2'])
+
+    expect(getUser).toHaveBeenCalledWith('u2')
+    expect(dms.usersById.u2.customStatus).toEqual({ emoji: '📅', text: 'In a meeting' })
+    expect(dms.usersById.u2.customStatusLoaded).toBe(true)
+    expect(dms.customStatusError).toBe('')
   })
 
   it('loads company members and makes them available by user ID', async () => {

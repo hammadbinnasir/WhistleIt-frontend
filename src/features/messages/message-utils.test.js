@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { createLinkPreview, messageSegments, sameDay } from './message-utils'
+import {
+  createLinkPreview,
+  formattedMessageHtml,
+  messageSegments,
+  sameDay,
+} from './message-utils'
 
 describe('message link and date helpers', () => {
   it('creates safe link metadata and preserves surrounding text', () => {
@@ -24,6 +29,14 @@ describe('message link and date helpers', () => {
     expect(createLinkPreview('file:///etc/passwd')).toBeNull()
     expect(createLinkPreview('https://untrusted.example@trusted.example/')).toBeNull()
     expect(messageSegments('javascript:alert(1)')).toEqual([{ text: 'javascript:alert(1)' }])
+  })
+
+  it('renders supported formatting without exposing raw tags or unsafe HTML', () => {
+    expect(
+      formattedMessageHtml('**bold** *italic* ~~strike~~ <u>underlined</u> <script>alert(1)</script>'),
+    ).toBe(
+      '<strong>bold</strong> <em>italic</em> <s>strike</s> <u>underlined</u> &lt;script&gt;alert(1)&lt;/script&gt;',
+    )
   })
 
   it('creates a preview for paths containing invalid encoded characters', () => {

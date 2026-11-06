@@ -88,7 +88,10 @@ describe('dms store', () => {
   })
 
   it('loads company members and makes them available by user ID', async () => {
-    dmApi.listCompanyMembers.mockResolvedValue([
+    useTeamsStore().teamsByWorkspaceId = {
+      'company-1': [{ id: 'team-1' }],
+    }
+    dmApi.listTeamMembers.mockResolvedValue([
       { id: 'company-user-1', name: 'Company User', email: 'user@example.com', avatarUrl: '' },
     ])
     const dms = useDmStore()
@@ -96,7 +99,8 @@ describe('dms store', () => {
 
     await dms.loadCompanyMembers()
 
-    expect(dmApi.listCompanyMembers).toHaveBeenCalledWith('company-1')
+    expect(dmApi.listCompanyMembers).not.toHaveBeenCalled()
+    expect(dmApi.listTeamMembers).toHaveBeenCalledWith('company-1', 'team-1')
     expect(dms.usersById['company-user-1']).toMatchObject({
       name: 'Company User',
       email: 'user@example.com',
@@ -104,14 +108,43 @@ describe('dms store', () => {
     expect(dms.companyMembersError).toBe('')
   })
 
-  it('combines company and team member lists for DM search', async () => {
+  it('loads missing DM names through team APIs instead of the forbidden company endpoint', async () => {
+    useTeamsStore().teamsByWorkspaceId = {
+      'company-1': [{ id: 'team-1' }],
+    }
+    dmApi.listDirectChannels.mockImplementation(async () => [
+      {
+        conversation: {
+          id: 'c1',
+          type: 'dm',
+          members: ['u1', 'u2'],
+          name: '',
+          unreadCount: 0,
+          isFavorite: false,
+          messages: [],
+        },
+        users: [{ id: 'u2', name: '', email: '', avatarUrl: '' }],
+      },
+    ])
+    dmApi.listTeamMembers.mockResolvedValue([
+      { id: 'u2', name: 'Named Team User', email: '', avatarUrl: '' },
+    ])
+    const dms = useDmStore()
+
+    await dms.init()
+    await vi.waitFor(() => {
+      expect(dms.usersById.u2.name).toBe('Named Team User')
+    })
+
+    expect(dmApi.listCompanyMembers).not.toHaveBeenCalled()
+    expect(dmApi.listTeamMembers).toHaveBeenCalledWith('company-1', 'team-1')
+  })
+
+  it('combines team members and available users for DM search', async () => {
     useTeamsStore().teamsByWorkspaceId = {
       'company-1': [{ id: 'team-1' }, { id: 'team-2' }],
     }
-    dmApi.listCompanyMembers.mockResolvedValue([
-      { id: 'u1', name: 'Current user', email: '', avatarUrl: '' },
-    ])
-    dmApi.listTeamMembers.mockImplementation(async (teamId) =>
+    dmApi.listTeamMembers.mockImplementation(async (_companyId, teamId) =>
       teamId === 'team-1'
         ? [{ id: 'u2', name: 'Muniba Khan', email: '', avatarUrl: '' }]
         : [{ id: 'u3', name: 'Taha Jawad', email: '', avatarUrl: '' }],
@@ -124,12 +157,11 @@ describe('dms store', () => {
 
     await dms.loadCompanyMembers()
 
-    expect(dmApi.listTeamMembers).toHaveBeenCalledWith('team-1')
-    expect(dmApi.listTeamMembers).toHaveBeenCalledWith('team-2')
+    expect(dmApi.listTeamMembers).toHaveBeenCalledWith('company-1', 'team-1')
+    expect(dmApi.listTeamMembers).toHaveBeenCalledWith('company-1', 'team-2')
     expect(dmApi.listTeamNonMembers).toHaveBeenCalledWith('company-1', 'team-1')
     expect(dmApi.listTeamNonMembers).toHaveBeenCalledWith('company-1', 'team-2')
     expect(dms.companyMembers.map((user) => user.name)).toEqual([
-      'Current user',
       'Muniba Khan',
       'Taha Jawad',
       'Available User',
@@ -154,11 +186,11 @@ describe('dms store', () => {
     await dms.loadCompanyMembers()
 
     expect(teams.fetchTeams).toHaveBeenCalledWith('company-1')
-    expect(dmApi.listTeamMembers).toHaveBeenCalledWith('team-loaded')
+    expect(dmApi.listTeamMembers).toHaveBeenCalledWith('company-1', 'team-loaded')
     expect(dms.companyMembers.map((user) => user.name)).toContain('Muniba Khan')
   })
 
-  it('starts the company members request while workspace teams are still loading', async () => {
+  it('waits for workspace teams before loading their members', async () => {
     const teams = useTeamsStore()
     teams.teamsByWorkspaceId = {}
     let resolveTeams
@@ -171,11 +203,16 @@ describe('dms store', () => {
     const dms = useDmStore()
 
     const loading = dms.loadCompanyMembers()
-    await vi.waitFor(() => {
-      expect(dmApi.listCompanyMembers).toHaveBeenCalledWith('company-1')
-    })
+    await vi.waitFor(() => expect(resolveTeams).toBeTypeOf('function'))
+    expect(dmApi.listTeamMembers).not.toHaveBeenCalled()
 
-    resolveTeams([])
+    teams.teamsByWorkspaceId = {
+      'company-1': [{ id: 'team-loaded' }],
+    }
+    resolveTeams(teams.teams)
+    await vi.waitFor(() =>
+      expect(dmApi.listTeamMembers).toHaveBeenCalledWith('company-1', 'team-loaded'),
+    )
     await loading
   })
 

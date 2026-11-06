@@ -48,6 +48,13 @@ describe('auth session', () => {
     expect(getAuthUser()).toEqual({ id: 'user-42', fullName: 'Sara Khan' })
   })
 
+  it('stores access tokens from nested API responses and normalizes Bearer prefixes', () => {
+    expect(saveAuthToken({ data: { data: { accessToken: 'Bearer nested-token' } } })).toBe(
+      'nested-token',
+    )
+    expect(getAuthToken()).toBe('nested-token')
+  })
+
   it('stores a remembered token persistently and replaces any previous token', () => {
     sessionStorage.setItem('authToken', 'old-token')
 

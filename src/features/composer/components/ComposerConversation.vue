@@ -3,12 +3,14 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import EmojiPicker from 'vue3-emoji-picker'
 import 'vue3-emoji-picker/css'
 import { useChannelsStore } from '@/features/channels'
+import { pinMessage, unpinMessage } from '@/features/channels/api/channels.api'
 import { useDmStore } from '@/features/dms/stores/dms'
 import { getAuthUser } from '@/features/auth/session'
 import { useMessagesStore } from '@/features/messages/messages'
 import {
   createLinkPreview,
   dateLabel,
+  formattedMessageHtml,
   messageSegments,
   sameDay,
   timeLabel,
@@ -22,6 +24,8 @@ import {
   getScheduledMessages,
 } from '../api/scheduledMessagesApi'
 import MessageComposer from './MessageComposer.vue'
+import pinChatIcon from '@/assets/pin-chat.svg'
+import unpinChatIcon from '@/assets/unpin-chat.svg'
 
 const props = defineProps({
   conversationId: { type: [String, Number], default: null },
@@ -58,9 +62,11 @@ const currentUserName = computed(
   () => dms.usersById[dms.meId]?.name || getAuthUser()?.fullName || 'You',
 )
 let messageClickTimer = null
+let channelMessagesRefreshTimer = null
 
 const pollClock = ref(Date.now())
 let pollClockTimer = null
+const LOCAL_SCHEDULED_MESSAGES_KEY = 'whistleit:composer-scheduled-messages'
 const channelId = computed(() => String(props.conversationId ?? 'general'))
 const conversation = computed(() => {
   if (props.conversationType !== 'dm' || props.conversationId == null) return null
@@ -118,6 +124,9 @@ const hasOlderMessages = computed(() =>
     ? allMessages.value.length > dmVisibleCount.value
     : messageStore.hasOlderMessages(channelId.value),
 )
+const loadingOlderMessages = computed(
+  () => !conversation.value && Boolean(messageStore.loadingOlderByChannel[channelId.value]),
+)
 const visibleMessages = computed(() =>
   conversation.value
     ? allMessages.value.slice(-dmVisibleCount.value)
@@ -128,6 +137,24 @@ const renderedMessages = computed(() => {
   let previous = null
 
   return [...visibleMessages.value]
+    .filter((message, index, messages) => {
+      if (!message.scheduled || !isScheduledMessageDelivered(message)) return true
+      const content = String(message.content ?? message.text ?? message.body ?? '').trim()
+      const scheduledAt = scheduledTimestamp(message)
+      return !messages.some((candidate, candidateIndex) => {
+        if (candidateIndex === index || candidate.scheduled || candidate.deleted) return false
+        const candidateContent = String(
+          candidate.content ?? candidate.text ?? candidate.body ?? '',
+        ).trim()
+        const sentAt = Date.parse(candidate.createdAt || '')
+        return (
+          candidateContent === content &&
+          Number.isFinite(scheduledAt) &&
+          Number.isFinite(sentAt) &&
+          Math.abs(sentAt - scheduledAt) <= 5 * 60_000
+        )
+      })
+    })
     .sort((a, b) => new Date(a.createdAt || 0) - new Date(b.createdAt || 0))
     .map((message) => {
       const content = message.deleted
@@ -148,6 +175,7 @@ const renderedMessages = computed(() => {
       const rendered = {
         ...message,
         content,
+        formattedContent: formattedMessageHtml(content),
         author,
         authorId,
         mine: message.mine ?? message.from === dms.meId,
@@ -191,14 +219,23 @@ watch(
     openReactionId.value = null
     reminderTarget.value = null
     forwardTarget.value = null
+    clearInterval(channelMessagesRefreshTimer)
+    channelMessagesRefreshTimer = null
+    if (props.conversationType === 'channel' && props.conversationId != null) {
+      void messageStore.fetchChannelMessages(props.conversationId)
+      channelMessagesRefreshTimer = window.setInterval(() => {
+        if (!document.hidden) void messageStore.fetchChannelMessages(props.conversationId)
+      }, 10_000)
+    }
     nextTick(scrollMessagesToLatest)
   },
+  { immediate: true },
 )
 
 watch(
-  () => allMessages.value.length,
-  (count, previousCount) => {
-    if (count > previousCount) scrollMessagesToLatest()
+  () => allMessages.value.at(-1)?.id,
+  (id, previousId) => {
+    if (id != null && id !== previousId) scrollMessagesToLatest()
   },
 )
 
@@ -226,12 +263,67 @@ function openMessageAuthor(message) {
   ui.activePanel = null
 }
 
-function togglePin(message) {
-  ui.togglePinnedMessage(message, conversationMeta.value)
+async function togglePin(message) {
+  if (props.conversationType === 'dm') {
+    if (!message.backendSynced) {
+      ui.toast('Unable to pin message', 'This direct message is not available on the server yet.', 'error')
+      return
+    }
+  } else if (message.backendSynced !== true) {
+    ui.toast('Unable to pin message', 'This channel message is not available on the server yet.', 'error')
+    return
+  }
+
+  const pinned = isPinned(message)
+  try {
+    if (props.conversationType === 'dm') {
+      if (pinned) await dms.unpinMessage(props.conversationId, message.id)
+      else await dms.pinMessage(props.conversationId, message.id)
+    } else if (pinned) {
+      await unpinMessage(channelId.value, message.id)
+    } else {
+      await pinMessage(channelId.value, message.id)
+    }
+    ui.togglePinnedMessage(message, conversationMeta.value)
+  } catch (error) {
+    ui.toast('Unable to update pin', error.message || 'Please try again.', 'error')
+  }
 }
 
-function addMessage(payload) {
+async function addMessage(payload) {
   const messagePayload = replyTo.value ? { ...payload, replyTo: { ...replyTo.value } } : payload
+  const canSendToChannelApi =
+    !conversation.value &&
+    typeof payload.content === 'string' &&
+    payload.content.trim() &&
+    !payload.attachments?.length &&
+    !payload.poll &&
+    !payload.gif &&
+    !payload.scheduledAt &&
+    !payload.important &&
+    !replyTo.value
+
+  if (canSendToChannelApi) {
+    const result = await messageStore.postChannelMessage(channelId.value, messagePayload)
+    if (!result.success) {
+      ui.toast('Message not sent', result.error || 'The channel message could not be sent.', 'error')
+      return
+    }
+
+    const sentMessage = messageStore.messagesFor(channelId.value).at(-1)
+    if (sentMessage) {
+      addMockMessage({
+        id: sentMessage.id,
+        text: sentMessage.content,
+        sender: sentMessage.author,
+        conversation: conversationMeta.value,
+      })
+    }
+    replyTo.value = null
+    scrollMessagesToLatest()
+    return
+  }
+
   const sentMessage = conversation.value
     ? dms.sendMessage(conversation.value.id, messagePayload)
     : messageStore.sendMessage(
@@ -259,6 +351,19 @@ function addMessage(payload) {
 }
 
 function addScheduledMessage(message) {
+  const optimisticId = `scheduled-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+  const optimisticMessage = normalizeScheduledMessage(
+    {
+      id: optimisticId,
+      body: message.content,
+      scheduled_at: message.scheduledAt,
+      status: 'pending',
+    },
+    message,
+  )
+  appendScheduledMessage(optimisticMessage)
+  scrollMessagesToLatest()
+
   const payload = {
     channel_id: channelId.value,
     body: message.content,
@@ -275,11 +380,12 @@ function addScheduledMessage(message) {
       if (!scheduledMessage) {
         throw new Error('Scheduled message response did not contain a message.')
       }
-      appendScheduledMessage(scheduledMessage)
+      replaceScheduledMessage(optimisticId, scheduledMessage)
       ui.toast('Message scheduled', 'Your message was scheduled successfully.', 'success')
       scrollMessagesToLatest()
     })
     .catch((error) => {
+      removeScheduledMessage(optimisticId)
       console.error('Unable to schedule message:', error)
       ui.toast('Message not scheduled', error.message || 'The scheduled message could not be created.', 'error')
     })
@@ -295,30 +401,278 @@ function normalizeScheduledMessage(response, fallback = {}) {
   if (!source || typeof source !== 'object') return null
   const id = source.id ?? source.message_id
   if (id == null) return null
+  const status = String(source.status ?? fallback.status ?? 'pending').toLowerCase()
+  const scheduledAt = source.scheduledAt ?? source.scheduled_at ?? fallback.scheduledAt ?? ''
+  const isPending = ![
+    'sent',
+    'delivered',
+    'completed',
+    'published',
+    'processed',
+    'success',
+  ].includes(status)
+  const sentAt =
+    source.sentAt ??
+    source.sent_at ??
+    (isPending ? '' : scheduledAt)
+  const createdAt = isPending
+    ? source.createdAt ?? source.created_at ?? new Date().toISOString()
+    : sentAt || scheduledAt || source.createdAt || source.created_at || new Date().toISOString()
   return {
     ...source,
     id,
-    content: source.content ?? source.text ?? fallback.content ?? '',
+    content: source.content ?? source.text ?? source.body ?? fallback.content ?? '',
     author: source.author ?? currentUserName.value,
-    authorId: source.authorId ?? source.author_id ?? dms.meId,
+    authorId: source.authorId ?? source.author_id ?? source.user_id ?? dms.meId,
     mine: true,
-    createdAt: source.createdAt ?? source.created_at ?? new Date().toISOString(),
-    scheduled: true,
-    scheduledAt: source.scheduledAt ?? source.scheduled_at ?? fallback.scheduledAt,
-    timeZone: source.timeZone ?? source.timezone ?? fallback.timeZone,
+    createdAt,
+    scheduled: isPending,
+    scheduledAt,
+    timeZone: source.timeZone ?? source.timezone ?? fallback.timeZone ?? 'Asia/Karachi',
+    scheduledStatus: status,
     attachments: source.attachments ?? fallback.attachments ?? [],
   }
 }
 
+function scheduledMessageLabel(message) {
+  const timestamp = Date.parse(message.scheduledAt || '')
+  if (!Number.isFinite(timestamp)) return message.scheduledAt
+  return new Intl.DateTimeFormat('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+    second: '2-digit',
+  }).format(timestamp)
+}
+
+function scheduledTimestamp(message) {
+  const scheduledAt = String(message.scheduledAt ?? message.scheduled_at ?? '').trim()
+  if (!scheduledAt) return NaN
+  if (/[zZ]|[+-]\d{2}:?\d{2}$/.test(scheduledAt)) return Date.parse(scheduledAt)
+
+  const parts = scheduledAt.match(
+    /^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})(?::(\d{2})(?:\.(\d{1,3}))?)?$/,
+  )
+  if (!parts) return Date.parse(scheduledAt)
+
+  const [, year, month, day, hour, minute, second = '0', milliseconds = '0'] = parts
+  const naiveTimestamp = Date.UTC(
+    Number(year),
+    Number(month) - 1,
+    Number(day),
+    Number(hour),
+    Number(minute),
+    Number(second),
+    Number(milliseconds.padEnd(3, '0')),
+  )
+  const timeZone = message.timeZone ?? message.timezone
+  if (!timeZone) return naiveTimestamp
+
+  try {
+    const formatted = new Intl.DateTimeFormat('en-US', {
+      timeZone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hourCycle: 'h23',
+    }).formatToParts(new Date(naiveTimestamp))
+    const values = Object.fromEntries(
+      formatted
+        .filter(({ type }) => type !== 'literal')
+        .map(({ type, value }) => [type, Number(value)]),
+    )
+    const timezoneTimestamp = Date.UTC(
+      values.year,
+      values.month - 1,
+      values.day,
+      values.hour,
+      values.minute,
+      values.second,
+      Number(milliseconds.padEnd(3, '0')),
+    )
+    return naiveTimestamp - (timezoneTimestamp - naiveTimestamp)
+  } catch {
+    return naiveTimestamp
+  }
+}
+
+function scheduledMessageFingerprint(message) {
+  const content = String(message.content ?? message.text ?? message.body ?? '').trim()
+  const scheduledAt = String(message.scheduledAt ?? message.scheduled_at ?? '').trim()
+  const timestamp = scheduledTimestamp(message)
+  return `${content}\u0000${Number.isFinite(timestamp) ? timestamp : scheduledAt}`
+}
+
+function isOptimisticScheduledMessage(message) {
+  return String(message?.id ?? '').startsWith('scheduled-')
+}
+
+function isCompletedScheduledMessage(message) {
+  return ['sent', 'delivered', 'completed', 'published', 'processed', 'success'].includes(
+    String(message?.scheduledStatus ?? message?.status ?? '').toLowerCase(),
+  )
+}
+
+function isScheduledMessageDelivered(message) {
+  if (isCompletedScheduledMessage(message)) return true
+  const scheduledAt = scheduledTimestamp(message)
+  return Number.isFinite(scheduledAt) && scheduledAt <= pollClock.value
+}
+
+function mergeScheduledMessages(existing, incoming) {
+  if (!existing) return incoming
+  if (!incoming) return existing
+  if (
+    isCompletedScheduledMessage(existing) &&
+    !isCompletedScheduledMessage(incoming)
+  ) {
+    return { ...incoming, ...existing }
+  }
+  if (
+    !isOptimisticScheduledMessage(existing) &&
+    isOptimisticScheduledMessage(incoming)
+  ) {
+    return { ...incoming, ...existing }
+  }
+  return { ...existing, ...incoming }
+}
+
 function appendScheduledMessage(message) {
+  let messages
+  if (conversation.value) {
+    messages = conversation.value.messages
+  } else {
+    const key = String(channelId.value)
+    if (!messageStore.messagesByChannel[key]) {
+      messageStore.messagesByChannel[key] = []
+    }
+    messages = messageStore.messagesByChannel[key]
+  }
+  const fingerprint = scheduledMessageFingerprint(message)
+  const existingIndex = messages.findIndex(
+    (item) =>
+      String(item.id) === String(message.id) ||
+      scheduledMessageFingerprint(item) === fingerprint,
+  )
+  if (existingIndex >= 0) {
+    messages.splice(
+      existingIndex,
+      1,
+      mergeScheduledMessages(messages[existingIndex], message),
+    )
+    persistLocalScheduledMessage(message)
+    return
+  }
+  messages.push(message)
+  persistLocalScheduledMessage(message)
+}
+
+function replaceScheduledMessage(previousId, message) {
   const messages = conversation.value
     ? conversation.value.messages
-    : messageStore.messagesFor(channelId.value)
-  if (messages.some((item) => String(item.id) === String(message.id))) return
-  messages.push(message)
+    : messageStore.messagesByChannel[String(channelId.value)] || []
+  const index = messages.findIndex((item) => String(item.id) === String(previousId))
+  const duplicateIndex = messages.findIndex(
+    (item, itemIndex) =>
+      itemIndex !== index &&
+      scheduledMessageFingerprint(item) === scheduledMessageFingerprint(message),
+  )
+  if (duplicateIndex >= 0) {
+    const targetIndex = isOptimisticScheduledMessage(messages[duplicateIndex])
+      ? index
+      : duplicateIndex
+    const staleIndex = targetIndex === duplicateIndex ? index : duplicateIndex
+    if (staleIndex >= 0) {
+      messages.splice(staleIndex, 1)
+    }
+    const replacementIndex = targetIndex > staleIndex ? targetIndex - 1 : targetIndex
+    if (replacementIndex >= 0 && replacementIndex < messages.length) {
+      messages.splice(
+        replacementIndex,
+        1,
+        mergeScheduledMessages(messages[replacementIndex], message),
+      )
+      persistLocalScheduledMessage(message)
+      return
+    }
+  }
+  if (index >= 0) {
+    messages.splice(index, 1, mergeScheduledMessages(messages[index], message))
+  } else {
+    appendScheduledMessage(message)
+    return
+  }
+  persistLocalScheduledMessage(message)
+}
+
+function removeScheduledMessage(messageId) {
+  const messages = conversation.value
+    ? conversation.value.messages
+    : messageStore.messagesByChannel[String(channelId.value)] || []
+  const index = messages.findIndex((item) => String(item.id) === String(messageId))
+  if (index >= 0) messages.splice(index, 1)
+  removeLocalScheduledMessage(messageId)
+}
+
+function readLocalScheduledMessages() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(LOCAL_SCHEDULED_MESSAGES_KEY) || '{}')
+    return saved && typeof saved === 'object' && !Array.isArray(saved) ? saved : {}
+  } catch (error) {
+    console.error('Unable to load local scheduled messages:', error)
+    return {}
+  }
+}
+
+function persistLocalScheduledMessage(message) {
+  try {
+    const saved = readLocalScheduledMessages()
+    const key = String(channelId.value)
+    const messages = Array.isArray(saved[key]) ? saved[key] : []
+    const index = messages.findIndex(
+      (item) =>
+        String(item.id) === String(message.id) ||
+        scheduledMessageFingerprint(item) === scheduledMessageFingerprint(message),
+    )
+    if (index >= 0) {
+      messages.splice(index, 1, mergeScheduledMessages(messages[index], message))
+    }
+    else messages.push(message)
+    saved[key] = messages
+    localStorage.setItem(LOCAL_SCHEDULED_MESSAGES_KEY, JSON.stringify(saved))
+  } catch (error) {
+    console.error('Unable to save local scheduled message:', error)
+  }
+}
+
+function removeLocalScheduledMessage(messageId) {
+  try {
+    const saved = readLocalScheduledMessages()
+    const key = String(channelId.value)
+    if (!Array.isArray(saved[key])) return
+    saved[key] = saved[key].filter((item) => String(item.id) !== String(messageId))
+    localStorage.setItem(LOCAL_SCHEDULED_MESSAGES_KEY, JSON.stringify(saved))
+  } catch (error) {
+    console.error('Unable to remove local scheduled message:', error)
+  }
+}
+
+function loadLocalScheduledMessages() {
+  const saved = readLocalScheduledMessages()
+  const direct = saved[String(channelId.value)]
+  const values = Array.isArray(direct)
+    ? direct
+    : Object.values(saved).flatMap((items) => (Array.isArray(items) ? items : []))
+  values.map((item) => normalizeScheduledMessage(item)).filter(Boolean).forEach(appendScheduledMessage)
 }
 
 function loadScheduledMessages() {
+  loadLocalScheduledMessages()
   getScheduledMessages()
     .then((response) => {
       const values = Array.isArray(response)
@@ -329,8 +683,12 @@ function loadScheduledMessages() {
         .filter(
           (item) =>
             item &&
-            String(item.conversation_id ?? item.conversationId ?? channelId.value) ===
-              channelId.value,
+            String(
+              item.channel_id ??
+                item.conversation_id ??
+                item.conversationId ??
+                channelId.value,
+            ) === channelId.value,
         )
         .forEach(appendScheduledMessage)
     })
@@ -356,7 +714,7 @@ function addGif(gif) {
   scrollMessagesToLatest()
 }
 
-function loadOlder() {
+async function loadOlder() {
   if (conversation.value) {
     dmVisibleCount.value += 20
     return
@@ -364,10 +722,9 @@ function loadOlder() {
   const container = messagesContainer.value
   const previousHeight = container?.scrollHeight || 0
   const previousTop = container?.scrollTop || 0
-  messageStore.loadOlder(channelId.value)
-  nextTick(() => {
-    if (container) container.scrollTop = previousTop + container.scrollHeight - previousHeight
-  })
+  await messageStore.loadOlder(channelId.value)
+  await nextTick()
+  if (container) container.scrollTop = previousTop + container.scrollHeight - previousHeight
 }
 
 function startEdit(message) {
@@ -381,19 +738,31 @@ function cancelEdit() {
   editDraft.value = ''
 }
 
-function saveEdit(message) {
+async function saveEdit(message) {
   if (!editDraft.value.trim()) {
     ui.toast('Message not updated', 'A message cannot be empty.', 'error')
     return
   }
-  const updated = conversation.value
-    ? dms.editMessage(conversation.value.id, message.id, editDraft.value)
-    : messageStore.editMessage(channelId.value, message.id, editDraft.value)
-  if (!updated) {
+  if (conversation.value) {
+    if (!dms.editMessage(conversation.value.id, message.id, editDraft.value)) {
+      ui.toast('Message not updated', 'Only your unscheduled messages can be edited.', 'error')
+      return
+    }
+  } else if (message.serverBacked) {
+    const result = await messageStore.updateServerMessage(
+      channelId.value,
+      message.id,
+      editDraft.value,
+    )
+    if (!result.success) {
+      ui.toast('Message not updated', result.error || 'The channel message could not be updated.', 'error')
+      return
+    }
+    updateMockMessage(message.id, editDraft.value.trim())
+  } else if (!messageStore.editMessage(channelId.value, message.id, editDraft.value)) {
     ui.toast('Message not updated', 'Only your unscheduled messages can be edited.', 'error')
     return
   }
-  if (!conversation.value) updateMockMessage(message.id, editDraft.value.trim())
   cancelEdit()
 }
 
@@ -427,9 +796,32 @@ function confirmMessageDeletion() {
     deleteAt = date.toISOString()
   }
 
-  const deleted = conversation.value
-    ? dms.deleteMessage(conversation.value.id, message.id, deleteAt)
-    : messageStore.deleteMessage(channelId.value, message.id, deleteAt)
+  let deleted
+  if (conversation.value) {
+    deleted = dms.deleteMessage(conversation.value.id, message.id, deleteAt)
+  } else if (message.serverBacked && !deleteAt) {
+    const result = messageStore.deleteServerMessage(channelId.value, message.id)
+    if (result?.success === false) {
+      ui.toast(
+        'Message not deleted',
+        result.error || 'The channel message could not be deleted.',
+        'error',
+      )
+      return
+    }
+    deleted = true
+    void Promise.resolve(result).then((apiResult) => {
+      if (!apiResult.success) {
+        ui.toast(
+          'Message not deleted',
+          apiResult.error || 'The channel message could not be deleted.',
+          'error',
+        )
+      }
+    })
+  } else {
+    deleted = messageStore.deleteMessage(channelId.value, message.id, deleteAt)
+  }
   if (!deleted) {
     ui.toast('Message not deleted', 'Only your unscheduled messages can be deleted.', 'error')
     return
@@ -537,7 +929,7 @@ function openForwardDialog(message) {
     forwardDestinations.value.find((destination) => destination.id !== channelId.value)?.id || ''
 }
 
-function forwardMessage() {
+async function forwardMessage() {
   const destination = forwardDestinations.value.find(
     (item) => item.id === forwardDestinationId.value,
   )
@@ -554,27 +946,31 @@ function forwardMessage() {
       : {}),
     ...(forwardTarget.value.gif ? { gif: forwardTarget.value.gif } : {}),
   }
-  const forwarded =
-    destination.type === 'dm'
-      ? dms.sendMessage(destination.id, payload)
-      : messageStore.sendMessage(
-          destination.id,
-          payload,
-          currentUserName.value,
-          destination.name.replace(/^#/, ''),
-        )
-
-  if (!forwarded) {
-    ui.toast('Unable to forward message', 'The destination is no longer available.', 'error')
-    return
-  }
-  if (destination.type === 'channel') {
-    addMockMessage({
-      id: forwarded.id,
-      text: forwarded.content,
-      sender: forwarded.author,
-      conversation: { id: destination.id, name: destination.name.slice(1), kind: 'public' },
-    })
+  if (destination.type === 'dm') {
+    const forwarded = dms.sendMessage(destination.id, payload)
+    if (!forwarded) {
+      ui.toast('Unable to forward message', 'The destination is no longer available.', 'error')
+      return
+    }
+  } else {
+    const result = await messageStore.postChannelMessage(destination.id, payload)
+    if (!result.success) {
+      ui.toast('Unable to forward message', result.error || 'The channel message could not be sent.', 'error')
+      return
+    }
+    const forwarded =
+      result.data ??
+      messageStore
+        .messagesFor(destination.id)
+        .find((message) => message.forwardedFrom === payload.forwardedFrom && message.content === payload.content)
+    if (forwarded) {
+      addMockMessage({
+        id: forwarded.id,
+        text: forwarded.content,
+        sender: forwarded.author || currentUserName.value,
+        conversation: { id: destination.id, name: destination.name.slice(1), kind: 'public' },
+      })
+    }
   }
   forwardTarget.value = null
   ui.toast('Message forwarded', `Sent to ${destination.name}.`, 'success')
@@ -770,7 +1166,6 @@ async function scrollMessagesToLatest() {
 
 onMounted(() => {
   document.addEventListener('pointerdown', closeActionsOnOutsideClick)
-  loadScheduledMessages()
   pollClockTimer = window.setInterval(() => {
     pollClock.value = Date.now()
   }, 1000)
@@ -778,6 +1173,7 @@ onMounted(() => {
 onBeforeUnmount(() => {
   document.removeEventListener('pointerdown', closeActionsOnOutsideClick)
   clearTimeout(messageClickTimer)
+  clearInterval(channelMessagesRefreshTimer)
   if (pollClockTimer) window.clearInterval(pollClockTimer)
 })
 </script>
@@ -789,17 +1185,42 @@ onBeforeUnmount(() => {
         v-if="hasOlderMessages"
         type="button"
         class="composer-conversation__load-older"
+        :disabled="loadingOlderMessages"
         @click="loadOlder"
       >
-        Load older messages
+        {{ loadingOlderMessages ? 'Loading older messages...' : 'Load older messages' }}
       </button>
-      <p v-if="messagesLoading" class="composer-conversation__status">Loading messages…</p>
-      <p v-else-if="messagesError" class="composer-conversation__status composer-conversation__status--error">
-          {{ messagesError }}
-       <button type="button" @click="retryConversationMessages">Retry</button>
+      <p
+        v-if="props.conversationType === 'channel' && messageStore.loadingByChannel[channelId]"
+        class="composer-conversation__status"
+        role="status"
+      >
+        Loading channel messages...
       </p>
-      <p v-else-if="conversation && !renderedMessages.length" class="composer-conversation__status">
-          No messages yet.
+      <p
+        v-else-if="props.conversationType === 'channel' && messageStore.errorsByChannel[channelId]"
+        class="composer-conversation__status composer-conversation__status--error"
+        role="alert"
+      >
+        {{ messageStore.errorsByChannel[channelId] }}
+        <button type="button" @click="messageStore.fetchChannelMessages(channelId)">Retry</button>
+      </p>
+      <p v-else-if="messagesLoading" class="composer-conversation__status" role="status">
+        Loading messages...
+      </p>
+      <p
+        v-else-if="messagesError"
+        class="composer-conversation__status composer-conversation__status--error"
+        role="alert"
+      >
+        {{ messagesError }}
+        <button type="button" @click="retryConversationMessages">Retry</button>
+      </p>
+      <p
+        v-else-if="conversation && !renderedMessages.length"
+        class="composer-conversation__status"
+      >
+        No messages yet.
       </p>
       <template v-for="message in renderedMessages" :key="message.id">
         <div v-if="message.showDate" class="composer-conversation__date">
@@ -824,7 +1245,10 @@ onBeforeUnmount(() => {
           <span v-else class="composer-conversation__avatar-spacer" aria-hidden="true"></span>
 
           <div class="composer-conversation__message-content">
-            <header v-if="!message.grouped" class="composer-conversation__message-heading">
+            <header
+              v-if="!message.grouped || isPinned(message)"
+              class="composer-conversation__message-heading"
+            >
               <button
                 v-if="messageAuthorUserId(message)"
                 type="button"
@@ -837,6 +1261,7 @@ onBeforeUnmount(() => {
               <strong v-else>{{ message.author }}</strong>
               <time :datetime="message.createdAt">{{ message.time }}</time>
               <span v-if="message.editedAt" class="composer-conversation__edited">(edited)</span>
+              <span v-if="isPinned(message)" class="composer-conversation__pinned">PINNED</span>
             </header>
 
             <div
@@ -848,7 +1273,7 @@ onBeforeUnmount(() => {
             >
               <template v-if="!message.deleted">
                 <span v-if="message.forwardedFrom" class="composer-conversation__forwarded">
-                  Forwarded from {{ message.forwardedFrom }}
+                  (forwarded)
                 </span>
                 <span v-if="message.important" class="composer-conversation__important">
                   IMPORTANT!
@@ -976,18 +1401,7 @@ onBeforeUnmount(() => {
                 </form>
 
                 <template v-else>
-                  <p v-if="message.content">
-                    <template v-for="(segment, index) in message.segments" :key="index">
-                      <a
-                        v-if="segment.href"
-                        :href="segment.href"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        >{{ segment.text }}</a
-                      >
-                      <template v-else>{{ segment.text }}</template>
-                    </template>
-                  </p>
+                  <p v-if="message.content" v-html="message.formattedContent"></p>
                   <img
                     v-if="message.gif"
                     class="composer-conversation__gif"
@@ -1013,8 +1427,13 @@ onBeforeUnmount(() => {
                   }}</span>
                 </a>
 
-                <span v-if="message.scheduled" class="composer-conversation__scheduled">
-                  Scheduled for {{ message.scheduledAt }} ({{ message.timeZone || 'local time' }})
+                <span
+                  v-if="message.scheduled && !isScheduledMessageDelivered(message)"
+                  class="composer-conversation__scheduled"
+                  :title="`Scheduled to send ${scheduledMessageLabel(message)} (${message.timeZone || 'local time'})`"
+                >
+                  Scheduled for {{ scheduledMessageLabel(message) }}
+                  ({{ message.timeZone || 'local time' }})
                 </span>
                 <span v-if="message.deleteScheduledAt" class="composer-conversation__scheduled">
                   Scheduled to delete {{ new Date(message.deleteScheduledAt).toLocaleString() }}
@@ -1046,6 +1465,11 @@ onBeforeUnmount(() => {
                 </div>
               </template>
               <p v-else class="composer-conversation__deleted-message">(message deleted)</p>
+              <span
+                v-if="message.editedAt && !message.deleted"
+                class="composer-conversation__edited"
+                >(edited)</span
+              >
             </div>
 
             <div
@@ -1115,7 +1539,14 @@ onBeforeUnmount(() => {
                   :title="isPinned(message) ? 'Unpin message' : 'Pin message'"
                   @click="togglePin(message)"
                 >
-                  📌
+                  <span>
+                    <img
+                      class="composer-conversation__pin-icon"
+                      :src="isPinned(message) ? unpinChatIcon : pinChatIcon"
+                      alt=""
+                      aria-hidden="true"
+                    />
+                  </span>
                 </button>
                 <button
                   type="button"
@@ -1232,7 +1663,7 @@ onBeforeUnmount(() => {
             </button>
 
             <span
-              v-if="message.mine && !message.scheduled && !message.deleted"
+              v-if="message.mine && !message.deleted && (!message.scheduled || isScheduledMessageDelivered(message))"
               class="composer-conversation__sent-status"
               aria-label="Sent"
             >
@@ -1579,8 +2010,20 @@ onBeforeUnmount(() => {
 
 .composer-conversation__message-heading time,
 .composer-conversation__edited {
+  display: block;
+  margin-top: 8px;
   color: #696d81;
   font-size: 12px;
+}
+
+.composer-conversation__pinned {
+  border-radius: 3px;
+  background: #6159d8;
+  padding: 2px 6px;
+  color: #fff;
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 12px;
 }
 
 .composer-conversation__message-bubble {
@@ -2290,9 +2733,10 @@ onBeforeUnmount(() => {
   place-items: center;
 }
 
-.composer-conversation__action-toolbar button svg {
-  width: 20px;
-  height: 20px;
+.composer-conversation__action-toolbar button svg,
+.composer-conversation__action-toolbar button img {
+  width: 19px;
+  height: 19px;
 }
 
 .composer-conversation__action-toolbar button:hover,

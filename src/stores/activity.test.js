@@ -2,36 +2,42 @@ import { beforeEach, describe, expect, it } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 import { useActivityStore } from './activity'
 import { useDmStore } from '@/features/dms/stores/dms'
+import { setupDmsTestState } from '@/features/dms/test-utils'
 
 describe('activity store', () => {
-  beforeEach(() => setActivePinia(createPinia()))
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    setupDmsTestState()
+  })
 
-  it('loads notifications and supports read filters and mark-all-read', async () => {
+  it('initializes without an unavailable notifications endpoint', async () => {
     const activity = useActivityStore()
     await activity.init()
 
-    expect(activity.sorted.length).toBeGreaterThan(0)
-    expect(activity.unreadCount).toBe(2)
+    expect(activity.loaded).toBe(true)
+    expect(activity.loading).toBe(false)
+    expect(activity.error).toBe('')
+    expect(activity.sorted).toEqual([])
 
-    const unread = activity.sorted.find((item) => !item.read)
-    activity.setRead(unread.id, true)
+    activity.addActivity({ title: 'Update', body: 'Activity item' })
     expect(activity.unreadCount).toBe(1)
-
     activity.markAllRead()
     expect(activity.unreadCount).toBe(0)
   })
 
-  it('adds a new activity when a demo DM message arrives', async () => {
+  it('adds a mention activity when a DM message mentions someone', async () => {
     const activity = useActivityStore()
     const dms = useDmStore()
     await Promise.all([activity.init(), dms.init()])
 
-    const message = dms.receiveDemo()
+    const conversation = await dms.startDm('u2')
+    const message = dms.sendMessage(conversation.id, { content: '@someone hello' })
 
-    expect(message.text).toBe('You have a new message.')
+    expect(message.text).toBe('@someone hello')
     expect(activity.sorted[0]).toMatchObject({
-      conversationId: expect.any(String),
-      body: message.text,
+      conversationId: conversation.id,
+      type: 'mention',
+      body: '@someone hello',
       read: false,
     })
   })

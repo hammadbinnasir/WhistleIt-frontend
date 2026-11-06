@@ -1,9 +1,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { apiRequest } from './client'
-import { getAuthToken } from '@/features/auth/session'
+import { expireAuthSession, getAuthToken } from '@/features/auth/session'
 
 vi.mock('@/features/auth/session', () => ({
   getAuthToken: vi.fn(),
+  expireAuthSession: vi.fn(),
 }))
 
 describe('shared API client', () => {
@@ -42,7 +43,7 @@ describe('shared API client', () => {
   })
 
   it('maps HTTP and unsuccessful response errors to status and message', async () => {
-    getAuthToken.mockReturnValue(null)
+    getAuthToken.mockReturnValue('session-token')
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce({
@@ -77,5 +78,36 @@ describe('shared API client', () => {
       status: 502,
       message: 'Bad Gateway',
     })
+  })
+
+  it('expires the session when the server reports a missing authentication token', async () => {
+    getAuthToken.mockReturnValue('session-token')
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 403,
+      statusText: 'Forbidden',
+      json: async () => ({ success: false, message: 'Missing authentication token.' }),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(apiRequest('/company')).rejects.toMatchObject({
+      status: 403,
+      message: 'Missing authentication token.',
+    })
+    expect(expireAuthSession).toHaveBeenCalledOnce()
+  })
+
+  it('does not send an authenticated request when no token is available', async () => {
+    getAuthToken.mockReturnValue(null)
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(apiRequest('/company')).rejects.toMatchObject({
+      status: 401,
+      message: 'Your login session is missing. Please sign in again.',
+    })
+
+    expect(fetchMock).not.toHaveBeenCalled()
+    expect(expireAuthSession).toHaveBeenCalledOnce()
   })
 })

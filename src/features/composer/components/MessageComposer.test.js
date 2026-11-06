@@ -507,6 +507,62 @@ describe('message composer', () => {
     wrapper.unmount()
   })
 
+  it('applies underline to text typed after activating underline', async () => {
+    const wrapper = mount(MessageComposer, { attachTo: document.body })
+    const input = wrapper.get('[contenteditable="true"]')
+    input.element.focus()
+    const range = document.createRange()
+    range.selectNodeContents(input.element)
+    range.collapse(false)
+    document.getSelection().removeAllRanges()
+    document.getSelection().addRange(range)
+
+    await wrapper.get('button[aria-label="Underline"]').trigger('mousedown')
+    await wrapper.get('button[aria-label="Underline"]').trigger('click')
+
+    input.element.dispatchEvent(
+      new InputEvent('beforeinput', {
+        inputType: 'insertText',
+        data: 'underlined',
+        bubbles: true,
+        cancelable: true,
+      }),
+    )
+
+    expect(input.element.innerHTML).toBe('<u>underlined</u>')
+    expect(wrapper.get('button[aria-label="Underline"]').attributes('aria-pressed')).toBe('true')
+    wrapper.unmount()
+  })
+
+  it('applies code formatting to selected text and typed text', async () => {
+    const wrapper = mount(MessageComposer, { attachTo: document.body })
+    const input = setEditorText(wrapper, 'const value = 1')
+    selectEditorText(input)
+
+    await wrapper.get('button[aria-label="Code block"]').trigger('mousedown')
+    await wrapper.get('button[aria-label="Code block"]').trigger('click')
+
+    expect(input.element.innerHTML).toBe('<code>const value = 1</code>')
+
+    const range = document.createRange()
+    range.selectNodeContents(input.element)
+    range.collapse(false)
+    const selection = document.getSelection()
+    selection.removeAllRanges()
+    selection.addRange(range)
+    input.element.dispatchEvent(
+      new InputEvent('beforeinput', {
+        inputType: 'insertText',
+        data: '!',
+        bubbles: true,
+        cancelable: true,
+      }),
+    )
+
+    expect(input.element.innerHTML).toBe('<code>const value = 1!</code>')
+    wrapper.unmount()
+  })
+
   it('types only the remaining active format after toggling bold off', async () => {
     const wrapper = mount(MessageComposer, { attachTo: document.body })
 

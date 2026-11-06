@@ -12,8 +12,10 @@ const wait = (ms = 200) => new Promise((resolve) => setTimeout(resolve, ms))
 
 export async function listMembers(channelId = null) {
   if (channelId) {
-    const { items } = await listChannelMembers(channelId, { limit: 100 })
-    return items.map((member) => ({
+    const { items, total } = await listChannelMembers(channelId, { limit: 100 })
+    const completeMembers =
+      total > items.length ? (await listChannelMembers(channelId, { limit: total })).items : items
+    return completeMembers.map((member) => ({
       id: member.userId || member.id,
       name: member.name || member.email || 'Channel member',
       email: member.email || '',

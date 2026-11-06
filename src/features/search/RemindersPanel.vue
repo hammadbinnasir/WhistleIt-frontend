@@ -33,16 +33,17 @@ const saveEdit = (r) => {
 </script>
 
 <template>
-  <aside class="flex h-full w-full flex-col border-l border-slate-200 bg-white">
+  <aside class="flex h-full w-full flex-col bg-white">
     <header class="flex h-14 shrink-0 items-center justify-between border-b border-slate-200 px-5">
-      <h2 class="text-xl text-slate-700">Reminders</h2>
+      <h2 class="text-xl font-normal text-slate-800">Reminders</h2>
       <button
-        class="flex h-8 w-8 cursor-pointer items-center justify-center text-slate-600 hover:text-slate-900"
-        aria-label="Close"
+        class="flex h-6 w-6 cursor-pointer items-center justify-center rounded-full bg-indigo-50 text-slate-600 transition-colors hover:text-slate-900"
+        title="Close Reminders"
+        aria-label="Close Reminders"
         @click="ui.closePanel()"
       >
         <svg
-          class="h-5 w-5"
+          class="h-3.5 w-3.5"
           viewBox="0 0 24 24"
           fill="none"
           stroke="currentColor"

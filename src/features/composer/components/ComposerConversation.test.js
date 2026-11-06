@@ -9,8 +9,22 @@ import { useMessagesStore } from '@/features/messages/messages'
 import { useRemindersStore } from '@/features/search/reminders'
 import { useUiStore } from '@/stores/ui'
 import { resetUserStore, useUserStore } from '@/features/account/composables/useUserStore'
+import { setupDmsTestState } from '@/features/dms/test-utils'
+import {
+  getChannelMessages,
+  sendChannelMessage,
+  updateChannelMessage,
+  deleteChannelMessage,
+} from '@/features/messages/channelMessageService'
 
 const emojiPickerProps = vi.hoisted(() => vi.fn())
+
+vi.mock('@/features/messages/channelMessageService', () => ({
+  getChannelMessages: vi.fn(),
+  sendChannelMessage: vi.fn(),
+  updateChannelMessage: vi.fn(),
+  deleteChannelMessage: vi.fn(),
+}))
 
 vi.mock('vue3-emoji-picker', async () => {
   const { defineComponent, h } = await import('vue')
@@ -39,7 +53,33 @@ describe('composer conversation', () => {
     localStorage.clear()
     sessionStorage.clear()
     setActivePinia(createPinia())
+    setupDmsTestState()
     resetUserStore()
+    getChannelMessages.mockReset()
+    getChannelMessages.mockResolvedValue({
+      success: true,
+      data: { success: true, data: { messages: [] } },
+    })
+    sendChannelMessage.mockReset()
+    updateChannelMessage.mockReset()
+    updateChannelMessage.mockResolvedValue({ success: true, data: {} })
+    deleteChannelMessage.mockReset()
+    deleteChannelMessage.mockResolvedValue({ success: true, data: null })
+    let serverMessageId = 0
+    sendChannelMessage.mockImplementation(async (_company, _team, _channel, { content }) => ({
+      success: true,
+      data: {
+        success: true,
+        data: {
+          message: {
+            id: `server-message-${++serverMessageId}`,
+            content,
+            sender_id: 'u1',
+            created_at: '2026-11-05T10:00:00Z',
+          },
+        },
+      },
+    }))
   })
 
   async function sendMessage(wrapper, content) {
@@ -54,6 +94,93 @@ describe('composer conversation', () => {
   function buttonWithText(wrapper, content) {
     return wrapper.findAll('button').find((button) => button.text().includes(content))
   }
+
+  it('loads channel messages when a channel conversation opens', async () => {
+    const wrapper = mount(ComposerConversation, {
+      props: { conversationId: '6aeb0aa8fbf9fd02ad07048f' },
+    })
+
+    await vi.waitFor(() => {
+      expect(getChannelMessages).toHaveBeenCalledWith(
+        'company-1',
+        'team-1',
+        '6aeb0aa8fbf9fd02ad07048f',
+        { page: 1, perPage: 15 },
+      )
+    })
+    wrapper.unmount()
+  })
+
+  it('loads and displays older channel messages from the next API page', async () => {
+    const makeMessages = (prefix) =>
+      Array.from({ length: 15 }, (_, index) => ({
+        id: `${prefix}-${index}`,
+        body: `${prefix} message ${index}`,
+        sender_id: 'u2',
+        created_at: new Date(Date.UTC(2026, 10, 5, 10, index)).toISOString(),
+      }))
+    const pagination = (currentPage) => ({
+      current_page: currentPage,
+      per_page: 15,
+      total: 30,
+      last_page: 2,
+      has_more_pages: currentPage === 1,
+    })
+    getChannelMessages
+      .mockResolvedValueOnce({
+        success: true,
+        data: { messages: makeMessages('latest'), pagination: pagination(1) },
+      })
+      .mockResolvedValueOnce({
+        success: true,
+        data: {
+          messages: [
+            {
+              id: 'older-message',
+              body: 'Older channel history',
+              sender_id: 'u2',
+              created_at: '2026-11-04T10:00:00Z',
+            },
+          ],
+          pagination: pagination(2),
+        },
+      })
+    const wrapper = mount(ComposerConversation, {
+      props: { conversationId: 'channel-1' },
+    })
+
+    await vi.waitFor(() => {
+      expect(buttonWithText(wrapper, 'Load older messages')).toBeTruthy()
+    })
+    await buttonWithText(wrapper, 'Load older messages').trigger('click')
+    await vi.waitFor(() => {
+      expect(wrapper.text()).toContain('Older channel history')
+    })
+    expect(getChannelMessages).toHaveBeenNthCalledWith(
+      2,
+      'company-1',
+      'team-1',
+      'channel-1',
+      { page: 2, perPage: 15 },
+    )
+    wrapper.unmount()
+  })
+
+  it('sends a plain channel message through the shared messages API', async () => {
+    const wrapper = mount(ComposerConversation, {
+      props: { conversationId: '6aeb0aa8fbf9fd02ad07048f' },
+    })
+    await sendMessage(wrapper, 'Hello everyone')
+
+    expect(sendChannelMessage).toHaveBeenCalledWith(
+      'company-1',
+      'team-1',
+      '6aeb0aa8fbf9fd02ad07048f',
+      { content: 'Hello everyone' },
+    )
+    expect(wrapper.text()).toContain('Hello everyone')
+    wrapper.unmount()
+  })
 
   it('shows a sent message in the conversation', async () => {
     const wrapper = mount(ComposerConversation)
@@ -266,7 +393,7 @@ describe('composer conversation', () => {
   it('opens and sends messages in the selected direct message', async () => {
     const dms = useDmStore()
     await dms.init()
-    const conversation = dms.startDm('u2')
+    const conversation = await dms.startDm('u2')
     const wrapper = mount(ComposerConversation, {
       props: { conversationId: conversation.id, conversationType: 'dm' },
     })
@@ -291,7 +418,7 @@ describe('composer conversation', () => {
     const dms = useDmStore()
     await dms.init()
     dms.users = dms.users.filter((user) => user.id !== dms.meId)
-    const conversation = dms.startDm('u2')
+    const conversation = await dms.startDm('u2')
     const wrapper = mount(ComposerConversation, {
       props: { conversationId: conversation.id, conversationType: 'dm' },
     })
@@ -332,7 +459,7 @@ describe('composer conversation', () => {
     const dms = useDmStore()
     const ui = useUiStore()
     await dms.init()
-    const otherConversation = dms.startDm('u3')
+    const otherConversation = await dms.startDm('u3')
     ui.activePanel = 'activity'
     const wrapper = mount(ComposerConversation, {
       props: { conversationId: 'c1', conversationType: 'dm' },
@@ -377,7 +504,7 @@ describe('composer conversation', () => {
   it('shows edit and delete only for messages sent by the current user', async () => {
     const dms = useDmStore()
     await dms.init()
-    const conversation = dms.startDm('u2')
+    const conversation = await dms.startDm('u2')
     dms.sendMessage(conversation.id, { content: 'My message' })
     const wrapper = mount(ComposerConversation, {
       props: { conversationId: conversation.id, conversationType: 'dm' },
@@ -421,9 +548,55 @@ describe('composer conversation', () => {
     const editForm = article.get('.composer-conversation__edit-form')
     await editForm.get('textarea').setValue('Edited message')
     await editForm.trigger('submit')
+    await vi.waitFor(() => {
+      expect(updateChannelMessage).toHaveBeenCalledWith(
+        'company-1',
+        'team-1',
+        'general',
+        'server-message-1',
+        { content: 'Edited message' },
+      )
+    })
 
-    expect(article.text()).toContain('Edited message')
-    expect(article.text()).toContain('(edited)')
+    await vi.waitFor(() => {
+      expect(article.text()).toContain('Edited message')
+      expect(article.find('.composer-conversation__edit-form').exists()).toBe(false)
+    })
+    expect(
+      article.get('.composer-conversation__message-bubble .composer-conversation__edited').text(),
+    ).toBe('(edited)')
+    expect(article.find('.composer-conversation__message-heading .composer-conversation__edited').exists()).toBe(
+      false,
+    )
+  })
+
+  it('deletes a server-backed channel message through the delete API', async () => {
+    const wrapper = mount(ComposerConversation)
+    await sendMessage(wrapper, 'A message to delete')
+    const article = wrapper.get('article')
+    let resolveDelete
+    deleteChannelMessage.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveDelete = resolve
+        }),
+    )
+
+    await article.get('button[aria-label="More message actions"]').trigger('click')
+    await buttonWithText(article.get('.composer-conversation__menu'), 'Delete').trigger('click')
+    document.querySelector('.composer-conversation__delete-dialog .is-delete').click()
+    await nextTick()
+
+    expect(deleteChannelMessage).toHaveBeenCalledWith(
+      'company-1',
+      'team-1',
+      'general',
+      'server-message-1',
+    )
+    expect(article.text()).toContain('(message deleted)')
+    expect(document.querySelector('.composer-conversation__delete-dialog')).toBeNull()
+    resolveDelete({ success: true, data: null })
+    wrapper.unmount()
   })
 
   it('copies message text from the toolbar copy button', async () => {
@@ -480,7 +653,7 @@ describe('composer conversation', () => {
       'Are you sure you want to delete this Message?',
     )
     document.querySelector('.composer-conversation__delete-footer .is-delete').click()
-    await nextTick()
+    await vi.waitFor(() => expect(messages.messagesFor('general').at(-1).deleted).toBe(true))
 
     expect(wrapper.text()).not.toContain('Remove this message')
     expect(wrapper.text()).toContain('(message deleted)')
@@ -507,7 +680,7 @@ describe('composer conversation', () => {
     )
     await nextTick()
     document.querySelector('.composer-conversation__delete-footer .is-delete').click()
-    await nextTick()
+    await vi.waitFor(() => expect(useMessagesStore().messagesFor('general')[0].deleted).toBe(true))
 
     const replyArticle = wrapper
       .findAll('article')
@@ -545,9 +718,12 @@ describe('composer conversation', () => {
       await nextTick()
 
       document.querySelector('.composer-conversation__delete-footer .is-delete').click()
-      await nextTick()
+      await vi.waitFor(() =>
+        expect(messages.messagesFor('general').at(-1).deleteScheduledAt).toBe(
+          deleteAt.toISOString(),
+        ),
+      )
       expect(wrapper.text()).toContain('Delete this later')
-      expect(messages.messagesFor('general').at(-1).deleteScheduledAt).toBe(deleteAt.toISOString())
 
       await vi.advanceTimersByTimeAsync(120_000)
       await nextTick()
@@ -623,10 +799,31 @@ describe('composer conversation', () => {
     await forwardAction.trigger('click')
     await wrapper.get('form.composer-conversation__forward-dialog').trigger('submit')
 
-    expect(messages.messagesFor('random')[0]).toMatchObject({
-      content: 'Forward this update',
-      forwardedFrom: 'You in general',
+    await vi.waitFor(() => {
+      expect(sendChannelMessage).toHaveBeenLastCalledWith(
+        'company-1',
+        'team-1',
+        'random',
+        {
+          content: 'Forward this update',
+          forwardedFrom: 'You in general',
+        },
+      )
     })
+    expect(messages.messagesFor('random')).toContainEqual(
+      expect.objectContaining({
+        serverBacked: true,
+        forwardedFrom: 'You in general',
+        id: expect.any(String),
+      }),
+    )
+
+    await wrapper.setProps({ conversationId: 'random' })
+    await vi.waitFor(() => {
+      expect(wrapper.text()).toContain('(forwarded)')
+      expect(wrapper.text()).not.toContain('Forwarded from')
+    })
+    wrapper.unmount()
   })
 
   it('groups messages and loads older history in pages', async () => {
@@ -670,6 +867,40 @@ describe('composer conversation', () => {
     expect(wrapper.text()).toContain('Scheduled for')
 
     expect(wrapper.text()).toContain('Asia/Karachi')
+  })
+
+  it('shows delivery ticks after a scheduled message reaches its send time', async () => {
+    const messages = useMessagesStore()
+    const sentAt = new Date(Date.now() - 500)
+    localStorage.setItem(
+      'whistleit:composer-scheduled-messages',
+      JSON.stringify({
+        general: [
+          {
+            id: 'scheduled-1',
+            body: 'Scheduled and sent',
+            scheduled_at: new Date(sentAt.getTime() - 500).toISOString(),
+            status: 'pending',
+          },
+        ],
+      }),
+    )
+    messages.messagesByChannel.general = [
+      {
+        id: 'sent-1',
+        content: 'Scheduled and sent',
+        mine: true,
+        author: 'You',
+        createdAt: sentAt.toISOString(),
+      },
+    ]
+
+    const wrapper = mount(ComposerConversation)
+    await nextTick()
+
+    expect(wrapper.get('[aria-label="Sent"]').text()).toBe('✓✓')
+    expect(wrapper.text()).not.toContain('Scheduled for')
+    expect(wrapper.findAll('.composer-conversation__message-bubble')).toHaveLength(1)
   })
 
   it('shows a selected GIF as a conversation message', async () => {

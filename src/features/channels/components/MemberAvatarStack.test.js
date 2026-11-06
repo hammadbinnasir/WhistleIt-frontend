@@ -45,4 +45,18 @@ describe('MemberAvatarStack', () => {
     expect(wrapper.find('.ch-stack__preview').exists()).toBe(true)
     wrapper.unmount()
   })
+
+  it('emits the selected member when the profile action is clicked', async () => {
+    const member = { id: '1', name: 'Abbas Ali', status: 'offline' }
+    const wrapper = mount(MemberAvatarStack, {
+      props: { members: [member], total: 1 },
+    })
+
+    await wrapper.find('.ch-stack__avatar').trigger('mouseenter')
+    await wrapper.get('button.ch-stack__preview-action--secondary').trigger('click')
+
+    expect(wrapper.emitted('profile')).toEqual([[member]])
+    expect(wrapper.emitted('click')).toBeUndefined()
+    wrapper.unmount()
+  })
 })

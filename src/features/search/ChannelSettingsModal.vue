@@ -2,6 +2,8 @@
 // Channel Settings modal: Settings | Members | Integrations | About
 import { ref, computed, onMounted, watch } from 'vue'
 import { useUiStore } from '@/stores/ui'
+import { useChannelsStore } from '@/features/channels'
+import { getAuthUserId } from '@/features/auth/session'
 import {
   listMembers,
   listAvailableMembers,
@@ -24,11 +26,13 @@ const emit = defineEmits([
   'save-details',
 ])
 const ui = useUiStore()
+const channels = useChannelsStore()
 
 const tab = ref(ui.channelSettingsTab)
 const members = ref([])
 const memberQuery = ref('')
 const loadingMembers = ref(true)
+const membersLoadError = ref('')
 const adding = ref(false)
 const addQuery = ref('')
 const addOptions = ref([])
@@ -40,26 +44,22 @@ const addOptionsError = ref('')
 const addMemberError = ref('')
 const webhookUrl = ref('')
 const copied = ref(false)
-const connectionCopied = ref(false)
 const confirmLeave = ref(false)
 const showMessagePermissions = ref(false)
 const confirmArchive = ref(false)
-const confirmConnectionUpdate = ref(false)
-const connectionUrl = ref('')
-const connectionUrlDraft = ref('')
+const memberToRemove = ref(null)
 const editingDetails = ref(false)
 const draftName = ref('')
 const draftDescription = ref('')
 const messagePermission = ref('everyone')
 const selectedMessagePermission = ref('everyone')
+const newAdminId = ref('')
+const newAdminSearch = ref('')
+const newAdminDropdownOpen = ref(false)
+const leaveError = ref('')
+const leaving = ref(false)
 
 const permissionStorageKey = computed(() => `channel-message-permission:${props.channel.id}`)
-
-function createConnectionUrl() {
-  return `https://app.whistleit.io/guestChannel/${props.channel.id}/U2F${props.channel.id}`
-}
-
-connectionUrl.value = createConnectionUrl()
 
 watch(
   permissionStorageKey,
@@ -119,14 +119,28 @@ const filtered = computed(() =>
 )
 
 async function refresh() {
-  members.value = await listMembers(props.channel.id)
-  loadingMembers.value = false
+  loadingMembers.value = true
+  membersLoadError.value = ''
+  try {
+    members.value = await listMembers(props.channel.id)
+  } catch (error) {
+    membersLoadError.value = error?.message || 'Unable to load channel members.'
+    throw error
+  } finally {
+    loadingMembers.value = false
+  }
 }
 onMounted(async () => {
-  await refresh()
-  webhookUrl.value = await getWebhookUrl(props.channel.id)
-  connectionUrl.value =
-    localStorage.getItem(`channel-connection-url:${props.channel.id}`) || createConnectionUrl()
+  try {
+    await refresh()
+  } catch (error) {
+    console.error('Unable to load channel settings members:', error)
+  }
+  try {
+    webhookUrl.value = await getWebhookUrl(props.channel.id)
+  } catch (error) {
+    console.error('Unable to load channel webhook URL:', error)
+  }
 })
 
 async function openAdd() {
@@ -194,8 +208,15 @@ async function addSelected() {
   }
 }
 async function remove(m) {
+  memberToRemove.value = m
+}
+
+async function confirmRemoveMember() {
+  const m = memberToRemove.value
+  if (!m) return
   await removeMember(m.id, props.channel.id)
   await refresh()
+  memberToRemove.value = null
 }
 
 async function copy() {
@@ -208,30 +229,44 @@ async function copy() {
   }
 }
 
-async function copyConnectionUrl() {
+function openLeaveConfirmation() {
+  newAdminId.value = ''
+  newAdminSearch.value = ''
+  leaveError.value = ''
+  newAdminDropdownOpen.value = false
+  confirmLeave.value = true
+}
+
+async function leave() {
+  if (channelNeedsAdmin.value && !newAdminId.value) return
+  leaveError.value = ''
+  leaving.value = true
   try {
-    await navigator.clipboard.writeText(connectionUrl.value)
-    connectionCopied.value = true
-    setTimeout(() => (connectionCopied.value = false), 1500)
+    await channels.leaveChannel(props.channel.id, newAdminId.value || undefined)
+    emit('left')
   } catch (error) {
-    console.error('Unable to copy connection URL:', error)
+    leaveError.value = error?.message || 'Unable to leave this channel. Please try again.'
+  } finally {
+    leaving.value = false
   }
 }
 
-function updateConnectionUrl() {
-  connectionUrlDraft.value = connectionUrlDraft.value.trim()
-  if (!connectionUrlDraft.value) return
-  connectionUrl.value = connectionUrlDraft.value
-  localStorage.setItem(`channel-connection-url:${props.channel.id}`, connectionUrl.value)
-  confirmConnectionUpdate.value = false
-}
-function openConnectionUrlUpdate() {
-  connectionUrlDraft.value = connectionUrl.value
-  confirmConnectionUpdate.value = true
-}
-function leave() {
-  emit('left')
-}
+const channelNeedsAdmin = computed(() => Boolean(props.channel.canManage))
+const availableNewAdmins = computed(() =>
+  members.value.filter(
+    (member) => getAuthUserId() == null || String(member.id) !== String(getAuthUserId()),
+  ),
+)
+const filteredNewAdmins = computed(() => {
+  const query = newAdminSearch.value.trim().toLowerCase()
+  if (!query) return availableNewAdmins.value
+  return availableNewAdmins.value.filter((member) =>
+    `${member.name} ${member.email}`.toLowerCase().includes(query),
+  )
+})
+const selectedNewAdmin = computed(() =>
+  availableNewAdmins.value.find((member) => String(member.id) === String(newAdminId.value)),
+)
 
 const samplePayload = JSON.stringify({ text: 'Build finished', username: 'CI Bot' }, null, 2)
 const showSample = ref(false)
@@ -243,45 +278,165 @@ const showSample = ref(false)
     @click.self="ui.closeChannelSettings()"
   >
     <div
-      v-if="confirmConnectionUpdate"
-      class="fixed inset-0 z-[80] flex items-center justify-center bg-slate-900/40 p-4"
-      @click.self="confirmConnectionUpdate = false"
+      v-if="confirmLeave"
+      class="fixed inset-0 z-[90] flex items-center justify-center bg-slate-900/40 p-4"
+      @click.self="confirmLeave = false"
     >
       <section
         class="w-[450px] max-w-full rounded-lg bg-white px-6 py-6 text-center shadow-2xl"
         role="dialog"
         aria-modal="true"
-        aria-labelledby="update-connection-title"
+        aria-labelledby="leave-channel-title"
+        @click="newAdminDropdownOpen = false"
       >
         <div class="mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-full bg-red-50 text-red-500">
           <span class="text-4xl font-bold leading-none">i</span>
         </div>
-        <h3 id="update-connection-title" class="text-xl font-bold text-slate-700">
-          Update Connection URL
-        </h3>
-        <p class="mt-7 text-base text-slate-600">
-          Are you sure you want to update this channel's connection URL?
+        <h3 id="leave-channel-title" class="text-xl font-bold text-slate-700">Leave Channel</h3>
+        <p v-if="channelNeedsAdmin" class="mt-5 text-sm text-slate-600">
+          Before leaving, select a new channel admin from the existing members.
         </p>
-        <input
-          v-model="connectionUrlDraft"
-          type="url"
-          class="mt-5 w-full rounded border border-slate-300 px-3 py-2 text-sm text-slate-700 outline-none focus:border-indigo-500"
-          aria-label="Connection URL"
-        />
+        <div
+          v-if="channelNeedsAdmin"
+          class="relative mt-5 text-left"
+          @click.stop
+        >
+          <label for="new-channel-admin-search" class="sr-only">Search channel members</label>
+          <div class="flex items-center rounded border-2 border-indigo-500 px-3">
+            <i class="fa-solid fa-magnifying-glass text-slate-400" aria-hidden="true"></i>
+            <input
+              id="new-channel-admin-search"
+              v-model="newAdminSearch"
+              type="search"
+              class="min-w-0 flex-1 border-0 px-2 py-3 text-sm text-slate-700 outline-none"
+              :placeholder="selectedNewAdmin?.name || 'Type here to search'"
+              aria-label="Search channel members to select a new admin"
+              aria-controls="new-channel-admin-options"
+              :aria-expanded="newAdminDropdownOpen"
+              @focus="newAdminDropdownOpen = true"
+              @input="newAdminDropdownOpen = true"
+            />
+            <button
+              type="button"
+              class="cursor-pointer px-1 text-indigo-500"
+              :aria-label="newAdminDropdownOpen ? 'Close member list' : 'Open member list'"
+              @click="newAdminDropdownOpen = !newAdminDropdownOpen"
+            >
+              <i
+                class="fa-solid"
+                :class="newAdminDropdownOpen ? 'fa-chevron-up' : 'fa-chevron-down'"
+                aria-hidden="true"
+              ></i>
+            </button>
+          </div>
+          <ul
+            v-if="newAdminDropdownOpen"
+            id="new-channel-admin-options"
+            class="absolute z-10 max-h-56 w-full overflow-y-auto rounded-b bg-white py-2 text-left shadow-lg"
+            role="listbox"
+            aria-label="Channel members"
+          >
+            <li v-if="loadingMembers" class="px-4 py-3 text-sm text-slate-500">
+              Loading channel members...
+            </li>
+            <li v-else-if="membersLoadError" class="px-4 py-3 text-sm text-red-600" role="alert">
+              {{ membersLoadError }}
+            </li>
+            <li
+              v-else-if="!filteredNewAdmins.length"
+              class="px-4 py-3 text-sm text-slate-500"
+            >
+              {{ availableNewAdmins.length ? 'No matching members.' : 'No other channel members.' }}
+            </li>
+            <li v-for="member in filteredNewAdmins" :key="member.id" role="presentation">
+              <button
+                type="button"
+                class="flex w-full cursor-pointer items-center gap-3 px-4 py-2 text-left text-sm text-slate-800 hover:bg-slate-100"
+                :class="{ 'bg-indigo-50': String(newAdminId) === String(member.id) }"
+                role="option"
+                :aria-selected="String(newAdminId) === String(member.id)"
+                @click="
+                  newAdminId = String(member.id);
+                  newAdminSearch = '';
+                  newAdminDropdownOpen = false
+                "
+              >
+                <img
+                  v-if="member.avatar"
+                  :src="member.avatar"
+                  :alt="`${member.name} avatar`"
+                  class="h-9 w-9 rounded-full object-cover"
+                />
+                <span
+                  v-else
+                  class="grid h-9 w-9 shrink-0 place-items-center rounded-full text-xs font-bold text-white"
+                  :class="colorFor(member.id)"
+                  aria-hidden="true"
+                >
+                  {{ initials(member.name || member.email || 'User') }}
+                </span>
+                <span>{{ member.name || member.email || 'Channel member' }}</span>
+              </button>
+            </li>
+          </ul>
+        </div>
+        <p v-if="leaveError" class="mt-4 text-left text-sm text-red-600" role="alert">
+          {{ leaveError }}
+        </p>
         <div class="mt-6 flex justify-center gap-4">
           <button
             type="button"
             class="cursor-pointer rounded border border-slate-300 px-7 py-2.5 font-semibold uppercase text-slate-600 hover:bg-slate-50"
-            @click="confirmConnectionUpdate = false"
+            :disabled="leaving"
+            @click="confirmLeave = false"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            class="cursor-pointer rounded bg-red-500 px-7 py-2.5 font-semibold uppercase text-white hover:bg-red-600 disabled:cursor-not-allowed disabled:opacity-50"
+            :disabled="leaving || (channelNeedsAdmin && !newAdminId)"
+            @click="leave"
+          >
+            {{ leaving ? 'Leaving...' : 'Leave' }}
+          </button>
+        </div>
+      </section>
+    </div>
+    <div
+      v-if="memberToRemove"
+      class="fixed inset-0 z-[90] flex items-center justify-center bg-slate-900/40 p-4"
+      @click.self="memberToRemove = null"
+    >
+      <section
+        class="w-[450px] max-w-full rounded-lg bg-white px-6 py-6 text-center shadow-2xl"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="remove-member-title"
+      >
+        <div class="mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-full bg-red-50 text-red-500">
+          <span class="text-4xl font-bold leading-none">i</span>
+        </div>
+        <h3 id="remove-member-title" class="text-xl font-bold text-slate-700">
+          Remove Member
+        </h3>
+        <p class="mt-7 text-base text-slate-600">
+          Are you sure you want to remove this member?
+        </p>
+        <div class="mt-6 flex justify-center gap-4">
+          <button
+            type="button"
+            class="cursor-pointer rounded border border-slate-300 px-7 py-2.5 font-semibold uppercase text-slate-600 hover:bg-slate-50"
+            @click="memberToRemove = null"
           >
             Cancel
           </button>
           <button
             type="button"
             class="cursor-pointer rounded bg-red-500 px-7 py-2.5 font-semibold uppercase text-white hover:bg-red-600"
-            @click="updateConnectionUrl"
+            @click="confirmRemoveMember"
           >
-            Update
+            Remove
           </button>
         </div>
       </section>
@@ -455,34 +610,6 @@ const showSample = ref(false)
               Favourite move your most important channels to top in the sidebar, to access them
               easily
             </p>
-          </div>
-          <div v-if="channel.canManage" class="rounded border border-slate-300 p-3">
-            <h3 class="font-bold text-slate-700">Connection URL</h3>
-            <p class="mt-1 text-sm text-slate-500">
-              Provide this url to anyone around the globe who wants to communicate.
-            </p>
-            <div class="mt-3 flex gap-2">
-              <input
-                :value="connectionUrl"
-                readonly
-                class="min-w-0 flex-1 rounded border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700"
-              />
-              <button
-                type="button"
-                class="w-9 shrink-0 cursor-pointer rounded border border-indigo-300 text-indigo-500 hover:bg-indigo-50"
-                :aria-label="connectionCopied ? 'Copied' : 'Copy connection URL'"
-                @click="copyConnectionUrl"
-              >
-                <i :class="connectionCopied ? 'fa-solid fa-check' : 'fa-solid fa-copy'" aria-hidden="true"></i>
-              </button>
-              <button
-                type="button"
-                class="cursor-pointer rounded bg-indigo-500 px-3 py-2 text-sm font-semibold text-white"
-                @click="openConnectionUrlUpdate"
-              >
-                Update
-              </button>
-            </div>
           </div>
           <div v-if="channel.canManage" class="rounded border border-slate-300 p-3">
             <h3 class="font-bold text-slate-700">Message Permissions</h3>
@@ -693,7 +820,11 @@ const showSample = ref(false)
                 >
                 <span class="text-sm text-slate-800">{{ m.name }}</span>
               </div>
-              <button class="invisible text-xs text-red-600 group-hover:visible" @click="remove(m)">
+              <button
+                type="button"
+                class="invisible cursor-pointer text-xs text-red-600 group-hover:visible hover:text-red-700"
+                @click="remove(m)"
+              >
                 Remove
               </button>
             </li>
@@ -811,15 +942,10 @@ const showSample = ref(false)
             <button
               v-if="!confirmLeave"
               class="font-bold text-red-500"
-              @click="confirmLeave = true"
+              @click="openLeaveConfirmation"
             >
               Leave Channel
             </button>
-            <div v-else class="flex items-center gap-3 text-sm">
-              <span class="text-slate-700">Leave #{{ channel.name }}?</span>
-              <button class="font-bold text-red-500" @click="leave">Yes, leave</button>
-              <button class="text-slate-500" @click="confirmLeave = false">Cancel</button>
-            </div>
           </div>
         </div>
       </div>
