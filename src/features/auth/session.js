@@ -58,11 +58,17 @@ function getUserFromToken(token) {
 export function saveAuthToken(response, remember = false) {
   clearAuthSession()
 
-  const token =
+  const rawToken =
     response?.token ??
     response?.access_token ??
+    response?.accessToken ??
     response?.data?.token ??
-    response?.data?.access_token
+    response?.data?.access_token ??
+    response?.data?.accessToken ??
+    response?.data?.data?.token ??
+    response?.data?.data?.access_token ??
+    response?.data?.data?.accessToken
+  const token = typeof rawToken === 'string' ? rawToken.replace(/^Bearer\s+/i, '').trim() : rawToken
 
   if (typeof token !== 'string' || token.trim().length === 0) return null
 
@@ -102,4 +108,9 @@ export function clearAuthSession() {
   sessionStorage.removeItem(TOKEN_KEY)
   localStorage.removeItem(USER_KEY)
   sessionStorage.removeItem(USER_KEY)
+}
+
+export function expireAuthSession() {
+  clearAuthSession()
+  if (typeof window !== 'undefined') window.dispatchEvent(new Event('auth:expired'))
 }

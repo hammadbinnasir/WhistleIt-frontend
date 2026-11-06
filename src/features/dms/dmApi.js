@@ -50,6 +50,7 @@ function membersFrom(data) {
   const list = Array.isArray(data)
     ? data
     : (data?.members ??
+      data?.teamusers?.members ??
       data?.companyusers?.members ??
       data?.notteamusers?.members ??
       data?.users ??
@@ -258,10 +259,13 @@ export const dmApi = {
     return apiRequest(`/company/${encode(companyId)}/members`).then(normalizeMembers)
   },
 
-  // Company members mein team members already shamil hain, isliye yahan alag
-  // endpoint nahi lagaya. Agar team members ka alag endpoint ho to yahan lagayein.
-  listTeamMembers() {
-    return Promise.resolve([])
+  // GET /v1/{company}/teams/{team}/members
+  listTeamMembers(companyId, teamId) {
+    requireCompany(companyId, 'load team members')
+    requireTeam(teamId)
+    return apiRequest(`/v1/${encode(companyId)}/teams/${encode(teamId)}/members`).then(
+      normalizeMembers,
+    )
   },
 
   // GET /v1/{company}/teams/{team}/notmembers

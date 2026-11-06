@@ -3,11 +3,15 @@ import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { useDmStore } from '@/features/dms/stores/dms'
 import { useUiStore } from '@/stores/ui'
+import { setupDmsTestState } from '@/features/dms/test-utils'
 import DmList from './DmList.vue'
 import DmListItem from './DmListItem.vue'
 
 describe('DmList', () => {
-  beforeEach(() => setActivePinia(createPinia()))
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    setupDmsTestState()
+  })
 
   it('closes the activity panel and clears channel selection when a DM is selected', async () => {
     const dms = useDmStore()

@@ -1,0 +1,181 @@
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { http } from '@/features/channels/api/http'
+import {
+  deleteChannelMessage,
+  getChannelMessage,
+  getChannelMessages,
+  sendChannelMessage,
+  updateChannelMessage,
+} from './channelMessageService'
+
+vi.mock('@/features/channels/api/http', () => ({ http: vi.fn() }))
+
+const collectionPath = '/v1/company-1/teams/team-2/channels/channel-3/messages'
+const messagePath = `${collectionPath}/message-4`
+
+describe('channel message service', () => {
+  beforeEach(() => {
+    http.mockReset()
+    http.mockResolvedValue({ id: 'message-4', content: 'Hello' })
+  })
+
+  it('gets messages for a channel', async () => {
+    const data = [{ id: 'message-4', content: 'Hello' }]
+    http.mockResolvedValue(data)
+
+    await expect(getChannelMessages('company-1', 'team-2', 'channel-3')).resolves.toEqual({
+      success: true,
+      data,
+    })
+    expect(http).toHaveBeenCalledWith(collectionPath, {
+      params: { include_deleted: true, page: 1, per_page: 15 },
+    })
+  })
+
+  it('requests a specific channel message page', async () => {
+    await getChannelMessages('company-1', 'team-2', 'channel-3', { page: 3, perPage: 15 })
+
+    expect(http).toHaveBeenCalledWith(collectionPath, {
+      params: { include_deleted: true, page: 3, per_page: 15 },
+    })
+  })
+
+  it('gets one message using encoded path parameters', async () => {
+    await getChannelMessage('company/1', 'team 2', 'channel-3', 'message?4')
+
+    expect(http).toHaveBeenCalledWith(
+      '/v1/company%2F1/teams/team%202/channels/channel-3/messages/message%3F4',
+    )
+  })
+
+  it('sends message content using the backend body field', async () => {
+    const payload = { content: 'Hello', messageType: 'text' }
+
+    await expect(sendChannelMessage('company-1', 'team-2', 'channel-3', payload)).resolves.toEqual({
+      success: true,
+      data: { id: 'message-4', content: 'Hello' },
+    })
+    expect(http).toHaveBeenCalledWith(collectionPath, {
+      method: 'POST',
+      body: { messageType: 'text', body: 'Hello' },
+    })
+  })
+
+  it('updates a message with the provided patch body', async () => {
+    const payload = { content: 'Updated' }
+
+    await updateChannelMessage('company-1', 'team-2', 'channel-3', 'message-4', payload)
+
+    expect(http).toHaveBeenCalledWith(messagePath, {
+      method: 'PATCH',
+      body: { body: 'Updated' },
+    })
+  })
+
+  it('soft-deletes a message so it remains visible to channel members', async () => {
+    await deleteChannelMessage('company-1', 'team-2', 'channel-3', 'message-4')
+
+    expect(http).toHaveBeenCalledWith(messagePath, {
+      method: 'PATCH',
+      body: { is_deleted: true },
+    })
+  })
+
+  it('returns a consistent error response when the API request fails', async () => {
+    http.mockRejectedValue(new Error('Message not found'))
+
+    await expect(getChannelMessage('company-1', 'team-2', 'channel-3', 'message-4')).resolves.toEqual(
+      { success: false, error: 'Message not found' },
+    )
+  })
+
+  it('handles non-Error rejections', async () => {
+    http.mockRejectedValueOnce('Gateway timeout')
+    await expect(getChannelMessages('company-1', 'team-2', 'channel-3')).resolves.toEqual({
+      success: false,
+      error: 'Gateway timeout',
+    })
+
+    http.mockRejectedValueOnce({})
+    await expect(getChannelMessages('company-1', 'team-2', 'channel-3')).resolves.toEqual({
+      success: false,
+      error: 'The channel message request failed.',
+    })
+  })
+
+  it('returns a consistent error response for missing path parameters', async () => {
+    const result = await getChannelMessages('company-1', 'team-2', '')
+
+    expect(result).toEqual({
+      success: false,
+      error: 'Company, team, and channel IDs are required.',
+    })
+    expect(http).not.toHaveBeenCalled()
+  })
+
+  it('requires a message ID for single-message operations', async () => {
+    const message = 'Company, team, channel, and message IDs are required.'
+
+    await expect(getChannelMessage('company-1', 'team-2', 'channel-3')).resolves.toEqual({
+      success: false,
+      error: message,
+    })
+    await expect(
+      updateChannelMessage('company-1', 'team-2', 'channel-3', ' ', { content: 'x' }),
+    ).resolves.toEqual({ success: false, error: message })
+    await expect(deleteChannelMessage('company-1', 'team-2', 'channel-3', null)).resolves.toEqual({
+      success: false,
+      error: message,
+    })
+    expect(http).not.toHaveBeenCalled()
+  })
+
+  it('requires collection IDs when sending a message', async () => {
+    await expect(sendChannelMessage('', 'team-2', 'channel-3', { content: 'Hi' })).resolves.toEqual({
+      success: false,
+      error: 'Company, team, and channel IDs are required.',
+    })
+    expect(http).not.toHaveBeenCalled()
+  })
+
+  it('rejects invalid send payloads before calling the API', async () => {
+    const send = (payload) => sendChannelMessage('company-1', 'team-2', 'channel-3', payload)
+
+    await expect(send(undefined)).resolves.toMatchObject({ success: false })
+    await expect(send([])).resolves.toMatchObject({ success: false })
+    await expect(send({})).resolves.toEqual({ success: false, error: 'Message content is required.' })
+    await expect(send({ content: '   ' })).resolves.toEqual({
+      success: false,
+      error: 'Message content must be a non-empty string.',
+    })
+    await expect(send({ content: 'Hi', messageType: 5 })).resolves.toEqual({
+      success: false,
+      error: 'Message type must be a string.',
+    })
+    await expect(send({ content: 'Hi', parentMessageId: 12 })).resolves.toEqual({
+      success: false,
+      error: 'Parent message ID must be a string or null.',
+    })
+    expect(http).not.toHaveBeenCalled()
+  })
+
+  it('accepts a null parentMessageId and rejects empty patch bodies', async () => {
+    await expect(
+      sendChannelMessage('company-1', 'team-2', 'channel-3', {
+        content: 'Reply',
+        parentMessageId: null,
+      }),
+    ).resolves.toMatchObject({ success: true })
+
+    await expect(
+      updateChannelMessage('company-1', 'team-2', 'channel-3', 'message-4', {}),
+    ).resolves.toEqual({
+      success: false,
+      error: 'At least one field is required to update a message.',
+    })
+    await expect(
+      updateChannelMessage('company-1', 'team-2', 'channel-3', 'message-4', { content: '' }),
+    ).resolves.toMatchObject({ success: false })
+    expect(http).toHaveBeenCalledTimes(1)
+  })
+})
