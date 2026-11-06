@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { addMockMessage, searchMessages } from './search'
+import { addMockMessage, searchMessages, updateMockMessage, removeMockMessage } from './search'
 
 describe('search date filters', () => {
   it('filters messages before and after a selected date', async () => {
@@ -24,5 +24,43 @@ describe('search date filters', () => {
     })
 
     expect(result.items).toHaveLength(1)
+  })
+})
+
+describe('persisted channel messages', () => {
+  it('finds channel messages after browser storage is restored', async () => {
+    localStorage.setItem(
+      'whistleit:channel-messages',
+      JSON.stringify({
+        general: [
+          {
+            id: 'persisted-message',
+            content: 'Persistent search text',
+            author: 'Test User',
+            authorId: 'user-1',
+            createdAt: '2026-11-05T10:00:00.000Z',
+          },
+        ],
+      }),
+    )
+
+    const result = await searchMessages({
+      q: 'Persistent search',
+      channelId: 'general',
+    })
+
+    expect(result.items.map((item) => item.id)).toContain('persisted-message')
+  })
+
+  it('reflects in-memory edits and deletions', async () => {
+    addMockMessage({ id: 'mutable-message', text: 'Original text' })
+    updateMockMessage('mutable-message', 'Edited text')
+
+    const edited = await searchMessages({ q: 'Edited text' })
+    expect(edited.items.map((item) => item.id)).toContain('mutable-message')
+
+    removeMockMessage('mutable-message')
+    const deleted = await searchMessages({ q: 'Edited text' })
+    expect(deleted.items.map((item) => item.id)).not.toContain('mutable-message')
   })
 })

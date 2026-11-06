@@ -107,6 +107,7 @@ export function normalizeMessage(raw) {
   return {
     ...raw,
     id: String(raw.id),
+    backendSynced: true,
     from: String(
       raw.sender_id ?? raw.user_id ?? raw.from ?? (sender && typeof sender === 'object' ? sender.id : '') ?? '',
     ),
@@ -305,6 +306,33 @@ export const dmApi = {
     requireChannel(channelId)
     requireMessage(messageId)
     return apiRequest(`${messagesPath(companyId, channelId)}/${encode(messageId)}`, {
+      method: 'DELETE',
+    }).then(unwrap)
+  },
+
+  listPinnedMessages(companyId, channelId, messageId) {
+    requireCompany(companyId, 'load pinned messages')
+    requireChannel(channelId)
+    requireMessage(messageId)
+    return apiRequest(
+      `${messagesPath(companyId, channelId)}/${encode(messageId)}/pinned-messages`,
+    ).then(unwrap)
+  },
+
+  pinMessage(companyId, channelId, messageId) {
+    requireCompany(companyId, 'pin a message')
+    requireChannel(channelId)
+    requireMessage(messageId)
+    return apiRequest(`${messagesPath(companyId, channelId)}/${encode(messageId)}/pin`, {
+      method: 'POST',
+    }).then(unwrap)
+  },
+
+  unpinMessage(companyId, channelId, messageId) {
+    requireCompany(companyId, 'unpin a message')
+    requireChannel(channelId)
+    requireMessage(messageId)
+    return apiRequest(`${messagesPath(companyId, channelId)}/${encode(messageId)}/pin`, {
       method: 'DELETE',
     }).then(unwrap)
   },

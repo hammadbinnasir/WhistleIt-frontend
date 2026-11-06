@@ -672,6 +672,40 @@ describe('composer conversation', () => {
     expect(wrapper.text()).toContain('Asia/Karachi')
   })
 
+  it('shows delivery ticks after a scheduled message reaches its send time', async () => {
+    const messages = useMessagesStore()
+    const sentAt = new Date(Date.now() - 500)
+    localStorage.setItem(
+      'whistleit:composer-scheduled-messages',
+      JSON.stringify({
+        general: [
+          {
+            id: 'scheduled-1',
+            body: 'Scheduled and sent',
+            scheduled_at: new Date(sentAt.getTime() - 500).toISOString(),
+            status: 'pending',
+          },
+        ],
+      }),
+    )
+    messages.messagesByChannel.general = [
+      {
+        id: 'sent-1',
+        content: 'Scheduled and sent',
+        mine: true,
+        author: 'You',
+        createdAt: sentAt.toISOString(),
+      },
+    ]
+
+    const wrapper = mount(ComposerConversation)
+    await nextTick()
+
+    expect(wrapper.get('[aria-label="Sent"]').text()).toBe('✓✓')
+    expect(wrapper.text()).not.toContain('Scheduled for')
+    expect(wrapper.findAll('.composer-conversation__message-bubble')).toHaveLength(1)
+  })
+
   it('shows a selected GIF as a conversation message', async () => {
     const wrapper = mount(ComposerConversation)
     const gif = { title: 'Celebration', url: 'https://example.com/celebration.gif' }

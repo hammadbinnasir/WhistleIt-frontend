@@ -2,6 +2,7 @@
 // Right side of the channel/DM header.
 import { computed } from 'vue'
 import { useUiStore } from '@/stores/ui'
+import pinChatIcon from '@/assets/pin-chat.svg'
 
 const props = defineProps({
   isDm: { type: Boolean, default: false },
@@ -38,7 +39,7 @@ const hasCurrentConversationPins = computed(() =>
       aria-label="Pinned messages"
       @click="ui.openPanel('pinned')"
     >
-      <i class="fa-vellum fa-solid fa-thumbtack" aria-hidden="true"></i>
+      <img class="header-pin-icon" :src="pinChatIcon" alt="" aria-hidden="true" />
     </button>
     <button
       class="icon-btn"
@@ -72,5 +73,10 @@ const hasCurrentConversationPins = computed(() =>
 @reference "../../assets/main.css";
 .icon-btn {
   @apply flex h-9 w-9 cursor-pointer items-center justify-center rounded-full border border-slate-200 text-slate-600 hover:bg-indigo-50 hover:text-indigo-600;
+}
+
+.header-pin-icon {
+  width: 22px;
+  height: 22px;
 }
 </style>

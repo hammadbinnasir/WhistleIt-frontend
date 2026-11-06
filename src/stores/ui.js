@@ -4,6 +4,26 @@ import { computed, ref } from 'vue'
 // UI state store: selected channel, sidebar visibility, modal states.
 // Server data (messages, channels from the API) does NOT belong here.
 export const useUiStore = defineStore('ui', () => {
+  const PINNED_MESSAGES_STORAGE_KEY = 'whistleit:pinned-messages'
+
+  function loadPinnedMessages() {
+    try {
+      const saved = JSON.parse(localStorage.getItem(PINNED_MESSAGES_STORAGE_KEY) || '[]')
+      return Array.isArray(saved) ? saved : []
+    } catch (error) {
+      console.error('Unable to load pinned messages:', error)
+      return []
+    }
+  }
+
+  function persistPinnedMessages() {
+    try {
+      localStorage.setItem(PINNED_MESSAGES_STORAGE_KEY, JSON.stringify(pinnedMessages.value))
+    } catch (error) {
+      console.error('Unable to save pinned messages:', error)
+    }
+  }
+
   // state
   const selectedChannelId = ref(null)
   const sidebarOpen = ref(true)
@@ -11,7 +31,7 @@ export const useUiStore = defineStore('ui', () => {
   const channelSettingsOpen = ref(false)
   const channelSettingsTab = ref('settings')
   const toasts = ref([])
-  const pinnedMessages = ref([])
+  const pinnedMessages = ref(loadPinnedMessages())
   const polls = ref([])
   let nextToastId = 0
 
@@ -76,9 +96,11 @@ export const useUiStore = defineStore('ui', () => {
     })
     if (existingIndex !== -1) {
       pinnedMessages.value.splice(existingIndex, 1)
+      persistPinnedMessages()
       return false
     }
     pinnedMessages.value.unshift({ ...message, conversation })
+    persistPinnedMessages()
     return true
   }
   function toggleSidebar() {
