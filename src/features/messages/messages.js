@@ -1,7 +1,14 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
+import { getAuthUserId } from '@/features/auth/session'
+import { useTeamsStore } from '@/stores/teams'
 import { useActivityStore } from '@/stores/activity'
-import { sendChannelMessage } from '@/features/channels/api/channels.api'
+import {
+  deleteChannelMessage as removeChannelMessage,
+  getChannelMessages,
+  sendChannelMessage,
+  updateChannelMessage as patchChannelMessage,
+} from './channelMessageService'
 
 const STORAGE_KEY = 'whistleit:channel-messages'
 const PAGE_SIZE = 20
@@ -25,7 +32,238 @@ function loadMessages() {
 export const useMessagesStore = defineStore('messages', () => {
   const messagesByChannel = ref(loadMessages())
   const visibleCounts = ref({})
+  const loadingByChannel = ref({})
+  const errorsByChannel = ref({})
   const deletionTimers = new Map()
+  const serverDeletionRequests = new Map()
+  const messageRequests = new Map()
+  const pendingServerMessages = new Map()
+
+  function unwrapMessages(data) {
+    let response = data
+    for (let depth = 0; depth < 3 && response && typeof response === 'object'; depth += 1) {
+      if (response.success === false) {
+        throw new Error(response.message || response.error || 'Unable to load channel messages.')
+      }
+      if (Array.isArray(response)) return response
+      const list = response.messages ?? response.channel_messages ?? response.items
+      if (Array.isArray(list)) return list
+      response = response.data
+    }
+    throw new Error('The channel messages response does not contain a message list.')
+  }
+
+  function normalizeMessage(record) {
+    if (!record || typeof record !== 'object') {
+      throw new Error('The channel messages response contains an invalid message.')
+    }
+    const sender =
+      record.sender && typeof record.sender === 'object'
+        ? record.sender
+        : record.user && typeof record.user === 'object'
+          ? record.user
+          : record.author && typeof record.author === 'object'
+            ? record.author
+            : {}
+    const id = record.id ?? record.message_id ?? record.messageId
+    if (id == null) throw new Error('A channel message is missing its ID.')
+    const senderId = record.sender_id ?? record.user_id ?? record.from ?? sender.id ?? sender.user_id
+    const userId = getAuthUserId()
+    const deleted = Boolean(record.deleted || record.is_deleted || record.deleted_at || record.deletedAt)
+    const content = deleted ? '' : (record.content ?? record.body ?? record.text ?? record.message ?? '')
+
+    return {
+      ...record,
+      id: String(id),
+      content: String(content),
+      text: String(content),
+      serverBacked: true,
+      deleted,
+      ...(deleted
+        ? {
+            deletedAt: record.deleted_at ?? record.deletedAt ?? new Date().toISOString(),
+            attachments: [],
+            reactions: [],
+          }
+        : {}),
+      author:
+        record.author_name ??
+        record.sender_name ??
+        sender.name ??
+        sender.full_name ??
+        (typeof record.author === 'string' ? record.author : ''),
+      ...(senderId != null ? { from: String(senderId), authorId: String(senderId) } : {}),
+      mine: userId != null && senderId != null && String(userId) === String(senderId),
+      createdAt: record.created_at ?? record.createdAt ?? record.created_on ?? '',
+      editedAt: record.edited_at ?? record.editedAt,
+      forwardedFrom: record.forwarded_from ?? record.forwardedFrom,
+      reactions: deleted ? [] : Array.isArray(record.reactions) ? record.reactions : [],
+    }
+  }
+
+  function findCreatedMessage(data) {
+    let response = data
+    for (let depth = 0; depth < 5 && response && typeof response === 'object'; depth += 1) {
+      if (Array.isArray(response)) return null
+      const candidate = response.message ?? response.channel_message ?? response.item
+      if (candidate && typeof candidate === 'object') return candidate
+      if (response.id != null || response.message_id != null || response.messageId != null) {
+        return response
+      }
+      response = response.data ?? response.result
+    }
+    return null
+  }
+
+  async function fetchChannelMessages(channelId) {
+    const key = String(channelId ?? '')
+    if (!key.trim()) return { success: false, error: 'A channel ID is required to load messages.' }
+
+    const teams = useTeamsStore()
+    const companyId = teams.activeWorkspaceId
+    const teamId = teams.activeTeamId
+    if (!companyId || !teamId) {
+      const error = 'Select a company and team before loading channel messages.'
+      errorsByChannel.value[key] = error
+      return { success: false, error }
+    }
+
+    const requestId = (messageRequests.get(key) ?? 0) + 1
+    messageRequests.set(key, requestId)
+    loadingByChannel.value[key] = true
+    errorsByChannel.value[key] = ''
+
+    const result = await getChannelMessages(companyId, teamId, key)
+    if (messageRequests.get(key) !== requestId) return result
+    loadingByChannel.value[key] = false
+
+    if (!result.success) {
+      errorsByChannel.value[key] = result.error
+      return result
+    }
+
+    try {
+      const currentMessages = messagesFor(key)
+      const deletedMessages = currentMessages.filter((message) => message.deleted)
+      const deletedIds = new Set(deletedMessages.map((message) => String(message.id)))
+      const fetched = unwrapMessages(result.data)
+        .map(normalizeMessage)
+        .filter((message) => !deletedIds.has(message.id))
+      const localMessages = currentMessages.filter(
+        (message) => String(message.id).startsWith('local-') && !deletedIds.has(String(message.id)),
+      )
+      const fetchedIds = new Set(fetched.map((message) => message.id))
+      const pending = pendingServerMessages.get(key) ?? []
+      const visiblePending = pending.filter(
+        (message) => !fetchedIds.has(message.id) && !deletedIds.has(String(message.id)),
+      )
+      pendingServerMessages.set(
+        key,
+        pending.filter(
+          (message) => !fetchedIds.has(message.id) && !deletedIds.has(String(message.id)),
+        ),
+      )
+      messagesByChannel.value[key] = [
+        ...deletedMessages,
+        ...fetched,
+        ...visiblePending,
+        ...localMessages.filter((message) => !fetchedIds.has(String(message.id))),
+      ]
+      return { success: true, data: fetched }
+    } catch (error) {
+      errorsByChannel.value[key] =
+        error instanceof Error ? error.message : 'Unable to read channel messages.'
+      return { success: false, error: errorsByChannel.value[key] }
+    }
+  }
+
+  async function postChannelMessage(channelId, payload) {
+    const key = String(channelId ?? '')
+    const content = typeof payload?.content === 'string' ? payload.content.trim() : ''
+    if (!key.trim()) return { success: false, error: 'A channel ID is required to send a message.' }
+    if (!content) return { success: false, error: 'Message content is required.' }
+
+    const teams = useTeamsStore()
+    const companyId = teams.activeWorkspaceId
+    const teamId = teams.activeTeamId
+    if (!companyId || !teamId) {
+      return {
+        success: false,
+        error: 'Select a company and team before sending a channel message.',
+      }
+    }
+
+    const metadata = { ...payload }
+    delete metadata.content
+    if (Array.isArray(metadata.attachments) && metadata.attachments.length === 0) {
+      delete metadata.attachments
+    }
+    const result = await sendChannelMessage(companyId, teamId, key, {
+      ...metadata,
+      content,
+    })
+    if (!result.success) {
+      errorsByChannel.value[key] = result.error
+      return result
+    }
+
+    const createdRecord = findCreatedMessage(result.data)
+    if (createdRecord) {
+      const message = {
+        ...normalizeMessage(createdRecord),
+        ...(payload.forwardedFrom ? { forwardedFrom: payload.forwardedFrom } : {}),
+        mine: true,
+      }
+      const pending = pendingServerMessages.get(key) ?? []
+      if (!pending.some((item) => item.id === message.id)) pending.push(message)
+      pendingServerMessages.set(key, pending)
+      const current = messagesFor(key)
+      if (!current.some((item) => item.id === message.id)) {
+        messagesByChannel.value[key] = [...current, message]
+      }
+    }
+
+    await fetchChannelMessages(key)
+    return { success: true, data: createdRecord }
+  }
+
+  async function updateServerMessage(channelId, messageId, content) {
+    const key = String(channelId ?? '')
+    const message = messagesFor(key).find((item) => String(item.id) === String(messageId))
+    const updatedContent = typeof content === 'string' ? content.trim() : ''
+    if (
+      !message ||
+      !message.serverBacked ||
+      !message.mine ||
+      message.scheduled ||
+      message.deleted ||
+      message.deleteScheduledAt ||
+      !updatedContent
+    ) {
+      return { success: false, error: 'Only your unscheduled messages can be edited.' }
+    }
+
+    const teams = useTeamsStore()
+    const companyId = teams.activeWorkspaceId
+    const teamId = teams.activeTeamId
+    if (!companyId || !teamId) {
+      return {
+        success: false,
+        error: 'Select a company and team before editing a channel message.',
+      }
+    }
+
+    const result = await patchChannelMessage(companyId, teamId, key, message.id, {
+      content: updatedContent,
+    })
+    if (!result.success) return result
+
+    message.content = updatedContent
+    message.text = updatedContent
+    message.editedAt = new Date().toISOString()
+    persist()
+    return { success: true, data: message }
+  }
 
   function messagesFor(channelId) {
     return messagesByChannel.value[String(channelId)] || []
@@ -71,8 +309,7 @@ export const useMessagesStore = defineStore('messages', () => {
     const delay = Date.parse(scheduledAt) - Date.now()
     if (!Number.isFinite(delay)) return
     if (delay <= 0) {
-      finalizeDeletion(message)
-      persist()
+      executeScheduledDeletion(channelId, message)
       return
     }
 
@@ -82,8 +319,7 @@ export const useMessagesStore = defineStore('messages', () => {
         const current = messagesFor(channelId).find((item) => item.id === message.id)
         if (!current || current.deleteScheduledAt !== scheduledAt) return
         if (Date.parse(scheduledAt) <= Date.now()) {
-          finalizeDeletion(current)
-          persist()
+          executeScheduledDeletion(channelId, current)
         } else {
           scheduleDeletion(channelId, current)
         }
@@ -92,6 +328,22 @@ export const useMessagesStore = defineStore('messages', () => {
     )
     timer.unref?.()
     deletionTimers.set(timerKey, timer)
+  }
+
+  function executeScheduledDeletion(channelId, message) {
+    if (!message.serverBacked) {
+      finalizeDeletion(message)
+      persist()
+      return
+    }
+
+    void deleteServerMessage(channelId, message.id).then((result) => {
+      if (!result.success) {
+        delete message.deleteScheduledAt
+        errorsByChannel.value[channelId] = result.error
+        persist()
+      }
+    })
   }
 
   function loadOlder(channelId) {
@@ -174,6 +426,7 @@ export const useMessagesStore = defineStore('messages', () => {
     )
       return false
     message.content = content.trim()
+    message.text = message.content
     message.editedAt = new Date().toISOString()
     persist()
     return true
@@ -199,6 +452,68 @@ export const useMessagesStore = defineStore('messages', () => {
     finalizeDeletion(message)
     persist()
     return true
+  }
+
+  function deleteServerMessage(channelId, messageId) {
+    const key = String(channelId ?? '')
+    const message = messagesFor(key).find((item) => String(item.id) === String(messageId))
+    if (!message || !message.serverBacked || !message.mine || message.scheduled || message.deleted) {
+      return { success: false, error: 'Only your unscheduled messages can be deleted.' }
+    }
+    const requestKey = `${key}:${message.id}`
+    const pendingRequest = serverDeletionRequests.get(requestKey)
+    if (pendingRequest) return pendingRequest
+
+    const teams = useTeamsStore()
+    const companyId = teams.activeWorkspaceId
+    const teamId = teams.activeTeamId
+    if (!companyId || !teamId) {
+      return {
+        success: false,
+        error: 'Select a company and team before deleting a channel message.',
+      }
+    }
+
+    const timerKey = `${key}:${message.id}`
+    const timer = deletionTimers.get(timerKey)
+    if (timer) clearTimeout(timer)
+    deletionTimers.delete(timerKey)
+    const previousMessage = { ...message }
+    delete message.deleteScheduledAt
+    finalizeDeletion(message)
+    persist()
+
+    const restoreMessage = () => {
+      for (const field of [
+        'deleted',
+        'deletedAt',
+        'deleteScheduledAt',
+        'gif',
+        'poll',
+      ]) {
+        if (!Object.hasOwn(previousMessage, field)) delete message[field]
+      }
+      Object.assign(message, previousMessage)
+      persist()
+    }
+
+    const request = removeChannelMessage(companyId, teamId, key, message.id)
+      .then((result) => {
+        if (!result.success) restoreMessage()
+        return result.success
+          ? { success: true, data: message }
+          : { success: false, error: result.error }
+      })
+      .catch((error) => {
+        restoreMessage()
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'The channel message could not be deleted.',
+        }
+      })
+      .finally(() => serverDeletionRequests.delete(requestKey))
+    serverDeletionRequests.set(requestKey, request)
+    return request
   }
 
   function toggleReaction(channelId, messageId, emoji, userId = 'current-user') {
@@ -238,10 +553,16 @@ export const useMessagesStore = defineStore('messages', () => {
   return {
     messagesByChannel,
     visibleCounts,
+    loadingByChannel,
+    errorsByChannel,
     messagesFor,
     visibleMessagesFor,
     hasOlderMessages,
     loadOlder,
+    fetchChannelMessages,
+    postChannelMessage,
+    updateServerMessage,
+    deleteServerMessage,
     sendMessage,
     editMessage,
     deleteMessage,
