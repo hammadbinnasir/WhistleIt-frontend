@@ -1,4 +1,4 @@
-import { clearAuthSession, getAuthToken } from '@/features/auth/session'
+import { expireAuthSession, getAuthToken } from '@/features/auth/session'
 
 const BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://10.0.105.90:8000/api'
 
@@ -11,15 +11,16 @@ export class ApiError extends Error {
   }
 }
 
-function getAuthHeaders() {
-  const token = getAuthToken()
-  return token ? { Authorization: 'Bearer ' + token } : {}
-}
-
 export async function http(
   path,
   { method = 'GET', body, params, signal, credentials = 'omit', auth = true, headers = {} } = {},
 ) {
+  const token = auth ? getAuthToken() : null
+  if (auth && !token) {
+    expireAuthSession()
+    throw new ApiError('Your login session is missing. Please sign in again.', { status: 401 })
+  }
+
   const url = new URL(`${BASE_URL}${path}`, window.location.origin)
   if (params) {
     Object.entries(params).forEach(([key, value]) => {
@@ -36,7 +37,7 @@ export async function http(
       headers: {
         Accept: 'application/json',
         ...(body !== undefined && !isFormData ? { 'Content-Type': 'application/json' } : {}),
-        ...(auth ? getAuthHeaders() : {}),
+        ...(token ? { Authorization: 'Bearer ' + token } : {}),
         ...headers,
       },
       ...(body !== undefined ? { body: isFormData ? body : JSON.stringify(body) } : {}),
@@ -47,10 +48,17 @@ export async function http(
   let payload = null
   try {
     payload = await response.json()
-  } catch {
-    // ignore JSON parse failures and leave payload as null
+  } catch (error) {
+    if (response.ok && response.status !== 204) {
+      throw new ApiError('The server returned an unreadable response.', {
+        status: response.status,
+        details: error,
+      })
+    }
   }
-  if (response.status === 401) clearAuthSession()
+  const missingToken =
+    response.status === 403 && /missing authentication token/i.test(payload?.message || '')
+  if (auth && (response.status === 401 || missingToken)) expireAuthSession()
   if (!response.ok) {
     throw new ApiError(payload?.message || response.statusText || 'Request failed', {
       status: response.status,

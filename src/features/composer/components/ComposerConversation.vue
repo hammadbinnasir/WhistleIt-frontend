@@ -17,8 +17,10 @@ import {
 } from '@/features/messages/message-utils'
 import { useUiStore } from '@/stores/ui'
 import { useUserStore } from '@/features/account/composables/useUserStore'
+import { useRemindersStore } from '@/features/search/reminders'
 import { addMockMessage, removeMockMessage, updateMockMessage } from '@/features/search/search'
 import SetReminderModal from '@/features/search/SetReminderModal.vue'
+import systemProfile from '@/assets/system-profile.webp'
 import {
   createScheduledMessage,
   getScheduledMessages,
@@ -37,6 +39,7 @@ const channelsStore = useChannelsStore()
 const ui = useUiStore()
 const userStore = useUserStore()
 const messageStore = useMessagesStore()
+const reminderStore = useRemindersStore()
 const messagesContainer = ref(null)
 const editingId = ref(null)
 const editDraft = ref('')
@@ -62,10 +65,10 @@ const currentUserName = computed(
   () => dms.usersById[dms.meId]?.name || getAuthUser()?.fullName || 'You',
 )
 let messageClickTimer = null
+let channelMessagesRefreshTimer = null
 
 const pollClock = ref(Date.now())
 let pollClockTimer = null
-let scheduledMessagesTimer = null
 const LOCAL_SCHEDULED_MESSAGES_KEY = 'whistleit:composer-scheduled-messages'
 const channelId = computed(() => String(props.conversationId ?? 'general'))
 const conversation = computed(() => {
@@ -78,6 +81,30 @@ const conversationLabel = computed(() =>
 
 const messagesLoading = computed(() => Boolean(conversation.value) && dms.messagesLoading)
 const messagesError = computed(() => (conversation.value ? dms.messagesError : ''))
+const currentReminderConversationType = computed(() =>
+  props.conversationType === 'dm' ? 'dm' : 'channel',
+)
+const dueReminders = computed(() =>
+  reminderStore.dueItems
+    .filter(
+      (reminder) =>
+        String(reminder.conversationId ?? 'general') === channelId.value &&
+        (reminder.conversationType === 'dm' ? 'dm' : 'channel') ===
+          currentReminderConversationType.value,
+    )
+    .sort((a, b) => new Date(a.firedAt) - new Date(b.firedAt)),
+)
+const deletedReminders = computed(() =>
+  reminderStore.deletedItems
+    .filter(
+      (reminder) =>
+        String(reminder.conversationId ?? 'general') === channelId.value &&
+        (reminder.conversationType === 'dm' ? 'dm' : 'channel') ===
+          currentReminderConversationType.value &&
+        (reminder.dismissed || !reminder.fired),
+    )
+    .sort((a, b) => new Date(a.deletedAt || a.remindAt) - new Date(b.deletedAt || b.remindAt)),
+)
 
 function retryConversationMessages() {
   if (conversation.value) void dms.loadMessages(conversation.value.id, { force: true })
@@ -123,6 +150,9 @@ const hasOlderMessages = computed(() =>
   conversation.value
     ? allMessages.value.length > dmVisibleCount.value
     : messageStore.hasOlderMessages(channelId.value),
+)
+const loadingOlderMessages = computed(
+  () => !conversation.value && Boolean(messageStore.loadingOlderByChannel[channelId.value]),
 )
 const visibleMessages = computed(() =>
   conversation.value
@@ -205,6 +235,24 @@ const reminderMessage = computed(() => {
   }
 })
 
+function formatReminderDate(value) {
+  return new Date(value).toLocaleString('en-US', {
+    month: 'short',
+    day: '2-digit',
+    year: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  })
+}
+
+function dismissDueReminder(reminder) {
+  reminderStore.dismissDue(reminder.id)
+}
+
+function snoozeDueReminder(reminder) {
+  reminderStore.snooze(reminder.id)
+}
+
 watch(
   () => `${props.conversationType}:${props.conversationId}`,
   () => {
@@ -216,12 +264,29 @@ watch(
     openReactionId.value = null
     reminderTarget.value = null
     forwardTarget.value = null
+    clearInterval(channelMessagesRefreshTimer)
+    channelMessagesRefreshTimer = null
+    if (props.conversationType === 'channel' && props.conversationId != null) {
+      void messageStore.fetchChannelMessages(props.conversationId)
+      channelMessagesRefreshTimer = window.setInterval(() => {
+        if (!document.hidden) void messageStore.fetchChannelMessages(props.conversationId)
+      }, 10_000)
+    }
+    loadScheduledMessages()
     nextTick(scrollMessagesToLatest)
+  },
+  { immediate: true },
+)
+
+watch(
+  () => allMessages.value.at(-1)?.id,
+  (id, previousId) => {
+    if (id != null && id !== previousId) scrollMessagesToLatest()
   },
 )
 
 watch(
-  () => allMessages.value.length,
+  () => dueReminders.value.length,
   (count, previousCount) => {
     if (count > previousCount) scrollMessagesToLatest()
   },
@@ -278,8 +343,40 @@ async function togglePin(message) {
   }
 }
 
-function addMessage(payload) {
+async function addMessage(payload) {
   const messagePayload = replyTo.value ? { ...payload, replyTo: { ...replyTo.value } } : payload
+  const canSendToChannelApi =
+    !conversation.value &&
+    typeof payload.content === 'string' &&
+    payload.content.trim() &&
+    !payload.attachments?.length &&
+    !payload.poll &&
+    !payload.gif &&
+    !payload.scheduledAt &&
+    !payload.important &&
+    !replyTo.value
+
+  if (canSendToChannelApi) {
+    const result = await messageStore.postChannelMessage(channelId.value, messagePayload)
+    if (!result.success) {
+      ui.toast('Message not sent', result.error || 'The channel message could not be sent.', 'error')
+      return
+    }
+
+    const sentMessage = messageStore.messagesFor(channelId.value).at(-1)
+    if (sentMessage) {
+      addMockMessage({
+        id: sentMessage.id,
+        text: sentMessage.content,
+        sender: sentMessage.author,
+        conversation: conversationMeta.value,
+      })
+    }
+    replyTo.value = null
+    scrollMessagesToLatest()
+    return
+  }
+
   const sentMessage = conversation.value
     ? dms.sendMessage(conversation.value.id, messagePayload)
     : messageStore.sendMessage(
@@ -621,13 +718,12 @@ function removeLocalScheduledMessage(messageId) {
 function loadLocalScheduledMessages() {
   const saved = readLocalScheduledMessages()
   const direct = saved[String(channelId.value)]
-  const values = Array.isArray(direct)
-    ? direct
-    : Object.values(saved).flatMap((items) => (Array.isArray(items) ? items : []))
+  const values = Array.isArray(direct) ? direct : []
   values.map((item) => normalizeScheduledMessage(item)).filter(Boolean).forEach(appendScheduledMessage)
 }
 
 function loadScheduledMessages() {
+  const requestedConversationId = channelId.value
   loadLocalScheduledMessages()
   getScheduledMessages()
     .then((response) => {
@@ -643,19 +739,14 @@ function loadScheduledMessages() {
               item.channel_id ??
                 item.conversation_id ??
                 item.conversationId ??
-                channelId.value,
-            ) === channelId.value,
+              requestedConversationId,
+            ) === requestedConversationId,
         )
         .forEach(appendScheduledMessage)
     })
     .catch((error) => {
       console.error('Unable to load scheduled messages:', error)
     })
-}
-
-function startScheduledMessagesRefresh() {
-  loadScheduledMessages()
-  scheduledMessagesTimer = window.setInterval(loadScheduledMessages, 10_000)
 }
 
 function addGif(gif) {
@@ -675,7 +766,7 @@ function addGif(gif) {
   scrollMessagesToLatest()
 }
 
-function loadOlder() {
+async function loadOlder() {
   if (conversation.value) {
     dmVisibleCount.value += 20
     return
@@ -683,10 +774,9 @@ function loadOlder() {
   const container = messagesContainer.value
   const previousHeight = container?.scrollHeight || 0
   const previousTop = container?.scrollTop || 0
-  messageStore.loadOlder(channelId.value)
-  nextTick(() => {
-    if (container) container.scrollTop = previousTop + container.scrollHeight - previousHeight
-  })
+  await messageStore.loadOlder(channelId.value)
+  await nextTick()
+  if (container) container.scrollTop = previousTop + container.scrollHeight - previousHeight
 }
 
 function startEdit(message) {
@@ -700,19 +790,31 @@ function cancelEdit() {
   editDraft.value = ''
 }
 
-function saveEdit(message) {
+async function saveEdit(message) {
   if (!editDraft.value.trim()) {
     ui.toast('Message not updated', 'A message cannot be empty.', 'error')
     return
   }
-  const updated = conversation.value
-    ? dms.editMessage(conversation.value.id, message.id, editDraft.value)
-    : messageStore.editMessage(channelId.value, message.id, editDraft.value)
-  if (!updated) {
+  if (conversation.value) {
+    if (!dms.editMessage(conversation.value.id, message.id, editDraft.value)) {
+      ui.toast('Message not updated', 'Only your unscheduled messages can be edited.', 'error')
+      return
+    }
+  } else if (message.serverBacked) {
+    const result = await messageStore.updateServerMessage(
+      channelId.value,
+      message.id,
+      editDraft.value,
+    )
+    if (!result.success) {
+      ui.toast('Message not updated', result.error || 'The channel message could not be updated.', 'error')
+      return
+    }
+    updateMockMessage(message.id, editDraft.value.trim())
+  } else if (!messageStore.editMessage(channelId.value, message.id, editDraft.value)) {
     ui.toast('Message not updated', 'Only your unscheduled messages can be edited.', 'error')
     return
   }
-  if (!conversation.value) updateMockMessage(message.id, editDraft.value.trim())
   cancelEdit()
 }
 
@@ -746,9 +848,32 @@ function confirmMessageDeletion() {
     deleteAt = date.toISOString()
   }
 
-  const deleted = conversation.value
-    ? dms.deleteMessage(conversation.value.id, message.id, deleteAt)
-    : messageStore.deleteMessage(channelId.value, message.id, deleteAt)
+  let deleted
+  if (conversation.value) {
+    deleted = dms.deleteMessage(conversation.value.id, message.id, deleteAt)
+  } else if (message.serverBacked && !deleteAt) {
+    const result = messageStore.deleteServerMessage(channelId.value, message.id)
+    if (result?.success === false) {
+      ui.toast(
+        'Message not deleted',
+        result.error || 'The channel message could not be deleted.',
+        'error',
+      )
+      return
+    }
+    deleted = true
+    void Promise.resolve(result).then((apiResult) => {
+      if (!apiResult.success) {
+        ui.toast(
+          'Message not deleted',
+          apiResult.error || 'The channel message could not be deleted.',
+          'error',
+        )
+      }
+    })
+  } else {
+    deleted = messageStore.deleteMessage(channelId.value, message.id, deleteAt)
+  }
   if (!deleted) {
     ui.toast('Message not deleted', 'Only your unscheduled messages can be deleted.', 'error')
     return
@@ -856,7 +981,7 @@ function openForwardDialog(message) {
     forwardDestinations.value.find((destination) => destination.id !== channelId.value)?.id || ''
 }
 
-function forwardMessage() {
+async function forwardMessage() {
   const destination = forwardDestinations.value.find(
     (item) => item.id === forwardDestinationId.value,
   )
@@ -873,27 +998,31 @@ function forwardMessage() {
       : {}),
     ...(forwardTarget.value.gif ? { gif: forwardTarget.value.gif } : {}),
   }
-  const forwarded =
-    destination.type === 'dm'
-      ? dms.sendMessage(destination.id, payload)
-      : messageStore.sendMessage(
-          destination.id,
-          payload,
-          currentUserName.value,
-          destination.name.replace(/^#/, ''),
-        )
-
-  if (!forwarded) {
-    ui.toast('Unable to forward message', 'The destination is no longer available.', 'error')
-    return
-  }
-  if (destination.type === 'channel') {
-    addMockMessage({
-      id: forwarded.id,
-      text: forwarded.content,
-      sender: forwarded.author,
-      conversation: { id: destination.id, name: destination.name.slice(1), kind: 'public' },
-    })
+  if (destination.type === 'dm') {
+    const forwarded = dms.sendMessage(destination.id, payload)
+    if (!forwarded) {
+      ui.toast('Unable to forward message', 'The destination is no longer available.', 'error')
+      return
+    }
+  } else {
+    const result = await messageStore.postChannelMessage(destination.id, payload)
+    if (!result.success) {
+      ui.toast('Unable to forward message', result.error || 'The channel message could not be sent.', 'error')
+      return
+    }
+    const forwarded =
+      result.data ??
+      messageStore
+        .messagesFor(destination.id)
+        .find((message) => message.forwardedFrom === payload.forwardedFrom && message.content === payload.content)
+    if (forwarded) {
+      addMockMessage({
+        id: forwarded.id,
+        text: forwarded.content,
+        sender: forwarded.author || currentUserName.value,
+        conversation: { id: destination.id, name: destination.name.slice(1), kind: 'public' },
+      })
+    }
   }
   forwardTarget.value = null
   ui.toast('Message forwarded', `Sent to ${destination.name}.`, 'success')
@@ -1089,7 +1218,6 @@ async function scrollMessagesToLatest() {
 
 onMounted(() => {
   document.addEventListener('pointerdown', closeActionsOnOutsideClick)
-  startScheduledMessagesRefresh()
   pollClockTimer = window.setInterval(() => {
     pollClock.value = Date.now()
   }, 1000)
@@ -1097,8 +1225,8 @@ onMounted(() => {
 onBeforeUnmount(() => {
   document.removeEventListener('pointerdown', closeActionsOnOutsideClick)
   clearTimeout(messageClickTimer)
+  clearInterval(channelMessagesRefreshTimer)
   if (pollClockTimer) window.clearInterval(pollClockTimer)
-  if (scheduledMessagesTimer) window.clearInterval(scheduledMessagesTimer)
 })
 </script>
 
@@ -1109,17 +1237,47 @@ onBeforeUnmount(() => {
         v-if="hasOlderMessages"
         type="button"
         class="composer-conversation__load-older"
+        :disabled="loadingOlderMessages"
         @click="loadOlder"
       >
-        Load older messages
+        {{ loadingOlderMessages ? 'Loading older messages...' : 'Load older messages' }}
       </button>
-      <p v-if="messagesLoading" class="composer-conversation__status">Loading messages…</p>
-      <p v-else-if="messagesError" class="composer-conversation__status composer-conversation__status--error">
-          {{ messagesError }}
-       <button type="button" @click="retryConversationMessages">Retry</button>
+      <p
+        v-if="props.conversationType === 'channel' && messageStore.loadingByChannel[channelId]"
+        class="composer-conversation__status"
+        role="status"
+      >
+        Loading channel messages...
       </p>
-      <p v-else-if="conversation && !renderedMessages.length" class="composer-conversation__status">
-          No messages yet.
+      <p
+        v-else-if="props.conversationType === 'channel' && messageStore.errorsByChannel[channelId]"
+        class="composer-conversation__status composer-conversation__status--error"
+        role="alert"
+      >
+        {{ messageStore.errorsByChannel[channelId] }}
+        <button type="button" @click="messageStore.fetchChannelMessages(channelId)">Retry</button>
+      </p>
+      <p v-else-if="messagesLoading" class="composer-conversation__status" role="status">
+        Loading messages...
+      </p>
+      <p
+        v-else-if="messagesError"
+        class="composer-conversation__status composer-conversation__status--error"
+        role="alert"
+      >
+        {{ messagesError }}
+        <button type="button" @click="retryConversationMessages">Retry</button>
+      </p>
+      <p
+        v-else-if="
+          conversation &&
+          !renderedMessages.length &&
+          !dueReminders.length &&
+          !deletedReminders.length
+        "
+        class="composer-conversation__status"
+      >
+        No messages yet.
       </p>
       <template v-for="message in renderedMessages" :key="message.id">
         <div v-if="message.showDate" class="composer-conversation__date">
@@ -1172,7 +1330,7 @@ onBeforeUnmount(() => {
             >
               <template v-if="!message.deleted">
                 <span v-if="message.forwardedFrom" class="composer-conversation__forwarded">
-                  Forwarded from {{ message.forwardedFrom }}
+                  (forwarded)
                 </span>
                 <span v-if="message.important" class="composer-conversation__important">
                   IMPORTANT!
@@ -1364,6 +1522,11 @@ onBeforeUnmount(() => {
                 </div>
               </template>
               <p v-else class="composer-conversation__deleted-message">(message deleted)</p>
+              <span
+                v-if="message.editedAt && !message.deleted"
+                class="composer-conversation__edited"
+                >(edited)</span
+              >
             </div>
 
             <div
@@ -1566,6 +1729,122 @@ onBeforeUnmount(() => {
           </div>
         </article>
       </template>
+      <article
+        v-for="reminder in dueReminders"
+        :key="`due-reminder-${reminder.id}`"
+        class="composer-conversation__reminder-notice"
+      >
+        <div class="composer-conversation__reminder-time">
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.8"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+          >
+            <circle cx="12" cy="12" r="9" />
+            <path d="M12 7v5l3 2" />
+          </svg>
+          <span>Reminded you at {{ formatReminderDate(reminder.firedAt || reminder.remindAt) }}</span>
+        </div>
+        <div class="composer-conversation__reminder-content">
+          <img
+            class="composer-conversation__reminder-system-icon"
+            :src="systemProfile"
+            alt=""
+            aria-hidden="true"
+          />
+          <div class="composer-conversation__reminder-details">
+            <header class="composer-conversation__reminder-heading">
+              <strong>System</strong>
+              <time :datetime="reminder.firedAt || reminder.remindAt">
+                {{ timeLabel(reminder.firedAt || reminder.remindAt) }}
+              </time>
+            </header>
+            <strong class="composer-conversation__reminder-label">Message</strong>
+            <p class="composer-conversation__reminder-message">
+              <template
+                v-for="(segment, index) in messageSegments(reminder.text || '')"
+                :key="`${reminder.id}-${index}`"
+              >
+                <a
+                  v-if="segment.href"
+                  :href="segment.href"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >{{ segment.text }}</a>
+                <span v-else>{{ segment.text }}</span>
+              </template>
+            </p>
+            <footer class="composer-conversation__reminder-actions">
+              <button type="button" @click="dismissDueReminder(reminder)">Delete Reminder</button>
+              <span aria-hidden="true">|</span>
+              <button
+                type="button"
+                title="Snooze for 5 minutes"
+                @click="snoozeDueReminder(reminder)"
+              >
+                Snooze
+              </button>
+            </footer>
+          </div>
+        </div>
+      </article>
+      <article
+        v-for="reminder in deletedReminders"
+        :key="`deleted-reminder-${reminder.id}`"
+        class="composer-conversation__reminder-notice"
+      >
+        <div class="composer-conversation__reminder-time">
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.8"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+          >
+            <circle cx="12" cy="12" r="9" />
+            <path d="M12 7v5l3 2" />
+          </svg>
+          <span>Reminder deleted at {{ formatReminderDate(reminder.deletedAt || reminder.remindAt) }}</span>
+        </div>
+        <div class="composer-conversation__reminder-content">
+          <img
+            class="composer-conversation__reminder-system-icon"
+            :src="systemProfile"
+            alt=""
+            aria-hidden="true"
+          />
+          <div class="composer-conversation__reminder-details">
+            <header class="composer-conversation__reminder-heading">
+              <strong>System</strong>
+              <time :datetime="reminder.deletedAt || reminder.remindAt">
+                {{ timeLabel(reminder.deletedAt || reminder.remindAt) }}
+              </time>
+            </header>
+            <strong class="composer-conversation__reminder-label">Message</strong>
+            <p class="composer-conversation__reminder-message">
+              <template
+                v-for="(segment, index) in messageSegments(reminder.text || '')"
+                :key="`deleted-${reminder.id}-${index}`"
+              >
+                <a
+                  v-if="segment.href"
+                  :href="segment.href"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >{{ segment.text }}</a>
+                <span v-else>{{ segment.text }}</span>
+              </template>
+            </p>
+            <p class="composer-conversation__reminder-deleted-label">Reminder deleted</p>
+          </div>
+        </div>
+      </article>
     </div>
 
     <div v-if="replyTo" class="composer-conversation__replying">
@@ -1904,6 +2183,8 @@ onBeforeUnmount(() => {
 
 .composer-conversation__message-heading time,
 .composer-conversation__edited {
+  display: block;
+  margin-top: 8px;
   color: #696d81;
   font-size: 12px;
 }
@@ -1946,6 +2227,111 @@ onBeforeUnmount(() => {
 .composer-conversation__message-bubble a {
   color: #514bc7;
   text-decoration: underline;
+}
+
+.composer-conversation__reminder-notice {
+  margin: 18px 0 18px 42px;
+  padding: 0 0 8px;
+  color: #25263a;
+}
+
+.composer-conversation__reminder-time {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 0 0 4px -39px;
+  color: #696d81;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.composer-conversation__reminder-time svg {
+  width: 22px;
+  height: 22px;
+  flex: 0 0 22px;
+  color: #ff334b;
+}
+
+.composer-conversation__reminder-content {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  min-width: 0;
+}
+
+.composer-conversation__reminder-system-icon {
+  width: 30px;
+  height: 30px;
+  flex: 0 0 30px;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+.composer-conversation__reminder-details {
+  min-width: 0;
+  flex: 1;
+}
+
+.composer-conversation__reminder-heading {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin: 0 0 7px;
+  font-size: 14px;
+}
+
+.composer-conversation__reminder-heading time {
+  color: #696d81;
+  font-size: 12px;
+}
+
+.composer-conversation__reminder-label {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 14px;
+}
+
+.composer-conversation__reminder-message {
+  margin: 0;
+  overflow-wrap: anywhere;
+  font-size: 14px;
+  white-space: pre-wrap;
+}
+
+.composer-conversation__reminder-message a {
+  color: #514bc7;
+  text-decoration: underline;
+}
+
+.composer-conversation__reminder-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 20px;
+  font-size: 12px;
+}
+
+.composer-conversation__reminder-actions button {
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: #696d81;
+  font: inherit;
+  cursor: pointer;
+}
+
+.composer-conversation__reminder-actions button:first-child {
+  color: #ff334b;
+}
+
+.composer-conversation__reminder-actions button:hover {
+  text-decoration: underline;
+}
+
+.composer-conversation__reminder-deleted-label {
+  margin: 20px 0 0;
+  color: #ff334b;
+  font-size: 12px;
 }
 
 .composer-conversation__reply-quote {

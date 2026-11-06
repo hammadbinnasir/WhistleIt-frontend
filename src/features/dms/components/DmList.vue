@@ -1,5 +1,5 @@
 <script setup>
-import { onBeforeUnmount, onMounted, ref } from 'vue'
+import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useDmStore } from '@/features/dms/stores/dms'
 import { usePresenceStore } from '@/features/dms/stores/presence'
 import { useUiStore } from '@/stores/ui'
@@ -17,6 +17,19 @@ function openConversation(conversationId) {
   ui.selectChannel(null)
   ui.closePanel()
 }
+
+watch(
+  () =>
+    dms.sorted
+      .map((conversation) =>
+        conversation.type === 'dm' ? dms.partnerId(conversation) : null,
+      )
+      .filter(Boolean),
+  (userIds) => {
+    void dms.loadCustomStatuses(userIds)
+  },
+  { immediate: true },
+)
 
 onMounted(() => {
   void dms.init()
@@ -68,6 +81,20 @@ onBeforeUnmount(() => {
         <template v-if="dms.offline">Offline: showing saved messages.</template>
         <template v-else>{{ dms.error }}</template>
         <button class="underline" @click="dms.init()">Retry</button>
+      </p>
+
+      <p v-if="dms.customStatusError" class="px-4 py-1.5 text-xs text-slate-400">
+        Custom statuses could not be loaded.
+        <button
+          class="underline"
+          @click="
+            dms.loadCustomStatuses(
+              dms.sorted.map((c) => (c.type === 'dm' ? dms.partnerId(c) : null)).filter(Boolean),
+            )
+          "
+        >
+          Retry
+        </button>
       </p>
 
       <DmListItem

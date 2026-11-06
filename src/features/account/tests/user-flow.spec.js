@@ -43,6 +43,7 @@ const tab = (label) => byText(label, '[role=tab]')
 
 beforeEach(() => {
   resetUserStore()
+  sessionStorage.setItem('authToken', 'test-token')
   sessionStorage.setItem('authUser', JSON.stringify({ id: 'test-user', fullName: 'Hammad Haider' }))
   URL.createObjectURL = vi.fn(() => 'blob:mock')
   URL.revokeObjectURL = vi.fn()

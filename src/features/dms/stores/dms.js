@@ -1,6 +1,8 @@
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
-import { dmApi } from '@/features/dms/dmApi'
+import { getUser } from '@/features/account/api'
+import { dmApi, normalizePublicCustomStatus } from '@/features/dms/dmApi'
+import { useActivityStore } from '@/stores/activity'
 import { useTeamsStore } from '@/stores/teams'
 
 // localStorage: har conversation ke messages  -> { [company]: { [conversationId]: messages[] } }
@@ -99,9 +101,11 @@ export const useDmStore = defineStore('dms', () => {
   const companyMembers = ref([])
   const companyMembersLoading = ref(false)
   const companyMembersError = ref('')
+  const customStatusError = ref('')
 
   const detailLoaded = new Set()
   const detailRequests = new Map()
+  const customStatusRequests = new Map()
   const messagesLoaded = new Set()
   const messageRequests = new Map()
   let initialization = null
@@ -130,6 +134,49 @@ export const useDmStore = defineStore('dms', () => {
         ...usersById.value[user.id],
         ...defined,
       }
+    }
+  }
+
+  async function loadCustomStatuses(userIds = []) {
+    const ids = [
+      ...new Set(
+        userIds.filter((id) => {
+          const user = usersById.value[id]
+          return (
+            id &&
+            id !== meId.value &&
+            !user?.customStatusLoaded &&
+            !user?.customStatus?.emoji &&
+            !user?.customStatus?.text
+          )
+        }),
+      ),
+    ]
+
+    if (!ids.length) return
+    customStatusError.value = ''
+
+    const results = await Promise.allSettled(
+      ids.map(async (id) => {
+        if (customStatusRequests.has(id)) return customStatusRequests.get(id)
+
+        const request = getUser(id)
+          .then((response) => {
+            mergeUsers([normalizePublicCustomStatus(response, id)])
+          })
+          .finally(() => customStatusRequests.delete(id))
+        customStatusRequests.set(id, request)
+        return request
+      }),
+    )
+    const errors = results
+      .filter((result) => result.status === 'rejected')
+      .map((result) => errorMessage(result.reason))
+
+    if (errors.length) {
+      customStatusError.value = errors[0]
+    } else {
+      persistConversations()
     }
   }
 
@@ -274,7 +321,7 @@ export const useDmStore = defineStore('dms', () => {
     )
   }
 
-  // API conversation mein sirf ids de to naam company members se lo
+  // API conversation mein sirf IDs hon to team member lists se names load karo.
   async function fillMissingNames(company) {
     try {
       const list = (await dmApi.listCompanyMembers?.(company)) ?? []
@@ -284,6 +331,8 @@ export const useDmStore = defineStore('dms', () => {
     } catch {
       /* naam baad mein loadCompanyMembers se bhi aa jate hain */
     }
+    if (String(companyId.value) !== String(company)) return
+    await loadCompanyMembers()
   }
 
   function loadDetail(id) {
@@ -388,35 +437,44 @@ export const useDmStore = defineStore('dms', () => {
     companyMembersError.value = ''
 
     try {
-      // Company members ki request teams fetch hone ka intezar kiye bina shuru hoti hai
-      const companyResult = (async () => dmApi.listCompanyMembers(company))().then(
-        (value) => ({ value }),
-        (cause) => ({ cause }),
-      )
-
       let teams = teamsStore.teamsByWorkspaceId?.[company] ?? []
       if (!teams.length && company) {
         try {
           await teamsStore.fetchTeams(company)
           teams = teamsStore.teamsByWorkspaceId?.[company] ?? []
-        } catch {
-          teams = []
+        } catch (cause) {
+          companyMembersError.value = errorMessage(cause)
         }
       }
 
+      if (!teams.length) {
+        if (!companyMembersError.value) {
+          companyMembersError.value = 'No teams are available to load members from.'
+        }
+        companyMembers.value = []
+        return companyMembers.value
+      }
+
       const [memberResults, nonMemberResults] = await Promise.all([
-        Promise.allSettled(teams.map((team) => dmApi.listTeamMembers(team.id))),
+        Promise.allSettled(teams.map((team) => dmApi.listTeamMembers(company, team.id))),
         Promise.allSettled(teams.map((team) => dmApi.listTeamNonMembers(company, team.id))),
       ])
       const fulfilled = (results) =>
         results.filter((r) => r.status === 'fulfilled').flatMap((r) => r.value ?? [])
-
-      const result = await companyResult
-      if (result.cause) companyMembersError.value = errorMessage(result.cause)
+      const succeeded = [...memberResults, ...nonMemberResults].some(
+        (result) => result.status === 'fulfilled',
+      )
+      if (!succeeded) {
+        const failed = [...memberResults, ...nonMemberResults].find(
+          (result) => result.status === 'rejected',
+        )
+        companyMembersError.value = failed
+          ? errorMessage(failed.reason)
+          : 'Unable to load members from the available teams.'
+      }
 
       const seen = new Map()
       for (const user of [
-        ...(result.value ?? []),
         ...fulfilled(memberResults),
         ...fulfilled(nonMemberResults),
       ]) {
@@ -642,6 +700,7 @@ export const useDmStore = defineStore('dms', () => {
       text,
       createdAt: new Date().toISOString(),
       ...(payload.replyTo ? { replyTo: payload.replyTo } : {}),
+      ...(payload.threadId ? { threadId: payload.threadId } : {}),
       ...(payload.forwardedFrom ? { forwardedFrom: payload.forwardedFrom } : {}),
       ...(attachments.length ? { attachments } : {}),
       ...(payload.important ? { important: true } : {}),
@@ -662,10 +721,15 @@ export const useDmStore = defineStore('dms', () => {
 
     conversation.messages.push(message)
     persist(conversation)
-
-    const added = conversation.messages.at(-1) // reactive version
-    void deliver(conversationId, added)
-    return added
+    if (!payload.scheduledAt) {
+      useActivityStore().recordMessageMentions({
+        text,
+        conversationId: conversation.id,
+        conversationName: titleOf(conversation),
+        conversationType: 'dm',
+      })
+    }
+    return conversation.messages.at(-1)
   }
 
   function cancelScheduledMessage(conversationId, messageId) {
@@ -854,9 +918,11 @@ export const useDmStore = defineStore('dms', () => {
     companyMembers,
     companyMembersLoading,
     companyMembersError,
+    customStatusError,
     sorted,
     init,
     loadCompanyMembers,
+    loadCustomStatuses,
     openConversation,
     loadMessages,
     closeConversation,

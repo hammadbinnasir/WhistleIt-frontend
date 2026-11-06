@@ -35,8 +35,8 @@ describe('channel API routes', () => {
   it('preserves explicit membership status from list and browse responses', async () => {
     http.mockResolvedValue({
       items: [
-        { id: 'channel-3', name: 'Engineering', is_member: true },
-        { id: 'channel-4', name: 'Design Reviews', is_member: false },
+        { id: 'channel-3', name: 'Engineering', is_member: true, member_count: 7 },
+        { id: 'channel-4', name: 'Design Reviews', is_member: false, member_count: 3 },
       ],
     })
 
@@ -53,6 +53,26 @@ describe('channel API routes', () => {
       ['channel-3', true],
       ['channel-4', false],
     ])
+    expect(browseResults.map(({ memberCount }) => memberCount)).toEqual([7, 3])
+  })
+
+  it('loads missing member counts for browse results', async () => {
+    http.mockImplementation(async (path) => {
+      if (path === collectionPath) {
+        return { items: [{ id: 'channel-3', name: 'Engineering', is_member: true }] }
+      }
+      if (path === `${collectionPath}/channel-3/members`) {
+        return { members: ['user-42', 'user-43', 'user-44'], total: 3 }
+      }
+      throw new Error(`Unexpected request: ${path}`)
+    })
+
+    await expect(browseChannels()).resolves.toMatchObject([
+      { id: 'channel-3', isMember: true, memberCount: 3 },
+    ])
+    expect(http).toHaveBeenLastCalledWith(`${collectionPath}/channel-3/members`, {
+      params: { limit: 100 },
+    })
   })
 
   it('resolves membership in browse results when the response omits it', async () => {
@@ -211,6 +231,12 @@ describe('channel API routes', () => {
 
     await leaveChannel('channel-3')
     expect(http).toHaveBeenLastCalledWith(`${channelPath}/leave`, { method: 'DELETE' })
+
+    await leaveChannel('channel-3', 'user-4')
+    expect(http).toHaveBeenLastCalledWith(`${channelPath}/leave`, {
+      method: 'DELETE',
+      body: { new_admin_id: 'user-4' },
+    })
 
     http.mockResolvedValue({ items: [], total: 0 })
     await listMembers('channel-3')

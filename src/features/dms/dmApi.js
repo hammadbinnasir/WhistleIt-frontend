@@ -50,6 +50,7 @@ function membersFrom(data) {
   const list = Array.isArray(data)
     ? data
     : (data?.members ??
+      data?.teamusers?.members ??
       data?.companyusers?.members ??
       data?.notteamusers?.members ??
       data?.users ??
@@ -77,17 +78,68 @@ function nameOf(source = {}) {
   )
 }
 
+function customStatusOf(raw, user) {
+  const value =
+    raw.customStatus ?? raw.custom_status ?? user.customStatus ?? user.custom_status
+  const status = value && typeof value === 'object' ? value : {}
+  const text =
+    (typeof value === 'string' ? value : status.text ?? status.status_text) ??
+    raw.customStatusText ??
+    raw.custom_status_text ??
+    user.customStatusText ??
+    user.custom_status_text ??
+    ''
+  const emoji =
+    raw.customStatusEmoji ??
+    raw.custom_status_emoji ??
+    user.customStatusEmoji ??
+    user.custom_status_emoji ??
+    status.emoji ??
+    ''
+  return text || emoji ? { emoji, text } : null
+}
+
+function objectEntriesDeep(value, entries = [], seen = new Set()) {
+  if (!value || typeof value !== 'object' || seen.has(value)) return entries
+  seen.add(value)
+  entries.push(value)
+  for (const nested of Object.values(value)) objectEntriesDeep(nested, entries, seen)
+  return entries
+}
+
+export function normalizePublicCustomStatus(response, userId) {
+  const entries = objectEntriesDeep(response)
+  const candidate = entries.find((entry) =>
+    [
+      'customStatus',
+      'custom_status',
+      'customStatusText',
+      'custom_status_text',
+      'customStatusEmoji',
+      'custom_status_emoji',
+    ].some((key) => entry[key] != null),
+  )
+  const customStatus = candidate ? customStatusOf(candidate, {}) : null
+  return {
+    id: String(userId),
+    customStatus,
+    customStatusLoaded: true,
+  }
+}
+
 function normalizeUser(raw) {
   if (raw == null) return { id: '', name: '', email: '', avatarUrl: '' }
   // Sirf id aayi ho (string/number)
   if (typeof raw !== 'object') return { id: String(raw), name: '', email: '', avatarUrl: '' }
 
   const user = raw.user && typeof raw.user === 'object' ? raw.user : {}
+  const customStatus = customStatusOf(raw, user)
   return {
     id: String(user.id ?? raw.user_id ?? raw.id ?? ''),
     name: nameOf(raw) ?? nameOf(user) ?? '',
     email: raw.email ?? user.email ?? '',
     avatarUrl: raw.avatar_url ?? raw.avatarUrl ?? user.avatar_url ?? user.avatarUrl ?? '',
+    ...(customStatus ? { customStatus } : {}),
   }
 }
 
@@ -98,8 +150,15 @@ function normalizeMembers(response) {
 }
 
 function normalizeParticipant(raw) {
-  const { id, name, email, avatarUrl } = normalizeUser(raw)
-  return { id, name, avatarUrl, ...(email ? { email } : {}) }
+  const user = normalizeUser(raw)
+  const { id, name, email, avatarUrl, customStatus } = user
+  return {
+    id,
+    name,
+    avatarUrl,
+    ...(email ? { email } : {}),
+    ...(customStatus ? { customStatus, customStatusLoaded: true } : {}),
+  }
 }
 
 export function normalizeMessage(raw) {
@@ -200,10 +259,13 @@ export const dmApi = {
     return apiRequest(`/company/${encode(companyId)}/members`).then(normalizeMembers)
   },
 
-  // Company members mein team members already shamil hain, isliye yahan alag
-  // endpoint nahi lagaya. Agar team members ka alag endpoint ho to yahan lagayein.
-  listTeamMembers() {
-    return Promise.resolve([])
+  // GET /v1/{company}/teams/{team}/members
+  listTeamMembers(companyId, teamId) {
+    requireCompany(companyId, 'load team members')
+    requireTeam(teamId)
+    return apiRequest(`/v1/${encode(companyId)}/teams/${encode(teamId)}/members`).then(
+      normalizeMembers,
+    )
   },
 
   // GET /v1/{company}/teams/{team}/notmembers

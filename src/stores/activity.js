@@ -38,6 +38,12 @@ export const useActivityStore = defineStore('activity', () => {
 
     loading.value = true
     error.value = ''
+    if (typeof dmApi.notifications !== 'function') {
+      loaded.value = true
+      loading.value = false
+      return Promise.resolve()
+    }
+
     initialization = dmApi
       .notifications()
       .then((notifications) => {

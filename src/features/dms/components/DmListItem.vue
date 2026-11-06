@@ -2,6 +2,8 @@
 import { computed } from 'vue'
 import { useDmStore } from '@/features/dms/stores/dms'
 import { usePresenceStore } from '@/features/dms/stores/presence'
+import { useUserStore } from '@/features/account/composables/useUserStore'
+import { customStatusTooltip } from '@/features/account/composables/statusExpiry'
 import PresenceIcon from './PresenceIcon.vue'
 
 const props = defineProps({
@@ -12,16 +14,39 @@ defineEmits(['select', 'close'])
 
 const dms = useDmStore()
 const presence = usePresenceStore()
+const userStore = useUserStore()
 
 const title = computed(() => dms.titleOf(props.conversation))
 const partnerId = computed(() =>
   props.conversation.type === 'dm' ? dms.partnerId(props.conversation) : null,
 )
 const state = computed(() => (partnerId.value ? presence.stateOf(partnerId.value) : null))
-const custom = computed(() => (partnerId.value ? presence.customOf(partnerId.value) : null))
+const isOwnStatus = computed(() => partnerId.value === dms.meId)
+const custom = computed(() => {
+  if (!partnerId.value) return null
+
+  const accountStatus = isOwnStatus.value
+    ? {
+        emoji: userStore.state.customStatusEmoji,
+        text: userStore.state.customStatus,
+      }
+    : null
+  const status =
+    accountStatus?.text || accountStatus?.emoji
+      ? accountStatus
+      : (dms.usersById[partnerId.value]?.customStatus ?? presence.customOf(partnerId.value))
+
+  return status?.emoji || status?.text ? status : null
+})
+const customTooltip = computed(() =>
+  customStatusTooltip(
+    custom.value?.text,
+    isOwnStatus.value ? userStore.state.customStatusExpiresAt : null,
+  ),
+)
 const tooltip = computed(() =>
   partnerId.value
-    ? presence.labelOf(partnerId.value)
+    ? ({ online: 'Online', away: 'Away', offline: 'Offline' })[state.value] ?? 'Offline'
     : `${props.conversation.members.length} members`,
 )
 </script>
@@ -47,13 +72,28 @@ const tooltip = computed(() =>
       >
         {{ title }}
       </span>
+      <span
+        v-if="custom?.emoji"
+        class="group/status relative shrink-0 cursor-default text-sm"
+        :aria-label="`Custom status: ${customTooltip || custom.text}`"
+        :aria-describedby="`custom-status-${conversation.id}`"
+        role="img"
+      >
+        {{ custom.emoji }}
+        <span
+          :id="`custom-status-${conversation.id}`"
+          class="pointer-events-none absolute right-0 top-full z-50 mt-1 whitespace-nowrap rounded bg-[#6b6b73] px-3 py-1.5 text-xs font-medium text-white opacity-0 shadow-md transition-opacity group-hover/status:opacity-100 group-focus-within/status:opacity-100"
+          role="tooltip"
+        >
+          {{ customTooltip || custom.text }}
+        </span>
+      </span>
 
-      <!-- Emoji + unread badge: hover par ya selected hone par chhup jate hain -->
-      <span v-if="!active" class="flex items-center gap-2 group-hover:hidden">
-        <span v-if="custom?.emoji" class="text-sm">{{ custom.emoji }}</span>
+      <!-- Unread badge -->
+      <span v-if="!active" class="flex items-center gap-2">
         <span
           v-if="conversation.unreadCount"
-          class="rounded-full bg-red-500 px-1.5 text-xs font-semibold text-white"
+          class="rounded-full bg-red-500 px-1.5 text-xs font-semibold text-white group-hover:invisible"
         >
           {{ conversation.unreadCount }}
         </span>

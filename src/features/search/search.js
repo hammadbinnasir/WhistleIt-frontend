@@ -1,10 +1,11 @@
+import { messageSegments } from '@/features/messages/message-utils'
+
 // Mock search API. Replace each function body with the real call, e.g.
 // return api.get('/search/files', { params })  (central client in lib/api).
 // Keep the return shape: { items, totalPages }.
 
 const FILES = []
 const MESSAGES = []
-const LINKS = []
 const wait = (ms = 250) => new Promise((r) => setTimeout(r, ms))
 const CHANNEL_MESSAGES_STORAGE_KEY = 'whistleit:channel-messages'
 
@@ -77,27 +78,23 @@ function applyFilters(
       (!userIds.length ||
         userIds.map(String).includes(String(i.userId))) &&
       (!date ||
-        (dateMode === 'before' && i.createdAt.slice(0, 10) < date) ||
-        (dateMode === 'after' && i.createdAt.slice(0, 10) > date) ||
+        (dateMode === 'before' && String(i.createdAt || '').slice(0, 10) < date) ||
+        (dateMode === 'after' && String(i.createdAt || '').slice(0, 10) > date) ||
         (dateMode === 'range' &&
-          i.createdAt.slice(0, 10) >= date &&
-          (!dateEnd || i.createdAt.slice(0, 10) <= dateEnd)) ||
-        (dateMode === 'on' && i.createdAt.slice(0, 10) === date)) &&
+          String(i.createdAt || '').slice(0, 10) >= date &&
+          (!dateEnd || String(i.createdAt || '').slice(0, 10) <= dateEnd)) ||
+        (dateMode === 'on' && String(i.createdAt || '').slice(0, 10) === date)) &&
       (!webhooks || i.webhook) &&
-      (!channelId || i.conversation?.id === channelId) &&
+      (!channelId || String(i.conversation?.id ?? '') === String(channelId)) &&
       (!dmConversationId ||
-        i.conversation?.kind !== 'dm' ||
-        i.conversation?.id === dmConversationId),
+        (i.conversation?.kind === 'dm' &&
+          String(i.conversation?.id ?? '') === String(dmConversationId))),
   )
 }
 
 export async function searchMessages(p) {
   await wait()
-  const dmMessages = Array.isArray(p.dmMessages) ? p.dmMessages : []
-  const combined = [...MESSAGES, ...readStoredChannelMessages(), ...dmMessages].filter(
-    (message, index, messages) =>
-      messages.findIndex((candidate) => String(candidate.id) === String(message.id)) === index,
-  )
+  const combined = getSearchableMessages(p)
   const filtered = applyFilters(combined, p, 'text')
   const page = p.page || 1
   const pageSize = p.pageSize || filtered.length || 1
@@ -107,9 +104,47 @@ export async function searchMessages(p) {
     total: filtered.length,
   }
 }
+
+function getSearchableMessages({ dmMessages = [] } = {}) {
+  const combined = [
+    ...MESSAGES,
+    ...readStoredChannelMessages(),
+    ...(Array.isArray(dmMessages) ? dmMessages : []),
+  ]
+  return combined.filter(
+    (message, index, messages) =>
+      messages.findIndex(
+        (candidate) =>
+          String(candidate.id) === String(message.id) &&
+          String(candidate.conversation?.id ?? '') === String(message.conversation?.id ?? ''),
+      ) === index,
+  )
+}
+
 export async function searchLinks(p) {
   await wait()
-  return { items: applyFilters(LINKS, p, 'url'), totalPages: 1 }
+  const links = getSearchableMessages(p).flatMap((message) =>
+    messageSegments(String(message.text ?? message.content ?? ''))
+      .filter((segment) => segment.href)
+      .map((segment, index) => ({
+        id: message.id,
+        url: segment.text,
+        sender: message.sender || 'Unknown user',
+        userId: message.userId || '',
+        createdAt: message.createdAt || '',
+        webhook: Boolean(message.webhook),
+        conversation: message.conversation,
+        linkIndex: index,
+      })),
+  )
+  const filtered = applyFilters(links, p, 'url')
+  const page = p.page || 1
+  const pageSize = p.pageSize || 6
+  return {
+    items: filtered.slice((page - 1) * pageSize, page * pageSize),
+    totalPages: Math.max(1, Math.ceil(filtered.length / pageSize)),
+    total: filtered.length,
+  }
 }
 export async function searchFiles(p) {
   await wait()
@@ -121,6 +156,6 @@ export async function searchFiles(p) {
     totalPages: Math.max(1, Math.ceil(all.length / size)),
   }
 }
-export async function searchUsers(q) {
+export async function searchUsers() {
   return []
 }

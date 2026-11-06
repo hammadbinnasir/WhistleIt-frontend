@@ -93,6 +93,11 @@ const user = computed(() => ({
   customStatus: userStore.state?.customStatus,
 }))
 
+function showPollHistory() {
+  ui.closeChannelSettings()
+  ui.activePanel = 'poll-history'
+}
+
 function onAccountSettingsSaved(payload) {
   const messages = {
     added: 'Profile picture updated',
@@ -272,12 +277,12 @@ function messageProfileMember(member) {
 }
 
 onMounted(async () => {
+  remindersStore.startWatcher()
   void activity.init()
   await teamsStore.fetchTeams()
   if (teamsStore.activeTeamId) {
     await membersStore.fetchMembers(teamsStore.activeTeamId)
   }
-  remindersStore.startWatcher()
 })
 
 onBeforeUnmount(() => {
@@ -524,25 +529,16 @@ onBeforeUnmount(() => {
 
           <!-- Side Drawer: Reminders, Search, and other conversation panels -->
           <aside
-            v-if="ui.activePanel && ui.activePanel !== 'help'"
+            v-if="ui.activePanel && !['help', 'reminders', 'pinned', 'poll-history'].includes(ui.activePanel)"
             class="min-h-0 w-full shrink-0 border-l border-slate-200 bg-white shadow-lg"
             :class="
               ui.activePanel === 'profile'
                 ? 'md:w-[min(380px,35vw)]'
-                : ['reminders', 'pinned', 'poll-history'].includes(ui.activePanel)
-                ? 'md:w-[min(400px,35vw)]'
                 : 'md:w-[min(480px,40vw)]'
             "
           >
-            <RemindersPanel v-if="ui.activePanel === 'reminders'" />
-            <PinnedMessagesPanel
-              v-else-if="ui.activePanel === 'pinned'"
-              :conversation-id="activeConversation?.id || selectedChannelId || ''"
-              :conversation-type="activeConversation ? 'dm' : 'channel'"
-            />
-            <PollHistoryPanel v-else-if="ui.activePanel === 'poll-history'" />
             <ProfilePanel
-              v-else-if="ui.activePanel === 'profile' && activeProfileMember"
+              v-if="ui.activePanel === 'profile' && activeProfileMember"
               :member="activeProfileMember"
               @close="closeMemberProfile"
               @message="messageProfileMember"
@@ -558,6 +554,36 @@ onBeforeUnmount(() => {
     </main>
 
     <aside
+      v-if="ui.activePanel === 'reminders'"
+      class="h-full w-[min(432px,40vw)] shrink-0 border-l border-slate-200 bg-white shadow-lg"
+      aria-label="Reminders panel"
+    >
+      <RemindersPanel
+        :conversation-id="activeConversation?.id ?? selectedChannelId ?? ''"
+        :conversation-type="activeConversation ? 'dm' : 'channel'"
+      />
+    </aside>
+
+    <aside
+      v-if="ui.activePanel === 'pinned'"
+      class="h-full w-[min(432px,40vw)] shrink-0 border-l border-slate-200 bg-white shadow-lg"
+      aria-label="Pinned messages panel"
+    >
+      <PinnedMessagesPanel
+        :conversation-id="activeConversation?.id || selectedChannelId || ''"
+        :conversation-type="activeConversation ? 'dm' : 'channel'"
+      />
+    </aside>
+
+    <aside
+      v-if="ui.activePanel === 'poll-history'"
+      class="h-full w-[min(432px,40vw)] shrink-0 border-l border-slate-200 bg-white shadow-lg"
+      aria-label="Poll history panel"
+    >
+      <PollHistoryPanel />
+    </aside>
+
+    <aside
       v-if="ui.activePanel === 'help'"
       class="h-full w-[min(432px,40vw)] shrink-0 border-l border-slate-200 bg-white shadow-lg"
       aria-label="Help panel"
@@ -571,7 +597,7 @@ onBeforeUnmount(() => {
       :channel="selectedChannel"
       @toggle-mute="toggleChannelMute"
       @toggle-favourite="toggleChannelFavorite"
-      @show-polls="ui.openPanel('poll-history')"
+      @show-polls="showPollHistory"
       @left="ui.selectChannel(null)"
       @archive="archiveSelectedChannel"
       @save-message-permission="saveChannelMessagePermission"
