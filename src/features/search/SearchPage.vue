@@ -116,6 +116,7 @@ const directoryItems = computed(() => [
 ])
 const hasFilters = computed(() => applied.userIds.length || applied.date || applied.webhooks)
 const DIRECTORY_PAGE_SIZE = 10
+let searchRequestId = 0
 
 function workspaceTeams(workspaceId) {
   return teamsStore.workspaces.length
@@ -171,9 +172,13 @@ function channelMatchesQuery(channel, needle) {
 }
 
 function dmSearchMessages() {
+  if (scope.value === 'channel' && !props.dmConversationId) return []
+
   const conversations =
-    props.dmConversationId && scope.value === 'channel'
-      ? dmsStore.conversations.filter((conversation) => conversation.id === props.dmConversationId)
+    scope.value === 'channel'
+      ? dmsStore.conversations.filter(
+          (conversation) => String(conversation.id) === String(props.dmConversationId),
+        )
       : dmsStore.conversations
 
   return conversations.flatMap((conversation) =>
@@ -194,6 +199,7 @@ function dmSearchMessages() {
 }
 
 async function run() {
+  const requestId = ++searchRequestId
   error.value = ''
   const needle = q.value.trim().toLowerCase()
   categoryCounts.Messages = 0
@@ -208,7 +214,7 @@ async function run() {
   categoryCounts.Channels = directoryItems.value.filter((item) =>
     item.category === 'Channels' && channelMatchesQuery(item, needle)
   ).length
-  if (searchCategory.value !== 'Messages') {
+  if (tab.value === 'text' && searchCategory.value !== 'Messages') {
     const matches = directoryItems.value.filter((item) => {
       return (
         item.category === searchCategory.value &&
@@ -221,14 +227,16 @@ async function run() {
     const start = (page.value - 1) * DIRECTORY_PAGE_SIZE
     items.value = matches.slice(start, start + DIRECTORY_PAGE_SIZE)
     searched.value = Boolean(needle)
+    loading.value = false
     return
   }
 
-  // files list shows everything by default (like the live app); text/link need a query or filter
-  const canSearch = tab.value === 'file' || q.value.trim() || hasFilters.value
+  // Files and links show all results by default; text needs a query or filter.
+  const canSearch = ['file', 'link'].includes(tab.value) || q.value.trim() || hasFilters.value
   if (!canSearch) {
     items.value = []
     searched.value = false
+    loading.value = false
     return
   }
   loading.value = true
@@ -248,14 +256,16 @@ async function run() {
     }
     const fn = { text: searchMessages, file: searchFiles, link: searchLinks }[tab.value]
     const res = await fn(params)
+    if (requestId !== searchRequestId) return
     items.value = res.items
     totalPages.value = res.totalPages
     searched.value = true
     categoryCounts.Messages = Number(res.total ?? res.items.length)
   } catch {
+    if (requestId !== searchRequestId) return
     error.value = 'Search failed. Check your connection and try again.'
   } finally {
-    loading.value = false
+    if (requestId === searchRequestId) loading.value = false
   }
 }
 
@@ -265,11 +275,15 @@ watch(q, () => {
   clearTimeout(timer)
   timer = setTimeout(run, 350)
 })
-watch([tab, scope, searchCategory, () => props.channelId, () => props.dmConversationId], () => {
-  page.value = 1
-  items.value = []
-  run()
-})
+watch(
+  [tab, scope, searchCategory, () => props.channelId, () => props.dmConversationId],
+  ([nextTab]) => {
+    if (nextTab !== 'text') searchCategory.value = 'Messages'
+    page.value = 1
+    items.value = []
+    run()
+  },
+)
 watch(page, run)
 const searchInput = ref(null)
 onMounted(async () => {
@@ -908,7 +922,7 @@ const senderInitials = (name = '') =>
     </div>
 
     <nav
-      v-if="q.trim() || searched"
+      v-if="tab === 'text' && (q.trim() || searched)"
       class="flex items-center gap-7 border-b border-slate-200 px-4 text-[15px] font-semibold"
     >
       <button
@@ -961,7 +975,10 @@ const senderInitials = (name = '') =>
       </div>
 
       <!-- company, team, and channel results -->
-      <ul v-else-if="searchCategory !== 'Messages'" class="divide-y divide-slate-100">
+      <ul
+        v-else-if="tab === 'text' && searchCategory !== 'Messages'"
+        class="divide-y divide-slate-100"
+      >
         <li v-for="item in items" :key="item.id" class="py-4">
           <button type="button" class="w-full rounded-sm border border-slate-200 text-left hover:bg-slate-50" @click="openDirectoryItem(item)">
             <div class="flex items-start gap-3 p-4">
@@ -1038,7 +1055,11 @@ const senderInitials = (name = '') =>
 
       <!-- text + link results -->
       <ul v-else class="divide-y divide-slate-100">
-        <li v-for="m in items" :key="m.id" class="group relative flex gap-3 py-3 text-sm">
+        <li
+          v-for="m in items"
+          :key="`${m.id}-${m.linkIndex ?? 0}`"
+          class="group relative flex gap-3 py-3 text-sm"
+        >
           <button
             type="button"
             class="absolute inset-0 cursor-pointer"
