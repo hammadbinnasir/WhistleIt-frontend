@@ -62,6 +62,7 @@ const currentUserName = computed(
   () => dms.usersById[dms.meId]?.name || getAuthUser()?.fullName || 'You',
 )
 let messageClickTimer = null
+let channelMessagesRefreshTimer = null
 
 const pollClock = ref(Date.now())
 let pollClockTimer = null
@@ -123,6 +124,9 @@ const hasOlderMessages = computed(() =>
   conversation.value
     ? allMessages.value.length > dmVisibleCount.value
     : messageStore.hasOlderMessages(channelId.value),
+)
+const loadingOlderMessages = computed(
+  () => !conversation.value && Boolean(messageStore.loadingOlderByChannel[channelId.value]),
 )
 const visibleMessages = computed(() =>
   conversation.value
@@ -216,14 +220,23 @@ watch(
     openReactionId.value = null
     reminderTarget.value = null
     forwardTarget.value = null
+    clearInterval(channelMessagesRefreshTimer)
+    channelMessagesRefreshTimer = null
+    if (props.conversationType === 'channel' && props.conversationId != null) {
+      void messageStore.fetchChannelMessages(props.conversationId)
+      channelMessagesRefreshTimer = window.setInterval(() => {
+        if (!document.hidden) void messageStore.fetchChannelMessages(props.conversationId)
+      }, 10_000)
+    }
     nextTick(scrollMessagesToLatest)
   },
+  { immediate: true },
 )
 
 watch(
-  () => allMessages.value.length,
-  (count, previousCount) => {
-    if (count > previousCount) scrollMessagesToLatest()
+  () => allMessages.value.at(-1)?.id,
+  (id, previousId) => {
+    if (id != null && id !== previousId) scrollMessagesToLatest()
   },
 )
 
@@ -278,8 +291,40 @@ async function togglePin(message) {
   }
 }
 
-function addMessage(payload) {
+async function addMessage(payload) {
   const messagePayload = replyTo.value ? { ...payload, replyTo: { ...replyTo.value } } : payload
+  const canSendToChannelApi =
+    !conversation.value &&
+    typeof payload.content === 'string' &&
+    payload.content.trim() &&
+    !payload.attachments?.length &&
+    !payload.poll &&
+    !payload.gif &&
+    !payload.scheduledAt &&
+    !payload.important &&
+    !replyTo.value
+
+  if (canSendToChannelApi) {
+    const result = await messageStore.postChannelMessage(channelId.value, messagePayload)
+    if (!result.success) {
+      ui.toast('Message not sent', result.error || 'The channel message could not be sent.', 'error')
+      return
+    }
+
+    const sentMessage = messageStore.messagesFor(channelId.value).at(-1)
+    if (sentMessage) {
+      addMockMessage({
+        id: sentMessage.id,
+        text: sentMessage.content,
+        sender: sentMessage.author,
+        conversation: conversationMeta.value,
+      })
+    }
+    replyTo.value = null
+    scrollMessagesToLatest()
+    return
+  }
+
   const sentMessage = conversation.value
     ? dms.sendMessage(conversation.value.id, messagePayload)
     : messageStore.sendMessage(
@@ -675,7 +720,7 @@ function addGif(gif) {
   scrollMessagesToLatest()
 }
 
-function loadOlder() {
+async function loadOlder() {
   if (conversation.value) {
     dmVisibleCount.value += 20
     return
@@ -683,10 +728,9 @@ function loadOlder() {
   const container = messagesContainer.value
   const previousHeight = container?.scrollHeight || 0
   const previousTop = container?.scrollTop || 0
-  messageStore.loadOlder(channelId.value)
-  nextTick(() => {
-    if (container) container.scrollTop = previousTop + container.scrollHeight - previousHeight
-  })
+  await messageStore.loadOlder(channelId.value)
+  await nextTick()
+  if (container) container.scrollTop = previousTop + container.scrollHeight - previousHeight
 }
 
 function startEdit(message) {
@@ -700,19 +744,31 @@ function cancelEdit() {
   editDraft.value = ''
 }
 
-function saveEdit(message) {
+async function saveEdit(message) {
   if (!editDraft.value.trim()) {
     ui.toast('Message not updated', 'A message cannot be empty.', 'error')
     return
   }
-  const updated = conversation.value
-    ? dms.editMessage(conversation.value.id, message.id, editDraft.value)
-    : messageStore.editMessage(channelId.value, message.id, editDraft.value)
-  if (!updated) {
+  if (conversation.value) {
+    if (!dms.editMessage(conversation.value.id, message.id, editDraft.value)) {
+      ui.toast('Message not updated', 'Only your unscheduled messages can be edited.', 'error')
+      return
+    }
+  } else if (message.serverBacked) {
+    const result = await messageStore.updateServerMessage(
+      channelId.value,
+      message.id,
+      editDraft.value,
+    )
+    if (!result.success) {
+      ui.toast('Message not updated', result.error || 'The channel message could not be updated.', 'error')
+      return
+    }
+    updateMockMessage(message.id, editDraft.value.trim())
+  } else if (!messageStore.editMessage(channelId.value, message.id, editDraft.value)) {
     ui.toast('Message not updated', 'Only your unscheduled messages can be edited.', 'error')
     return
   }
-  if (!conversation.value) updateMockMessage(message.id, editDraft.value.trim())
   cancelEdit()
 }
 
@@ -746,9 +802,32 @@ function confirmMessageDeletion() {
     deleteAt = date.toISOString()
   }
 
-  const deleted = conversation.value
-    ? dms.deleteMessage(conversation.value.id, message.id, deleteAt)
-    : messageStore.deleteMessage(channelId.value, message.id, deleteAt)
+  let deleted
+  if (conversation.value) {
+    deleted = dms.deleteMessage(conversation.value.id, message.id, deleteAt)
+  } else if (message.serverBacked && !deleteAt) {
+    const result = messageStore.deleteServerMessage(channelId.value, message.id)
+    if (result?.success === false) {
+      ui.toast(
+        'Message not deleted',
+        result.error || 'The channel message could not be deleted.',
+        'error',
+      )
+      return
+    }
+    deleted = true
+    void Promise.resolve(result).then((apiResult) => {
+      if (!apiResult.success) {
+        ui.toast(
+          'Message not deleted',
+          apiResult.error || 'The channel message could not be deleted.',
+          'error',
+        )
+      }
+    })
+  } else {
+    deleted = messageStore.deleteMessage(channelId.value, message.id, deleteAt)
+  }
   if (!deleted) {
     ui.toast('Message not deleted', 'Only your unscheduled messages can be deleted.', 'error')
     return
@@ -856,7 +935,7 @@ function openForwardDialog(message) {
     forwardDestinations.value.find((destination) => destination.id !== channelId.value)?.id || ''
 }
 
-function forwardMessage() {
+async function forwardMessage() {
   const destination = forwardDestinations.value.find(
     (item) => item.id === forwardDestinationId.value,
   )
@@ -873,27 +952,31 @@ function forwardMessage() {
       : {}),
     ...(forwardTarget.value.gif ? { gif: forwardTarget.value.gif } : {}),
   }
-  const forwarded =
-    destination.type === 'dm'
-      ? dms.sendMessage(destination.id, payload)
-      : messageStore.sendMessage(
-          destination.id,
-          payload,
-          currentUserName.value,
-          destination.name.replace(/^#/, ''),
-        )
-
-  if (!forwarded) {
-    ui.toast('Unable to forward message', 'The destination is no longer available.', 'error')
-    return
-  }
-  if (destination.type === 'channel') {
-    addMockMessage({
-      id: forwarded.id,
-      text: forwarded.content,
-      sender: forwarded.author,
-      conversation: { id: destination.id, name: destination.name.slice(1), kind: 'public' },
-    })
+  if (destination.type === 'dm') {
+    const forwarded = dms.sendMessage(destination.id, payload)
+    if (!forwarded) {
+      ui.toast('Unable to forward message', 'The destination is no longer available.', 'error')
+      return
+    }
+  } else {
+    const result = await messageStore.postChannelMessage(destination.id, payload)
+    if (!result.success) {
+      ui.toast('Unable to forward message', result.error || 'The channel message could not be sent.', 'error')
+      return
+    }
+    const forwarded =
+      result.data ??
+      messageStore
+        .messagesFor(destination.id)
+        .find((message) => message.forwardedFrom === payload.forwardedFrom && message.content === payload.content)
+    if (forwarded) {
+      addMockMessage({
+        id: forwarded.id,
+        text: forwarded.content,
+        sender: forwarded.author || currentUserName.value,
+        conversation: { id: destination.id, name: destination.name.slice(1), kind: 'public' },
+      })
+    }
   }
   forwardTarget.value = null
   ui.toast('Message forwarded', `Sent to ${destination.name}.`, 'success')
@@ -1097,6 +1180,7 @@ onMounted(() => {
 onBeforeUnmount(() => {
   document.removeEventListener('pointerdown', closeActionsOnOutsideClick)
   clearTimeout(messageClickTimer)
+  clearInterval(channelMessagesRefreshTimer)
   if (pollClockTimer) window.clearInterval(pollClockTimer)
   if (scheduledMessagesTimer) window.clearInterval(scheduledMessagesTimer)
 })
@@ -1109,17 +1193,42 @@ onBeforeUnmount(() => {
         v-if="hasOlderMessages"
         type="button"
         class="composer-conversation__load-older"
+        :disabled="loadingOlderMessages"
         @click="loadOlder"
       >
-        Load older messages
+        {{ loadingOlderMessages ? 'Loading older messages...' : 'Load older messages' }}
       </button>
-      <p v-if="messagesLoading" class="composer-conversation__status">Loading messages…</p>
-      <p v-else-if="messagesError" class="composer-conversation__status composer-conversation__status--error">
-          {{ messagesError }}
-       <button type="button" @click="retryConversationMessages">Retry</button>
+      <p
+        v-if="props.conversationType === 'channel' && messageStore.loadingByChannel[channelId]"
+        class="composer-conversation__status"
+        role="status"
+      >
+        Loading channel messages...
       </p>
-      <p v-else-if="conversation && !renderedMessages.length" class="composer-conversation__status">
-          No messages yet.
+      <p
+        v-else-if="props.conversationType === 'channel' && messageStore.errorsByChannel[channelId]"
+        class="composer-conversation__status composer-conversation__status--error"
+        role="alert"
+      >
+        {{ messageStore.errorsByChannel[channelId] }}
+        <button type="button" @click="messageStore.fetchChannelMessages(channelId)">Retry</button>
+      </p>
+      <p v-else-if="messagesLoading" class="composer-conversation__status" role="status">
+        Loading messages...
+      </p>
+      <p
+        v-else-if="messagesError"
+        class="composer-conversation__status composer-conversation__status--error"
+        role="alert"
+      >
+        {{ messagesError }}
+        <button type="button" @click="retryConversationMessages">Retry</button>
+      </p>
+      <p
+        v-else-if="conversation && !renderedMessages.length"
+        class="composer-conversation__status"
+      >
+        No messages yet.
       </p>
       <template v-for="message in renderedMessages" :key="message.id">
         <div v-if="message.showDate" class="composer-conversation__date">
@@ -1172,7 +1281,7 @@ onBeforeUnmount(() => {
             >
               <template v-if="!message.deleted">
                 <span v-if="message.forwardedFrom" class="composer-conversation__forwarded">
-                  Forwarded from {{ message.forwardedFrom }}
+                  (forwarded)
                 </span>
                 <span v-if="message.important" class="composer-conversation__important">
                   IMPORTANT!
@@ -1364,6 +1473,11 @@ onBeforeUnmount(() => {
                 </div>
               </template>
               <p v-else class="composer-conversation__deleted-message">(message deleted)</p>
+              <span
+                v-if="message.editedAt && !message.deleted"
+                class="composer-conversation__edited"
+                >(edited)</span
+              >
             </div>
 
             <div
@@ -1904,6 +2018,8 @@ onBeforeUnmount(() => {
 
 .composer-conversation__message-heading time,
 .composer-conversation__edited {
+  display: block;
+  margin-top: 8px;
   color: #696d81;
   font-size: 12px;
 }

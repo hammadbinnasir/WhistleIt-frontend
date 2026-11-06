@@ -7,6 +7,7 @@ import { useMessagesStore } from '@/features/messages/messages'
 import { useUiStore } from '@/stores/ui'
 import { useRemindersStore } from '@/features/search/reminders'
 import { useChannelsStore } from '@/features/channels/store/channels.store'
+import { setupDmsTestState } from '@/features/dms/test-utils'
 import ActivityFeed from './ActivityFeed.vue'
 
 vi.mock('vue3-emoji-picker', async () => {
@@ -48,7 +49,10 @@ function mountActivityFeed() {
 }
 
 describe('ActivityFeed', () => {
-  beforeEach(() => setActivePinia(createPinia()))
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    setupDmsTestState()
+  })
 
   it('keeps activity tab labels on one line', () => {
     const wrapper = mountActivityFeed()
@@ -116,7 +120,7 @@ describe('ActivityFeed', () => {
     const ui = useUiStore()
     const dms = useDmStore()
     await dms.init()
-    dms.startDm('u2')
+    await dms.startDm('u2')
     const messages = useMessagesStore()
     messages.sendMessage('general', { content: 'Channel activity' }, 'You', 'General')
     const wrapper = mountActivityFeed()
@@ -182,7 +186,7 @@ describe('ActivityFeed', () => {
   it('shows and cancels scheduled messages', async () => {
     const dms = useDmStore()
     await dms.init()
-    const conversation = dms.startDm('u2')
+    const conversation = await dms.startDm('u2')
     dms.sendMessage(conversation.id, {
       content: 'Scheduled for later',
       scheduledAt: new Date(Date.now() + 60_000).toISOString(),
@@ -199,7 +203,11 @@ describe('ActivityFeed', () => {
       .findAll('button')
       .find((button) => button.text() === 'Cancel')
       .trigger('click')
-    expect(conversation.messages.some((message) => message.scheduled)).toBe(false)
+    expect(
+      dms.conversations
+        .find((item) => item.id === conversation.id)
+        ?.messages.some((message) => message.scheduled),
+    ).toBe(false)
     wrapper.unmount()
   })
 

@@ -2,11 +2,15 @@ import { mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { useDmStore } from '@/features/dms/stores/dms'
+import { setupDmsTestState } from '@/features/dms/test-utils'
 import NewDmPanel from './NewDmPanel.vue'
 
 describe('NewDmPanel', () => {
-  beforeEach(() => setActivePinia(createPinia()))
-     localStorage.clear()  
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    setupDmsTestState()
+  })
+
   it('shows available member names when the dropdown arrow is clicked', async () => {
     const dms = useDmStore()
     await dms.init()

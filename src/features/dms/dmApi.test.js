@@ -151,6 +151,34 @@ describe('DM API', () => {
     expect(apiRequest).toHaveBeenCalledWith('/company/company%201/members')
   })
 
+  it('loads team members from the team-scoped members endpoint', async () => {
+    apiRequest.mockResolvedValue({
+      success: true,
+      data: {
+        teamusers: {
+          members: [
+            {
+              id: 'user-2',
+              name: 'Team User',
+              email: 'user@example.com',
+              avatar_url: '/avatars/user.png',
+            },
+          ],
+        },
+      },
+    })
+
+    await expect(dmApi.listTeamMembers('company-1', 'team-1')).resolves.toEqual([
+      {
+        id: 'user-2',
+        name: 'Team User',
+        email: 'user@example.com',
+        avatarUrl: '/avatars/user.png',
+      },
+    ])
+    expect(apiRequest).toHaveBeenCalledWith('/v1/company-1/teams/team-1/members')
+  })
+
   it('loads team users who are not members of that team', async () => {
     apiRequest.mockResolvedValue({
       success: true,

@@ -12,11 +12,23 @@ import {
 
 const STORAGE_KEY = 'whistleit:channel-messages'
 const PAGE_SIZE = 20
+const API_PAGE_SIZE = 15
 const MAX_TIMEOUT = 2_147_483_647
 let generatedId = 0
 
 function createId() {
   return globalThis.crypto?.randomUUID?.() ?? `message-${Date.now()}-${generatedId++}`
+}
+
+function isDeletedMessage(record) {
+  const deletedFlag = [record.deleted, record.is_deleted, record.isDeleted].some(
+    (flag) =>
+      flag === true ||
+      flag === 1 ||
+      (typeof flag === 'string' && ['true', '1'].includes(flag.trim().toLowerCase())),
+  )
+  const deletedAt = record.deleted_at ?? record.deletedAt
+  return deletedFlag || (deletedAt != null && deletedAt !== '')
 }
 
 function loadMessages() {
@@ -33,7 +45,11 @@ export const useMessagesStore = defineStore('messages', () => {
   const messagesByChannel = ref(loadMessages())
   const visibleCounts = ref({})
   const loadingByChannel = ref({})
+  const loadingOlderByChannel = ref({})
   const errorsByChannel = ref({})
+  const currentPageByChannel = ref({})
+  const lastPageByChannel = ref({})
+  const hasMorePagesByChannel = ref({})
   const deletionTimers = new Map()
   const serverDeletionRequests = new Map()
   const messageRequests = new Map()
@@ -41,16 +57,36 @@ export const useMessagesStore = defineStore('messages', () => {
 
   function unwrapMessages(data) {
     let response = data
-    for (let depth = 0; depth < 3 && response && typeof response === 'object'; depth += 1) {
+    let pagination = null
+    for (let depth = 0; depth < 5 && response && typeof response === 'object'; depth += 1) {
       if (response.success === false) {
         throw new Error(response.message || response.error || 'Unable to load channel messages.')
       }
-      if (Array.isArray(response)) return response
+      if (Array.isArray(response)) return { messages: response, pagination }
+      if (response.pagination && typeof response.pagination === 'object') {
+        pagination = response.pagination
+      }
       const list = response.messages ?? response.channel_messages ?? response.items
-      if (Array.isArray(list)) return list
+      if (Array.isArray(list)) return { messages: list, pagination }
       response = response.data
     }
     throw new Error('The channel messages response does not contain a message list.')
+  }
+
+  function sortMessages(messages) {
+    return messages.sort((left, right) => {
+      const leftTime = Date.parse(left.createdAt || '')
+      const rightTime = Date.parse(right.createdAt || '')
+      return Number.isFinite(leftTime) && Number.isFinite(rightTime) ? leftTime - rightTime : 0
+    })
+  }
+
+  function readHasMorePages(pagination, page) {
+    const hasMore = pagination?.has_more_pages ?? pagination?.hasMorePages
+    if (typeof hasMore === 'boolean') return hasMore
+    if (typeof hasMore === 'string') return ['true', '1'].includes(hasMore.toLowerCase())
+    const lastPage = Number(pagination?.last_page ?? pagination?.lastPage)
+    return Number.isFinite(lastPage) && lastPage > page
   }
 
   function normalizeMessage(record) {
@@ -69,7 +105,7 @@ export const useMessagesStore = defineStore('messages', () => {
     if (id == null) throw new Error('A channel message is missing its ID.')
     const senderId = record.sender_id ?? record.user_id ?? record.from ?? sender.id ?? sender.user_id
     const userId = getAuthUserId()
-    const deleted = Boolean(record.deleted || record.is_deleted || record.deleted_at || record.deletedAt)
+    const deleted = isDeletedMessage(record)
     const content = deleted ? '' : (record.content ?? record.body ?? record.text ?? record.message ?? '')
 
     return {
@@ -115,7 +151,7 @@ export const useMessagesStore = defineStore('messages', () => {
     return null
   }
 
-  async function fetchChannelMessages(channelId) {
+  async function fetchChannelMessages(channelId, { page = 1, olderPage = false } = {}) {
     const key = String(channelId ?? '')
     if (!key.trim()) return { success: false, error: 'A channel ID is required to load messages.' }
 
@@ -128,14 +164,18 @@ export const useMessagesStore = defineStore('messages', () => {
       return { success: false, error }
     }
 
-    const requestId = (messageRequests.get(key) ?? 0) + 1
-    messageRequests.set(key, requestId)
-    loadingByChannel.value[key] = true
+    const requestKey = `${key}:${page}`
+    const requestId = (messageRequests.get(requestKey) ?? 0) + 1
+    messageRequests.set(requestKey, requestId)
+    if (page === 1 && !olderPage) loadingByChannel.value[key] = true
     errorsByChannel.value[key] = ''
 
-    const result = await getChannelMessages(companyId, teamId, key)
-    if (messageRequests.get(key) !== requestId) return result
-    loadingByChannel.value[key] = false
+    const result = await getChannelMessages(companyId, teamId, key, {
+      page,
+      perPage: API_PAGE_SIZE,
+    })
+    if (messageRequests.get(requestKey) !== requestId) return result
+    if (page === 1 && !olderPage) loadingByChannel.value[key] = false
 
     if (!result.success) {
       errorsByChannel.value[key] = result.error
@@ -143,15 +183,11 @@ export const useMessagesStore = defineStore('messages', () => {
     }
 
     try {
+      const { messages: records, pagination } = unwrapMessages(result.data)
+      const fetched = records.map(normalizeMessage)
       const currentMessages = messagesFor(key)
       const deletedMessages = currentMessages.filter((message) => message.deleted)
       const deletedIds = new Set(deletedMessages.map((message) => String(message.id)))
-      const fetched = unwrapMessages(result.data)
-        .map(normalizeMessage)
-        .filter((message) => !deletedIds.has(message.id))
-      const localMessages = currentMessages.filter(
-        (message) => String(message.id).startsWith('local-') && !deletedIds.has(String(message.id)),
-      )
       const fetchedIds = new Set(fetched.map((message) => message.id))
       const pending = pendingServerMessages.get(key) ?? []
       const visiblePending = pending.filter(
@@ -163,17 +199,39 @@ export const useMessagesStore = defineStore('messages', () => {
           (message) => !fetchedIds.has(message.id) && !deletedIds.has(String(message.id)),
         ),
       )
-      messagesByChannel.value[key] = [
-        ...deletedMessages,
-        ...fetched,
-        ...visiblePending,
-        ...localMessages.filter((message) => !fetchedIds.has(String(message.id))),
-      ]
+
+      const merged = new Map(
+        currentMessages
+          .filter((message) => !deletedIds.has(String(message.id)) || message.deleted)
+          .map((message) => [String(message.id), message]),
+      )
+      for (const message of fetched) {
+        if (!deletedIds.has(message.id)) merged.set(message.id, message)
+      }
+      for (const message of visiblePending) merged.set(String(message.id), message)
+      messagesByChannel.value[key] = sortMessages([...merged.values()])
+
+      const responsePage = Number(pagination?.current_page ?? pagination?.currentPage ?? page)
+      currentPageByChannel.value[key] = Math.max(
+        currentPageByChannel.value[key] || 0,
+        responsePage,
+      )
+      const lastPage = Number(pagination?.last_page ?? pagination?.lastPage)
+      if (Number.isFinite(lastPage) && lastPage > 0) {
+        lastPageByChannel.value[key] = lastPage
+        hasMorePagesByChannel.value[key] = currentPageByChannel.value[key] < lastPage
+      } else if (responsePage >= (currentPageByChannel.value[key] || 1)) {
+        hasMorePagesByChannel.value[key] = readHasMorePages(pagination, responsePage)
+      }
       return { success: true, data: fetched }
     } catch (error) {
       errorsByChannel.value[key] =
         error instanceof Error ? error.message : 'Unable to read channel messages.'
       return { success: false, error: errorsByChannel.value[key] }
+    } finally {
+      if (page === 1 && !olderPage && messageRequests.get(requestKey) === requestId) {
+        loadingByChannel.value[key] = false
+      }
     }
   }
 
@@ -272,11 +330,21 @@ export const useMessagesStore = defineStore('messages', () => {
   function visibleMessagesFor(channelId) {
     const messages = messagesFor(channelId)
     const count = visibleCounts.value[String(channelId)] || PAGE_SIZE
-    return messages.slice(-count)
+    const visible = messages.slice(-count)
+    const visibleIds = new Set(visible.map((message) => String(message.id)))
+    return [
+      ...messages.filter((message) => message.deleted && !visibleIds.has(String(message.id))),
+      ...visible,
+    ]
   }
 
   function hasOlderMessages(channelId) {
-    return visibleMessagesFor(channelId).length < messagesFor(channelId).length
+    const key = String(channelId)
+    const visibleCount = visibleCounts.value[key] || PAGE_SIZE
+    return (
+      messagesFor(key).length > visibleCount ||
+      Boolean(hasMorePagesByChannel.value[key])
+    )
   }
 
   function persist() {
@@ -346,11 +414,27 @@ export const useMessagesStore = defineStore('messages', () => {
     })
   }
 
-  function loadOlder(channelId) {
+  async function loadOlder(channelId) {
     const key = String(channelId)
-    if (!hasOlderMessages(key)) return false
-    visibleCounts.value[key] = (visibleCounts.value[key] || PAGE_SIZE) + PAGE_SIZE
-    return true
+    if (loadingOlderByChannel.value[key] || !hasOlderMessages(key)) return false
+
+    const visibleCount = visibleCounts.value[key] || PAGE_SIZE
+    if (messagesFor(key).length > visibleCount) {
+      visibleCounts.value[key] = visibleCount + PAGE_SIZE
+      return true
+    }
+
+    if (!hasMorePagesByChannel.value[key]) return false
+    loadingOlderByChannel.value[key] = true
+    const nextPage = (currentPageByChannel.value[key] || 1) + 1
+    try {
+      const result = await fetchChannelMessages(key, { page: nextPage, olderPage: true })
+      if (!result.success || !result.data.length) return false
+      visibleCounts.value[key] = visibleCount + PAGE_SIZE
+      return true
+    } finally {
+      loadingOlderByChannel.value[key] = false
+    }
   }
 
   function sendMessage(channelId, payload, author, conversationName = String(channelId)) {
@@ -554,7 +638,11 @@ export const useMessagesStore = defineStore('messages', () => {
     messagesByChannel,
     visibleCounts,
     loadingByChannel,
+    loadingOlderByChannel,
     errorsByChannel,
+    currentPageByChannel,
+    lastPageByChannel,
+    hasMorePagesByChannel,
     messagesFor,
     visibleMessagesFor,
     hasOlderMessages,
