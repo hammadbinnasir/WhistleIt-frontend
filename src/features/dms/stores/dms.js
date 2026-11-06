@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
-import { dmApi } from '@/features/dms/dmApi'
+import { getUser } from '@/features/account/api'
+import { dmApi, normalizePublicCustomStatus } from '@/features/dms/dmApi'
 import { useTeamsStore } from '@/stores/teams'
 
 // localStorage: har conversation ke messages  -> { [company]: { [conversationId]: messages[] } }
@@ -99,9 +100,11 @@ export const useDmStore = defineStore('dms', () => {
   const companyMembers = ref([])
   const companyMembersLoading = ref(false)
   const companyMembersError = ref('')
+  const customStatusError = ref('')
 
   const detailLoaded = new Set()
   const detailRequests = new Map()
+  const customStatusRequests = new Map()
   const messagesLoaded = new Set()
   const messageRequests = new Map()
   let initialization = null
@@ -130,6 +133,49 @@ export const useDmStore = defineStore('dms', () => {
         ...usersById.value[user.id],
         ...defined,
       }
+    }
+  }
+
+  async function loadCustomStatuses(userIds = []) {
+    const ids = [
+      ...new Set(
+        userIds.filter((id) => {
+          const user = usersById.value[id]
+          return (
+            id &&
+            id !== meId.value &&
+            !user?.customStatusLoaded &&
+            !user?.customStatus?.emoji &&
+            !user?.customStatus?.text
+          )
+        }),
+      ),
+    ]
+
+    if (!ids.length) return
+    customStatusError.value = ''
+
+    const results = await Promise.allSettled(
+      ids.map(async (id) => {
+        if (customStatusRequests.has(id)) return customStatusRequests.get(id)
+
+        const request = getUser(id)
+          .then((response) => {
+            mergeUsers([normalizePublicCustomStatus(response, id)])
+          })
+          .finally(() => customStatusRequests.delete(id))
+        customStatusRequests.set(id, request)
+        return request
+      }),
+    )
+    const errors = results
+      .filter((result) => result.status === 'rejected')
+      .map((result) => errorMessage(result.reason))
+
+    if (errors.length) {
+      customStatusError.value = errors[0]
+    } else {
+      persistConversations()
     }
   }
 
@@ -854,9 +900,11 @@ export const useDmStore = defineStore('dms', () => {
     companyMembers,
     companyMembersLoading,
     companyMembersError,
+    customStatusError,
     sorted,
     init,
     loadCompanyMembers,
+    loadCustomStatuses,
     openConversation,
     loadMessages,
     closeConversation,

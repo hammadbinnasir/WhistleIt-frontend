@@ -4,7 +4,7 @@ vi.unmock('@/features/dms/dmApi')
 vi.mock('@/lib/api/client', () => ({ apiRequest: vi.fn() }))
 
 import { apiRequest } from '@/lib/api/client'
-import { dmApi } from './dmApi'
+import { dmApi, normalizePublicCustomStatus } from './dmApi'
 
 describe('DM API', () => {
   beforeEach(() => {
@@ -39,6 +39,53 @@ describe('DM API', () => {
       },
     ])
     expect(apiRequest).toHaveBeenCalledWith('/company/company-1/members')
+  })
+
+  it('preserves custom status details from company member records', async () => {
+    apiRequest.mockResolvedValue({
+      success: true,
+      data: {
+        members: [
+          {
+            user: {
+              id: 'user-2',
+              full_name: 'Alex Member',
+              custom_status: { emoji: '📅', text: 'In a meeting' },
+            },
+          },
+        ],
+      },
+    })
+
+    await expect(dmApi.listCompanyMembers('company-1')).resolves.toMatchObject([
+      {
+        id: 'user-2',
+        customStatus: { emoji: '📅', text: 'In a meeting' },
+      },
+    ])
+  })
+
+  it('normalizes custom status details nested in a public user profile', () => {
+    expect(
+      normalizePublicCustomStatus(
+        {
+          data: {
+            data: {
+              user: {
+                profile: {
+                  custom_status: { emoji: '📅', text: 'In a meeting' },
+                },
+              },
+            },
+          },
+        },
+        'user-2',
+      ),
+    ).toEqual({
+      id: 'user-2',
+      customStatus: { emoji: '📅', text: 'In a meeting' },
+      customStatusLoaded: true,
+    })
   })
 
   it('loads members from the companyusers.members response returned by the API', async () => {
@@ -134,7 +181,11 @@ describe('DM API', () => {
             id: 'channel-1',
             participants: [
               { id: 'user-1', name: 'Me' },
-              { id: 'user-2', name: 'Alex' },
+              {
+                id: 'user-2',
+                name: 'Alex',
+                custom_status: { emoji: '📅', text: 'In a meeting' },
+              },
             ],
             messages: [{ id: 'message-1', sender_id: 'user-2', content: 'Hello' }],
           },
@@ -165,7 +216,13 @@ describe('DM API', () => {
         },
         users: [
           { id: 'user-1', name: 'Me', avatarUrl: '' },
-          { id: 'user-2', name: 'Alex', avatarUrl: '' },
+          {
+            id: 'user-2',
+            name: 'Alex',
+            avatarUrl: '',
+            customStatus: { emoji: '📅', text: 'In a meeting' },
+            customStatusLoaded: true,
+          },
         ],
       },
     ])
@@ -373,4 +430,3 @@ describe('DM API', () => {
     expect(apiRequest).not.toHaveBeenCalled()
   })
 })
-
