@@ -277,12 +277,12 @@ function messageProfileMember(member) {
 }
 
 onMounted(async () => {
+  remindersStore.startWatcher()
   void activity.init()
   await teamsStore.fetchTeams()
   if (teamsStore.activeTeamId) {
     await membersStore.fetchMembers(teamsStore.activeTeamId)
   }
-  remindersStore.startWatcher()
 })
 
 onBeforeUnmount(() => {
@@ -558,7 +558,10 @@ onBeforeUnmount(() => {
       class="h-full w-[min(432px,40vw)] shrink-0 border-l border-slate-200 bg-white shadow-lg"
       aria-label="Reminders panel"
     >
-      <RemindersPanel />
+      <RemindersPanel
+        :conversation-id="activeConversation?.id ?? selectedChannelId ?? ''"
+        :conversation-type="activeConversation ? 'dm' : 'channel'"
+      />
     </aside>
 
     <aside

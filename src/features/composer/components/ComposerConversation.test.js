@@ -225,6 +225,78 @@ describe('composer conversation', () => {
     expect(wrapper.get('[aria-label="Reminder title"]').exists()).toBe(true)
   })
 
+  it('shows due reminders in chat and snoozes them back to the reminder list', async () => {
+    const reminderStore = useRemindersStore()
+    const reminderTime = new Date(Date.now() - 60_000).toISOString()
+    reminderStore.deletedItems.push({
+      id: 'due-reminder-1',
+      fired: true,
+      dismissed: false,
+      conversationId: 'general',
+      conversationName: 'General',
+      conversationType: 'channel',
+      messageId: 'message-1',
+      text: 'Check https://example.com',
+      remindAt: reminderTime,
+      firedAt: reminderTime,
+    })
+    reminderStore.deletedItems.push({
+      id: 'due-reminder-other-conversation',
+      fired: true,
+      dismissed: false,
+      conversationId: 'general',
+      conversationName: 'General DM',
+      conversationType: 'dm',
+      messageId: 'message-2',
+      text: 'This reminder belongs to a DM',
+      remindAt: reminderTime,
+      firedAt: reminderTime,
+    })
+    const wrapper = mount(ComposerConversation)
+
+    expect(wrapper.text()).toContain('Reminded you at')
+    expect(wrapper.text()).toContain('System')
+    expect(wrapper.text()).not.toContain('This reminder belongs to a DM')
+    expect(wrapper.get('.composer-conversation__reminder-message a').attributes('href')).toBe(
+      'https://example.com/',
+    )
+
+    await buttonWithText(wrapper, 'Snooze').trigger('click')
+
+    expect(reminderStore.dueItems.map((reminder) => reminder.id)).toEqual([
+      'due-reminder-other-conversation',
+    ])
+    expect(reminderStore.items).toHaveLength(1)
+    expect(reminderStore.items[0].fired).toBe(false)
+  })
+
+  it('shows deleted reminders in their original conversation only', async () => {
+    const reminderStore = useRemindersStore()
+    reminderStore.add({
+      conversationId: 'general',
+      conversationName: 'General',
+      conversationType: 'channel',
+      messageId: 'message-deleted',
+      text: 'Deleted reminder message',
+      remindAt: new Date(Date.now() + 60_000).toISOString(),
+    })
+    const reminderId = reminderStore.items[0].id
+    reminderStore.remove(reminderId)
+
+    const wrapper = mount(ComposerConversation, {
+      props: { conversationId: 'general', conversationType: 'channel' },
+    })
+
+    expect(wrapper.text()).toContain('Reminder deleted at')
+    expect(wrapper.text()).toContain('Deleted reminder message')
+    expect(wrapper.text()).toContain('Reminder deleted')
+
+    const otherConversation = mount(ComposerConversation, {
+      props: { conversationId: 'other-channel', conversationType: 'channel' },
+    })
+    expect(otherConversation.text()).not.toContain('Deleted reminder message')
+  })
+
   it('does not open a message menu when left click is set to default', async () => {
     useUserStore().hydrate({ preferences: { leftClick: 'default' } })
     const wrapper = mount(ComposerConversation)

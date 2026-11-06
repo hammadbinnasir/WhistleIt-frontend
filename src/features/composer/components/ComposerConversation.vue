@@ -17,8 +17,10 @@ import {
 } from '@/features/messages/message-utils'
 import { useUiStore } from '@/stores/ui'
 import { useUserStore } from '@/features/account/composables/useUserStore'
+import { useRemindersStore } from '@/features/search/reminders'
 import { addMockMessage, removeMockMessage, updateMockMessage } from '@/features/search/search'
 import SetReminderModal from '@/features/search/SetReminderModal.vue'
+import systemProfile from '@/assets/system-profile.webp'
 import {
   createScheduledMessage,
   getScheduledMessages,
@@ -37,6 +39,7 @@ const channelsStore = useChannelsStore()
 const ui = useUiStore()
 const userStore = useUserStore()
 const messageStore = useMessagesStore()
+const reminderStore = useRemindersStore()
 const messagesContainer = ref(null)
 const editingId = ref(null)
 const editDraft = ref('')
@@ -78,6 +81,30 @@ const conversationLabel = computed(() =>
 
 const messagesLoading = computed(() => Boolean(conversation.value) && dms.messagesLoading)
 const messagesError = computed(() => (conversation.value ? dms.messagesError : ''))
+const currentReminderConversationType = computed(() =>
+  props.conversationType === 'dm' ? 'dm' : 'channel',
+)
+const dueReminders = computed(() =>
+  reminderStore.dueItems
+    .filter(
+      (reminder) =>
+        String(reminder.conversationId ?? 'general') === channelId.value &&
+        (reminder.conversationType === 'dm' ? 'dm' : 'channel') ===
+          currentReminderConversationType.value,
+    )
+    .sort((a, b) => new Date(a.firedAt) - new Date(b.firedAt)),
+)
+const deletedReminders = computed(() =>
+  reminderStore.deletedItems
+    .filter(
+      (reminder) =>
+        String(reminder.conversationId ?? 'general') === channelId.value &&
+        (reminder.conversationType === 'dm' ? 'dm' : 'channel') ===
+          currentReminderConversationType.value &&
+        (reminder.dismissed || !reminder.fired),
+    )
+    .sort((a, b) => new Date(a.deletedAt || a.remindAt) - new Date(b.deletedAt || b.remindAt)),
+)
 
 function retryConversationMessages() {
   if (conversation.value) void dms.loadMessages(conversation.value.id, { force: true })
@@ -208,6 +235,24 @@ const reminderMessage = computed(() => {
   }
 })
 
+function formatReminderDate(value) {
+  return new Date(value).toLocaleString('en-US', {
+    month: 'short',
+    day: '2-digit',
+    year: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  })
+}
+
+function dismissDueReminder(reminder) {
+  reminderStore.dismissDue(reminder.id)
+}
+
+function snoozeDueReminder(reminder) {
+  reminderStore.snooze(reminder.id)
+}
+
 watch(
   () => `${props.conversationType}:${props.conversationId}`,
   () => {
@@ -227,6 +272,7 @@ watch(
         if (!document.hidden) void messageStore.fetchChannelMessages(props.conversationId)
       }, 10_000)
     }
+    loadScheduledMessages()
     nextTick(scrollMessagesToLatest)
   },
   { immediate: true },
@@ -236,6 +282,13 @@ watch(
   () => allMessages.value.at(-1)?.id,
   (id, previousId) => {
     if (id != null && id !== previousId) scrollMessagesToLatest()
+  },
+)
+
+watch(
+  () => dueReminders.value.length,
+  (count, previousCount) => {
+    if (count > previousCount) scrollMessagesToLatest()
   },
 )
 
@@ -665,13 +718,12 @@ function removeLocalScheduledMessage(messageId) {
 function loadLocalScheduledMessages() {
   const saved = readLocalScheduledMessages()
   const direct = saved[String(channelId.value)]
-  const values = Array.isArray(direct)
-    ? direct
-    : Object.values(saved).flatMap((items) => (Array.isArray(items) ? items : []))
+  const values = Array.isArray(direct) ? direct : []
   values.map((item) => normalizeScheduledMessage(item)).filter(Boolean).forEach(appendScheduledMessage)
 }
 
 function loadScheduledMessages() {
+  const requestedConversationId = channelId.value
   loadLocalScheduledMessages()
   getScheduledMessages()
     .then((response) => {
@@ -687,8 +739,8 @@ function loadScheduledMessages() {
               item.channel_id ??
                 item.conversation_id ??
                 item.conversationId ??
-                channelId.value,
-            ) === channelId.value,
+              requestedConversationId,
+            ) === requestedConversationId,
         )
         .forEach(appendScheduledMessage)
     })
@@ -1217,7 +1269,12 @@ onBeforeUnmount(() => {
         <button type="button" @click="retryConversationMessages">Retry</button>
       </p>
       <p
-        v-else-if="conversation && !renderedMessages.length"
+        v-else-if="
+          conversation &&
+          !renderedMessages.length &&
+          !dueReminders.length &&
+          !deletedReminders.length
+        "
         class="composer-conversation__status"
       >
         No messages yet.
@@ -1672,6 +1729,122 @@ onBeforeUnmount(() => {
           </div>
         </article>
       </template>
+      <article
+        v-for="reminder in dueReminders"
+        :key="`due-reminder-${reminder.id}`"
+        class="composer-conversation__reminder-notice"
+      >
+        <div class="composer-conversation__reminder-time">
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.8"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+          >
+            <circle cx="12" cy="12" r="9" />
+            <path d="M12 7v5l3 2" />
+          </svg>
+          <span>Reminded you at {{ formatReminderDate(reminder.firedAt || reminder.remindAt) }}</span>
+        </div>
+        <div class="composer-conversation__reminder-content">
+          <img
+            class="composer-conversation__reminder-system-icon"
+            :src="systemProfile"
+            alt=""
+            aria-hidden="true"
+          />
+          <div class="composer-conversation__reminder-details">
+            <header class="composer-conversation__reminder-heading">
+              <strong>System</strong>
+              <time :datetime="reminder.firedAt || reminder.remindAt">
+                {{ timeLabel(reminder.firedAt || reminder.remindAt) }}
+              </time>
+            </header>
+            <strong class="composer-conversation__reminder-label">Message</strong>
+            <p class="composer-conversation__reminder-message">
+              <template
+                v-for="(segment, index) in messageSegments(reminder.text || '')"
+                :key="`${reminder.id}-${index}`"
+              >
+                <a
+                  v-if="segment.href"
+                  :href="segment.href"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >{{ segment.text }}</a>
+                <span v-else>{{ segment.text }}</span>
+              </template>
+            </p>
+            <footer class="composer-conversation__reminder-actions">
+              <button type="button" @click="dismissDueReminder(reminder)">Delete Reminder</button>
+              <span aria-hidden="true">|</span>
+              <button
+                type="button"
+                title="Snooze for 5 minutes"
+                @click="snoozeDueReminder(reminder)"
+              >
+                Snooze
+              </button>
+            </footer>
+          </div>
+        </div>
+      </article>
+      <article
+        v-for="reminder in deletedReminders"
+        :key="`deleted-reminder-${reminder.id}`"
+        class="composer-conversation__reminder-notice"
+      >
+        <div class="composer-conversation__reminder-time">
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.8"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+          >
+            <circle cx="12" cy="12" r="9" />
+            <path d="M12 7v5l3 2" />
+          </svg>
+          <span>Reminder deleted at {{ formatReminderDate(reminder.deletedAt || reminder.remindAt) }}</span>
+        </div>
+        <div class="composer-conversation__reminder-content">
+          <img
+            class="composer-conversation__reminder-system-icon"
+            :src="systemProfile"
+            alt=""
+            aria-hidden="true"
+          />
+          <div class="composer-conversation__reminder-details">
+            <header class="composer-conversation__reminder-heading">
+              <strong>System</strong>
+              <time :datetime="reminder.deletedAt || reminder.remindAt">
+                {{ timeLabel(reminder.deletedAt || reminder.remindAt) }}
+              </time>
+            </header>
+            <strong class="composer-conversation__reminder-label">Message</strong>
+            <p class="composer-conversation__reminder-message">
+              <template
+                v-for="(segment, index) in messageSegments(reminder.text || '')"
+                :key="`deleted-${reminder.id}-${index}`"
+              >
+                <a
+                  v-if="segment.href"
+                  :href="segment.href"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >{{ segment.text }}</a>
+                <span v-else>{{ segment.text }}</span>
+              </template>
+            </p>
+            <p class="composer-conversation__reminder-deleted-label">Reminder deleted</p>
+          </div>
+        </div>
+      </article>
     </div>
 
     <div v-if="replyTo" class="composer-conversation__replying">
@@ -2054,6 +2227,111 @@ onBeforeUnmount(() => {
 .composer-conversation__message-bubble a {
   color: #514bc7;
   text-decoration: underline;
+}
+
+.composer-conversation__reminder-notice {
+  margin: 18px 0 18px 42px;
+  padding: 0 0 8px;
+  color: #25263a;
+}
+
+.composer-conversation__reminder-time {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 0 0 4px -39px;
+  color: #696d81;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.composer-conversation__reminder-time svg {
+  width: 22px;
+  height: 22px;
+  flex: 0 0 22px;
+  color: #ff334b;
+}
+
+.composer-conversation__reminder-content {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  min-width: 0;
+}
+
+.composer-conversation__reminder-system-icon {
+  width: 30px;
+  height: 30px;
+  flex: 0 0 30px;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+.composer-conversation__reminder-details {
+  min-width: 0;
+  flex: 1;
+}
+
+.composer-conversation__reminder-heading {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin: 0 0 7px;
+  font-size: 14px;
+}
+
+.composer-conversation__reminder-heading time {
+  color: #696d81;
+  font-size: 12px;
+}
+
+.composer-conversation__reminder-label {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 14px;
+}
+
+.composer-conversation__reminder-message {
+  margin: 0;
+  overflow-wrap: anywhere;
+  font-size: 14px;
+  white-space: pre-wrap;
+}
+
+.composer-conversation__reminder-message a {
+  color: #514bc7;
+  text-decoration: underline;
+}
+
+.composer-conversation__reminder-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 20px;
+  font-size: 12px;
+}
+
+.composer-conversation__reminder-actions button {
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: #696d81;
+  font: inherit;
+  cursor: pointer;
+}
+
+.composer-conversation__reminder-actions button:first-child {
+  color: #ff334b;
+}
+
+.composer-conversation__reminder-actions button:hover {
+  text-decoration: underline;
+}
+
+.composer-conversation__reminder-deleted-label {
+  margin: 20px 0 0;
+  color: #ff334b;
+  font-size: 12px;
 }
 
 .composer-conversation__reply-quote {
