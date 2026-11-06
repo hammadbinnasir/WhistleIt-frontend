@@ -83,6 +83,7 @@ export const useRemindersStore = defineStore('reminders', {
       const reminder = this.deletedItems.find((item) => item.id === id && item.fired && item.firedAt)
       if (!reminder) return
       reminder.dismissed = true
+      reminder.hideFromChat = true
       this.persistDeleted()
     },
     snooze(id, duration = 5 * 60_000) {

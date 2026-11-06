@@ -270,6 +270,35 @@ describe('composer conversation', () => {
     expect(reminderStore.items[0].fired).toBe(false)
   })
 
+  it('removes a due reminder from chat when Delete Reminder is clicked', async () => {
+    const reminderStore = useRemindersStore()
+    const reminderTime = new Date(Date.now() - 60_000).toISOString()
+    reminderStore.deletedItems.push({
+      id: 'due-reminder-delete',
+      fired: true,
+      dismissed: false,
+      conversationId: 'general',
+      conversationName: 'General',
+      conversationType: 'channel',
+      messageId: 'message-delete',
+      text: 'Remove this reminder from chat',
+      remindAt: reminderTime,
+      firedAt: reminderTime,
+    })
+    const wrapper = mount(ComposerConversation)
+
+    expect(wrapper.text()).toContain('Remove this reminder from chat')
+    await buttonWithText(wrapper, 'Delete Reminder').trigger('click')
+
+    expect(wrapper.text()).not.toContain('Remove this reminder from chat')
+    expect(reminderStore.dueItems).toHaveLength(0)
+    expect(reminderStore.deletedItems[0]).toMatchObject({
+      id: 'due-reminder-delete',
+      dismissed: true,
+      hideFromChat: true,
+    })
+  })
+
   it('shows deleted reminders in their original conversation only', async () => {
     const reminderStore = useRemindersStore()
     reminderStore.add({

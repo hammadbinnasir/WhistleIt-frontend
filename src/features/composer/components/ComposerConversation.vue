@@ -101,7 +101,8 @@ const deletedReminders = computed(() =>
         String(reminder.conversationId ?? 'general') === channelId.value &&
         (reminder.conversationType === 'dm' ? 'dm' : 'channel') ===
           currentReminderConversationType.value &&
-        (reminder.dismissed || !reminder.fired),
+        (reminder.dismissed || !reminder.fired) &&
+        !reminder.hideFromChat,
     )
     .sort((a, b) => new Date(a.deletedAt || a.remindAt) - new Date(b.deletedAt || b.remindAt)),
 )
@@ -1780,7 +1781,7 @@ onBeforeUnmount(() => {
             </p>
             <footer class="composer-conversation__reminder-actions">
               <button type="button" @click="dismissDueReminder(reminder)">Delete Reminder</button>
-              <span aria-hidden="true">|</span>
+              <span class="composer-conversation__reminder-action-divider" aria-hidden="true"></span>
               <button
                 type="button"
                 title="Snooze for 5 minutes"
@@ -2230,8 +2231,9 @@ onBeforeUnmount(() => {
 }
 
 .composer-conversation__reminder-notice {
-  margin: 18px 0 18px 42px;
-  padding: 0 0 8px;
+  margin: 0 0 12px;
+  padding: 12px 12px 8px;
+  background: #f7f7fb;
   color: #25263a;
 }
 
@@ -2239,30 +2241,30 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: flex-start;
   gap: 8px;
-  margin: 0 0 4px -39px;
+  margin: 0 0 4px;
   color: #696d81;
-  font-size: 12px;
+  font-size: 16px;
   line-height: 1.5;
 }
 
 .composer-conversation__reminder-time svg {
-  width: 22px;
-  height: 22px;
-  flex: 0 0 22px;
+  width: 30px;
+  height: 30px;
+  flex: 0 0 30px;
   color: #ff334b;
 }
 
 .composer-conversation__reminder-content {
   display: flex;
   align-items: flex-start;
-  gap: 12px;
+  gap: 16px;
   min-width: 0;
 }
 
 .composer-conversation__reminder-system-icon {
-  width: 30px;
-  height: 30px;
-  flex: 0 0 30px;
+  width: 32px;
+  height: 32px;
+  flex: 0 0 32px;
   border-radius: 50%;
   object-fit: cover;
 }
@@ -2275,26 +2277,26 @@ onBeforeUnmount(() => {
 .composer-conversation__reminder-heading {
   display: flex;
   align-items: baseline;
-  gap: 10px;
-  margin: 0 0 7px;
-  font-size: 14px;
+  gap: 28px;
+  margin: 0 0 10px;
+  font-size: 18px;
 }
 
 .composer-conversation__reminder-heading time {
   color: #696d81;
-  font-size: 12px;
+  font-size: 16px;
 }
 
 .composer-conversation__reminder-label {
   display: block;
-  margin-bottom: 4px;
-  font-size: 14px;
+  margin-bottom: 6px;
+  font-size: 18px;
 }
 
 .composer-conversation__reminder-message {
   margin: 0;
   overflow-wrap: anywhere;
-  font-size: 14px;
+  font-size: 18px;
   white-space: pre-wrap;
 }
 
@@ -2306,9 +2308,9 @@ onBeforeUnmount(() => {
 .composer-conversation__reminder-actions {
   display: flex;
   align-items: center;
-  gap: 8px;
-  margin-top: 20px;
-  font-size: 12px;
+  gap: 10px;
+  margin-top: 44px;
+  font-size: 16px;
 }
 
 .composer-conversation__reminder-actions button {
@@ -2322,6 +2324,12 @@ onBeforeUnmount(() => {
 
 .composer-conversation__reminder-actions button:first-child {
   color: #ff334b;
+}
+
+.composer-conversation__reminder-action-divider {
+  width: 1px;
+  height: 20px;
+  background: #d3d5de;
 }
 
 .composer-conversation__reminder-actions button:hover {

@@ -243,6 +243,28 @@ describe('channel API routes', () => {
     expect(http).toHaveBeenLastCalledWith(channelPath, { method: 'DELETE' })
   })
 
+  it('sends the backend message permission payload', async () => {
+    await updateChannel('channel-3', { messagePermission: 'everyone' })
+
+    expect(http).toHaveBeenLastCalledWith(channelPath, {
+      method: 'PATCH',
+      body: { message_permission: 'everyone', allowed_sender_ids: [] },
+    })
+
+    await updateChannel('channel-3', {
+      messagePermission: 'selected_members',
+      allowedSenderIds: ['user-id-1', 'user-id-2'],
+    })
+
+    expect(http).toHaveBeenLastCalledWith(channelPath, {
+      method: 'PATCH',
+      body: {
+        message_permission: 'selected_members',
+        allowed_sender_ids: ['user-id-1', 'user-id-2'],
+      },
+    })
+  })
+
   it('uses the supplied join, leave, and membership routes', async () => {
     await joinChannel('channel-3')
     expect(http).toHaveBeenLastCalledWith(`${channelPath}/join`, { method: 'POST' })
