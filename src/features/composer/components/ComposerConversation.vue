@@ -1905,7 +1905,7 @@ onBeforeUnmount(() => {
                     <path d="M16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h3" />
                   </svg>
                   <span>Copy</span>
-                  <span class="composer-conversation__shortcuts"><kbd>⌘</kbd><kbd>G</kbd></span>
+                  <span class="composer-conversation__shortcuts"><kbd>Ctrl</kbd><kbd>G</kbd></span>
                 </button>
                 <button
                   v-if="message.mine && !message.scheduled && !message.deleteScheduledAt"
@@ -1925,7 +1925,7 @@ onBeforeUnmount(() => {
                     <path d="m16 5 3 3M4 20l4.5-1 10-10a2.1 2.1 0 0 0-3-3l-10 10L4 20Z" />
                   </svg>
                   <span>Edit</span>
-                  <span class="composer-conversation__shortcuts"><kbd>⌘</kbd><kbd>E</kbd></span>
+                  <span class="composer-conversation__shortcuts"><kbd>Ctrl</kbd><kbd>E</kbd></span>
                 </button>
                 <button
                   v-if="message.mine && !message.scheduled && !message.deleteScheduledAt"
@@ -1946,7 +1946,7 @@ onBeforeUnmount(() => {
                     <path d="M4 7h16M10 11v6M14 11v6M5 7l1 14h12l1-14M9 7V4h6v3" />
                   </svg>
                   <span>Delete</span>
-                  <span class="composer-conversation__shortcuts"><kbd>⌘</kbd><kbd>D</kbd></span>
+                  <span class="composer-conversation__shortcuts"><kbd>Ctrl</kbd><kbd>D</kbd></span>
                 </button>
                 <button type="button" @click="openForwardDialog(message)">
                   <svg
@@ -1962,17 +1962,17 @@ onBeforeUnmount(() => {
                     <path d="M21 12H9a4 4 0 0 0-4 4v3" />
                   </svg>
                   <span>Forward</span>
-                  <span class="composer-conversation__shortcuts"><kbd>⌘</kbd><kbd>H</kbd></span>
+                  <span class="composer-conversation__shortcuts"><kbd>Ctrl</kbd><kbd>H</kbd></span>
                 </button>
                 <button type="button" @click="beginReply(message)">
                   <span aria-hidden="true">↩</span>
                   <span>Reply</span>
-                  <span class="composer-conversation__shortcuts"><kbd>⌘</kbd><kbd>J</kbd></span>
+                  <span class="composer-conversation__shortcuts"><kbd>Ctrl</kbd><kbd>J</kbd></span>
                 </button>
                 <button type="button" @click="setReminder(message)">
                   <span aria-hidden="true">◷</span>
                   <span>Set Reminder</span>
-                  <span class="composer-conversation__shortcuts"><kbd>⌘</kbd><kbd>A</kbd></span>
+                  <span class="composer-conversation__shortcuts"><kbd>Ctrl</kbd><kbd>A</kbd></span>
                 </button>
               </div>
             </div>
