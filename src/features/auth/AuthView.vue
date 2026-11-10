@@ -2,7 +2,7 @@
 import { computed, ref, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { login, register, requestPasswordReset, resetPassword } from './api'
-import { saveAuthToken } from './session'
+import { consumeAuthRedirect, saveAuthToken } from './session'
 import authBackground from '@/assets/auth-background.svg'
 import LoadingSpinner from '@/components/LoadingSpinner.vue'
 
@@ -122,11 +122,7 @@ async function submitForm() {
       if (!saveAuthToken(response, rememberMe.value)) {
         throw new Error('Login response did not include an access token.')
       }
-      const redirect = route.query.redirect
-      const destination =
-        typeof redirect === 'string' && redirect.startsWith('/') && !redirect.startsWith('//')
-          ? redirect
-          : { name: 'home' }
+      const destination = consumeAuthRedirect() ?? { name: 'home' }
       await router.replace(destination)
     }
   } catch (error) {

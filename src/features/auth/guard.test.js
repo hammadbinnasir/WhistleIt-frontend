@@ -35,7 +35,8 @@ describe('auth route guard', () => {
     await router.push('/app')
 
     expect(router.currentRoute.value.name).toBe('login')
-    expect(router.currentRoute.value.query.redirect).toBe('/app')
+    expect(router.currentRoute.value.query).toEqual({})
+    expect(sessionStorage.getItem('authRedirect')).toBe('/app')
   })
 
   it('redirects unauthenticated users away from workspace routes', async () => {
@@ -45,7 +46,8 @@ describe('auth route guard', () => {
     await router.push(requestedPath)
 
     expect(router.currentRoute.value.name).toBe('login')
-    expect(router.currentRoute.value.query.redirect).toBe(requestedPath)
+    expect(router.currentRoute.value.query).toEqual({})
+    expect(sessionStorage.getItem('authRedirect')).toBe(requestedPath)
   })
 
   it('redirects authenticated users away from login and signup pages', async () => {

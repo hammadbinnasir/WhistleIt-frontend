@@ -5,6 +5,8 @@ import {
   getAuthUser,
   getAuthUserId,
   hasAuthSession,
+  consumeAuthRedirect,
+  saveAuthRedirect,
   saveAuthToken,
 } from './session'
 
@@ -78,5 +80,20 @@ describe('auth session', () => {
     expect(getAuthToken()).toBeNull()
     expect(getAuthUser()).toBeNull()
     expect(hasAuthSession()).toBe(false)
+  })
+
+  it('stores the protected destination in session storage without exposing it in a URL', () => {
+    saveAuthRedirect('/app/workspace-1/team-2/channel-3')
+
+    expect(sessionStorage.getItem('authRedirect')).toBe('/app/workspace-1/team-2/channel-3')
+    expect(consumeAuthRedirect()).toBe('/app/workspace-1/team-2/channel-3')
+    expect(sessionStorage.getItem('authRedirect')).toBeNull()
+  })
+
+  it('does not consume an external redirect destination', () => {
+    sessionStorage.setItem('authRedirect', '//example.com')
+
+    expect(consumeAuthRedirect()).toBeNull()
+    expect(sessionStorage.getItem('authRedirect')).toBeNull()
   })
 })
