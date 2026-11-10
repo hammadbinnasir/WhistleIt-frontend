@@ -206,7 +206,7 @@ describe('composer conversation', () => {
       createdById: 'creator-1',
       canManage: false,
       isOwner: false,
-      messagePermission: 'selected_members',
+      messagePermission: 'specific',
       allowedSenderIds: ['member-2'],
     })
 
@@ -227,10 +227,29 @@ describe('composer conversation', () => {
     channels.upsertChannel({
       ...channels.getById('selected-channel'),
       allowedSenderIds: ['member-2'],
-      createdById: 'member-1',
     })
     await nextTick()
+    expect(wrapper.findComponent(MessageComposer).exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('shows the composer to an explicitly allowed sender when membership data is stale', () => {
+    sessionStorage.setItem('authUser', JSON.stringify({ id: 'member-1' }))
+    const channels = useChannelsStore()
+    channels.channels.push({
+      id: 'selected-channel',
+      name: 'Selected',
+      isMember: false,
+      messagePermission: 'selected_members',
+      allowedSenderIds: [{ user_id: 'member-1' }],
+    })
+
+    const wrapper = mount(ComposerConversation, {
+      props: { conversationId: 'selected-channel', conversationType: 'channel' },
+    })
+
     expect(wrapper.findComponent(MessageComposer).exists()).toBe(true)
+    expect(wrapper.text()).not.toContain('Only certain people can post in this channel.')
     wrapper.unmount()
   })
 

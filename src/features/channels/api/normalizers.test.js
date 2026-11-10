@@ -61,6 +61,20 @@ describe('channel API normalizers', () => {
     })
   })
 
+  it('normalizes the backend specific permission mode to selected members', () => {
+    expect(
+      normalizeChannel({
+        id: 'channel-specific',
+        name: 'Specific',
+        message_permission: 'specific',
+        allowed_sender_ids: ['user-1'],
+      }),
+    ).toMatchObject({
+      messagePermission: 'selected_members',
+      allowedSenderIds: ['user-1'],
+    })
+  })
+
   it('does not assume a channel without membership data is joined', () => {
     expect(normalizeChannel({ id: 'channel-4', name: 'Design Reviews' }).isMember).toBe(false)
     expect(normalizeChannel({ id: 'channel-5', name: 'Random', is_member: 'false' }).isMember).toBe(
