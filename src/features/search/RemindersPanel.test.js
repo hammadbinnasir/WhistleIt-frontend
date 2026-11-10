@@ -1,19 +1,33 @@
 import { mount } from '@vue/test-utils'
-import { beforeEach, describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 import { useRemindersStore } from './reminders'
+import { useChannelsStore } from '@/features/channels'
 import RemindersPanel from './RemindersPanel.vue'
+
+const api = vi.hoisted(() => ({
+  createReminder: vi.fn(),
+  deleteReminder: vi.fn(),
+  listReminders: vi.fn(),
+}))
+vi.mock('./remindersApi', () => api)
 
 describe('reminders panel conversation scope', () => {
   beforeEach(() => {
     localStorage.clear()
     setActivePinia(createPinia())
+    api.createReminder.mockReset().mockImplementation(async (reminder) => ({
+      ...reminder,
+      id: `server-${Math.random()}`,
+      fired: false,
+    }))
+    api.deleteReminder.mockReset().mockResolvedValue()
   })
 
-  it('shows only reminders belonging to the open DM, including deleted reminders', () => {
+  it('shows only reminders belonging to the open DM, including deleted reminders', async () => {
     const store = useRemindersStore()
     const remindAt = new Date(Date.now() + 60_000).toISOString()
-    store.add({
+    await store.add({
       conversationId: 'same-id',
       conversationName: 'Hammad',
       conversationType: 'dm',
@@ -21,7 +35,7 @@ describe('reminders panel conversation scope', () => {
       text: 'DM reminder',
       remindAt,
     })
-    store.add({
+    await store.add({
       conversationId: 'same-id',
       conversationName: 'Channel',
       conversationType: 'channel',
@@ -31,7 +45,7 @@ describe('reminders panel conversation scope', () => {
     })
 
     const channelReminderId = store.items.find((item) => item.text === 'Channel reminder').id
-    store.remove(channelReminderId)
+    await store.remove(channelReminderId)
 
     const wrapper = mount(RemindersPanel, {
       props: { conversationId: 'same-id', conversationType: 'dm' },
@@ -41,10 +55,15 @@ describe('reminders panel conversation scope', () => {
     expect(wrapper.text()).not.toContain('Channel reminder')
   })
 
-  it('shows only reminders belonging to the open channel', () => {
+  it('shows only reminders belonging to the open channel', async () => {
+    useChannelsStore().upsertChannel({
+      id: 'channel-1',
+      name: 'Channel One',
+      isMember: true,
+    })
     const store = useRemindersStore()
     const remindAt = new Date(Date.now() + 60_000).toISOString()
-    store.add({
+    await store.add({
       conversationId: 'channel-1',
       conversationName: 'Channel One',
       conversationType: 'channel',
@@ -52,7 +71,7 @@ describe('reminders panel conversation scope', () => {
       text: 'Channel one reminder',
       remindAt,
     })
-    store.add({
+    await store.add({
       conversationId: 'dm-1',
       conversationName: 'Hammad',
       conversationType: 'dm',
@@ -66,6 +85,29 @@ describe('reminders panel conversation scope', () => {
     })
 
     expect(wrapper.text()).toContain('Channel one reminder')
+    expect(wrapper.text()).toContain('@Channel One')
     expect(wrapper.text()).not.toContain('DM reminder')
+  })
+
+  it('resolves channel IDs to channel names for reminders loaded from the API', () => {
+    useChannelsStore().upsertChannel({
+      id: 'channel-2',
+      name: 'Product Updates',
+      isMember: true,
+    })
+    const store = useRemindersStore()
+    store.items.push({
+      id: 'api-reminder',
+      conversationId: 'channel-2',
+      conversationName: 'channel-2',
+      conversationType: 'channel',
+      text: 'Release notes',
+      remindAt: new Date(Date.now() + 60_000).toISOString(),
+    })
+
+    const wrapper = mount(RemindersPanel)
+
+    expect(wrapper.text()).toContain('@Product Updates')
+    expect(wrapper.text()).not.toContain('@channel-2')
   })
 })

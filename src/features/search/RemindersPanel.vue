@@ -3,6 +3,8 @@
 import { computed, ref } from 'vue'
 import { useRemindersStore } from './reminders'
 import { useUiStore } from '@/stores/ui'
+import { useChannelsStore } from '@/features/channels'
+import { useDmStore } from '@/features/dms/stores/dms'
 
 const props = defineProps({
   conversationId: { type: [String, Number], default: '' },
@@ -10,9 +12,12 @@ const props = defineProps({
 })
 const store = useRemindersStore()
 const ui = useUiStore()
+const channels = useChannelsStore()
+const dms = useDmStore()
 const editingId = ref(null)
 const editText = ref('')
 const deletedExpanded = ref(true)
+const removingId = ref(null)
 const hasConversation = computed(() => props.conversationId !== '' && props.conversationId != null)
 const matchesConversation = (reminder) =>
   !hasConversation.value ||
@@ -22,6 +27,22 @@ const matchesConversation = (reminder) =>
 const visibleReminders = computed(() => store.sorted.filter(matchesConversation))
 const visibleDeletedReminders = computed(() => store.deletedItems.filter(matchesConversation))
 const hasDeleted = computed(() => visibleDeletedReminders.value.length > 0)
+const conversationName = (reminder) => {
+  const id = String(reminder.conversationId ?? '')
+  if (reminder.conversationType === 'dm') {
+    const conversation = dms.conversations.find((item) => String(item.id) === id)
+    if (conversation) return dms.titleOf(conversation)
+  } else {
+    const channel = channels.getById(id)
+    if (channel?.name) return channel.name
+  }
+  const savedName = reminder.conversationName
+  return savedName && savedName !== id && savedName !== 'Conversation'
+    ? savedName
+    : reminder.conversationType === 'dm'
+      ? 'Direct message'
+      : 'Channel'
+}
 
 const fmt = (iso) => {
   const d = new Date(iso)
@@ -41,6 +62,16 @@ const startEdit = (r) => {
 const saveEdit = (r) => {
   store.update(r.id, { text: editText.value })
   editingId.value = null
+}
+async function removeReminder(id) {
+  removingId.value = id
+  try {
+    await store.remove(id)
+  } catch (error) {
+    ui.toast('Unable to delete reminder', error?.message || 'Please try again.', 'error')
+  } finally {
+    removingId.value = null
+  }
 }
 </script>
 
@@ -108,7 +139,7 @@ const saveEdit = (r) => {
         </button>
         <p class="text-sm font-bold text-slate-900">
           In {{ r.conversationType === 'dm' ? 'conversation with' : 'channel' }}
-          <span class="font-normal text-blue-500">@{{ r.conversationName }}</span>
+          <span class="font-normal text-blue-500">@{{ conversationName(r) }}</span>
         </p>
         <p v-if="r.title" class="mt-2 text-sm font-semibold text-slate-900">{{ r.title }}</p>
         <p class="mt-1 text-sm font-bold text-slate-900">Message:</p>
@@ -129,8 +160,12 @@ const saveEdit = (r) => {
         <p class="mt-3 text-xs text-slate-500">
           {{ fmt(r.remindAt) }}<span v-if="r.fired" class="ml-2 text-amber-600">Due</span>
         </p>
-        <button class="mt-2 text-xs text-red-600" @click="store.remove(r.id)">
-          Delete Reminder
+        <button
+          class="mt-2 cursor-pointer text-sm text-red-600 disabled:cursor-not-allowed disabled:opacity-50"
+          :disabled="removingId === r.id"
+          @click="removeReminder(r.id)"
+        >
+          {{ removingId === r.id ? 'Deleting…' : 'Delete Reminder' }}
         </button>
       </div>
 
@@ -163,7 +198,7 @@ const saveEdit = (r) => {
           >
             <p class="text-sm font-bold text-slate-900">
               In {{ r.conversationType === 'dm' ? 'conversation with' : 'channel' }}
-              <span class="font-normal text-blue-500">@{{ r.conversationName }}</span>
+              <span class="font-normal text-blue-500">@{{ conversationName(r) }}</span>
             </p>
             <p class="mt-2 text-sm font-bold text-slate-900">Message:</p>
             <p class="mt-1 break-words text-sm text-slate-800">{{ r.text }}</p>

@@ -278,6 +278,9 @@ function messageProfileMember(member) {
 }
 
 onMounted(async () => {
+  void remindersStore.fetch().catch((error) => {
+    ui.toast('Unable to load reminders', error?.message || 'Please try again.', 'error')
+  })
   remindersStore.startWatcher()
   void activity.init()
   await teamsStore.fetchTeams()

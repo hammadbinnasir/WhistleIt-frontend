@@ -5,7 +5,7 @@ import 'vue3-emoji-picker/css'
 import { useChannelsStore } from '@/features/channels'
 import { pinMessage, unpinMessage } from '@/features/channels/api/channels.api'
 import { useDmStore } from '@/features/dms/stores/dms'
-import { getAuthUser } from '@/features/auth/session'
+import { getAuthUser, getAuthUserId } from '@/features/auth/session'
 import { useMessagesStore } from '@/features/messages/messages'
 import {
   createLinkPreview,
@@ -16,6 +16,7 @@ import {
   timeLabel,
 } from '@/features/messages/message-utils'
 import { useUiStore } from '@/stores/ui'
+import { useTeamsStore } from '@/stores/teams'
 import { useUserStore } from '@/features/account/composables/useUserStore'
 import { useRemindersStore } from '@/features/search/reminders'
 import { addMockMessage, removeMockMessage, updateMockMessage } from '@/features/search/search'
@@ -36,6 +37,7 @@ const props = defineProps({
 
 const dms = useDmStore()
 const channelsStore = useChannelsStore()
+const teamsStore = useTeamsStore()
 const ui = useUiStore()
 const userStore = useUserStore()
 const messageStore = useMessagesStore()
@@ -50,6 +52,7 @@ const scheduleDelete = ref(false)
 const scheduledDeleteAt = ref('')
 const openReactionId = ref(null)
 const reminderTarget = ref(null)
+const snoozeTarget = ref(null)
 const forwardTarget = ref(null)
 const forwardDestinationId = ref('')
 const dmVisibleCount = ref(20)
@@ -76,8 +79,37 @@ const conversation = computed(() => {
   return dms.conversations.find((item) => String(item.id) === String(props.conversationId)) || null
 })
 const conversationLabel = computed(() =>
-  conversation.value ? dms.titleOf(conversation.value) : channelId.value.replaceAll('-', ' '),
+  conversation.value
+    ? dms.titleOf(conversation.value)
+    : (channelsStore.getById(channelId.value)?.name || channelId.value.replaceAll('-', ' ')),
 )
+const canSendMessages = computed(() => {
+  if (props.conversationType === 'dm') return true
+
+  const channel = channelsStore.getById(channelId.value)
+  if (!channel) return !channelsStore.loaded
+
+  const userId = getAuthUserId() ?? dms.meId
+  const isChannelAdmin =
+    teamsStore.isAdmin ||
+    channel.canManage ||
+    channel.isOwner ||
+    (userId != null &&
+      String(channel.createdById ?? channel.createdBy) === String(userId))
+  if (channel.isMember === false) return false
+
+  if (channel.messagePermission === 'creator_only' || channel.messagePermission === 'admins') {
+    return isChannelAdmin
+  }
+  if (channel.messagePermission === 'selected_members') {
+    return (
+      isChannelAdmin ||
+      (userId != null &&
+        (channel.allowedSenderIds || []).some((id) => String(id) === String(userId)))
+    )
+  }
+  return channel.isMember !== false
+})
 
 const messagesLoading = computed(() => Boolean(conversation.value) && dms.messagesLoading)
 const messagesError = computed(() => (conversation.value ? dms.messagesError : ''))
@@ -226,13 +258,14 @@ const renderedMessages = computed(() => {
     })
 })
 const reminderMessage = computed(() => {
-  if (!reminderTarget.value) return null
+  const target = reminderTarget.value || snoozeTarget.value
+  if (!target) return null
   return {
     conversationId: channelId.value,
     conversationName: conversationLabel.value,
     conversationType: props.conversationType,
-    messageId: String(reminderTarget.value.id),
-    text: reminderTarget.value.text ?? reminderTarget.value.content ?? '',
+    messageId: String(target.messageId ?? target.id),
+    text: target.text ?? target.content ?? '',
   }
 })
 
@@ -251,7 +284,22 @@ function dismissDueReminder(reminder) {
 }
 
 function snoozeDueReminder(reminder) {
-  reminderStore.snooze(reminder.id)
+  snoozeTarget.value = reminder
+}
+
+function reminderModalClosed() {
+  reminderTarget.value = null
+  snoozeTarget.value = null
+}
+
+function reminderSaved() {
+  ui.toast(
+    snoozeTarget.value ? 'Reminder snoozed' : 'Reminder set',
+    snoozeTarget.value
+      ? 'The reminder has been scheduled again.'
+      : 'You will be reminded about this message.',
+    'success',
+  )
 }
 
 watch(
@@ -1037,10 +1085,6 @@ function selectReaction(message, emoji) {
 function closeMessageActions() {
   openMenuId.value = null
   openReactionId.value = null
-}
-
-function reminderSaved() {
-  ui.toast('Reminder set', 'You will be reminded about this message.', 'success')
 }
 
 function closeActionsOnOutsideClick(event) {
@@ -1855,12 +1899,26 @@ onBeforeUnmount(() => {
       </div>
       <button type="button" aria-label="Cancel reply" @click="replyTo = null">×</button>
     </div>
-    <MessageComposer @send="addMessage" @schedule="addScheduledMessage" @gif="addGif" />
+    <MessageComposer
+      v-if="canSendMessages"
+      @send="addMessage"
+      @schedule="addScheduledMessage"
+      @gif="addGif"
+    />
+    <div
+      v-else-if="conversationType !== 'dm'"
+      class="mx-4 mb-3 rounded-sm bg-[#f0f0f7] px-4 py-3 text-sm text-slate-500"
+      role="status"
+    >
+      Only certain people can post in this channel.
+    </div>
 
     <SetReminderModal
       v-if="reminderMessage"
       :message="reminderMessage"
-      @close="reminderTarget = null"
+      :mode="snoozeTarget ? 'snooze' : 'create'"
+      :reminder="snoozeTarget"
+      @close="reminderModalClosed"
       @saved="reminderSaved"
     />
 

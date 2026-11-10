@@ -44,6 +44,18 @@ const workflowRecurrence = ref('weekly')
 const workflowStartDate = ref('')
 const workflowEndDate = ref('')
 const activeThread = ref(null)
+const deletingReminderId = ref(null)
+
+async function deleteReminder(id) {
+  deletingReminderId.value = id
+  try {
+    await reminders.remove(id)
+  } catch (error) {
+    ui.toast('Unable to delete reminder', error?.message || 'Please try again.', 'error')
+  } finally {
+    deletingReminderId.value = null
+  }
+}
 
 onMounted(() => {
   void activity.init()
@@ -722,10 +734,11 @@ function saveWorkflow() {
             </button>
             <button
               type="button"
-              class="rounded border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-50"
-              @click="reminders.remove(reminder.id)"
+              class="rounded border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-50 disabled:opacity-50"
+              :disabled="deletingReminderId === reminder.id"
+              @click="deleteReminder(reminder.id)"
             >
-              Delete
+              {{ deletingReminderId === reminder.id ? 'Deleting...' : 'Delete' }}
             </button>
           </article>
         </div>

@@ -10,6 +10,13 @@ import { useChannelsStore } from '@/features/channels/store/channels.store'
 import { setupDmsTestState } from '@/features/dms/test-utils'
 import ActivityFeed from './ActivityFeed.vue'
 
+const reminderApi = vi.hoisted(() => ({
+  createReminder: vi.fn(),
+  deleteReminder: vi.fn(),
+  listReminders: vi.fn(),
+}))
+vi.mock('@/features/search/remindersApi', () => reminderApi)
+
 vi.mock('vue3-emoji-picker', async () => {
   const { defineComponent, h } = await import('vue')
 
@@ -52,6 +59,13 @@ describe('ActivityFeed', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     setupDmsTestState()
+    reminderApi.createReminder.mockReset().mockImplementation(async (reminder) => ({
+      ...reminder,
+      id: 'server-reminder',
+      fired: false,
+    }))
+    reminderApi.deleteReminder.mockReset().mockResolvedValue()
+    reminderApi.listReminders.mockReset().mockResolvedValue([])
   })
 
   it('keeps activity tab labels on one line', () => {
@@ -226,7 +240,7 @@ describe('ActivityFeed', () => {
 
   it('shows upcoming reminders and lets the user delete them', async () => {
     const reminders = useRemindersStore()
-    reminders.add({
+    await reminders.add({
       conversationId: 'c1',
       conversationName: 'Muniba Naseer',
       conversationType: 'dm',
