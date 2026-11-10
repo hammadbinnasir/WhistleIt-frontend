@@ -100,17 +100,27 @@ const canSendMessages = computed(() => {
     channel.isOwner ||
     (userId != null &&
       String(channel.createdById ?? channel.createdBy) === String(userId))
+  const isAllowedSender =
+    userId != null &&
+    (channel.allowedSenderIds || []).some((sender) => {
+      const senderId =
+        sender && typeof sender === 'object'
+          ? (sender.id ?? sender.user_id ?? sender.userId ?? sender.member_id)
+          : sender
+      return senderId != null && String(senderId) === String(userId)
+    })
+  const usesSelectedMembersPermission = ['selected_members', 'specific'].includes(
+    channel.messagePermission,
+  )
+
+  if (usesSelectedMembersPermission && isAllowedSender) return true
   if (channel.isMember === false) return false
 
   if (channel.messagePermission === 'creator_only' || channel.messagePermission === 'admins') {
     return isChannelAdmin
   }
-  if (channel.messagePermission === 'selected_members') {
-    return (
-      isChannelAdmin ||
-      (userId != null &&
-        (channel.allowedSenderIds || []).some((id) => String(id) === String(userId)))
-    )
+  if (usesSelectedMembersPermission) {
+    return isChannelAdmin || isAllowedSender
   }
   return channel.isMember !== false
 })

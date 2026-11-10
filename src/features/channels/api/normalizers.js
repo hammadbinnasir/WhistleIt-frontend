@@ -35,6 +35,7 @@ export function normalizeChannel(raw = {}) {
   const rawPrivate = record.isPrivate ?? record.is_private
   const rawMember = record.isMember ?? record.is_member
   const type = String(record.type ?? record.channel_type ?? '').toLowerCase()
+  const rawMessagePermission = record.messagePermission ?? record.message_permission ?? 'everyone'
   const createdByRaw =
     record.createdBy ??
     record.created_by ??
@@ -84,7 +85,8 @@ export function normalizeChannel(raw = {}) {
         false,
     ),
     canManage: Boolean(record.canManage ?? record.can_manage ?? record.isOwner ?? record.is_owner),
-    messagePermission: record.messagePermission ?? record.message_permission ?? 'everyone',
+    messagePermission:
+      rawMessagePermission === 'specific' ? 'selected_members' : rawMessagePermission,
     allowedSenderIds: Array.isArray(record.allowedSenderIds ?? record.allowed_sender_ids)
       ? (record.allowedSenderIds ?? record.allowed_sender_ids).map((id) =>
           String(typeof id === 'object' ? id.id ?? id.user_id : id),

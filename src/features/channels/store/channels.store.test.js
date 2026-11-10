@@ -9,6 +9,7 @@ vi.mock('../api', () => ({
     browseChannels: vi.fn(),
     joinChannel: vi.fn(),
     listMembers: vi.fn(),
+    createChannel: vi.fn(),
   },
 }))
 
@@ -19,6 +20,7 @@ describe('channels store membership visibility', () => {
     api.browseChannels.mockReset()
     api.joinChannel.mockReset()
     api.listMembers.mockReset()
+    api.createChannel.mockReset()
   })
 
   it('keeps only joined channels in the main channel list', async () => {
@@ -70,6 +72,34 @@ describe('channels store membership visibility', () => {
       memberCount: 5,
     })
     expect(store.channels[0]).toMatchObject({ id: 'available', name: 'Available' })
+  })
+
+  it('lets every channel creator manage message permissions from channel settings', async () => {
+    api.createChannel.mockResolvedValue({
+      id: 'new-channel',
+      name: 'New Channel',
+      isMember: true,
+    })
+
+    const store = useChannelsStore()
+    const channel = await store.createChannel({
+      name: 'New Channel',
+      description: '',
+      isPrivate: false,
+    })
+
+    expect(channel).toMatchObject({
+      id: 'new-channel',
+      canManage: true,
+      messagePermission: 'everyone',
+      allowedSenderIds: [],
+    })
+    expect(store.getById('new-channel')).toMatchObject({
+      canManage: true,
+      messagePermission: 'everyone',
+      allowedSenderIds: [],
+    })
+    expect(localStorage.getItem('whistleit-managed-channel-ids')).toContain('new-channel')
   })
 
   it('reuses loaded members on repeated fetches', async () => {
