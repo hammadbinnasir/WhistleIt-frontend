@@ -628,7 +628,7 @@ describe('composer conversation', () => {
       'voice-note-1',
       'Listen to this',
     )
-    await vi.waitFor(() => expect(wrapper.find('audio[controls]').exists()).toBe(true))
+    await vi.waitFor(() => expect(wrapper.find('.voice-note-player__audio').exists()).toBe(true))
     expect(useMessagesStore().messagesFor('voice-channel').at(-1)).toMatchObject({
       content: 'Listen to this',
       voiceNoteId: 'voice-note-1',
@@ -645,7 +645,7 @@ describe('composer conversation', () => {
             id: 'incoming-channel-voice',
             sender_id: 'member-2',
             sender: { name: 'Avery' },
-            body: 'Voice message',
+            body: '<p>Voice message</p>',
             voice_note_id: 'voice-note-incoming',
             created_at: new Date().toISOString(),
           },
@@ -656,7 +656,7 @@ describe('composer conversation', () => {
       props: { conversationId: 'received-channel', conversationType: 'channel' },
     })
 
-    await vi.waitFor(() => expect(wrapper.find('audio[controls]').exists()).toBe(true))
+    await vi.waitFor(() => expect(wrapper.find('.voice-note-player__audio').exists()).toBe(true))
     expect(wrapper.find('.composer-conversation__message-bubble p').exists()).toBe(false)
     expect(getChannelMessages).toHaveBeenCalledWith('company-1', 'team-1', 'received-channel', {
       page: 1,
@@ -673,7 +673,7 @@ describe('composer conversation', () => {
           {
             id: 'incoming-nested-voice',
             sender_id: 'member-2',
-            body: 'Voice message',
+            body: '<p>Voice message</p>',
             sender: { voice_note: { id: 'voice-note-nested' } },
             created_at: new Date().toISOString(),
           },
@@ -684,7 +684,7 @@ describe('composer conversation', () => {
       props: { conversationId: 'nested-voice-channel', conversationType: 'channel' },
     })
 
-    await vi.waitFor(() => expect(wrapper.find('audio[controls]').exists()).toBe(true))
+    await vi.waitFor(() => expect(wrapper.find('.voice-note-player__audio').exists()).toBe(true))
     expect(useMessagesStore().messagesFor('nested-voice-channel')[0]).toMatchObject({
       id: 'incoming-nested-voice',
       voiceNoteId: 'voice-note-nested',
@@ -1336,7 +1336,7 @@ describe('composer conversation', () => {
         is_important: false,
       })
     })
-    await vi.waitFor(() => expect(wrapper.findAll('audio[controls]')).toHaveLength(2))
+    await vi.waitFor(() => expect(wrapper.findAll('.voice-note-player__audio')).toHaveLength(2))
     expect(wrapper.findAll('.composer-conversation__message-bubble p')).toHaveLength(0)
     expect(conversation.messages).toEqual(
       expect.arrayContaining([expect.objectContaining({ voiceNoteId: 'voice-note-sent' })]),

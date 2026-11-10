@@ -1,6 +1,7 @@
 <script setup>
 import { ref, computed, nextTick, onBeforeUnmount, onMounted } from 'vue'
 import MediaToolbar from '../../media/MediaToolbar.vue'
+import VoiceNotePlayer from '../../media/VoiceNotePlayer.vue'
 import { normalizeMessageText } from '../messageText'
 import {
   discardVoiceNote,
@@ -777,7 +778,7 @@ async function saveRecording(blob, duration) {
       channelId: props.channelId,
       duration,
     })
-    voiceNote.value = { id: saved.id, name: saved.file_name ?? saved.filename ?? 'Voice message' }
+    voiceNote.value = { id: saved.id }
     try {
       const details = await getVoiceNote(saved.id)
       const file = await getVoiceNoteFile(saved.id, details)
@@ -1181,29 +1182,24 @@ function handleKeydown(event) {
     <div class="message-composer__input-row">
       <div class="message-composer__editor-area">
         <span v-if="important" class="message-composer__important">IMPORTANT!</span>
-        <div
-          v-if="recording || voiceNoteUploading"
-          class="message-composer__voice-status"
-          role="status"
-        >
-          {{
-            recording
-              ? 'Recording voice message… Select the microphone again to stop.'
-              : 'Uploading voice recording…'
-          }}
-        </div>
         <div v-if="voiceNote || voiceNoteUploading" class="message-composer__voice-draft">
-          <strong>{{ voiceNote?.name ?? 'Voice message' }}</strong>
-          <audio v-if="voiceNotePreviewUrl" :src="voiceNotePreviewUrl" controls preload="metadata">
-            Your browser does not support audio playback.
-          </audio>
+          <VoiceNotePlayer
+            v-if="voiceNotePreviewUrl"
+            :voice-note-id="voiceNote?.id"
+            :preview-url="voiceNotePreviewUrl"
+          />
           <button
             v-if="voiceNote"
+            class="message-composer__voice-discard"
             type="button"
+            aria-label="Discard recording"
+            title="Discard recording"
             :disabled="voiceNoteUploading || voiceNoteSending"
             @click="removeVoiceNote"
           >
-            Discard recording
+            <svg viewBox="0 0 20 20" aria-hidden="true">
+              <path d="m5 5 10 10M15 5 5 15" />
+            </svg>
           </button>
         </div>
         <p v-if="voiceNoteError" class="message-composer__voice-error" role="alert">
@@ -1965,32 +1961,52 @@ function handleKeydown(event) {
   padding: 4px 0 4px 4px;
 }
 
-.message-composer__voice-status,
 .message-composer__voice-draft {
+  position: relative;
   display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 8px;
-  padding: 6px 8px;
+  width: min(320px, 100%);
+  align-items: flex-start;
+  padding: 6px 8px 8px;
   color: #55596d;
   font-size: 13px;
 }
 
-.message-composer__voice-draft audio {
-  width: min(300px, 100%);
-  height: 44px;
+.message-composer__voice-draft::after {
+  position: absolute;
+  right: 8px;
+  bottom: 3px;
+  left: 8px;
+  height: 3px;
+  background: #5962ff;
+  content: '';
 }
 
-.message-composer__voice-draft button {
-  padding: 4px 8px;
-  border: 1px solid #d5d7e0;
-  border-radius: 4px;
-  background: #fff;
-  color: #34364b;
+.message-composer__voice-discard {
+  position: absolute;
+  z-index: 1;
+  top: 0;
+  right: 0;
+  display: grid;
+  width: 20px;
+  height: 20px;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #6b6b76;
   cursor: pointer;
 }
 
-.message-composer__voice-draft button:disabled {
+.message-composer__voice-discard svg {
+  width: 15px;
+  height: 15px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-width: 1.5;
+}
+
+.message-composer__voice-discard:disabled {
   cursor: not-allowed;
   opacity: 0.6;
 }
