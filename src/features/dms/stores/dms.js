@@ -631,6 +631,7 @@ export const useDmStore = defineStore('dms', () => {
       // Backend ko message ka text "body" field mein chahiye
       const saved = await dmApi.sendMessage(companyId.value, conversationId, {
         body: message.text,
+        is_important: Boolean(message.important),
       })
 
       // Server batata hai ke ye message kisne bheja: wahi mera asli user id hai
@@ -721,6 +722,7 @@ export const useDmStore = defineStore('dms', () => {
 
     conversation.messages.push(message)
     persist(conversation)
+    if (isApiSendable(message)) void deliver(conversationId, message)
     if (!payload.scheduledAt) {
       useActivityStore().recordMessageMentions({
         text,
