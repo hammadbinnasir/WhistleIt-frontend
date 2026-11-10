@@ -223,13 +223,21 @@ export const useChannelsStore = defineStore('channels', () => {
 
   async function updateChannel(id, payload) {
     const channel = await api.updateChannel(id, payload)
+    const current = getById(id)
     const editable = {
-      name: channel.name,
-      description: channel.description,
-      messagePermission: channel.messagePermission,
+      ...(payload.name !== undefined ? { name: channel.name } : {}),
+      ...(payload.description !== undefined ? { description: channel.description } : {}),
+      ...(payload.messagePermission !== undefined
+        ? { messagePermission: channel.messagePermission }
+        : {}),
+      ...(payload.allowedSenderIds !== undefined
+        ? { allowedSenderIds: channel.allowedSenderIds }
+        : {}),
     }
-    patch(id, editable)
-    patchBrowse(id, editable)
+    if (current) {
+      patch(id, editable)
+      patchBrowse(id, editable)
+    }
     return getById(id) || channel
   }
 

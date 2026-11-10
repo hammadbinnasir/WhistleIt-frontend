@@ -138,6 +138,8 @@ const selectedChannel = computed(() => {
     muted: ch.isMuted || false,
     favourite: ch.isFavorite || false,
     canManage: Boolean(ch.canManage),
+    messagePermission: ch.messagePermission || 'everyone',
+    allowedSenderIds: ch.allowedSenderIds || [],
   }
 })
 
@@ -203,13 +205,12 @@ async function archiveSelectedChannel() {
   }
 }
 
-async function saveChannelMessagePermission(permission) {
+async function saveChannelMessagePermission({ messagePermission, allowedSenderIds }) {
   if (!selectedChannel.value) return
   try {
     await channelsStore.updateChannel(selectedChannel.value.id, {
-      name: selectedChannel.value.name,
-      description: selectedChannel.value.description,
-      messagePermission: permission,
+      messagePermission,
+      allowedSenderIds,
     })
   } catch (error) {
     ui.toast('Unable to save permissions', error?.message || 'Please try again.', 'error')
@@ -277,6 +278,9 @@ function messageProfileMember(member) {
 }
 
 onMounted(async () => {
+  void remindersStore.fetch().catch((error) => {
+    ui.toast('Unable to load reminders', error?.message || 'Please try again.', 'error')
+  })
   remindersStore.startWatcher()
   void activity.init()
   await teamsStore.fetchTeams()

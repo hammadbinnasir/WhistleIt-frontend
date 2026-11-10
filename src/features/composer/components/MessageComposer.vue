@@ -2,8 +2,23 @@
 import { ref, computed, nextTick, onBeforeUnmount, onMounted } from 'vue'
 import MediaToolbar from '../../media/MediaToolbar.vue'
 import { useUserStore } from '@/features/account/composables/useUserStore'
+import { normalizeMessageText } from '../messageText'
 
-const emit = defineEmits(['send', 'schedule', 'attachment', 'video', 'microphone', 'gif'])
+const props = defineProps({
+  channelId: { type: [String, Number], default: null },
+  createPoll: { type: Function, default: null },
+  pollLoading: { type: Boolean, default: false },
+  pollError: { type: String, default: '' },
+})
+const emit = defineEmits([
+  'send',
+  'schedule',
+  'attachment',
+  'video',
+  'microphone',
+  'gif',
+  'clear-poll-error',
+])
 const userStore = useUserStore()
 
 const editor = ref(null)
@@ -295,7 +310,9 @@ function syncContent() {
     saveSelection(true)
     return
   }
-  content.value = [...editor.value.childNodes].map(nodeToMarkdown).join('').replace(/\n+$/, '')
+  content.value = normalizeMessageText(
+    [...editor.value.childNodes].map(nodeToMarkdown).join('').replace(/\n+$/, ''),
+  )
   saveSelection(true)
 }
 
@@ -716,6 +733,7 @@ function scheduleAt(value) {
 }
 
 function openPoll() {
+  emit('clear-poll-error')
   pollTitle.value = ''
   pollDescription.value = ''
   pollQuestions.value = [createPollQuestion()]
@@ -833,7 +851,7 @@ function removePollChoice(question, index) {
   if (question.options.length > 2) question.options.splice(index, 1)
 }
 
-function createPollDraft() {
+async function createPollDraft() {
   if (!pollCanBeCreated.value) {
     pollValidationErrors.value = {
       title: !pollTitle.value.trim(),
@@ -847,7 +865,7 @@ function createPollDraft() {
     pollStep.value = 0
     return
   }
-  pollDraft.value = {
+  const draft = {
     id: `poll-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
     title: pollTitle.value.trim(),
     description: pollDescription.value.trim(),
@@ -862,6 +880,8 @@ function createPollDraft() {
     audience: pollAudience.value,
     resultsVisibility: pollResultsVisibility.value,
     startNow: pollStartNow.value,
+    scheduleStartEnabled: pollScheduleStart.value,
+    scheduleCloseEnabled: pollScheduleClose.value,
     scheduleStart: pollScheduleStart.value
       ? `${pollStartDate.value}T${pollStartTime.value}`
       : '',
@@ -869,6 +889,21 @@ function createPollDraft() {
       ? `${pollCloseDate.value}T${pollCloseTime.value}`
       : '',
   }
+  if (props.createPoll && props.channelId != null) {
+    const createdPoll = await props.createPoll(props.channelId, draft)
+    if (!createdPoll) return
+    pollOpen.value = false
+    content.value = ''
+    if (editor.value) editor.value.innerHTML = ''
+    activeFormats.value = []
+    activeList.value = ''
+    codeMode.value = false
+    important.value = false
+    savedSelectionRange = null
+    attachments.value = []
+    return
+  }
+  pollDraft.value = draft
   closePoll()
   sendMessage()
 }
@@ -1240,6 +1275,7 @@ function handleKeydown(event) {
             class="message-composer__poll-close"
             type="button"
             aria-label="Close poll dialog"
+            :disabled="pollLoading"
             @click="closePoll"
           >
             &times;
@@ -1249,6 +1285,7 @@ function handleKeydown(event) {
           <button
             v-for="(step, index) in pollStepNames"
             :key="step"
+            :disabled="pollLoading"
             type="button"
             :class="{ 'is-active': pollStep === index, 'is-complete': pollStep > index }"
             :aria-current="pollStep === index ? 'step' : undefined"
@@ -1272,7 +1309,7 @@ function handleKeydown(event) {
           </button>
         </nav>
 
-        <div class="message-composer__poll-content">
+        <div class="message-composer__poll-content" :inert="pollLoading">
           <template v-if="pollStep === 0">
             <label class="message-composer__poll-field-label" for="poll-title-input">Title</label>
             <input
@@ -1564,7 +1601,7 @@ function handleKeydown(event) {
           <button
             type="button"
             class="message-composer__poll-previous"
-            :disabled="pollStep === 0"
+            :disabled="pollStep === 0 || pollLoading"
             @click="goToPollStep(Math.max(0, pollStep - 1))"
           >
             Previous
@@ -1573,6 +1610,7 @@ function handleKeydown(event) {
             v-if="pollStep < pollStepNames.length - 1"
             type="button"
             class="message-composer__poll-next"
+            :disabled="pollLoading"
             @click="goToPollStep(pollStep + 1)"
           >
             Next
@@ -1581,12 +1619,15 @@ function handleKeydown(event) {
             v-else
             type="button"
             class="message-composer__poll-next"
-            :disabled="!pollCanBeCreated"
+            :disabled="!pollCanBeCreated || pollLoading"
             @click.prevent="createPollDraft"
           >
-            Create Poll
+            {{ pollLoading ? 'Creating Poll...' : 'Create Poll' }}
           </button>
         </footer>
+        <p v-if="pollError" class="message-composer__poll-request-error" role="alert">
+          {{ pollError }}
+        </p>
       </section>
     </div>
   </Teleport>

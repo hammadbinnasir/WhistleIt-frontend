@@ -4,6 +4,8 @@ import { useRemindersStore } from './reminders'
 
 const props = defineProps({
   message: { type: Object, required: true },
+  mode: { type: String, default: 'create' },
+  reminder: { type: Object, default: null },
 })
 const emit = defineEmits(['close', 'saved'])
 const store = useRemindersStore()
@@ -21,33 +23,59 @@ function localTimeValue(date) {
   return `${hour}:${minute}`
 }
 
-const initialDateTime = new Date(Date.now() + 20 * 60_000)
+const initialDateTime = new Date(Date.now() + (props.mode === 'snooze' ? 5 : 20) * 60_000)
 const date = ref(localDateValue(initialDateTime))
 const time = ref(localTimeValue(initialDateTime))
-const title = ref('')
+const title = ref(props.reminder?.title || '')
+const saving = ref(false)
+const saveError = ref('')
+const now = ref(Date.now())
 const today = localDateValue(new Date())
+let clockTimer
 const remindAt = computed(() =>
   date.value && time.value ? new Date(`${date.value}T${time.value}`).getTime() : NaN,
 )
-const valid = computed(() => Number.isFinite(remindAt.value) && remindAt.value > Date.now())
+const valid = computed(() => Number.isFinite(remindAt.value) && remindAt.value > now.value)
 
-function save() {
-  if (!valid.value) return
-  store.add({
-    ...props.message,
-    title: title.value.trim(),
-    remindAt: new Date(remindAt.value).toISOString(),
-  })
-  emit('saved')
-  emit('close')
+async function save() {
+  now.value = Date.now()
+  if (!valid.value || saving.value) return
+  saving.value = true
+  saveError.value = ''
+  try {
+    const reminderAt = new Date(remindAt.value).toISOString()
+    if (props.mode === 'snooze' && props.reminder) {
+      await store.snooze(props.reminder.id, { remindAt: reminderAt, title: title.value.trim() })
+    } else {
+      await store.add({
+        ...props.message,
+        title: title.value.trim(),
+        remindAt: reminderAt,
+      })
+    }
+    emit('saved')
+    emit('close')
+  } catch (error) {
+    saveError.value = error?.message || 'Unable to save reminder. Please try again.'
+  } finally {
+    saving.value = false
+  }
 }
 
 function closeOnEscape(event) {
   if (event.key === 'Escape') emit('close')
 }
 
-onMounted(() => document.addEventListener('keydown', closeOnEscape))
-onBeforeUnmount(() => document.removeEventListener('keydown', closeOnEscape))
+onMounted(() => {
+  document.addEventListener('keydown', closeOnEscape)
+  clockTimer = setInterval(() => {
+    now.value = Date.now()
+  }, 1000)
+})
+onBeforeUnmount(() => {
+  document.removeEventListener('keydown', closeOnEscape)
+  clearInterval(clockTimer)
+})
 </script>
 
 <template>
@@ -67,7 +95,7 @@ onBeforeUnmount(() => document.removeEventListener('keydown', closeOnEscape))
       >
         ×
       </button>
-      <h2 id="reminder-title">Reminder Message</h2>
+      <h2 id="reminder-title">{{ mode === 'snooze' ? 'Snooze Reminder' : 'Reminder Message' }}</h2>
 
       <div class="reminder-fields">
         <label>
@@ -82,10 +110,13 @@ onBeforeUnmount(() => document.removeEventListener('keydown', closeOnEscape))
 
       <textarea v-model="title" aria-label="Reminder title" placeholder="Title" rows="6"></textarea>
       <p v-if="!valid" class="reminder-error">Choose a date and time in the future.</p>
+      <p v-if="saveError" class="reminder-error" role="alert">{{ saveError }}</p>
 
       <footer>
         <button type="button" class="reminder-cancel" @click="emit('close')">Cancel</button>
-        <button type="submit" class="reminder-save" :disabled="!valid">Save</button>
+        <button type="submit" class="reminder-save" :disabled="!valid || saving">
+          {{ saving ? 'Saving...' : 'Save' }}
+        </button>
       </footer>
     </form>
   </div>
@@ -105,10 +136,12 @@ onBeforeUnmount(() => document.removeEventListener('keydown', closeOnEscape))
 .reminder-dialog {
   position: relative;
   display: grid;
-  width: min(565px, 100%);
-  gap: 24px;
+  width: min(410px, 100%);
+  max-height: calc(100vh - 32px);
+  gap: 16px;
+  overflow-y: auto;
   border-radius: 6px;
-  padding: 36px 50px 0;
+  padding: 26px 28px 0;
   background: white;
   box-shadow: 0 16px 36px #0003;
 }
@@ -173,7 +206,7 @@ onBeforeUnmount(() => document.removeEventListener('keydown', closeOnEscape))
 
 .reminder-dialog textarea {
   width: 100%;
-  min-height: 185px;
+  min-height: 100px;
   resize: vertical;
   border: 1px solid #c6c6c6;
   border-radius: 5px;
@@ -198,7 +231,7 @@ onBeforeUnmount(() => document.removeEventListener('keydown', closeOnEscape))
   display: flex;
   justify-content: flex-end;
   gap: 12px;
-  margin: 0 -50px;
+  margin: 0 -28px;
   border-top: 1px solid #e4e4e4;
   padding: 18px 10px;
 }
