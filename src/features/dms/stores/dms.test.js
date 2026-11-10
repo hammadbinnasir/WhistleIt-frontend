@@ -10,11 +10,11 @@ vi.mock('@/features/dms/dmApi', () => ({
     listTeamNonMembers: vi.fn(),
     getDirectChannel: vi.fn(),
     createDirectChannel: vi.fn(),
-    listMessages: vi.fn(),      // <- add
-    sendMessage: vi.fn(),       // <- add
-    updateMessage: vi.fn(),     // <- add
-    deleteMessage: vi.fn(), 
-  }, 
+    listMessages: vi.fn(), // <- add
+    sendMessage: vi.fn(), // <- add
+    updateMessage: vi.fn(), // <- add
+    deleteMessage: vi.fn(),
+  },
 }))
 
 import { dmApi } from '@/features/dms/dmApi'
@@ -63,16 +63,16 @@ describe('dms store', () => {
       makeConversation('created-channel', payload.user_id),
     )
     dmApi.listMessages.mockResolvedValue([
-    { id: 'm1', from: 'u2', text: 'Received', createdAt: '2026-01-01T10:00:00Z' },
-  ])
-  dmApi.sendMessage.mockImplementation(async (_companyId, _channelId, payload) => ({
-    id: 'server-1',
-    from: 'u1',
-    text: payload.content,
-    createdAt: new Date().toISOString(),
-  }))
-  dmApi.updateMessage.mockResolvedValue(null)
-  dmApi.deleteMessage.mockResolvedValue(null)
+      { id: 'm1', from: 'u2', text: 'Received', createdAt: '2026-01-01T10:00:00Z' },
+    ])
+    dmApi.sendMessage.mockImplementation(async (_companyId, _channelId, payload) => ({
+      id: 'server-1',
+      from: 'u1',
+      text: payload.content,
+      createdAt: new Date().toISOString(),
+    }))
+    dmApi.updateMessage.mockResolvedValue(null)
+    dmApi.deleteMessage.mockResolvedValue(null)
   })
 
   it('loads live conversations using the active company ID', async () => {
@@ -262,14 +262,15 @@ describe('dms store', () => {
   })
 
   it('restores locally sent DM messages after the conversation store is reloaded', async () => {
+    dmApi.sendMessage.mockImplementation(() => new Promise(() => {}))
     const dms = useDmStore()
     await dms.init()
 
     const sent = dms.sendMessage('c1', { content: 'Keep this direct message' })
     expect(sent.id).toMatch(/^local-/)
-    expect(JSON.parse(localStorage.getItem('whistleit:dm-messages'))['company-1']['c1']).toContainEqual(
-      sent,
-    )
+    expect(
+      JSON.parse(localStorage.getItem('whistleit:dm-messages'))['company-1']['c1'],
+    ).toContainEqual(sent)
 
     setActivePinia(createPinia())
     useTeamsStore().activeWorkspaceId = 'company-1'
@@ -277,6 +278,58 @@ describe('dms store', () => {
     await reloadedDms.init()
 
     expect(reloadedDms.conversations[0].messages).toContainEqual(sent)
+  })
+
+  it('sends a voice-note-only message through the direct-message API', async () => {
+    const dms = useDmStore()
+    await dms.init()
+
+    const sent = dms.sendMessage('c1', { voiceNoteId: 'voice-note-3' })
+    expect(sent).toMatchObject({ text: '', voiceNoteId: 'voice-note-3', status: 'sending' })
+
+    await vi.waitFor(() => {
+      expect(dmApi.sendMessage).toHaveBeenCalledWith('company-1', 'c1', {
+        body: 'Voice message',
+        voice_note_id: 'voice-note-3',
+        is_important: false,
+      })
+    })
+  })
+
+  it('keeps the voice-note ID when a poll echoes the message before send completes', async () => {
+    let resolveSend
+    dmApi.sendMessage.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveSend = resolve
+        }),
+    )
+    const dms = useDmStore()
+    await dms.init()
+
+    dms.sendMessage('c1', { voiceNoteId: 'voice-note-racing' })
+    const conversation = dms.conversations.find((item) => item.id === 'c1')
+    conversation.messages.push({
+      id: 'server-voice-message',
+      from: 'u1',
+      text: 'Voice message',
+      createdAt: new Date().toISOString(),
+    })
+    resolveSend({
+      id: 'server-voice-message',
+      from: 'u1',
+      text: 'Voice message',
+      createdAt: new Date().toISOString(),
+    })
+
+    await vi.waitFor(() => {
+      expect(conversation.messages).toHaveLength(2)
+      expect(
+        conversation.messages.find((message) => message.id === 'server-voice-message'),
+      ).toMatchObject({
+        voiceNoteId: 'voice-note-racing',
+      })
+    })
   })
 
   it('loads details from the API when a conversation opens', async () => {

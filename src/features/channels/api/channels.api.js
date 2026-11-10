@@ -1,7 +1,9 @@
 import { getAuthUserId } from '@/features/auth/session'
+import { normalizeMessage } from '@/features/dms/dmApi'
 import { useTeamsStore } from '@/stores/teams'
 import { http } from './http'
 import { asList, asObject, normalizeChannel, normalizeMember } from './normalizers'
+import { normalizeMessageAttachments } from '@/features/messages/messageAttachments'
 
 function channelsPath(channelId) {
   const { activeWorkspaceId: companyId, activeTeamId: teamId } = useTeamsStore()
@@ -32,8 +34,7 @@ async function resolveChannelMembership(records, { includeMemberCount = false } 
       const hasMemberCount = source.memberCount != null || source.member_count != null
       if (userId && (channel.createdById != null || channel.createdBy != null)) {
         channel.isOwner =
-          channel.isOwner ||
-          String(channel.createdById ?? channel.createdBy) === String(userId)
+          channel.isOwner || String(channel.createdById ?? channel.createdBy) === String(userId)
         channel.canManage = channel.canManage || channel.isOwner
       }
       if (source.isMember != null || source.is_member != null) {
@@ -83,8 +84,7 @@ export async function getChannel(id) {
   const userId = getAuthUserId()
   if (userId && (channel.createdById != null || channel.createdBy != null)) {
     channel.isOwner =
-      channel.isOwner ||
-      String(channel.createdById ?? channel.createdBy) === String(userId)
+      channel.isOwner || String(channel.createdById ?? channel.createdBy) === String(userId)
     channel.canManage = channel.canManage || channel.isOwner
   }
   await resolveCreatorName(channel)
@@ -137,6 +137,67 @@ export async function deleteChannel(id) {
   await http(channelsPath(id), { method: 'DELETE' })
 }
 
+export async function sendChannelVoiceMessage(id, voiceNoteId, body = '') {
+  if (voiceNoteId == null || voiceNoteId === '') {
+    throw new Error('A voice note ID is required to send a voice message.')
+  }
+  const messageBody = typeof body === 'string' ? body.trim() : ''
+  const response = await http(`${channelsPath(id)}/messages`, {
+    method: 'POST',
+    body: { body: messageBody || 'Voice message', voice_note_id: voiceNoteId },
+  })
+  const payload = response?.data?.data ?? response?.data ?? response
+  return payload?.message ?? payload?.channel_message ?? payload
+}
+
+export async function listChannelMessages(id) {
+  const response = await http(`${channelsPath(id)}/messages`)
+  const result = response?.data?.data ?? response?.data ?? response
+  const records = Array.isArray(result)
+    ? result
+    : (result?.messages ?? result?.channel_messages ?? result?.items)
+  if (!Array.isArray(records)) {
+    throw new Error('The channel messages response did not contain a message list.')
+  }
+
+  const currentUserId = getAuthUserId()
+  return records.map((record) => {
+    const raw = record?.message ?? record
+    const normalized = normalizeMessage(raw)
+    const rawVoiceNote =
+      raw.voice_note ??
+      raw.voiceNote ??
+      raw.sender?.voice_note ??
+      raw.sender?.voiceNote ??
+      record?.voice_note ??
+      record?.voiceNote ??
+      record?.sender?.voice_note ??
+      record?.sender?.voiceNote
+    const voiceNoteId =
+      raw.voice_note_id ??
+      raw.voiceNoteId ??
+      (typeof rawVoiceNote === 'string' || typeof rawVoiceNote === 'number'
+        ? rawVoiceNote
+        : (rawVoiceNote?.id ?? rawVoiceNote?.voice_note_id ?? rawVoiceNote?.voiceNoteId)) ??
+      record?.voice_note_id ??
+      record?.voiceNoteId
+    const author = raw.sender ?? raw.user ?? raw.author
+    const authorName =
+      typeof author === 'string'
+        ? author
+        : (author?.full_name ?? author?.fullName ?? author?.name ?? raw.author_name ?? '')
+    return {
+      ...normalized,
+      ...(voiceNoteId != null ? { voiceNoteId: String(voiceNoteId) } : {}),
+      content: normalized.text,
+      author: authorName,
+      authorId: normalized.from,
+      mine: currentUserId == null ? Boolean(raw.mine) : normalized.from === String(currentUserId),
+      attachments: normalizeMessageAttachments(raw),
+    }
+  })
+}
+
 export async function joinChannel(id) {
   const res = await http(`${channelsPath(id)}/join`, { method: 'POST' })
   const response = asObject(res)
@@ -183,16 +244,31 @@ export async function removeChannelMember(id, targetUser) {
 }
 
 export async function sendChannelMessage(channelId, payload) {
+  const attachment = payload?.attachment
+  let body = payload
+  if (attachment) {
+    body = new FormData()
+    const messageBody = payload.body ?? payload.content
+    if (typeof messageBody === 'string' && messageBody.trim()) {
+      body.append('body', messageBody.trim())
+    }
+    body.append('attachment', attachment)
+    Object.entries(payload).forEach(([key, value]) => {
+      if (key === 'body' || key === 'content' || key === 'attachment' || value == null) return
+      body.append(key, typeof value === 'string' ? value : JSON.stringify(value))
+    })
+  }
   const response = await http(`${channelsPath(channelId)}/messages`, {
     method: 'POST',
-    body: payload,
+    body,
   })
   const source = response?.data?.message ?? response?.message ?? response?.data ?? response
   const id = source?.id ?? source?.message_id ?? source?.uuid
   return {
     ...source,
     id: id == null ? null : String(id),
-    content: source?.content ?? source?.body ?? source?.text ?? payload.content ?? payload.body ?? '',
+    content:
+      source?.content ?? source?.body ?? source?.text ?? payload.content ?? payload.body ?? '',
   }
 }
 
@@ -204,10 +280,9 @@ export async function listPinnedMessages(channelId, messageId) {
 }
 
 export async function pinMessage(channelId, messageId) {
-  return http(
-    `${channelsPath(channelId)}/messages/${encodeURIComponent(messageId)}/pin`,
-    { method: 'POST' },
-  )
+  return http(`${channelsPath(channelId)}/messages/${encodeURIComponent(messageId)}/pin`, {
+    method: 'POST',
+  })
 }
 
 export async function unpinMessage(channelId, messageId) {

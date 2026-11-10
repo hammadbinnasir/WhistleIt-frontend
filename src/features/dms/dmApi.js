@@ -1,4 +1,5 @@
 import { apiRequest } from '@/lib/api/client'
+import { normalizeMessageAttachments } from '@/features/messages/messageAttachments'
 
 const encode = encodeURIComponent
 
@@ -33,8 +34,15 @@ function currentUser() {
 }
 function meId() {
   const user = currentUser()
-  const id = [user?.id, user?.user_id, user?.userId, user?._id, user?.uuid, user?.sub, user?.user?.id]
-    .find((value) => value != null && value !== '')
+  const id = [
+    user?.id,
+    user?.user_id,
+    user?.userId,
+    user?._id,
+    user?.uuid,
+    user?.sub,
+    user?.user?.id,
+  ].find((value) => value != null && value !== '')
   return id == null ? '' : String(id)
 }
 
@@ -79,11 +87,10 @@ function nameOf(source = {}) {
 }
 
 function customStatusOf(raw, user) {
-  const value =
-    raw.customStatus ?? raw.custom_status ?? user.customStatus ?? user.custom_status
+  const value = raw.customStatus ?? raw.custom_status ?? user.customStatus ?? user.custom_status
   const status = value && typeof value === 'object' ? value : {}
   const text =
-    (typeof value === 'string' ? value : status.text ?? status.status_text) ??
+    (typeof value === 'string' ? value : (status.text ?? status.status_text)) ??
     raw.customStatusText ??
     raw.custom_status_text ??
     user.customStatusText ??
@@ -162,21 +169,49 @@ function normalizeParticipant(raw) {
 }
 
 export function normalizeMessage(raw) {
-  const sender = raw.sender ?? raw.user ?? raw.author
+  const message = raw?.message ?? raw?.direct_message ?? raw ?? {}
+  const sender = message.sender ?? message.user ?? message.author
+  const voiceNote =
+    message.voice_note ??
+    message.voiceNote ??
+    sender?.voice_note ??
+    sender?.voiceNote ??
+    raw?.voice_note ??
+    raw?.voiceNote ??
+    raw?.sender?.voice_note ??
+    raw?.sender?.voiceNote
+  const voiceNoteId =
+    message.voice_note_id ??
+    message.voiceNoteId ??
+    (typeof voiceNote === 'string' || typeof voiceNote === 'number'
+      ? voiceNote
+      : (voiceNote?.id ?? voiceNote?.voice_note_id ?? voiceNote?.voiceNoteId)) ??
+    raw?.voice_note_id ??
+    raw?.voiceNoteId
+  const attachments = normalizeMessageAttachments(message)
   return {
     ...raw,
-    id: String(raw.id),
+    ...message,
+    id: String(message.id ?? message.message_id ?? message.messageId),
     backendSynced: true,
     from: String(
-      raw.sender_id ?? raw.user_id ?? raw.from ?? (sender && typeof sender === 'object' ? sender.id : '') ?? '',
+      message.sender_id ??
+        message.user_id ??
+        message.from ??
+        (sender && typeof sender === 'object' ? sender.id : '') ??
+        '',
     ),
-    text: raw.content ?? raw.text ?? raw.body ?? '',
-    createdAt: raw.created_at ?? raw.createdAt ?? '',
+    text: message.content ?? message.text ?? message.body ?? '',
+    ...(attachments.length ? { attachments } : {}),
+    createdAt: message.created_at ?? message.createdAt ?? '',
+    ...(voiceNoteId != null ? { voiceNoteId: String(voiceNoteId) } : {}),
     // Edit hua ho to "edited" dikhane ke liye (dusre user ko bhi)
     editedAt:
-      raw.edited_at ??
-      raw.editedAt ??
-      (raw.updated_at && raw.updated_at !== raw.created_at ? raw.updated_at : undefined),
+      message.edited_at ??
+      message.editedAt ??
+      (message.updated_at && message.updated_at !== message.created_at
+        ? message.updated_at
+        : undefined),
   }
 }
 
@@ -228,7 +263,9 @@ function normalizeChannel(channel, forcedType) {
 
   // Message bhejne wale bhi conversation ke member hain
   const members = [
-    ...new Set([meId(), ...participants.map((p) => p.id), ...messages.map((m) => m.from)].filter(Boolean)),
+    ...new Set(
+      [meId(), ...participants.map((p) => p.id), ...messages.map((m) => m.from)].filter(Boolean),
+    ),
   ]
 
   return {
@@ -342,9 +379,36 @@ export const dmApi = {
   sendMessage(companyId, channelId, payload) {
     requireCompany(companyId, 'send a message')
     requireChannel(channelId)
+    if ('attachments' in payload) {
+      throw new Error('Only one message attachment is supported.')
+    }
+    const voiceNoteId = payload.voice_note_id ?? payload.voiceNoteId
+    const body = payload.body
+    const attachment = payload.attachment
+    if (attachment != null && (typeof Blob === 'undefined' || !(attachment instanceof Blob))) {
+      throw new Error('Message attachment must be a file.')
+    }
+    const requestPayload = {
+      ...payload,
+      body: voiceNoteId && !String(body ?? '').trim() ? 'Voice message' : body,
+      ...(voiceNoteId ? { voice_note_id: String(voiceNoteId) } : {}),
+    }
+    if (attachment) {
+      const formData = new FormData()
+      if (requestPayload.body?.trim()) formData.append('body', requestPayload.body.trim())
+      formData.append('attachment', attachment)
+      Object.entries(requestPayload).forEach(([key, value]) => {
+        if (key === 'body' || key === 'attachment' || value == null) return
+        formData.append(key, typeof value === 'string' ? value : JSON.stringify(value))
+      })
+      return apiRequest(messagesPath(companyId, channelId), {
+        method: 'POST',
+        body: formData,
+      }).then((response) => normalizeMessage(messageFrom(unwrap(response))))
+    }
     return apiRequest(messagesPath(companyId, channelId), {
       method: 'POST',
-      body: JSON.stringify(payload),
+      body: JSON.stringify(requestPayload),
     }).then((response) => normalizeMessage(messageFrom(unwrap(response))))
   },
 

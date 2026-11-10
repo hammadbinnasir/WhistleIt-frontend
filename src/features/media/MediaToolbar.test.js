@@ -1,4 +1,4 @@
-import { mount, flushPromises } from '@vue/test-utils'
+import { mount } from '@vue/test-utils'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import MediaToolbar from './MediaToolbar.vue'
 
@@ -54,12 +54,16 @@ vi.mock('vue3-emoji-picker', async () => {
 })
 
 afterEach(() => {
-  vi.useRealTimers()
-  vi.unstubAllEnvs()
-  vi.unstubAllGlobals()
+  vi.restoreAllMocks()
 })
 
-describe('media toolbar GIF picker', () => {
+describe('media toolbar emoji picker', () => {
+  it('only allows selecting one attachment at a time', () => {
+    const wrapper = mount(MediaToolbar)
+
+    expect(wrapper.get('input[type="file"]').attributes('multiple')).toBeUndefined()
+  })
+
   it('opens on the nature category with the library emoji rendering', async () => {
     const wrapper = mount(MediaToolbar)
     await wrapper.get('button[aria-label="Emoji"]').trigger('click')
@@ -69,8 +73,11 @@ describe('media toolbar GIF picker', () => {
       'animals_nature',
     )
     expect(wrapper.get('.emoji-picker-library-mock').attributes('data-native')).toBe('false')
-    expect(wrapper.find('[role="tablist"]').exists()).toBe(true)
-    expect(wrapper.findAll('[role="tab"]')).toHaveLength(2)
+    expect(wrapper.find('[role="tablist"]').exists()).toBe(false)
+    expect(wrapper.find('[aria-label="GIFs"]').exists()).toBe(false)
+    expect(wrapper.find('input[aria-label="Search GIFs"]').exists()).toBe(false)
+    expect(wrapper.find('button[aria-label="Video"]').exists()).toBe(false)
+    expect(wrapper.find('button[aria-label="Microphone"]').exists()).toBe(true)
 
     const emojiSearch = wrapper.get('input[aria-label="Search emoji"]')
     await emojiSearch.setValue('cat')
@@ -85,69 +92,5 @@ describe('media toolbar GIF picker', () => {
     await emojiSearch.setValue('')
     expect(wrapper.get('.emoji-picker').attributes('data-searching')).toBe('false')
     expect(wrapper.get('input[aria-label="Library emoji search"]').element.value).toBe('')
-  })
-
-  it('searches the Open GIF catalog by typed text and emits the selected GIF', async () => {
-    const catalogUrl = 'https://raw.githubusercontent.com/bryanstedman/gifAPI/gh-pages/gifs.json'
-    const fetch = vi.fn().mockResolvedValue({
-      ok: true,
-      json: async () => [
-        { name: 'cat-dance', url: 'http://gifapi.co/cat-dance.gif', tags: ['cats', 'dance'] },
-        { name: 'dog-wave', url: 'http://gifapi.co/dog-wave.gif', tags: ['dog', 'hello'] },
-      ],
-    })
-    vi.stubGlobal('fetch', fetch)
-
-    const wrapper = mount(MediaToolbar)
-    await wrapper.get('button[aria-label="Emoji"]').trigger('click')
-    await wrapper.get('[role="tab"][aria-label="GIFs"]').trigger('click')
-    await flushPromises()
-    expect(fetch).toHaveBeenCalledWith(catalogUrl)
-
-    const gifSearch = wrapper.get('input[aria-label="Search GIFs"]')
-    vi.useFakeTimers()
-    await gifSearch.setValue('cats')
-    await vi.advanceTimersByTimeAsync(350)
-    await flushPromises()
-
-    expect(wrapper.find('.emoji-picker__library').exists()).toBe(false)
-    expect(gifSearch.element.value).toBe('cats')
-    expect(fetch).toHaveBeenCalledTimes(1)
-    expect(wrapper.findAll('.emoji-picker__gif')).toHaveLength(1)
-    expect(wrapper.get('img[alt="cat dance"]').attributes('src')).toBe(
-      'https://raw.githubusercontent.com/bryanstedman/gifAPI/gh-pages/cat-dance.gif',
-    )
-
-    await wrapper.get('button[aria-label="Send GIF: cat dance"]').trigger('click')
-    expect(wrapper.emitted('action')).toEqual([
-      [
-        'gif',
-        {
-          url: 'https://raw.githubusercontent.com/bryanstedman/gifAPI/gh-pages/cat-dance.gif',
-          title: 'cat dance',
-        },
-      ],
-    ])
-    expect(wrapper.find('.emoji-picker').exists()).toBe(false)
-  })
-
-  it('shows an Open GIF API error and lets the user retry', async () => {
-    const fetch = vi
-      .fn()
-      .mockResolvedValueOnce({ ok: false, status: 503 })
-      .mockResolvedValueOnce({ ok: true, json: async () => [] })
-    vi.stubGlobal('fetch', fetch)
-
-    const wrapper = mount(MediaToolbar)
-    await wrapper.get('button[aria-label="Emoji"]').trigger('click')
-    await wrapper.get('[role="tab"][aria-label="GIFs"]').trigger('click')
-
-    await flushPromises()
-    expect(wrapper.text()).toContain('Open GIF API returned 503')
-
-    await wrapper.get('.emoji-picker__gif-status button').trigger('click')
-    await flushPromises()
-    expect(fetch).toHaveBeenCalledTimes(2)
-    expect(wrapper.text()).toContain('No GIFs found')
   })
 })

@@ -338,6 +338,33 @@ describe('dms store', () => {
     expect(dms.conversations[0].messages.at(-1)).toMatchObject({ text: 'Hello Muniba', from: 'u1' })
   })
 
+  it('sends direct-message attachments through the API with the text', async () => {
+    const dms = useDmStore()
+    await dms.init()
+    const attachment = new File(['report'], 'report.txt', { type: 'text/plain' })
+
+    const sent = dms.sendMessage('c1', {
+      content: 'Please review this file',
+      attachment,
+    })
+
+    expect(sent).toMatchObject({
+      text: 'Please review this file',
+      attachments: [{ name: 'report.txt', size: 6, type: 'text/plain' }],
+      status: 'sending',
+    })
+    await vi.waitFor(() => {
+      expect(dmApi.sendMessage).toHaveBeenCalledWith('company-1', 'c1', {
+        body: 'Please review this file',
+        attachment,
+      })
+    })
+    await vi.waitFor(() => expect(dms.conversations[0].messages.at(-1).id).toBe('server-1'))
+    expect(dms.conversations[0].messages.at(-1).attachments).toEqual([
+      { name: 'report.txt', size: 6, type: 'text/plain' },
+    ])
+  })
+
   it('marks a message failed when POST fails and retries it', async () => {
     dmApi.sendMessage.mockRejectedValueOnce(new Error('Failed to fetch'))
     const dms = useDmStore()

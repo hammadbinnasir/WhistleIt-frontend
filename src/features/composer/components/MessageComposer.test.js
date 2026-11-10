@@ -1,6 +1,15 @@
-import { mount } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+
+const voiceNoteApi = vi.hoisted(() => ({
+  discardVoiceNote: vi.fn(),
+  getVoiceNote: vi.fn(),
+  getVoiceNoteFile: vi.fn(),
+  uploadVoiceNote: vi.fn(),
+}))
+
+vi.mock('../../media/voiceNotesApi', () => voiceNoteApi)
 
 vi.mock('vue3-emoji-picker', async () => {
   const { defineComponent, h } = await import('vue')
@@ -51,10 +60,15 @@ import { resetUserStore, useUserStore } from '@/features/account/composables/use
 
 beforeEach(() => {
   resetUserStore()
+  voiceNoteApi.uploadVoiceNote.mockResolvedValue({ id: 'voice-note-1' })
+  voiceNoteApi.getVoiceNote.mockResolvedValue({ id: 'voice-note-1' })
+  voiceNoteApi.getVoiceNoteFile.mockRejectedValue(new Error('Preview unavailable in test'))
+  voiceNoteApi.discardVoiceNote.mockResolvedValue(undefined)
 })
 afterEach(() => {
   resetUserStore()
   vi.restoreAllMocks()
+  vi.unstubAllGlobals()
 })
 
 function setEditorText(wrapper, text) {
@@ -81,7 +95,204 @@ function selectEditorText(editor) {
   selection.addRange(range)
 }
 
+function stubVoiceRecorder() {
+  const stream = { getTracks: () => [{ stop: vi.fn() }] }
+  const recorders = []
+  vi.stubGlobal('navigator', {
+    ...navigator,
+    mediaDevices: { getUserMedia: vi.fn().mockResolvedValue(stream) },
+  })
+  vi.stubGlobal(
+    'MediaRecorder',
+    class extends EventTarget {
+      static isTypeSupported = () => true
+      mimeType = 'audio/webm'
+      state = 'inactive'
+
+      constructor(...args) {
+        super(...args)
+        recorders.push(this)
+      }
+
+      start(timeslice) {
+        this.timeslice = timeslice
+        this.state = 'recording'
+      }
+
+      stop() {
+        this.state = 'inactive'
+        for (const chunk of ['complete-', 'recording']) {
+          const dataEvent = new Event('dataavailable')
+          Object.defineProperty(dataEvent, 'data', { value: new Blob([chunk]) })
+          this.dispatchEvent(dataEvent)
+        }
+        this.dispatchEvent(new Event('stop'))
+      }
+    },
+  )
+  vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:voice-preview')
+  vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {})
+  return { stream, recorders }
+}
+
 describe('message composer', () => {
+  it('records, uploads, previews, and sends a voice-note ID', async () => {
+    const { recorders } = stubVoiceRecorder()
+
+    const wrapper = mount(MessageComposer, {
+      attachTo: document.body,
+      props: { channelId: 'channel-1' },
+    })
+    await wrapper.get('button[aria-label="Microphone"]').trigger('click')
+    await flushPromises()
+    expect(document.querySelector('[role="dialog"]')?.textContent).toContain(
+      'Voice Message Recording',
+    )
+    expect(document.querySelector('[role="timer"]')?.textContent).toContain('00:00:00')
+    expect(voiceNoteApi.uploadVoiceNote).not.toHaveBeenCalled()
+
+    document.querySelector('button.message-composer__recording-stop').click()
+    await flushPromises()
+
+    expect(voiceNoteApi.uploadVoiceNote).toHaveBeenCalledOnce()
+    expect(voiceNoteApi.uploadVoiceNote.mock.calls[0][1]).toMatchObject({
+      channelId: 'channel-1',
+      duration: 1,
+    })
+    expect(recorders[0].timeslice).toBe(1000)
+    await expect(voiceNoteApi.uploadVoiceNote.mock.calls[0][0].text()).resolves.toBe(
+      'complete-recording',
+    )
+    expect(voiceNoteApi.getVoiceNote).toHaveBeenCalledWith('voice-note-1')
+    expect(wrapper.text()).toContain('Voice message')
+    expect(wrapper.get('.message-composer__voice-draft audio').attributes('src')).toBe(
+      'blob:voice-preview',
+    )
+    expect(document.querySelector('[role="dialog"]')).toBeNull()
+    expect(wrapper.get('button[aria-label="Send message"]').attributes('disabled')).toBeUndefined()
+
+    await wrapper.get('form').trigger('submit')
+    expect(wrapper.emitted('send')).toEqual([[{ content: '', voiceNoteId: 'voice-note-1' }]])
+    wrapper.unmount()
+  })
+
+  it('associates direct-message voice uploads with their DM channel', async () => {
+    stubVoiceRecorder()
+
+    const wrapper = mount(MessageComposer, {
+      attachTo: document.body,
+      props: { channelId: 'direct-channel-1', conversationType: 'dm' },
+    })
+    await wrapper.get('button[aria-label="Microphone"]').trigger('click')
+    await flushPromises()
+    document.querySelector('button.message-composer__recording-stop').click()
+    await flushPromises()
+
+    expect(voiceNoteApi.uploadVoiceNote.mock.calls[0][1]).toMatchObject({
+      channelId: 'direct-channel-1',
+      duration: 1,
+    })
+    wrapper.unmount()
+  })
+
+  it('discards an uploaded voice-note draft', async () => {
+    stubVoiceRecorder()
+    const wrapper = mount(MessageComposer, { attachTo: document.body })
+
+    await wrapper.get('button[aria-label="Microphone"]').trigger('click')
+    await flushPromises()
+    document.querySelector('button.message-composer__recording-stop').click()
+    await flushPromises()
+
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text().includes('Discard recording'))
+      .trigger('click')
+    await flushPromises()
+
+    expect(voiceNoteApi.discardVoiceNote).toHaveBeenCalledWith('voice-note-1')
+    expect(wrapper.find('.message-composer__voice-draft').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('cancels a recording without uploading it', async () => {
+    stubVoiceRecorder()
+    const wrapper = mount(MessageComposer, { attachTo: document.body })
+
+    await wrapper.get('button[aria-label="Microphone"]').trigger('click')
+    await flushPromises()
+    document.querySelector('button.message-composer__recording-cancel').click()
+    await flushPromises()
+
+    expect(document.querySelector('[role="dialog"]')).toBeNull()
+    expect(voiceNoteApi.uploadVoiceNote).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it('shows recording UI while microphone permission is pending and cancels safely', async () => {
+    let resolveMicrophone
+    const stopTrack = vi.fn()
+    vi.stubGlobal('navigator', {
+      ...navigator,
+      mediaDevices: {
+        getUserMedia: vi.fn(
+          () =>
+            new Promise((resolve) => {
+              resolveMicrophone = resolve
+            }),
+        ),
+      },
+    })
+    vi.stubGlobal('MediaRecorder', class {})
+    const wrapper = mount(MessageComposer, { attachTo: document.body })
+
+    await wrapper.get('button[aria-label="Microphone"]').trigger('click')
+    expect(document.querySelector('[role="dialog"]')?.textContent).toContain(
+      'Waiting for microphone access',
+    )
+    document.querySelector('button.message-composer__recording-cancel').click()
+    resolveMicrophone({ getTracks: () => [{ stop: stopTrack }] })
+    await flushPromises()
+
+    expect(document.querySelector('[role="dialog"]')).toBeNull()
+    expect(stopTrack).toHaveBeenCalledOnce()
+    expect(voiceNoteApi.uploadVoiceNote).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it('shows a clear error when microphone permission is denied', async () => {
+    vi.stubGlobal('navigator', {
+      ...navigator,
+      mediaDevices: { getUserMedia: vi.fn().mockRejectedValue(new Error('Permission denied')) },
+    })
+    vi.stubGlobal('MediaRecorder', class {})
+    const wrapper = mount(MessageComposer)
+
+    await wrapper.get('button[aria-label="Microphone"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.get('[role="alert"]').text()).toContain(
+      'Could not access the microphone: Permission denied',
+    )
+    expect(voiceNoteApi.uploadVoiceNote).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it('explains that microphone access requires a secure page on insecure origins', async () => {
+    vi.stubGlobal('isSecureContext', false)
+    vi.stubGlobal('navigator', { ...navigator, mediaDevices: undefined })
+    vi.stubGlobal('MediaRecorder', class {})
+    const wrapper = mount(MessageComposer)
+
+    await wrapper.get('button[aria-label="Microphone"]').trigger('click')
+
+    expect(wrapper.get('[role="alert"]').text()).toContain(
+      'Open it at http://localhost:5173 on this computer',
+    )
+    expect(voiceNoteApi.uploadVoiceNote).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
   it('renders compact bullet and numbered-list icons', () => {
     const wrapper = mount(MessageComposer)
 
@@ -134,13 +345,13 @@ describe('message composer', () => {
     questionInput.value = 'What should we order?'
     questionInput.dispatchEvent(new Event('input', { bubbles: true }))
     document.querySelectorAll('.message-composer__poll-option input')[0].value = 'Pizza'
-    document.querySelectorAll('.message-composer__poll-option input')[0].dispatchEvent(
-      new Event('input', { bubbles: true }),
-    )
+    document
+      .querySelectorAll('.message-composer__poll-option input')[0]
+      .dispatchEvent(new Event('input', { bubbles: true }))
     document.querySelectorAll('.message-composer__poll-option input')[1].value = 'Salad'
-    document.querySelectorAll('.message-composer__poll-option input')[1].dispatchEvent(
-      new Event('input', { bubbles: true }),
-    )
+    document
+      .querySelectorAll('.message-composer__poll-option input')[1]
+      .dispatchEvent(new Event('input', { bubbles: true }))
     document.querySelector('.message-composer__poll-add-choice').click()
     await wrapper.vm.$nextTick()
     expect(document.querySelectorAll('.message-composer__poll-option')).toHaveLength(4)
@@ -161,7 +372,9 @@ describe('message composer', () => {
     expect(wrapper.find('.message-composer__poll-draft').exists()).toBe(false)
     expect(wrapper.emitted('send')[0][0].content).toContain('Before the poll')
     expect(wrapper.emitted('send')[0][0].poll.title).toBe('Lunch vote')
-    expect(document.querySelector('[role="dialog"][aria-labelledby="message-poll-title"]')).toBeNull()
+    expect(
+      document.querySelector('[role="dialog"][aria-labelledby="message-poll-title"]'),
+    ).toBeNull()
     wrapper.unmount()
   })
 
@@ -233,9 +446,7 @@ describe('message composer', () => {
     document.querySelector('#poll-title-input').value = 'Scheduled poll'
     document.querySelector('#poll-title-input').dispatchEvent(new Event('input', { bubbles: true }))
     document.querySelector('#poll-question-0').value = 'What time works?'
-    document
-      .querySelector('#poll-question-0')
-      .dispatchEvent(new Event('input', { bubbles: true }))
+    document.querySelector('#poll-question-0').dispatchEvent(new Event('input', { bubbles: true }))
     document.querySelector('.message-composer__poll-option input').value = 'Morning'
     document
       .querySelector('.message-composer__poll-option input')
@@ -248,7 +459,9 @@ describe('message composer', () => {
     await wrapper.vm.$nextTick()
     document.querySelector('.message-composer__poll-next').click()
     await wrapper.vm.$nextTick()
-    const scheduleOptions = document.querySelectorAll('.message-composer__poll-schedule-option input')
+    const scheduleOptions = document.querySelectorAll(
+      '.message-composer__poll-schedule-option input',
+    )
     scheduleOptions[1].click()
     await wrapper.vm.$nextTick()
     document.querySelector('.message-composer__poll-footer .message-composer__poll-next').click()
@@ -266,9 +479,7 @@ describe('message composer', () => {
     document.querySelector('#poll-title-input').value = 'Timed poll'
     document.querySelector('#poll-title-input').dispatchEvent(new Event('input', { bubbles: true }))
     document.querySelector('#poll-question-0').value = 'Choose a time'
-    document
-      .querySelector('#poll-question-0')
-      .dispatchEvent(new Event('input', { bubbles: true }))
+    document.querySelector('#poll-question-0').dispatchEvent(new Event('input', { bubbles: true }))
     const options = document.querySelectorAll('.message-composer__poll-option input')
     options[0].value = 'Morning'
     options[0].dispatchEvent(new Event('input', { bubbles: true }))
@@ -279,14 +490,17 @@ describe('message composer', () => {
     document.querySelector('.message-composer__poll-next').click()
     await wrapper.vm.$nextTick()
 
-    const scheduleOptions = document.querySelectorAll('.message-composer__poll-schedule-option input')
+    const scheduleOptions = document.querySelectorAll(
+      '.message-composer__poll-schedule-option input',
+    )
     scheduleOptions[1].click()
     scheduleOptions[2].click()
     await wrapper.vm.$nextTick()
 
-    expect(document.querySelector('.message-composer__poll-footer .message-composer__poll-next').disabled).toBe(
-      false,
-    )
+    expect(
+      document.querySelector('.message-composer__poll-footer .message-composer__poll-next')
+        .disabled,
+    ).toBe(false)
     wrapper.unmount()
   })
 
@@ -387,7 +601,7 @@ describe('message composer', () => {
 
     await wrapper.get('form').trigger('submit')
 
-    expect(wrapper.emitted('send')).toEqual([[{ content: 'Hello team', attachments: [] }]])
+    expect(wrapper.emitted('send')).toEqual([[{ content: 'Hello team' }]])
 
     expect(input.element.textContent).toBe('')
   })
@@ -398,9 +612,7 @@ describe('message composer', () => {
 
     await wrapper.get('form').trigger('submit')
 
-    expect(wrapper.emitted('send')).toEqual([
-      [{ content: 'Aslam u Alikum', attachments: [] }],
-    ])
+    expect(wrapper.emitted('send')).toEqual([[{ content: 'Aslam u Alikum', attachments: [] }]])
   })
 
   it('does not send an empty message', async () => {
@@ -411,6 +623,19 @@ describe('message composer', () => {
     await wrapper.get('form').trigger('submit')
 
     expect(wrapper.emitted('send')).toBeUndefined()
+  })
+
+  it('sends an attachment without requiring message text', async () => {
+    const wrapper = mount(MessageComposer)
+    const attachment = new File(['report'], 'report.txt', { type: 'text/plain' })
+    const fileInput = wrapper.get('input[type="file"]').element
+
+    Object.defineProperty(fileInput, 'files', { configurable: true, value: [attachment] })
+    fileInput.dispatchEvent(new Event('change', { bubbles: true }))
+    await wrapper.vm.$nextTick()
+    await wrapper.get('form').trigger('submit')
+
+    expect(wrapper.emitted('send')).toEqual([[{ content: '', attachment }]])
   })
 
   it('sends the message when Enter is pressed with the default preference', async () => {
@@ -425,12 +650,10 @@ describe('message composer', () => {
     wrapper.get('[contenteditable="true"]').element.dispatchEvent(event)
 
     expect(event.defaultPrevented).toBe(true)
-    expect(wrapper.emitted('send')).toEqual([
-      [{ content: 'Send with Enter', attachments: [] }],
-    ])
+    expect(wrapper.emitted('send')).toEqual([[{ content: 'Send with Enter' }]])
   })
 
-  it('uses Enter for newlines and Shift+Enter to send when configured', async () => {
+  it('sends on Enter and uses Shift+Enter for a newline regardless of preference', async () => {
     useUserStore().hydrate({ preferences: { enterKey: 'newline' } })
     const wrapper = mount(MessageComposer)
     setEditorText(wrapper, 'Keep typing')
@@ -441,8 +664,8 @@ describe('message composer', () => {
       cancelable: true,
     })
     wrapper.get('[contenteditable="true"]').element.dispatchEvent(enter)
-    expect(enter.defaultPrevented).toBe(false)
-    expect(wrapper.emitted('send')).toBeUndefined()
+    expect(enter.defaultPrevented).toBe(true)
+    expect(wrapper.emitted('send')).toEqual([[{ content: 'Keep typing' }]])
 
     const shiftEnter = new KeyboardEvent('keydown', {
       key: 'Enter',
@@ -452,10 +675,27 @@ describe('message composer', () => {
     })
     wrapper.get('[contenteditable="true"]').element.dispatchEvent(shiftEnter)
 
-    expect(shiftEnter.defaultPrevented).toBe(true)
-    expect(wrapper.emitted('send')).toEqual([
-      [{ content: 'Keep typing', attachments: [] }],
-    ])
+    expect(shiftEnter.defaultPrevented).toBe(false)
+    expect(wrapper.emitted('send')).toHaveLength(1)
+  })
+
+  it('sends an attachment-only message when Enter is pressed', async () => {
+    const wrapper = mount(MessageComposer)
+    const attachment = new File(['report'], 'report.pdf', { type: 'application/pdf' })
+    const fileInput = wrapper.get('input[type="file"]').element
+    Object.defineProperty(fileInput, 'files', { configurable: true, value: [attachment] })
+    fileInput.dispatchEvent(new Event('change', { bubbles: true }))
+    await wrapper.vm.$nextTick()
+
+    const enter = new KeyboardEvent('keydown', {
+      key: 'Enter',
+      bubbles: true,
+      cancelable: true,
+    })
+    wrapper.get('[contenteditable="true"]').element.dispatchEvent(enter)
+
+    expect(enter.defaultPrevented).toBe(true)
+    expect(wrapper.emitted('send')).toEqual([[{ content: '', attachment }]])
   })
 
   it('keeps formatting options independently toggleable', async () => {
@@ -655,7 +895,7 @@ describe('message composer', () => {
     expect(input.element.querySelector('ul')).toBeNull()
     expect(input.element.textContent).toBe('first')
     await wrapper.get('form').trigger('submit')
-    expect(wrapper.emitted('send')).toEqual([[{ content: 'first', attachments: [] }]])
+    expect(wrapper.emitted('send')).toEqual([[{ content: 'first' }]])
     wrapper.unmount()
   })
 
@@ -757,7 +997,7 @@ describe('message composer', () => {
 
     await wrapper.get('form').trigger('submit')
 
-    expect(wrapper.emitted('send')).toEqual([[{ content: '1. first', attachments: [] }]])
+    expect(wrapper.emitted('send')).toEqual([[{ content: '1. first' }]])
   })
 
   it('toggles important status independently and includes it when sending', async () => {
@@ -783,9 +1023,7 @@ describe('message composer', () => {
 
     await wrapper.get('form').trigger('submit')
 
-    expect(wrapper.emitted('send')).toEqual([
-      [{ content: 'A critical update', attachments: [], important: true }],
-    ])
+    expect(wrapper.emitted('send')).toEqual([[{ content: 'A critical update', important: true }]])
 
     expect(wrapper.find('.message-composer__important').exists()).toBe(false)
 
@@ -874,8 +1112,6 @@ describe('message composer', () => {
           scheduledAt: '2099-10-23T09:30',
 
           timeZone: 'Asia/Karachi',
-
-          attachments: [],
         },
       ],
     ])
@@ -1007,7 +1243,7 @@ describe('message composer', () => {
     expect(wrapper.emitted('schedule')[0][0]).toMatchObject({
       content: '',
 
-      attachments: [attachment],
+      attachment,
 
       timeZone: 'Asia/Karachi',
     })
@@ -1017,12 +1253,11 @@ describe('message composer', () => {
     wrapper.unmount()
   })
 
-  it('forwards media actions that do not open the file picker', async () => {
+  it('forwards voice recording actions', async () => {
     const wrapper = mount(MessageComposer)
 
-    await wrapper.get('button[aria-label="Video"]').trigger('click')
     await wrapper.get('button[aria-label="Microphone"]').trigger('click')
-    expect(wrapper.emitted('video')).toHaveLength(1)
+
     expect(wrapper.emitted('microphone')).toHaveLength(1)
   })
 
