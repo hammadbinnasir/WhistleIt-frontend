@@ -354,10 +354,27 @@ describe('dms store', () => {
 
     const sent = dms.sendMessage('c1', { content: 'Hello Muniba' })
     expect(sent).toMatchObject({ status: 'sending', text: 'Hello Muniba' })
-    expect(dmApi.sendMessage).toHaveBeenCalledWith('company-1', 'c1', { body: 'Hello Muniba' })
+    expect(dmApi.sendMessage).toHaveBeenCalledWith('company-1', 'c1', {
+      body: 'Hello Muniba',
+      is_important: false,
+    })
 
     await vi.waitFor(() => expect(dms.conversations[0].messages.at(-1).id).toBe('server-1'))
     expect(dms.conversations[0].messages.at(-1)).toMatchObject({ text: 'Hello Muniba', from: 'u1' })
+  })
+
+  it('sends and preserves an important direct message', async () => {
+    const dms = useDmStore()
+    await dms.init()
+
+    dms.sendMessage('c1', { content: 'Urgent update', important: true })
+
+    expect(dmApi.sendMessage).toHaveBeenCalledWith('company-1', 'c1', {
+      body: 'Urgent update',
+      is_important: true,
+    })
+    await vi.waitFor(() => expect(dms.conversations[0].messages.at(-1).id).toBe('server-1'))
+    expect(dms.conversations[0].messages.at(-1).important).toBe(true)
   })
 
   it('marks a message failed when POST fails and retries it', async () => {

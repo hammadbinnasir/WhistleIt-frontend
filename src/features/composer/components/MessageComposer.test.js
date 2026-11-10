@@ -392,6 +392,17 @@ describe('message composer', () => {
     expect(input.element.textContent).toBe('')
   })
 
+  it('removes literal paragraph tags from the outgoing message', async () => {
+    const wrapper = mount(MessageComposer)
+    setEditorText(wrapper, '<p>Aslam u Alikum</p>')
+
+    await wrapper.get('form').trigger('submit')
+
+    expect(wrapper.emitted('send')).toEqual([
+      [{ content: 'Aslam u Alikum', attachments: [] }],
+    ])
+  })
+
   it('does not send an empty message', async () => {
     const wrapper = mount(MessageComposer)
 

@@ -26,7 +26,10 @@ import {
   createScheduledMessage,
   getScheduledMessages,
 } from '../api/scheduledMessagesApi'
+import { usePoll } from '../composables/usePoll'
 import MessageComposer from './MessageComposer.vue'
+import PollMessage from './PollMessage.vue'
+import { normalizeMessageText } from '../messageText'
 import pinChatIcon from '@/assets/pin-chat.svg'
 import unpinChatIcon from '@/assets/unpin-chat.svg'
 
@@ -36,6 +39,7 @@ const props = defineProps({
 })
 
 const dms = useDmStore()
+const pollApi = usePoll()
 const channelsStore = useChannelsStore()
 const teamsStore = useTeamsStore()
 const ui = useUiStore()
@@ -219,7 +223,7 @@ const renderedMessages = computed(() => {
     .map((message) => {
       const content = message.deleted
         ? '(message deleted)'
-        : (message.text ?? message.content ?? '')
+        : normalizeMessageText(message.text ?? message.content ?? '')
       const author =
         message.from === dms.meId
           ? currentUser
@@ -235,6 +239,7 @@ const renderedMessages = computed(() => {
       const rendered = {
         ...message,
         content,
+        important: isImportantMessage(message),
         formattedContent: formattedMessageHtml(content),
         author,
         authorId,
@@ -257,6 +262,12 @@ const renderedMessages = computed(() => {
       return rendered
     })
 })
+
+function isImportantMessage(message) {
+  const value = message.important ?? message.is_important
+  return value === true || value === 1 || value === '1' || value === 'true'
+}
+
 const reminderMessage = computed(() => {
   const target = reminderTarget.value || snoozeTarget.value
   if (!target) return null
@@ -371,7 +382,7 @@ async function togglePin(message) {
       ui.toast('Unable to pin message', 'This direct message is not available on the server yet.', 'error')
       return
     }
-  } else if (message.backendSynced !== true) {
+  } else if (message.backendSynced !== true && message.serverBacked !== true) {
     ui.toast('Unable to pin message', 'This channel message is not available on the server yet.', 'error')
     return
   }
@@ -393,7 +404,11 @@ async function togglePin(message) {
 }
 
 async function addMessage(payload) {
-  const messagePayload = replyTo.value ? { ...payload, replyTo: { ...replyTo.value } } : payload
+  const messagePayload = {
+    ...payload,
+    is_important: Boolean(payload.important),
+    ...(replyTo.value ? { replyTo: { ...replyTo.value } } : {}),
+  }
   const canSendToChannelApi =
     !conversation.value &&
     typeof payload.content === 'string' &&
@@ -402,7 +417,6 @@ async function addMessage(payload) {
     !payload.poll &&
     !payload.gif &&
     !payload.scheduledAt &&
-    !payload.important &&
     !replyTo.value
 
   if (canSendToChannelApi) {
@@ -412,8 +426,13 @@ async function addMessage(payload) {
       return
     }
 
-    const sentMessage = messageStore.messagesFor(channelId.value).at(-1)
+    const channelMessages = messageStore.messagesFor(channelId.value)
+    const responseMessageId = result.data?.id ?? result.data?.message_id ?? result.data?.messageId
+    const sentMessage = responseMessageId
+      ? channelMessages.find((message) => String(message.id) === String(responseMessageId))
+      : [...channelMessages].reverse().find((message) => message.content === payload.content)
     if (sentMessage) {
+      sentMessage.important = messagePayload.is_important
       addMockMessage({
         id: sentMessage.id,
         text: sentMessage.content,
@@ -1092,16 +1111,258 @@ function closeActionsOnOutsideClick(event) {
   if (!target?.closest('.composer-conversation__actions')) closeMessageActions()
 }
 
-function participateInPoll(pollId) {
+function pollQueryParams(poll, key) {
+  return poll[key] || { poll_id: poll.id }
+}
+
+function hasServerPollId(poll) {
+  return poll?.id != null && !String(poll.id).startsWith('poll-')
+}
+
+function pollQuestionsFromResponse(response) {
+  const questions = Array.isArray(response)
+    ? response
+    : Array.isArray(response?.questions)
+      ? response.questions
+      : Array.isArray(response?.poll_questions)
+        ? response.poll_questions
+        : Array.isArray(response?.result)
+          ? response.result
+          : []
+  return questions.map((question) => ({
+    ...question,
+    id: question.id ?? question.question_id,
+    text: question.text ?? question.question ?? '',
+    type: ['open-ended', 'open_ended'].includes(question.type)
+      ? 'openEnded'
+      : question.type ?? 'choice',
+    required: question.required !== false,
+    multiple: question.multiple ?? question.multiple_select ?? false,
+    options: question.options ?? question.choices ?? [],
+  }))
+}
+
+function normalizePollResult(response, poll) {
+  const result = response?.result ?? response
+  if (
+    !result ||
+    typeof result !== 'object' ||
+    (!result.totalVotes && !result.total_votes && !result.total && !result.questions && !result.results && !result.responses)
+  ) {
+    return null
+  }
+  const sourceQuestions = Array.isArray(result)
+    ? result
+    : (result?.questions ?? result?.results ?? [])
+  const questions = poll.questions.map((question, questionIndex) => {
+    const source = sourceQuestions[questionIndex] || {}
+    const sourceVotes = source.votes ?? source.answers ?? source.options ?? []
+    return {
+      votes: question.options.map((_, optionIndex) => {
+        const vote = sourceVotes[optionIndex]
+        return typeof vote === 'number'
+          ? vote
+          : Number(vote?.votes ?? vote?.count ?? vote?.total ?? vote ?? 0)
+      }),
+    }
+  })
+  return {
+    totalVotes: Number(
+      result?.totalVotes ?? result?.total_votes ?? result?.total ?? result?.pagination?.total ?? 0,
+    ),
+    questions,
+    responses: result?.responses ?? questions.map(() => []),
+  }
+}
+
+async function createPollInChannel(targetChannelId, pollDraft, existingMessage = null) {
+  const {
+    title,
+    description,
+    questions,
+    audience,
+    resultsVisibility,
+    startNow: draftStartNow,
+    scheduleStartEnabled: draftScheduleStartEnabled,
+    scheduleCloseEnabled: draftScheduleCloseEnabled,
+    scheduleStart,
+    scheduleClose,
+  } = pollDraft
+  const scheduleStartEnabled = draftScheduleStartEnabled ?? Boolean(scheduleStart)
+  const scheduleCloseEnabled = draftScheduleCloseEnabled ?? Boolean(scheduleClose)
+  const startNow = draftStartNow ?? !scheduleStartEnabled
+  const apiQuestions = questions.map((question) => ({
+    text: question.text,
+    type: question.type === 'openEnded' ? 'open_ended' : question.type,
+    required: question.required,
+    // The backend currently validates two options for open-ended questions, then discards them.
+    options:
+      question.type === 'openEnded'
+        ? ['__open_ended__', '__open_ended__']
+        : question.options,
+    ...(question.type === 'rating'
+      ? { rating_scale: Number(question.ratingType.split('-')[1]) }
+      : {}),
+    ...(question.type === 'choice' ? { multiple_select: Boolean(question.multiple) } : {}),
+  }))
+  const payload = {
+    title,
+    description,
+    questions: apiQuestions,
+    audience_responses: audience,
+    results_visibility: {
+      private: 'owner_only',
+      'after-close': 'after_close',
+      realtime: 'real_time',
+    }[resultsVisibility] ?? resultsVisibility,
+    start_now: startNow,
+    schedule_start: scheduleStartEnabled,
+    schedule_close: scheduleCloseEnabled,
+    ...(scheduleStartEnabled ? { start_at: scheduleStart } : {}),
+    ...(scheduleCloseEnabled ? { close_at: scheduleClose } : {}),
+  }
+  try {
+    const response = await pollApi.createPoll(targetChannelId, payload)
+    const responsePoll =
+      response?.poll ??
+      response?.poll_data ??
+      response?.data?.poll ??
+      response?.data?.data?.poll ??
+      response?.data ??
+      response ??
+      {}
+    const serverPollId = responsePoll.id ?? responsePoll.poll_id
+    if (serverPollId == null || serverPollId === '') {
+      throw new Error('The server did not return a poll ID.')
+    }
+    const poll = {
+      ...pollDraft,
+      ...(typeof responsePoll === 'object' && !Array.isArray(responsePoll) ? responsePoll : {}),
+      id: serverPollId,
+      creatorId: responsePoll.creatorId ?? responsePoll.creator_id ?? dms.meId,
+      scheduleStart:
+        responsePoll.scheduleStart !== undefined
+          ? responsePoll.scheduleStart
+          : responsePoll.start_at !== undefined
+            ? responsePoll.start_at
+            : pollDraft.scheduleStart ?? '',
+      scheduleClose:
+        responsePoll.scheduleClose !== undefined
+          ? responsePoll.scheduleClose
+          : responsePoll.close_at !== undefined
+            ? responsePoll.close_at
+            : pollDraft.scheduleClose ?? '',
+      audience:
+        responsePoll.audience ?? responsePoll.audience_responses ?? pollDraft.audience,
+      resultsVisibility:
+        responsePoll.resultsVisibility ??
+        responsePoll.results_visibility ??
+        pollDraft.resultsVisibility,
+      alreadyVoted:
+        responsePoll.alreadyVoted ??
+        responsePoll.already_voted ??
+        responsePoll.user_has_voted ??
+        false,
+      questions: pollQuestionsFromResponse(responsePoll).length
+        ? pollQuestionsFromResponse(responsePoll)
+        : pollDraft.questions,
+    }
+    const message = existingMessage || {
+      id: `poll-message-${poll.id}`,
+      content: `Poll: ${poll.title}`,
+      author: currentUserName.value,
+      authorId: dms.meId,
+      mine: true,
+      backendSynced: true,
+      createdAt: new Date().toISOString(),
+      poll,
+    }
+    if (existingMessage) {
+      existingMessage.poll = poll
+      existingMessage.backendSynced = true
+    } else {
+      const targetConversation =
+        conversation.value && String(conversation.value.id) === String(targetChannelId)
+          ? conversation.value
+          : null
+      if (targetConversation) {
+        targetConversation.messages.push(message)
+      } else {
+        const key = String(targetChannelId)
+        if (!messageStore.messagesByChannel[key]) messageStore.messagesByChannel[key] = []
+        messageStore.messagesByChannel[key].push(message)
+      }
+      ui.addPoll(message, conversationMeta.value)
+      if (!targetConversation) {
+        addMockMessage({
+          id: message.id,
+          text: message.content,
+          sender: message.author,
+          conversation: conversationMeta.value,
+        })
+      }
+    }
+    await scrollMessagesToLatest()
+    return poll
+  } catch (error) {
+    ui.toast('Poll not created', error.message || 'The poll could not be created.', 'error')
+    return null
+  }
+}
+
+function publishLegacyPoll(message) {
+  if (!message.mine || pollApi.loading.value || hasServerPollId(message.poll)) return
+  const storedMessage = allMessages.value.find((item) => String(item.id) === String(message.id))
+  if (!storedMessage) return
+  void createPollInChannel(channelId.value, storedMessage.poll, storedMessage)
+}
+
+function canClosePoll(message) {
+  const poll = message.poll
+  if (!hasServerPollId(poll)) return false
+  const creatorId = poll.creatorId ?? poll.creator_id ?? poll.createdBy ?? poll.created_by
+  const authUserId = getAuthUser()?.id ?? getAuthUser()?.userId
+  return Boolean(
+    message.mine ||
+      (creatorId != null && [dms.meId, authUserId].some((id) => id != null && String(id) === String(creatorId))) ||
+      poll.canClose === true ||
+      poll.can_close === true ||
+      poll.permissions?.close === true,
+  )
+}
+
+async function participateInPoll(pollId) {
+  if (pollApi.loading.value || !hasServerPollId({ id: pollId })) return
   const message = renderedMessages.value.find((item) => item.poll?.id === pollId)
   if (!message?.poll || !isPollActive(message.poll)) return
   activePoll.value = message.poll
   activePollMode.value = 'respond'
   pollResponses.value = {}
+  try {
+    const response = await pollApi.getPollQuestions(
+      pollQueryParams(message.poll, 'questionsQueryParams'),
+    )
+    const questions = pollQuestionsFromResponse(response)
+    if (questions.length) {
+      message.poll.questions = questions
+      activePoll.value = { ...message.poll, questions }
+    }
+  } catch (error) {
+    ui.toast('Unable to load poll', error.message || 'Poll questions could not be loaded.', 'error')
+  }
 }
 
-function closePoll(pollId) {
-  closedPolls.value = new Set([...closedPolls.value, pollId])
+async function closePoll(pollId) {
+  if (pollApi.loading.value || !hasServerPollId({ id: pollId })) return
+  const message = renderedMessages.value.find((item) => item.poll?.id === pollId)
+  if (!message?.poll || !canClosePoll(message)) return
+  try {
+    await pollApi.closePoll(pollId)
+    closedPolls.value = new Set([...closedPolls.value, pollId])
+    message.poll.closed = true
+  } catch (error) {
+    ui.toast('Unable to close poll', error.message || 'The poll could not be closed.', 'error')
+  }
 }
 
 function pollStartTime(poll) {
@@ -1117,34 +1378,28 @@ function isPollActive(poll) {
   const startsAt = pollStartTime(poll)
   const closesAt = pollCloseTime(poll)
   return (
-    !closedPolls.value.has(poll.id) &&
+    !isPollClosed(poll) &&
     (!Number.isFinite(startsAt) || startsAt <= now) &&
     (!Number.isFinite(closesAt) || closesAt > now)
   )
 }
 
 function isPollClosed(poll) {
-  return closedPolls.value.has(poll.id) || (
-    Number.isFinite(pollCloseTime(poll)) && pollCloseTime(poll) <= pollClock.value
+  return (
+    closedPolls.value.has(poll.id) ||
+    poll.closed === true ||
+    poll.is_closed === true ||
+    ['closed', 'complete', 'completed'].includes(String(poll.status || '').toLowerCase()) ||
+    (Number.isFinite(pollCloseTime(poll)) && pollCloseTime(poll) <= pollClock.value)
   )
 }
 
 function isPollScheduled(poll) {
   const startsAt = pollStartTime(poll)
-  return Number.isFinite(startsAt) && startsAt > pollClock.value
-}
-
-function pollScheduleLabel(value) {
-  const timestamp = Date.parse(value || '')
-  if (!Number.isFinite(timestamp)) return ''
-  return new Intl.DateTimeFormat('en-US', {
-    weekday: 'short',
-    month: 'short',
-    day: '2-digit',
-    year: 'numeric',
-    hour: 'numeric',
-    minute: '2-digit',
-  }).format(timestamp)
+  return (
+    (Number.isFinite(startsAt) && startsAt > pollClock.value) ||
+    (String(poll.status || '').toLowerCase() === 'scheduled' && !Number.isFinite(startsAt))
+  )
 }
 
 function exportPollResults(pollId) {
@@ -1170,12 +1425,22 @@ function exportPollResults(pollId) {
   URL.revokeObjectURL(url)
 }
 
-function viewPollResults(pollId) {
+async function viewPollResults(pollId) {
+  if (pollApi.loading.value || !hasServerPollId({ id: pollId })) return
   const message = renderedMessages.value.find((item) => item.poll?.id === pollId)
   if (!message?.poll) return
   activePoll.value = message.poll
   activePollMode.value = 'results'
   pollResponses.value = {}
+  try {
+    const response = await pollApi.getPollResult(
+      pollQueryParams(message.poll, 'resultsQueryParams'),
+    )
+    const result = normalizePollResult(response, message.poll)
+    if (result) pollResults.value = { ...pollResults.value, [pollId]: result }
+  } catch (error) {
+    ui.toast('Unable to load poll results', error.message || 'Poll results could not be loaded.', 'error')
+  }
 }
 
 function closePollResponse() {
@@ -1210,8 +1475,8 @@ function togglePollResponse(question, questionIndex, optionIndex) {
   }
 }
 
-function submitPollResponse() {
-  if (!activePoll.value) return
+async function submitPollResponse() {
+  if (!activePoll.value || pollApi.loading.value || isPollClosed(activePoll.value)) return
   const poll = activePoll.value
   const missingRequiredResponse = poll.questions.some(
     (question, questionIndex) =>
@@ -1220,6 +1485,35 @@ function submitPollResponse() {
       !String(pollResponses.value[questionIndex] || '').trim(),
   )
   if (missingRequiredResponse) return
+  if (poll.questions.some((question) => question.id == null && question.question_id == null)) {
+    ui.toast('Vote not submitted', 'Poll questions could not be loaded. Reopen the poll and try again.', 'error')
+    return
+  }
+  const answers = Object.fromEntries(
+    poll.questions
+      .map((question, questionIndex) => {
+        let answer
+        if (question.type === 'openEnded') {
+          answer = String(pollResponses.value[questionIndex] || '').trim()
+        } else if (question.multiple) {
+          answer = question.options.filter((_, optionIndex) =>
+            pollResponses.value[pollResponseKey(questionIndex, optionIndex)],
+          )
+        } else {
+          const optionIndex = pollResponses.value[questionIndex]
+          answer = typeof optionIndex === 'number' ? question.options[optionIndex] : ''
+        }
+        return [question.id ?? question.question_id, answer]
+      })
+      .filter(([, answer]) => Array.isArray(answer) ? answer.length > 0 : Boolean(answer)),
+  )
+  if (!Object.keys(answers).length) return
+  try {
+    await pollApi.submitPollAnswer({ channel_id: channelId.value, poll_id: poll.id, answers })
+  } catch (error) {
+    ui.toast('Vote not submitted', error.message || 'Your response could not be submitted.', 'error')
+    return
+  }
   const existingResult = pollResults.value[poll.id] || {
     totalVotes: 0,
     questions: poll.questions.map((question) => ({
@@ -1253,6 +1547,13 @@ function submitPollResponse() {
   pollResults.value = { ...pollResults.value, [poll.id]: existingResult }
   participatedPolls.value = new Set([...participatedPolls.value, activePoll.value.id])
   closePollResponse()
+  try {
+    const response = await pollApi.getPollResult(pollQueryParams(poll, 'resultsQueryParams'))
+    const result = normalizePollResult(response, poll)
+    if (result) pollResults.value = { ...pollResults.value, [poll.id]: result }
+  } catch (error) {
+    ui.toast('Vote submitted', error.message || 'Your vote was saved, but results are unavailable.', 'error')
+  }
 }
 
 async function scrollMessagesToLatest() {
@@ -1362,7 +1663,6 @@ onBeforeUnmount(() => {
               </button>
               <strong v-else>{{ message.author }}</strong>
               <time :datetime="message.createdAt">{{ message.time }}</time>
-              <span v-if="message.editedAt" class="composer-conversation__edited">(edited)</span>
               <span v-if="isPinned(message)" class="composer-conversation__pinned">PINNED</span>
             </header>
 
@@ -1380,106 +1680,26 @@ onBeforeUnmount(() => {
                 <span v-if="message.important" class="composer-conversation__important">
                   IMPORTANT!
                 </span>
-                <section v-if="message.poll" class="composer-conversation__poll-card">
-                  <h2>{{ message.poll.title }}</h2>
-                  <div
-                    v-if="message.poll.description"
-                    class="composer-conversation__poll-description"
-                  >
-                    {{ message.poll.description }}
-                  </div>
-                  <div class="composer-conversation__poll-meta">
-                    <span
-                      class="composer-conversation__poll-status"
-                      :class="{ 'is-closed': isPollClosed(message.poll) }"
-                    >
-                      <i
-                        class="composer-conversation__poll-status-icon"
-                        :class="
-                          isPollClosed(message.poll)
-                            ? 'is-closed'
-                            : isPollScheduled(message.poll)
-                              ? 'is-scheduled'
-                              : 'is-open'
-                        "
-                        aria-hidden="true"
-                      >
-                        {{ isPollClosed(message.poll) ? '×' : isPollScheduled(message.poll) ? '◷' : '✓' }}
-                      </i>
-                      {{ isPollClosed(message.poll) ? 'Closed' : isPollScheduled(message.poll) ? 'Scheduled' : 'Open' }}
-                    </span>
-                    <span
-                      class="composer-conversation__poll-meta-divider"
-                      aria-hidden="true"
-                    ></span>
-                    <span class="composer-conversation__poll-visibility">
-                      <i aria-hidden="true">◉</i>
-                      {{ message.poll.audience === 'anonymous' ? 'Anonymous' : 'Public' }}
-                    </span>
-                  </div>
-                  <div
-                    v-if="message.poll.scheduleStart || message.poll.scheduleClose"
-                    class="composer-conversation__poll-schedule-info"
-                  >
-                    <div v-if="message.poll.scheduleStart" class="composer-conversation__poll-schedule-item">
-                      <span class="composer-conversation__poll-schedule-icon">◷</span>
-                      <span>
-                        <small>Starts</small>
-                        <strong>{{ pollScheduleLabel(message.poll.scheduleStart) }}</strong>
-                      </span>
-                    </div>
-                    <div v-if="message.poll.scheduleClose" class="composer-conversation__poll-schedule-item">
-                      <span class="composer-conversation__poll-schedule-icon">×</span>
-                      <span>
-                        <small>Ends</small>
-                        <strong>{{ pollScheduleLabel(message.poll.scheduleClose) }}</strong>
-                      </span>
-                    </div>
-                  </div>
-                  <div class="composer-conversation__poll-actions">
-                    <button
-                      v-if="
-                        !isPollScheduled(message.poll) &&
-                        !isPollClosed(message.poll) &&
-                        !participatedPolls.has(message.poll.id)
-                      "
-                      type="button"
-                      @click="participateInPoll(message.poll.id)"
-                    >
-                      Participate
-                    </button>
-                    <button
-                      v-else-if="!isPollScheduled(message.poll) && !isPollClosed(message.poll)"
-                      type="button"
-                      class="is-done"
-                      disabled
-                      aria-label="You're done"
-                    >
-                      You're Done
-                    </button>
-                    <button
-                      v-if="!isPollScheduled(message.poll)"
-                      type="button"
-                      @click="viewPollResults(message.poll.id)"
-                    >
-                      View All Results
-                    </button>
-                    <button
-                      v-if="isPollClosed(message.poll)"
-                      type="button"
-                      @click="exportPollResults(message.poll.id)"
-                    >
-                      Export To Csv
-                    </button>
-                    <button
-                      v-else-if="!isPollScheduled(message.poll) && !isPollClosed(message.poll)"
-                      type="button"
-                      @click="closePoll(message.poll.id)"
-                    >
-                      Close Poll
-                    </button>
-                  </div>
-                </section>
+                <PollMessage
+                  v-if="message.poll"
+                  :poll="message.poll"
+                  :backend-available="hasServerPollId(message.poll)"
+                  :can-publish="message.mine"
+                  :result="pollResults[message.poll.id]"
+                  :closed="isPollClosed(message.poll)"
+                  :scheduled="isPollScheduled(message.poll)"
+                  :already-voted="
+                    participatedPolls.has(message.poll.id) ||
+                    Boolean(message.poll.alreadyVoted ?? message.poll.already_voted ?? message.poll.user_has_voted)
+                  "
+                  :can-close="canClosePoll(message)"
+                  :loading="pollApi.loading.value"
+                  @participate="participateInPoll(message.poll.id)"
+                  @results="viewPollResults(message.poll.id)"
+                  @close="closePoll(message.poll.id)"
+                  @export="exportPollResults(message.poll.id)"
+                  @publish="publishLegacyPoll(message)"
+                />
 
                 <div v-if="message.reply" class="composer-conversation__reply-quote">
                   <strong>{{ message.reply.author || 'Message' }}</strong>
@@ -1901,9 +2121,14 @@ onBeforeUnmount(() => {
     </div>
     <MessageComposer
       v-if="canSendMessages"
+      :channel-id="channelId"
+      :create-poll="createPollInChannel"
+      :poll-loading="pollApi.loading.value"
+      :poll-error="pollApi.error.value"
       @send="addMessage"
       @schedule="addScheduledMessage"
       @gif="addGif"
+      @clear-poll-error="pollApi.clearError"
     />
     <div
       v-else-if="conversationType !== 'dm'"
@@ -1965,7 +2190,7 @@ onBeforeUnmount(() => {
       <div
         v-if="activePoll"
         class="composer-conversation__poll-backdrop"
-        @mousedown.self="closePollResponse"
+        @mousedown.self="!pollApi.loading.value && closePollResponse()"
       >
         <section
           class="composer-conversation__poll-response-modal"
@@ -2067,6 +2292,7 @@ onBeforeUnmount(() => {
                   <span>{{ option }}</span>
                   <input
                     type="radio"
+                    :disabled="pollApi.loading.value"
                     :name="`poll-${activePoll.id}-question-${questionIndex}`"
                     :checked="pollResponses[questionIndex] === optionIndex"
                     @change="togglePollResponse(question, questionIndex, optionIndex)"
@@ -2077,6 +2303,7 @@ onBeforeUnmount(() => {
             <textarea
               v-else-if="question.type === 'openEnded'"
               v-model="pollResponses[questionIndex]"
+                :disabled="pollApi.loading.value"
               class="composer-conversation__poll-open-ended-input"
               :aria-label="`Response to question ${questionIndex + 1}`"
               :placeholder="
@@ -2090,6 +2317,7 @@ onBeforeUnmount(() => {
               <label v-for="(option, optionIndex) in question.options" :key="option">
                 <input
                   :type="question.multiple ? 'checkbox' : 'radio'"
+                  :disabled="pollApi.loading.value"
                   :name="`poll-${activePoll.id}-question-${questionIndex}`"
                   :checked="
                     question.multiple
@@ -2103,10 +2331,23 @@ onBeforeUnmount(() => {
             </div>
           </div>
           <footer class="composer-conversation__poll-response-footer">
-            <button v-if="activePollMode !== 'results'" type="button" @click="submitPollResponse">
-              Submit Response
+            <p v-if="pollApi.error.value" role="alert">{{ pollApi.error.value }}</p>
+            <button
+              v-if="activePollMode !== 'results'"
+              type="button"
+              :disabled="pollApi.loading.value || isPollClosed(activePoll)"
+              @click="submitPollResponse"
+            >
+              {{ pollApi.loading.value ? 'Submitting...' : 'Submit Response' }}
             </button>
-            <button type="button" class="is-close" @click="closePollResponse">Close</button>
+            <button
+              type="button"
+              class="is-close"
+              :disabled="pollApi.loading.value"
+              @click="closePollResponse"
+            >
+              Close
+            </button>
           </footer>
         </section>
       </div>
