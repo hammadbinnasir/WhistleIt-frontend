@@ -1,5 +1,21 @@
 const TOKEN_KEY = 'authToken'
 const USER_KEY = 'authUser'
+const REDIRECT_KEY = 'authRedirect'
+
+function isInternalRedirect(path) {
+  return typeof path === 'string' && path.startsWith('/') && !path.startsWith('//')
+}
+
+export function saveAuthRedirect(path) {
+  if (!isInternalRedirect(path)) return
+  sessionStorage.setItem(REDIRECT_KEY, path)
+}
+
+export function consumeAuthRedirect() {
+  const path = sessionStorage.getItem(REDIRECT_KEY)
+  sessionStorage.removeItem(REDIRECT_KEY)
+  return isInternalRedirect(path) ? path : null
+}
 
 function getFullName(user) {
   if (!user || typeof user !== 'object') return ''

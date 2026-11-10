@@ -1,4 +1,4 @@
-import { hasAuthSession } from './session'
+import { hasAuthSession, saveAuthRedirect } from './session'
 
 export function installAuthGuard(router) {
   let protectedHistoryBoundaryAdded = false
@@ -29,7 +29,8 @@ export function installAuthGuard(router) {
 
   router.beforeEach((to) => {
     if (to.meta.requiresAuth && !hasAuthSession()) {
-      return { name: 'login', query: { redirect: to.fullPath } }
+      saveAuthRedirect(to.fullPath)
+      return { name: 'login' }
     }
 
     if (to.meta.guestOnly && hasAuthSession()) {
