@@ -5,6 +5,7 @@ import { useRouter } from 'vue-router'
 
 // Stores
 import { useUiStore } from '@/stores/ui'
+import { useKeyboardShortcuts } from '@/features/shell/shortcuts/useKeyboardShortcuts'
 import { useTeamsStore } from '@/stores/teams'
 import { useMembersStore } from '@/stores/members'
 import { useChannelsStore } from '@/features/channels'
@@ -49,6 +50,7 @@ import SetReminderModal from '@/features/search/SetReminderModal.vue'
 
 const router = useRouter()
 const ui = useUiStore()
+useKeyboardShortcuts()
 const teamsStore = useTeamsStore()
 const membersStore = useMembersStore()
 const channelsStore = useChannelsStore()

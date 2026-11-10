@@ -276,36 +276,34 @@ export const shortcutColumns = [
     title: 'Messages',
     groups: [
       {
-        title: 'Works inside an empty input field or on message hover',
+        title: 'When a message is hovered or focused',
         items: [
           { label: 'Copy message', keys: ['Ctrl', 'G'] },
           { label: 'Edit message', keys: ['Ctrl', 'E'] },
-          { label: 'Delete message', keys: ['Ctrl', 'D'] },
+          { label: 'Delete message (when composer is empty)', keys: ['Ctrl', 'D'] },
           { label: 'Forward message', keys: ['Ctrl', 'H'] },
           { label: 'Reply to message', keys: ['Ctrl', 'J'] },
           { label: 'Set message reminder', keys: ['Ctrl', 'A'] },
         ],
       },
       {
-        title: 'Works in sending a message',
+        title: 'Sending a message',
         items: [
           { label: 'Emoji menu', keys: ['Ctrl', 'Shift', 'L'] },
           { label: 'Attach file', keys: ['Ctrl', 'Shift', 'U'] },
-          { label: 'Attach recent file', keys: ['Ctrl', '2'] },
-          { label: 'Start audio recording', keys: ['Ctrl', 'Shift', 'O'] },
-          { label: 'Start screen recording', keys: ['Ctrl', 'Shift', 'S'] },
+          { label: 'Start audio recording', keys: ['Ctrl', 'Alt', 'O'] },
           { label: 'Create poll', keys: ['Ctrl', 'Shift', 'P'] },
           { label: 'Send scheduled message', keys: ['Ctrl', 'Shift', 'Y'] },
-          { label: 'Send important Message', keys: ['Ctrl', '1'] },
+          { label: 'Mark message important', keys: ['Ctrl', 'Shift', 'F3'] },
         ],
       },
       {
-        title: 'Formatting',
+        title: 'Formatting in the composer',
         items: [
           { label: 'Bold', keys: ['Ctrl', 'B'] },
           { label: 'Italicize', keys: ['Ctrl', 'I'] },
           { label: 'Underline', keys: ['Ctrl', 'U'] },
-          { label: 'Strike', keys: ['Ctrl', 'D'] },
+          { label: 'Strikethrough (when composer has text)', keys: ['Ctrl', 'D'] },
           { label: 'Code', keys: ['Ctrl', 'Shift', '\\'] },
           { label: 'Bullet List', keys: ['Ctrl', 'Shift', '8'] },
           { label: 'Order List', keys: ['Ctrl', 'Shift', '9'] },
@@ -317,14 +315,11 @@ export const shortcutColumns = [
     title: 'Navigation',
     groups: [
       {
-        title: '',
-        items: [
-          { label: 'Quick navigation over Whistle It', keys: ['Ctrl', 'K'] },
-          { label: 'Messages, links and files search', keys: ['Ctrl', 'F'] },
-        ],
+        title: 'Navigation',
+        items: [{ label: 'Messages, links and files search', keys: ['Ctrl', 'F'] }],
       },
       {
-        title: 'Works inside an empty input field',
+        title: 'Works in an empty composer',
         items: [
           { label: 'Highlight latest message', keys: ['Down'] },
           { label: 'Highlight previous message', keys: ['Up'] },
@@ -333,11 +328,11 @@ export const shortcutColumns = [
       {
         title: 'Other',
         items: [
-          { label: 'Open account setting', keys: ['Ctrl', 'Shift', 'I'] },
-          { label: 'Open channel Setting', keys: ['Ctrl', 'Shift', 'X'] },
-          { label: 'Open reminder drawer', keys: ['Ctrl', 'Shift', '2'] },
-          { label: 'Open Pinned message drawer', keys: ['Ctrl', 'Shift', '6'] },
-          { label: 'Open help drawer', keys: ['Ctrl', 'Esc'] },
+          { label: 'Open account settings', keys: ['Ctrl', 'Shift', 'I'] },
+          { label: 'Open channel settings', keys: ['Ctrl', 'Shift', 'X'] },
+          { label: 'Open reminders', keys: ['Ctrl', 'Shift', '2'] },
+          { label: 'Open pinned messages', keys: ['Ctrl', 'Shift', '6'] },
+          { label: 'Open Help', keys: ['Ctrl', 'Shift', 'H'] },
         ],
       },
     ],
