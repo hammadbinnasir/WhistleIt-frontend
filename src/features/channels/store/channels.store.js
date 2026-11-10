@@ -214,8 +214,13 @@ export const useChannelsStore = defineStore('channels', () => {
 
   // ---------- actions: management ----------
   async function createChannel(payload) {
-    const channel = await api.createChannel(payload)
-    channel.canManage = true
+    const createdChannel = await api.createChannel(payload)
+    const channel = {
+      ...createdChannel,
+      canManage: true,
+      messagePermission: createdChannel.messagePermission ?? 'everyone',
+      allowedSenderIds: createdChannel.allowedSenderIds ?? [],
+    }
     rememberManagedChannel(channel.id)
     upsertChannel(channel)
     return channel
