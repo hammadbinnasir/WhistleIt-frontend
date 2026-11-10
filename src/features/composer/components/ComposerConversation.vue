@@ -236,11 +236,12 @@ const renderedMessages = computed(() => {
     .map((message) => {
       const voiceNoteId = message.voiceNoteId ?? message.voice_note_id ?? message.voice_note?.id
       const messageContent = message.text ?? message.content ?? ''
+      const normalizedContent = normalizeMessageText(messageContent)
       const content = message.deleted
         ? '(message deleted)'
-        : voiceNoteId && messageContent.trim().toLowerCase() === 'voice message'
+        : voiceNoteId && normalizedContent.trim().toLowerCase() === 'voice message'
           ? ''
-          : normalizeMessageText(messageContent)
+          : normalizedContent
       const author =
         message.from === dms.meId
           ? currentUser

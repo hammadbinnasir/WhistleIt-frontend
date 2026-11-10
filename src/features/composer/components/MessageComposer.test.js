@@ -164,9 +164,13 @@ describe('message composer', () => {
       'complete-recording',
     )
     expect(voiceNoteApi.getVoiceNote).toHaveBeenCalledWith('voice-note-1')
-    expect(wrapper.text()).toContain('Voice message')
+    expect(wrapper.text()).not.toContain('Voice message')
+    expect(wrapper.find('.message-composer__voice-status').exists()).toBe(false)
     expect(wrapper.get('.message-composer__voice-draft audio').attributes('src')).toBe(
       'blob:voice-preview',
+    )
+    expect(wrapper.get('.message-composer__voice-discard').attributes('aria-label')).toBe(
+      'Discard recording',
     )
     expect(document.querySelector('[role="dialog"]')).toBeNull()
     expect(wrapper.get('button[aria-label="Send message"]').attributes('disabled')).toBeUndefined()
@@ -204,10 +208,7 @@ describe('message composer', () => {
     document.querySelector('button.message-composer__recording-stop').click()
     await flushPromises()
 
-    await wrapper
-      .findAll('button')
-      .find((button) => button.text().includes('Discard recording'))
-      .trigger('click')
+    await wrapper.get('button[aria-label="Discard recording"]').trigger('click')
     await flushPromises()
 
     expect(voiceNoteApi.discardVoiceNote).toHaveBeenCalledWith('voice-note-1')
