@@ -35,6 +35,11 @@ async function mountAuthView(path = '/login') {
         }),
       },
       { path: '/app', name: 'home', component: { template: '<main>Workspace</main>' } },
+      {
+        path: '/app/:workspaceId/:teamId?/:channelId?',
+        name: 'workspace-team',
+        component: { template: '<main>Workspace</main>' },
+      },
     ],
   })
   await router.push(path)
@@ -289,6 +294,19 @@ describe('auth view', () => {
     expect(getAuthToken()).toBe('test-token')
     expect(localStorage.getItem('authToken')).toBeNull()
     expect(router.currentRoute.value.name).toBe('home')
+  })
+
+  it('returns to the saved protected page after login without putting its IDs in the login URL', async () => {
+    sessionStorage.setItem('authRedirect', '/app/workspace-1/team-2/channel-3')
+    const { router, wrapper } = await mountAuthView()
+
+    await wrapper.get('#email').setValue('sam@example.com')
+    await wrapper.get('#password').setValue('correct-password')
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+
+    expect(router.currentRoute.value.fullPath).toBe('/app/workspace-1/team-2/channel-3')
+    expect(sessionStorage.getItem('authRedirect')).toBeNull()
   })
 
   it('keeps the token across browser restarts when remember me is selected', async () => {

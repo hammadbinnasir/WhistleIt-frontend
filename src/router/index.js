@@ -7,6 +7,7 @@ import HomeView from '@/views/HomeView.vue'
 import { channelRoutes } from '@/features/channels/routes'
 import { useTeamsStore } from '@/stores/teams'
 import { useUiStore } from '@/stores/ui'
+import { saveAuthRedirect } from '@/features/auth/session'
 
 // Each feature owner adds their own routes here (or in features/<area>/routes.js
 // and imports them). Keep route names unique.
@@ -120,7 +121,8 @@ if (typeof window !== 'undefined') {
   window.addEventListener('auth:expired', () => {
     const currentRoute = router.currentRoute.value
     if (currentRoute.meta.requiresAuth) {
-      router.replace({ name: 'login', query: { redirect: currentRoute.fullPath } })
+      saveAuthRedirect(currentRoute.fullPath)
+      router.replace({ name: 'login' })
     }
   })
 }
