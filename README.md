@@ -15,16 +15,20 @@ npm run dev                   # http://localhost:5173
 
 Requires Node 20+ (22 recommended).
 
+Microphone access requires a secure browser context. When running locally, open
+`http://localhost:5173` on the same computer instead of accessing the dev server by its LAN IP
+over HTTP. For access from another device, serve the app over trusted HTTPS.
+
 ## Scripts
 
-| Command                | What it does                  |
-| ---------------------- | ----------------------------- |
-| `npm run dev`          | Start dev server              |
-| `npm run build`        | Production build to `dist/`   |
-| `npm test`             | Run unit tests (Vitest)       |
-| `npm run lint`         | ESLint                        |
-| `npm run format`       | Prettier, auto-fix `src/`     |
-| `npm run format:check` | Prettier check (used in CI)   |
+| Command                | What it does                |
+| ---------------------- | --------------------------- |
+| `npm run dev`          | Start dev server            |
+| `npm run build`        | Production build to `dist/` |
+| `npm test`             | Run unit tests (Vitest)     |
+| `npm run lint`         | ESLint                      |
+| `npm run format`       | Prettier, auto-fix `src/`   |
+| `npm run format:check` | Prettier check (used in CI) |
 
 ## Project structure
 
@@ -59,9 +63,11 @@ See `src/stores/ui.js` (store) and `src/views/HomeView.vue` (usage).
 ```js
 // stores/example.js
 export const useExampleStore = defineStore('example', () => {
-  const count = ref(0)                 // state
+  const count = ref(0) // state
   const double = computed(() => count.value * 2) // getter
-  function inc() { count.value++ }     // action
+  function inc() {
+    count.value++
+  } // action
   return { count, double, inc }
 })
 ```

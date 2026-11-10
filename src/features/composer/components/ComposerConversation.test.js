@@ -11,6 +11,7 @@ import { useRemindersStore } from '@/features/search/reminders'
 import { useUiStore } from '@/stores/ui'
 import { resetUserStore, useUserStore } from '@/features/account/composables/useUserStore'
 import { setupDmsTestState } from '@/features/dms/test-utils'
+import { normalizeMessage } from '@/features/dms/dmApi'
 import {
   getChannelMessages,
   sendChannelMessage,
@@ -19,6 +20,7 @@ import {
 } from '@/features/messages/channelMessageService'
 
 const emojiPickerProps = vi.hoisted(() => vi.fn())
+const sendChannelVoiceMessageMock = vi.hoisted(() => vi.fn())
 const reminderApi = vi.hoisted(() => ({
   createReminder: vi.fn(),
   deleteReminder: vi.fn(),
@@ -45,11 +47,6 @@ vi.mock('../api/scheduledMessagesApi', () => scheduledMessagesApi)
 const pinApi = vi.hoisted(() => ({
   pinMessage: vi.fn().mockResolvedValue({}),
   unpinMessage: vi.fn().mockResolvedValue(undefined),
-}))
-vi.mock('@/features/channels/api/channels.api', async (importOriginal) => ({
-  ...(await importOriginal()),
-  pinMessage: pinApi.pinMessage,
-  unpinMessage: pinApi.unpinMessage,
 }))
 
 vi.mock('@/features/messages/channelMessageService', () => ({
@@ -78,8 +75,22 @@ vi.mock('vue3-emoji-picker', async () => {
   }
 })
 
+vi.mock('@/features/channels/api/channels.api', async (importOriginal) => ({
+  ...(await importOriginal()),
+  pinMessage: pinApi.pinMessage,
+  sendChannelVoiceMessage: sendChannelVoiceMessageMock,
+  unpinMessage: pinApi.unpinMessage,
+}))
+
+vi.mock('@/features/media/voiceNotesApi', async (importOriginal) => ({
+  ...(await importOriginal()),
+  getVoiceNote: vi.fn().mockResolvedValue({ id: 'voice-note-1' }),
+  getVoiceNoteFile: vi.fn().mockResolvedValue(new Blob(['audio'], { type: 'audio/webm' })),
+}))
+
 import ComposerConversation from './ComposerConversation.vue'
 import MessageComposer from './MessageComposer.vue'
+import { sendChannelVoiceMessage } from '@/features/channels/api/channels.api'
 
 describe('composer conversation', () => {
   beforeEach(() => {
@@ -119,6 +130,8 @@ describe('composer conversation', () => {
     updateChannelMessage.mockResolvedValue({ success: true, data: {} })
     deleteChannelMessage.mockReset()
     deleteChannelMessage.mockResolvedValue({ success: true, data: null })
+    sendChannelVoiceMessage.mockReset()
+    sendChannelVoiceMessage.mockResolvedValue({ id: 'server-voice-message' })
     let serverMessageId = 0
     sendChannelMessage.mockImplementation(async (_company, _team, _channel, { content }) => ({
       success: true,
@@ -300,7 +313,126 @@ describe('composer conversation', () => {
       await nextTick()
       expect(wrapper.findComponent(MessageComposer).exists()).toBe(true)
     }
+    wrapper.unmount()
+  })
 
+  it('posts channel message text and attachments through the message API', async () => {
+    const attachment = new File(['report'], 'report.txt', { type: 'text/plain' })
+    const wrapper = mount(ComposerConversation, {
+      props: { conversationId: 'channel-1', conversationType: 'channel' },
+    })
+
+    wrapper.findComponent(MessageComposer).vm.$emit('send', {
+      content: 'Please review this file',
+      attachment,
+    })
+
+    await vi.waitFor(() => {
+      expect(sendChannelMessage).toHaveBeenCalledWith(
+        'company-1',
+        'team-1',
+        'channel-1',
+        expect.objectContaining({ content: 'Please review this file', attachment }),
+      )
+    })
+  })
+
+  it('posts a file-only channel message through the message API', async () => {
+    const attachment = new File(['report'], 'report.txt', { type: 'text/plain' })
+    const wrapper = mount(ComposerConversation, {
+      props: { conversationId: 'channel-1', conversationType: 'channel' },
+    })
+
+    wrapper.findComponent(MessageComposer).vm.$emit('send', {
+      content: '',
+      attachment,
+    })
+
+    await vi.waitFor(() => {
+      expect(sendChannelMessage).toHaveBeenCalledWith(
+        'company-1',
+        'team-1',
+        'channel-1',
+        expect.objectContaining({ content: '', attachment }),
+      )
+    })
+  })
+
+  it('immediately previews a returned image attachment below the message text', async () => {
+    const attachment = {
+      id: 'file-image',
+      name: 'men.jpg',
+      mime_type: 'image/jpeg',
+      path: 'messages/channel-1/men.jpg',
+    }
+    sendChannelMessage.mockResolvedValue({
+      success: true,
+      data: {
+        message: {
+          id: 'message-image',
+          body: 'Photo',
+          attachment: [attachment],
+          sender: { id: 'u1', name: 'Umais' },
+          created_at: '2026-11-10T10:00:00.000Z',
+        },
+      },
+    })
+    const wrapper = mount(ComposerConversation, {
+      props: { conversationId: 'channel-1', conversationType: 'channel' },
+    })
+
+    wrapper.findComponent(MessageComposer).vm.$emit('send', {
+      content: 'Photo',
+      attachment: new File(['image'], 'men.jpg', { type: 'image/jpeg' }),
+    })
+
+    await vi.waitFor(() => expect(wrapper.find('img[alt="men.jpg"]').exists()).toBe(true))
+    const image = wrapper.get('img[alt="men.jpg"]')
+    expect(image.attributes('src')).toMatch(/^blob:/)
+    expect(image.element.parentElement.getAttribute('href')).toMatch(/^blob:/)
+    expect(wrapper.text()).toContain('Photo')
+    wrapper.unmount()
+  })
+
+  it.each([
+    [
+      { id: 'pdf', name: 'guide.pdf', mime_type: 'application/pdf', path: 'messages/guide.pdf' },
+      'PDF',
+    ],
+    [
+      {
+        id: 'docx',
+        name: 'notes.docx',
+        mime_type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        path: 'messages/notes.docx',
+      },
+      'DOC',
+    ],
+  ])('shows a document card for returned %s attachments', async (file, icon) => {
+    sendChannelMessage.mockResolvedValue({
+      success: true,
+      data: {
+        message: {
+          id: `message-${file.id}`,
+          body: 'Document',
+          attachment: [file],
+          sender: { id: 'u1', name: 'Umais' },
+          created_at: '2026-11-10T10:00:00.000Z',
+        },
+      },
+    })
+    const wrapper = mount(ComposerConversation, {
+      props: { conversationId: 'channel-1', conversationType: 'channel' },
+    })
+
+    wrapper.findComponent(MessageComposer).vm.$emit('send', {
+      content: 'Document',
+      attachment: new File(['document'], file.name, { type: file.mime_type }),
+    })
+
+    await vi.waitFor(() => expect(wrapper.text()).toContain(file.name))
+    expect(wrapper.text()).toContain(icon)
+    expect(wrapper.get('a[download]').attributes('href')).toMatch(/^blob:/)
     wrapper.unmount()
   })
 
@@ -349,13 +481,10 @@ describe('composer conversation', () => {
     await vi.waitFor(() => {
       expect(wrapper.text()).toContain('Older channel history')
     })
-    expect(getChannelMessages).toHaveBeenNthCalledWith(
-      2,
-      'company-1',
-      'team-1',
-      'channel-1',
-      { page: 2, perPage: 15 },
-    )
+    expect(getChannelMessages).toHaveBeenNthCalledWith(2, 'company-1', 'team-1', 'channel-1', {
+      page: 2,
+      perPage: 15,
+    })
     wrapper.unmount()
   })
 
@@ -450,34 +579,117 @@ describe('composer conversation', () => {
   it('sends important DMs with is_important and renders the delivered flag', async () => {
     const dms = useDmStore()
     dms.conversations.push({ id: 'important-dm', members: [dms.meId, 'user-2'], messages: [] })
-    const sendDmMessage = vi.spyOn(dmApi, 'sendMessage').mockImplementation(
-      async (_companyId, channelId, payload) => ({
+    const sendDmMessage = vi
+      .spyOn(dmApi, 'sendMessage')
+      .mockImplementation(async (_companyId, channelId, payload) => ({
         id: 'important-dm-server-message',
         from: dms.meId,
         text: payload.body,
         createdAt: new Date().toISOString(),
         is_important: payload.is_important,
         channelId,
-      }),
-    )
+      }))
     const wrapper = mount(ComposerConversation, {
       props: { conversationId: 'important-dm', conversationType: 'dm' },
     })
 
-    await wrapper.findComponent(MessageComposer).get('button[aria-label="Important message"]').trigger('click')
+    await wrapper
+      .findComponent(MessageComposer)
+      .get('button[aria-label="Important message"]')
+      .trigger('click')
     await sendMessage(wrapper, 'Urgent direct message')
     await vi.waitFor(() =>
       expect(dms.conversations[0].messages.at(-1).id).toBe('important-dm-server-message'),
     )
 
-    expect(sendDmMessage).toHaveBeenCalledWith(
-      'company-1',
-      'important-dm',
-      { body: 'Urgent direct message', is_important: true },
-    )
+    expect(sendDmMessage).toHaveBeenCalledWith('company-1', 'important-dm', {
+      body: 'Urgent direct message',
+      is_important: true,
+    })
     expect(wrapper.text()).toContain('IMPORTANT!')
     wrapper.unmount()
     sendDmMessage.mockRestore()
+  })
+
+  it('sends channel voice-note IDs and renders playback for received voice notes', async () => {
+    const wrapper = mount(ComposerConversation, {
+      props: { conversationId: 'voice-channel', conversationType: 'channel' },
+    })
+    expect(wrapper.findComponent(MessageComposer).props('channelId')).toBe('voice-channel')
+    wrapper.findComponent(MessageComposer).vm.$emit('send', {
+      content: 'Listen to this',
+      voiceNoteId: 'voice-note-1',
+    })
+
+    await vi.waitFor(() => expect(sendChannelVoiceMessage).toHaveBeenCalledOnce())
+    expect(sendChannelMessage).not.toHaveBeenCalled()
+    expect(sendChannelVoiceMessage).toHaveBeenCalledWith(
+      'voice-channel',
+      'voice-note-1',
+      'Listen to this',
+    )
+    await vi.waitFor(() => expect(wrapper.find('audio[controls]').exists()).toBe(true))
+    expect(useMessagesStore().messagesFor('voice-channel').at(-1)).toMatchObject({
+      content: 'Listen to this',
+      voiceNoteId: 'voice-note-1',
+    })
+    wrapper.unmount()
+  })
+
+  it('loads and plays voice notes received from the channel messages API', async () => {
+    getChannelMessages.mockResolvedValueOnce({
+      success: true,
+      data: {
+        messages: [
+          {
+            id: 'incoming-channel-voice',
+            sender_id: 'member-2',
+            sender: { name: 'Avery' },
+            body: 'Voice message',
+            voice_note_id: 'voice-note-incoming',
+            created_at: new Date().toISOString(),
+          },
+        ],
+      },
+    })
+    const wrapper = mount(ComposerConversation, {
+      props: { conversationId: 'received-channel', conversationType: 'channel' },
+    })
+
+    await vi.waitFor(() => expect(wrapper.find('audio[controls]').exists()).toBe(true))
+    expect(wrapper.find('.composer-conversation__message-bubble p').exists()).toBe(false)
+    expect(getChannelMessages).toHaveBeenCalledWith('company-1', 'team-1', 'received-channel', {
+      page: 1,
+      perPage: 15,
+    })
+    wrapper.unmount()
+  })
+
+  it('renders a player for a received voice ID nested in backend metadata', async () => {
+    getChannelMessages.mockResolvedValueOnce({
+      success: true,
+      data: {
+        messages: [
+          {
+            id: 'incoming-nested-voice',
+            sender_id: 'member-2',
+            body: 'Voice message',
+            sender: { voice_note: { id: 'voice-note-nested' } },
+            created_at: new Date().toISOString(),
+          },
+        ],
+      },
+    })
+    const wrapper = mount(ComposerConversation, {
+      props: { conversationId: 'nested-voice-channel', conversationType: 'channel' },
+    })
+
+    await vi.waitFor(() => expect(wrapper.find('audio[controls]').exists()).toBe(true))
+    expect(useMessagesStore().messagesFor('nested-voice-channel')[0]).toMatchObject({
+      id: 'incoming-nested-voice',
+      voiceNoteId: 'voice-note-nested',
+    })
+    wrapper.unmount()
   })
 
   it('opens the message action menu on left click when configured', async () => {
@@ -656,10 +868,14 @@ describe('composer conversation', () => {
     await nextTick()
     document.querySelector('.message-composer__poll-footer .message-composer__poll-next').click()
     await vi.waitFor(() => expect(pollsApi.createPoll).toHaveBeenCalledOnce())
-    await vi.waitFor(() => expect(wrapper.find('.composer-conversation__poll-card').exists()).toBe(true))
+    await vi.waitFor(() =>
+      expect(wrapper.find('.composer-conversation__poll-card').exists()).toBe(true),
+    )
 
     expect(wrapper.get('.composer-conversation__poll-card').text()).toContain('Lunch vote')
-    expect(document.querySelector('[role="dialog"][aria-labelledby="message-poll-title"]')).toBeNull()
+    expect(
+      document.querySelector('[role="dialog"][aria-labelledby="message-poll-title"]'),
+    ).toBeNull()
     expect(useMessagesStore().messagesFor('general').at(-1).poll.questions[0].text).toBe(
       'What should we order?',
     )
@@ -848,7 +1064,6 @@ describe('composer conversation', () => {
     const composer = wrapper.findComponent(MessageComposer)
     composer.vm.$emit('send', {
       content: '',
-      attachments: [],
       poll: {
         id: 'open-ended-poll',
         title: 'Open feedback',
@@ -867,7 +1082,11 @@ describe('composer conversation', () => {
 
     await wrapper.get('.composer-conversation__poll-actions button').trigger('click')
     await vi.waitFor(() => expect(pollsApi.getPollQuestions).toHaveBeenCalledOnce())
-    await vi.waitFor(() => expect(document.querySelector('textarea[aria-label="Response to question 1"]')).not.toBeNull())
+    await vi.waitFor(() =>
+      expect(
+        document.querySelector('textarea[aria-label="Response to question 1"]'),
+      ).not.toBeNull(),
+    )
     const response = document.querySelector('textarea[aria-label="Response to question 1"]')
     expect(response).not.toBeNull()
     response.value = 'Improve documentation'
@@ -948,9 +1167,11 @@ describe('composer conversation', () => {
     const wrapper = mount(ComposerConversation)
 
     expect(wrapper.text()).toContain('Which option?')
-    expect(wrapper.findAll('.composer-conversation__poll-actions button').some((button) =>
-      button.text().includes('Close Poll'),
-    )).toBe(false)
+    expect(
+      wrapper
+        .findAll('.composer-conversation__poll-actions button')
+        .some((button) => button.text().includes('Close Poll')),
+    ).toBe(false)
     wrapper.unmount()
   })
 
@@ -1042,7 +1263,7 @@ describe('composer conversation', () => {
     const wrapper = mount(ComposerConversation, {
       props: { conversationId: conversation.id, conversationType: 'dm' },
     })
-
+    expect(wrapper.text()).toContain('Project ideas bhej di hain')
     expect(wrapper.text()).toContain('Project ideas bhej di hain')
 
     const editor = wrapper.get('[contenteditable="true"]')
@@ -1058,6 +1279,73 @@ describe('composer conversation', () => {
     expect(wrapper.text()).toContain('Reply from the composer')
   })
 
+  it('passes the direct-channel ID to the voice composer', () => {
+    const dms = useDmStore()
+    dms.conversations = [
+      {
+        id: 'direct-channel-42',
+        type: 'dm',
+        members: [dms.meId, 'user-2'],
+        messages: [],
+      },
+    ]
+    const wrapper = mount(ComposerConversation, {
+      props: { conversationId: 'direct-channel-42', conversationType: 'dm' },
+    })
+
+    expect(wrapper.findComponent(MessageComposer).props('channelId')).toBe('direct-channel-42')
+    wrapper.unmount()
+  })
+
+  it('sends and plays voice notes in direct messages', async () => {
+    const dms = useDmStore()
+    const conversation = {
+      id: 'direct-channel-voice',
+      type: 'dm',
+      members: [dms.meId, 'u2'],
+      messages: [
+        normalizeMessage({
+          id: 'received-dm-voice',
+          from: 'u2',
+          body: 'Voice message',
+          voice_note: { voice_note_id: 'voice-note-received' },
+          createdAt: new Date().toISOString(),
+        }),
+      ],
+    }
+    dms.conversations = [conversation]
+    const sendDmMessage = vi.spyOn(dmApi, 'sendMessage').mockResolvedValue({
+      id: 'sent-dm-voice',
+      from: dms.meId,
+      text: 'Voice message',
+      voiceNoteId: 'voice-note-sent',
+    })
+    const wrapper = mount(ComposerConversation, {
+      props: { conversationId: conversation.id, conversationType: 'dm' },
+    })
+
+    wrapper.findComponent(MessageComposer).vm.$emit('send', {
+      content: '',
+      voiceNoteId: 'voice-note-sent',
+    })
+
+    await vi.waitFor(() => {
+      expect(sendDmMessage).toHaveBeenCalledWith('company-1', conversation.id, {
+        body: 'Voice message',
+        voice_note_id: 'voice-note-sent',
+        is_important: false,
+      })
+    })
+    await vi.waitFor(() => expect(wrapper.findAll('audio[controls]')).toHaveLength(2))
+    expect(wrapper.findAll('.composer-conversation__message-bubble p')).toHaveLength(0)
+    expect(conversation.messages).toEqual(
+      expect.arrayContaining([expect.objectContaining({ voiceNoteId: 'voice-note-sent' })]),
+    )
+
+    sendDmMessage.mockRestore()
+    wrapper.unmount()
+  })
+
   it('shows the signed-in user name instead of You for DM messages', async () => {
     sessionStorage.setItem('authUser', JSON.stringify({ id: 'u1', fullName: 'Aiman Iqbal' }))
     const dms = useDmStore()
@@ -1071,7 +1359,7 @@ describe('composer conversation', () => {
     await sendMessage(wrapper, 'Name should be visible')
 
     expect(wrapper.text()).toContain('Aiman Iqbal')
-    expect(wrapper.text()).not.toContain('You')
+    expect(wrapper.text()).not.toMatch(/\bYou\b/)
     wrapper.unmount()
   })
 
@@ -1210,9 +1498,11 @@ describe('composer conversation', () => {
     expect(
       article.get('.composer-conversation__message-bubble .composer-conversation__edited').text(),
     ).toBe('(edited)')
-    expect(article.find('.composer-conversation__message-heading .composer-conversation__edited').exists()).toBe(
-      false,
-    )
+    expect(
+      article
+        .find('.composer-conversation__message-heading .composer-conversation__edited')
+        .exists(),
+    ).toBe(false)
   })
 
   it('deletes a server-backed channel message through the delete API', async () => {
@@ -1446,15 +1736,10 @@ describe('composer conversation', () => {
     await wrapper.get('form.composer-conversation__forward-dialog').trigger('submit')
 
     await vi.waitFor(() => {
-      expect(sendChannelMessage).toHaveBeenLastCalledWith(
-        'company-1',
-        'team-1',
-        'random',
-        {
-          content: 'Forward this update',
-          forwardedFrom: 'You in general',
-        },
-      )
+      expect(sendChannelMessage).toHaveBeenLastCalledWith('company-1', 'team-1', 'random', {
+        content: 'Forward this update',
+        forwardedFrom: 'You in general',
+      })
     })
     expect(messages.messagesFor('random')).toContainEqual(
       expect.objectContaining({
@@ -1547,15 +1832,5 @@ describe('composer conversation', () => {
     expect(wrapper.get('[aria-label="Sent"]').text()).toBe('✓✓')
     expect(wrapper.text()).not.toContain('Scheduled for')
     expect(wrapper.findAll('.composer-conversation__message-bubble')).toHaveLength(1)
-  })
-
-  it('shows a selected GIF as a conversation message', async () => {
-    const wrapper = mount(ComposerConversation)
-    const gif = { title: 'Celebration', url: 'https://example.com/celebration.gif' }
-
-    wrapper.findComponent(MessageComposer).vm.$emit('gif', gif)
-    await nextTick()
-
-    expect(wrapper.get('img[alt="Celebration"]').attributes('src')).toBe(gif.url)
   })
 })

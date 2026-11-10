@@ -42,6 +42,24 @@ describe('shared API client', () => {
     })
   })
 
+  it('sends FormData without overriding its multipart content type', async () => {
+    getAuthToken.mockReturnValue('session-token')
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ success: true }),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const body = new FormData()
+    body.append('attachment', new File(['file'], 'report.txt', { type: 'text/plain' }))
+
+    await apiRequest('/messages', { method: 'POST', body })
+
+    const [, options] = fetchMock.mock.calls[0]
+    expect(options.body).toBe(body)
+    expect(options.headers['Content-Type']).toBeUndefined()
+    expect(options.headers.Accept).toBe('application/json')
+  })
+
   it('maps HTTP and unsuccessful response errors to status and message', async () => {
     getAuthToken.mockReturnValue('session-token')
     const fetchMock = vi

@@ -13,7 +13,16 @@ export class ApiError extends Error {
 
 export async function http(
   path,
-  { method = 'GET', body, params, signal, credentials = 'omit', auth = true, headers = {} } = {},
+  {
+    method = 'GET',
+    body,
+    params,
+    signal,
+    credentials = 'omit',
+    auth = true,
+    headers = {},
+    responseType = 'json',
+  } = {},
 ) {
   const token = auth ? getAuthToken() : null
   if (auth && !token) {
@@ -21,7 +30,21 @@ export async function http(
     throw new ApiError('Your login session is missing. Please sign in again.', { status: 401 })
   }
 
-  const url = new URL(`${BASE_URL}${path}`, window.location.origin)
+  const baseUrl = new URL(BASE_URL, window.location.origin)
+  const basePath = baseUrl.pathname.replace(/\/$/, '')
+  const isAbsoluteUrl = /^https?:\/\//i.test(path)
+  const alreadyIncludesBasePath =
+    basePath && (path === basePath || path.startsWith(`${basePath}/`))
+  const url = isAbsoluteUrl
+    ? new URL(path)
+    : alreadyIncludesBasePath
+      ? new URL(path, baseUrl.origin)
+      : new URL(`${BASE_URL}${path}`, window.location.origin)
+  if (basePath && url.origin === baseUrl.origin) {
+    while (url.pathname.startsWith(`${basePath}${basePath}/`)) {
+      url.pathname = url.pathname.slice(basePath.length)
+    }
+  }
   if (params) {
     Object.entries(params).forEach(([key, value]) => {
       if (value !== undefined && value !== null && value !== '') url.searchParams.set(key, value)
@@ -46,14 +69,16 @@ export async function http(
     throw new ApiError(error.message || 'Network request failed', { details: error })
   }
   let payload = null
-  try {
-    payload = await response.json()
-  } catch (error) {
-    if (response.ok && response.status !== 204) {
-      throw new ApiError('The server returned an unreadable response.', {
-        status: response.status,
-        details: error,
-      })
+  if (!response.ok || responseType !== 'blob') {
+    try {
+      payload = await response.json()
+    } catch (error) {
+      if (response.ok && response.status !== 204) {
+        throw new ApiError('The server returned an unreadable response.', {
+          status: response.status,
+          details: error,
+        })
+      }
     }
   }
   const missingToken =
@@ -65,5 +90,6 @@ export async function http(
       details: payload,
     })
   }
+  if (responseType === 'blob') return response.blob()
   return payload
 }
