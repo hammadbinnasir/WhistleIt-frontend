@@ -63,6 +63,7 @@ describe('channel messages store', () => {
       content: 'Hello channel',
       from: 'user-2',
       createdAt: '2026-11-05T10:00:00Z',
+      backendSynced: true,
     })
     expect(messages.loadingByChannel['6aeb0aa8fbf9fd02ad07048f']).toBe(false)
     expect(messages.errorsByChannel['6aeb0aa8fbf9fd02ad07048f']).toBe('')
@@ -120,6 +121,23 @@ describe('channel messages store', () => {
     expect(messages.messagesFor('channel-1')[0]).toMatchObject({
       content: 'Keep visible',
       deleted: false,
+    })
+  })
+
+  it('removes API paragraph wrappers from channel message bodies', async () => {
+    useTeamsStore().activeWorkspaceId = 'company-1'
+    useTeamsStore().activeTeamId = 'team-1'
+    getChannelMessages.mockResolvedValue({
+      success: true,
+      data: { messages: [{ id: 'message-1', body: '<p>byeee</p>' }] },
+    })
+    const messages = useMessagesStore()
+
+    await messages.fetchChannelMessages('channel-1')
+
+    expect(messages.messagesFor('channel-1')[0]).toMatchObject({
+      content: 'byeee',
+      text: 'byeee',
     })
   })
 
@@ -263,6 +281,7 @@ describe('channel messages store', () => {
       'team-1',
       'channel-1',
       'server-message-1',
+      'Old message',
     )
     expect(messages.messagesFor('channel-1')[0]).toMatchObject({
       deleted: true,
@@ -328,6 +347,37 @@ describe('channel messages store', () => {
     expect(getChannelMessages).not.toHaveBeenCalled()
   })
 
+  it('syncs optimistic channel messages using the active team endpoint', async () => {
+    useTeamsStore().activeWorkspaceId = 'company-1'
+    useTeamsStore().activeTeamId = 'team-1'
+    sendChannelMessage.mockResolvedValue({
+      success: true,
+      data: { message: { id: 'saved-reply-parent', body: 'Thread parent', created_at: 'T1' } },
+    })
+    const messages = useMessagesStore()
+
+    const sent = messages.sendMessage(
+      'channel-1',
+      { content: 'Thread parent', replyTo: { id: 'original-message' } },
+      'You',
+    )
+
+    await vi.waitFor(() =>
+      expect(messages.messagesFor('channel-1')[0]).toMatchObject({
+        id: 'saved-reply-parent',
+        backendSynced: true,
+        serverBacked: true,
+      }),
+    )
+    expect(sendChannelMessage).toHaveBeenCalledWith(
+      'company-1',
+      'team-1',
+      'channel-1',
+      { content: 'Thread parent', parentMessageId: 'original-message' },
+    )
+    expect(sent.id).toBe('saved-reply-parent')
+  })
+
   it('sends forwarded channel messages through the API and preserves their origin', async () => {
     useTeamsStore().activeWorkspaceId = 'company-1'
     useTeamsStore().activeTeamId = 'team-1'
@@ -337,7 +387,9 @@ describe('channel messages store', () => {
     })
     getChannelMessages.mockResolvedValue({
       success: true,
-      data: { messages: [] },
+      data: {
+        messages: [{ id: 'forwarded-1', body: 'Hello', sender_id: 'user-1' }],
+      },
     })
     const messages = useMessagesStore()
 

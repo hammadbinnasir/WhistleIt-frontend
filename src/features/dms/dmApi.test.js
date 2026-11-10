@@ -4,7 +4,7 @@ vi.unmock('@/features/dms/dmApi')
 vi.mock('@/lib/api/client', () => ({ apiRequest: vi.fn() }))
 
 import { apiRequest } from '@/lib/api/client'
-import { dmApi, normalizePublicCustomStatus } from './dmApi'
+import { dmApi, normalizeMessage, normalizePublicCustomStatus } from './dmApi'
 
 describe('DM API', () => {
   beforeEach(() => {
@@ -234,6 +234,7 @@ describe('DM API', () => {
           messages: [
             {
               id: 'message-1',
+              backendSynced: true,
               sender_id: 'user-2',
               content: 'Hello',
               from: 'user-2',
@@ -416,6 +417,48 @@ describe('DM API', () => {
     expect(apiRequest).toHaveBeenCalledWith('/v1/company-1/direct-channels/channel-1/messages', {
       method: 'POST',
       body: JSON.stringify({ body: 'Hi' }),
+    })
+  })
+
+  it('sends forwarded metadata and normalizes it for direct-channel messages', async () => {
+    apiRequest.mockResolvedValue({
+      success: true,
+      data: {
+        message: {
+          id: 'm10',
+          sender_id: 'user-1',
+          body: 'Forwarded text',
+          forwardedFrom: 'Aiman in General',
+        },
+      },
+    })
+
+    await expect(
+      dmApi.sendMessage('company-1', 'channel-1', {
+        body: 'Forwarded text',
+        forwardedFrom: 'Aiman in General',
+      }),
+    ).resolves.toMatchObject({ id: 'm10', text: 'Forwarded text', forwardedFrom: 'Aiman in General' })
+    expect(apiRequest).toHaveBeenCalledWith('/v1/company-1/direct-channels/channel-1/messages', {
+      method: 'POST',
+      body: JSON.stringify({
+        body: 'Forwarded text',
+        forwardedFrom: 'Aiman in General',
+      }),
+    })
+  })
+
+  it('normalizes forwarded flags returned by the direct-message API', () => {
+    expect(normalizeMessage({
+      id: 'm11',
+      body: 'Forwarded text',
+      is_forwarded: true,
+    })).toMatchObject({ forwardedFrom: true })
+  })
+
+  it('removes API paragraph wrappers from direct-message bodies', () => {
+    expect(normalizeMessage({ id: 'm12', body: '<p>byeee</p>' })).toMatchObject({
+      text: 'byeee',
     })
   })
 

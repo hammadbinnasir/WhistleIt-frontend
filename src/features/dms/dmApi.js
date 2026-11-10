@@ -1,4 +1,5 @@
 import { apiRequest } from '@/lib/api/client'
+import { normalizeMessageContent } from '@/features/messages/message-utils'
 
 const encode = encodeURIComponent
 
@@ -163,6 +164,16 @@ function normalizeParticipant(raw) {
 
 export function normalizeMessage(raw) {
   const sender = raw.sender ?? raw.user ?? raw.author
+  const forwardedFrom =
+    raw.forwarded_from ??
+    raw.forwardedFrom ??
+    raw.forwarded?.from ??
+    raw.metadata?.forwardedFrom ??
+    (raw.is_forwarded || raw.isForwarded || raw.forwarded === true ? true : undefined)
+  const editedAt =
+    raw.edited_at ??
+    raw.editedAt ??
+    (raw.updated_at && raw.updated_at !== raw.created_at ? raw.updated_at : undefined)
   return {
     ...raw,
     id: String(raw.id),
@@ -170,13 +181,11 @@ export function normalizeMessage(raw) {
     from: String(
       raw.sender_id ?? raw.user_id ?? raw.from ?? (sender && typeof sender === 'object' ? sender.id : '') ?? '',
     ),
-    text: raw.content ?? raw.text ?? raw.body ?? '',
+    text: normalizeMessageContent(raw.content ?? raw.text ?? raw.body ?? ''),
     createdAt: raw.created_at ?? raw.createdAt ?? '',
+    ...(forwardedFrom ? { forwardedFrom } : {}),
     // Edit hua ho to "edited" dikhane ke liye (dusre user ko bhi)
-    editedAt:
-      raw.edited_at ??
-      raw.editedAt ??
-      (raw.updated_at && raw.updated_at !== raw.created_at ? raw.updated_at : undefined),
+    ...(editedAt ? { editedAt } : {}),
   }
 }
 

@@ -1,5 +1,13 @@
 const LINK_PATTERN = /https?:\/\/[^\s<>"']+/gi
 
+export function normalizeMessageContent(content = '') {
+  return String(content)
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<p(?:\s[^>]*)?>/gi, '')
+    .replace(/<\/p\s*>/gi, '\n')
+    .replace(/^\n+|\n+$/g, '')
+}
+
 function escapeHtml(value) {
   return String(value)
     .replaceAll('&', '&amp;')
@@ -128,4 +136,30 @@ export function timeLabel(value) {
   return new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' }).format(
     new Date(value),
   )
+}
+
+export function relativeTimeLabel(value, now = Date.now()) {
+  const timestamp = Date.parse(value)
+  if (!Number.isFinite(timestamp)) return ''
+
+  const elapsed = Math.max(0, now - timestamp)
+  if (elapsed < 60_000) return 'just now'
+
+  const minutes = Math.floor(elapsed / 60_000)
+  if (minutes < 60) return `${minutes} ${minutes === 1 ? 'minute' : 'minutes'} ago`
+
+  const hours = Math.floor(minutes / 60)
+  if (hours < 24) return `${hours} ${hours === 1 ? 'hour' : 'hours'} ago`
+
+  const days = Math.floor(hours / 24)
+  return `${days} ${days === 1 ? 'day' : 'days'} ago`
+}
+
+export function fullDateTimeLabel(value) {
+  const date = new Date(value)
+  if (!Number.isFinite(date.getTime())) return ''
+  return new Intl.DateTimeFormat(undefined, {
+    dateStyle: 'full',
+    timeStyle: 'medium',
+  }).format(date)
 }

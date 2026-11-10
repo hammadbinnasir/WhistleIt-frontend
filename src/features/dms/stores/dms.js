@@ -632,6 +632,7 @@ export const useDmStore = defineStore('dms', () => {
       const saved = await dmApi.sendMessage(companyId.value, conversationId, {
         body: message.text,
         is_important: Boolean(message.important),
+        ...(message.forwardedFrom ? { forwardedFrom: message.forwardedFrom } : {}),
       })
 
       // Server batata hai ke ye message kisne bheja: wahi mera asli user id hai
@@ -731,6 +732,7 @@ export const useDmStore = defineStore('dms', () => {
         conversationType: 'dm',
       })
     }
+    if (isApiSendable(message)) void deliver(conversation.id, message)
     return conversation.messages.at(-1)
   }
 

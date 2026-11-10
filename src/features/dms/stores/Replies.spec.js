@@ -4,11 +4,11 @@ import { createPinia, setActivePinia } from 'pinia'
 vi.mock('@/features/dms/dmApi', () => ({
   dmApi: { meId: vi.fn(() => 'u1') },
 }))
-vi.mock('@/features/replies/repliesApi', () => ({
+vi.mock('@/features/dms/Repliesapi', () => ({
   repliesApi: { listReplies: vi.fn(), sendReply: vi.fn() },
 }))
 
-import { repliesApi } from '@/features/replies/repliesApi'
+import { repliesApi } from '@/features/dms/Repliesapi'
 import { useTeamsStore } from '@/stores/teams'
 import { REPLIES_STORAGE_KEY, targetFromKey, threadKey, useRepliesStore } from './Replies'
 

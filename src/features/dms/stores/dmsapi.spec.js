@@ -338,6 +338,30 @@ describe('dms store', () => {
     expect(dms.conversations[0].messages.at(-1)).toMatchObject({ text: 'Hello Muniba', from: 'u1' })
   })
 
+  it('delivers forwarded direct messages and keeps the forwarded marker after send', async () => {
+    const dms = useDmStore()
+    await dms.init()
+
+    const sent = dms.sendMessage('c1', {
+      content: 'Forwarded text',
+      forwardedFrom: 'Aiman in General',
+    })
+
+    await vi.waitFor(() =>
+      expect(dmApi.sendMessage).toHaveBeenCalledWith('company-1', 'c1', {
+        body: 'Forwarded text',
+        forwardedFrom: 'Aiman in General',
+      }),
+    )
+    await vi.waitFor(() => expect(dms.conversations[0].messages.at(-1).id).toBe('server-1'))
+    expect(dms.conversations[0].messages.at(-1)).toMatchObject({
+      id: 'server-1',
+      text: 'Forwarded text',
+      forwardedFrom: 'Aiman in General',
+    })
+    expect(sent.status).toBe('sending')
+  })
+
   it('marks a message failed when POST fails and retries it', async () => {
     dmApi.sendMessage.mockRejectedValueOnce(new Error('Failed to fetch'))
     const dms = useDmStore()

@@ -5,14 +5,14 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 vi.mock('@/features/dms/dmApi', () => ({
   dmApi: { meId: vi.fn(() => 'u1') },
 }))
-vi.mock('@/features/replies/repliesApi', () => ({
+vi.mock('@/features/dms/Repliesapi', () => ({
   repliesApi: { listReplies: vi.fn(), sendReply: vi.fn() },
 }))
 
-import { repliesApi } from '@/features/replies/repliesApi'
+import { repliesApi } from '@/features/dms/Repliesapi'
 import { useDmStore } from '@/features/dms/stores/dms'
 import { useTeamsStore } from '@/stores/teams'
-import ThreadPanel from './ThreadPanel.vue'
+import ThreadPanel from '../components/Threadpanel.vue'
 
 const parent = { id: 'm1', from: 'u2', text: 'Parent message', createdAt: '2026-01-01T10:00:00Z' }
 
@@ -56,7 +56,7 @@ describe('ThreadPanel', () => {
     expect(items).toHaveLength(1)
     expect(items[0].text()).toContain('Muniba Khan')
     expect(items[0].text()).toContain('First reply')
-    expect(wrapper.get('[data-test="reply-count"]').text()).toBe('1 reply')
+    expect(wrapper.get('[data-test="reply-count"]').text()).toBe('1 Reply')
   })
 
   it('uses the team channel thread when a team ID is given', async () => {
@@ -90,7 +90,7 @@ describe('ThreadPanel', () => {
     expect(items.at(-1).text()).toContain('Hira Rao')
     expect(items.at(-1).text()).toContain('My answer')
     expect(wrapper.text()).not.toContain('Sending…')
-    expect(wrapper.get('[data-test="reply-count"]').text()).toBe('2 replies')
+    expect(wrapper.get('[data-test="reply-count"]').text()).toBe('2 Replies')
   })
 
   it('shows a failed reply with retry when the network is down', async () => {
@@ -131,5 +131,41 @@ describe('ThreadPanel', () => {
 
     expect(repliesApi.listReplies).not.toHaveBeenCalled()
     expect(wrapper.get('textarea').element.disabled).toBe(true)
+  })
+
+  it('keeps the zero-replies area clear while the parent message is not synced', async () => {
+    const wrapper = mountPanel({
+      message: { ...parent, backendSynced: false, syncError: 'The server is unavailable.' },
+    })
+    await flushPromises()
+
+    expect(wrapper.get('[data-test="reply-count"]').text()).toBe('0 Replies')
+    expect(wrapper.find('[data-test="parent-pending"]').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('The server is unavailable.')
+    expect(wrapper.get('textarea').element.disabled).toBe(true)
+  })
+
+  it('uses message author names when channel users are not in the DM user cache', async () => {
+    const wrapper = mountPanel({
+      message: { ...parent, from: 'channel-user', author: 'Channel Member' },
+    })
+    await flushPromises()
+
+    expect(wrapper.get('[data-test="parent"]').text()).toContain('Channel Member')
+  })
+
+  it('loads replies when the pending parent finishes syncing', async () => {
+    const wrapper = mountPanel({ message: { ...parent, backendSynced: false } })
+    await flushPromises()
+    expect(repliesApi.listReplies).not.toHaveBeenCalled()
+
+    await wrapper.setProps({ message: { ...parent, backendSynced: true } })
+    await flushPromises()
+
+    expect(repliesApi.listReplies).toHaveBeenCalledWith(
+      expect.objectContaining({ channelId: 'c1', messageId: 'm1' }),
+    )
+    expect(wrapper.text()).toContain('First reply')
+    expect(wrapper.get('textarea').element.disabled).toBe(false)
   })
 })

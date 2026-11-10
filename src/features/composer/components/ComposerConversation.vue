@@ -5,18 +5,23 @@ import 'vue3-emoji-picker/css'
 import { useChannelsStore } from '@/features/channels'
 import { pinMessage, unpinMessage } from '@/features/channels/api/channels.api'
 import { useDmStore } from '@/features/dms/stores/dms'
+import { useRepliesStore } from '@/features/dms/stores/Replies'
+import ThreadPanel from '@/features/dms/components/Threadpanel.vue'
 import { getAuthUser, getAuthUserId } from '@/features/auth/session'
 import { useMessagesStore } from '@/features/messages/messages'
+import { useTeamsStore } from '@/stores/teams'
+import { forwardChannelMessage } from '@/features/messages/channelMessageService'
 import {
   createLinkPreview,
   dateLabel,
   formattedMessageHtml,
+  fullDateTimeLabel,
   messageSegments,
+  relativeTimeLabel,
   sameDay,
   timeLabel,
 } from '@/features/messages/message-utils'
 import { useUiStore } from '@/stores/ui'
-import { useTeamsStore } from '@/stores/teams'
 import { useUserStore } from '@/features/account/composables/useUserStore'
 import { useRemindersStore } from '@/features/search/reminders'
 import { addMockMessage, removeMockMessage, updateMockMessage } from '@/features/search/search'
@@ -40,18 +45,23 @@ const props = defineProps({
 
 const dms = useDmStore()
 const pollApi = usePoll()
-const channelsStore = useChannelsStore()
+const repliesStore = useRepliesStore()
 const teamsStore = useTeamsStore()
+const channelsStore = useChannelsStore()
 const ui = useUiStore()
 const userStore = useUserStore()
 const messageStore = useMessagesStore()
 const reminderStore = useRemindersStore()
 const messagesContainer = ref(null)
+const actionMenu = ref(null)
 const editingId = ref(null)
 const editDraft = ref('')
 const replyTo = ref(null)
 const openMenuId = ref(null)
+const menuAnchor = ref(null)
+const actionMenuPosition = ref({})
 const deleteTarget = ref(null)
+const deletingMessage = ref(false)
 const scheduleDelete = ref(false)
 const scheduledDeleteAt = ref('')
 const openReactionId = ref(null)
@@ -59,6 +69,7 @@ const reminderTarget = ref(null)
 const snoozeTarget = ref(null)
 const forwardTarget = ref(null)
 const forwardDestinationId = ref('')
+const threadMessage = ref(null)
 const dmVisibleCount = ref(20)
 const participatedPolls = ref(new Set())
 const activePoll = ref(null)
@@ -256,7 +267,8 @@ const renderedMessages = computed(() => {
         mine: message.mine ?? message.from === dms.meId,
         showDate: !previous || !sameDay(previous.createdAt, message.createdAt),
         dateHeading: dateLabel(message.createdAt),
-        time: timeLabel(message.createdAt),
+        time: relativeTimeLabel(message.createdAt, pollClock.value),
+        fullTime: fullDateTimeLabel(message.createdAt),
         grouped: Boolean(grouped),
         segments: messageSegments(content),
         preview: createLinkPreview(content),
@@ -268,6 +280,7 @@ const renderedMessages = computed(() => {
           : null,
         reactions: message.reactions || [],
       }
+      rendered.replySummary = replySummaryFor(rendered)
       previous = rendered
       return rendered
     })
@@ -278,6 +291,58 @@ function isImportantMessage(message) {
   return value === true || value === 1 || value === '1' || value === 'true'
 }
 
+function replySummaryFor(message) {
+  const target = {
+    teamId: conversation.value ? null : teamsStore.activeTeamId,
+    channelId: channelId.value,
+    messageId: String(message.id),
+  }
+  const replyCountFields = [
+    message.reply_count,
+    message.replyCount,
+    message.replies_count,
+    message.repliesCount,
+    message.thread_reply_count,
+    message.threadReplyCount,
+    message.reply_total,
+    message.replyTotal,
+    message.thread_replies_count,
+    message.threadRepliesCount,
+    Array.isArray(message.replies) ? message.replies.length : null,
+  ]
+  const serverCounts = replyCountFields
+    .filter((value) => value != null && String(value).trim() !== '')
+    .map((value) => Number(value))
+    .filter((value) => Number.isInteger(value) && value >= 0)
+  const cachedReplies = repliesStore.repliesOf(target)
+  const count = Math.max(0, ...serverCounts, cachedReplies.length)
+  const lastReplyAt = [
+    message.last_reply_at ??
+      message.lastReplyAt ??
+      message.last_reply_created_at ??
+      message.lastReplyCreatedAt ??
+      message.latest_reply_at ??
+      message.latestReplyAt ??
+      message.last_reply?.created_at ??
+      message.last_reply?.createdAt ??
+      message.lastReply?.created_at ??
+      message.lastReply?.createdAt,
+    ...cachedReplies
+      .map((reply) => reply.createdAt)
+      .filter(Boolean)
+      .sort((a, b) => Date.parse(b) - Date.parse(a)),
+  ].find((value) => value && Number.isFinite(Date.parse(value)))
+  const parsedLastReplyAt = lastReplyAt ? Date.parse(lastReplyAt) : NaN
+  return {
+    count,
+    lastReplyAt: Number.isFinite(parsedLastReplyAt) ? lastReplyAt : '',
+    lastReplyLabel: Number.isFinite(parsedLastReplyAt)
+      ? new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(
+          parsedLastReplyAt,
+        )
+      : '',
+  }
+}
 const reminderMessage = computed(() => {
   const target = reminderTarget.value || snoozeTarget.value
   if (!target) return null
@@ -908,9 +973,9 @@ function toLocalDateTimeValue(date) {
   return localDate.toISOString().slice(0, 16)
 }
 
-function confirmMessageDeletion() {
+async function confirmMessageDeletion() {
   const message = deleteTarget.value
-  if (!message) return
+  if (!message || deletingMessage.value) return
 
   let deleteAt = null
   if (scheduleDelete.value) {
@@ -930,25 +995,28 @@ function confirmMessageDeletion() {
   if (conversation.value) {
     deleted = dms.deleteMessage(conversation.value.id, message.id, deleteAt)
   } else if (message.serverBacked && !deleteAt) {
-    const result = messageStore.deleteServerMessage(channelId.value, message.id)
-    if (result?.success === false) {
+    deletingMessage.value = true
+    try {
+      const result = await messageStore.deleteServerMessage(channelId.value, message.id)
+      if (!result.success) {
+        ui.toast(
+          'Message not deleted',
+          result.error || 'The channel message could not be deleted.',
+          'error',
+        )
+        return
+      }
+      deleted = true
+    } catch (error) {
       ui.toast(
         'Message not deleted',
-        result.error || 'The channel message could not be deleted.',
+        error.message || 'The channel message could not be deleted.',
         'error',
       )
       return
+    } finally {
+      deletingMessage.value = false
     }
-    deleted = true
-    void Promise.resolve(result).then((apiResult) => {
-      if (!apiResult.success) {
-        ui.toast(
-          'Message not deleted',
-          apiResult.error || 'The channel message could not be deleted.',
-          'error',
-        )
-      }
-    })
   } else {
     deleted = messageStore.deleteMessage(channelId.value, message.id, deleteAt)
   }
@@ -1018,6 +1086,11 @@ function beginReply(message) {
   nextTick(() => document.querySelector('[contenteditable="true"]')?.focus())
 }
 
+function openThread(message) {
+  threadMessage.value = message
+  openMenuId.value = null
+}
+
 function setReminder(message) {
   reminderTarget.value = message
   openMenuId.value = null
@@ -1076,7 +1149,46 @@ async function forwardMessage() {
       : {}),
     ...(forwardTarget.value.gif ? { gif: forwardTarget.value.gif } : {}),
   }
-  if (destination.type === 'dm') {
+  if (!conversation.value) {
+    if (!forwardTarget.value.serverBacked) {
+      ui.toast('Unable to forward message', 'Wait until the message is sent, then try again.', 'error')
+      return
+    }
+
+    const destinationPayload =
+      destination.type === 'channel'
+        ? { channel_ids: [destination.id] }
+        : {
+            user_ids: (
+              dms.conversations.find((item) => String(item.id) === String(destination.id))
+                ?.members ?? []
+            ).filter((memberId) => String(memberId) !== String(dms.meId)),
+          }
+    if (
+      destination.type === 'dm' &&
+      (!destinationPayload.user_ids || destinationPayload.user_ids.length === 0)
+    ) {
+      ui.toast('Unable to forward message', 'The destination has no available recipients.', 'error')
+      return
+    }
+
+    const result = await forwardChannelMessage(
+      teamsStore.activeWorkspaceId,
+      teamsStore.activeTeamId,
+      channelId.value,
+      forwardTarget.value.id,
+      destinationPayload,
+    )
+    if (!result.success) {
+      ui.toast('Unable to forward message', result.error || 'The channel message could not be forwarded.', 'error')
+      return
+    }
+    if (destination.type === 'channel') {
+      await messageStore.fetchChannelMessages(destination.id)
+    } else {
+      await dms.loadMessages(destination.id, { force: true })
+    }
+  } else if (destination.type === 'dm') {
     const forwarded = dms.sendMessage(destination.id, payload)
     if (!forwarded) {
       ui.toast('Unable to forward message', 'The destination is no longer available.', 'error')
@@ -1114,6 +1226,57 @@ function selectReaction(message, emoji) {
 function closeMessageActions() {
   openMenuId.value = null
   openReactionId.value = null
+  menuAnchor.value = null
+  actionMenuPosition.value = {}
+}
+
+function positionActionMenu() {
+  const anchor = menuAnchor.value
+  const menu = Array.isArray(actionMenu.value) ? actionMenu.value[0] : actionMenu.value
+  if (!anchor || !menu || openMenuId.value == null) return
+
+  const anchorRect = anchor.getBoundingClientRect()
+  const menuRect = menu.getBoundingClientRect()
+  const viewportWidth = document.documentElement.clientWidth || window.innerWidth
+  const viewportHeight = document.documentElement.clientHeight || window.innerHeight
+  const margin = 8
+  const gap = 6
+  const width = Math.max(0, Math.min(224, viewportWidth - margin * 2))
+  const height = menuRect.height || menu.scrollHeight || 260
+  const spaceAbove = Math.max(0, anchorRect.top - gap - margin)
+  const spaceBelow = Math.max(0, viewportHeight - anchorRect.bottom - gap - margin)
+  const placeAbove = height <= spaceAbove || spaceAbove >= spaceBelow
+  const availableHeight = placeAbove ? spaceAbove : spaceBelow
+  const displayedHeight = Math.min(height, availableHeight)
+  const left = Math.max(
+    margin,
+    Math.min(anchorRect.right - width, viewportWidth - width - margin),
+  )
+  const top = placeAbove
+    ? Math.max(margin, anchorRect.top - gap - displayedHeight)
+    : Math.min(viewportHeight - margin - displayedHeight, anchorRect.bottom + gap)
+
+  actionMenuPosition.value = {
+    position: 'fixed',
+    top: `${top}px`,
+    left: `${left}px`,
+    right: 'auto',
+    bottom: 'auto',
+    width: `${width}px`,
+    maxHeight: `${displayedHeight}px`,
+  }
+}
+
+function toggleMessageMenu(event, message) {
+  if (openMenuId.value === message.id) {
+    closeMessageActions()
+    return
+  }
+
+  openReactionId.value = null
+  openMenuId.value = message.id
+  menuAnchor.value = event.currentTarget
+  nextTick(positionActionMenu)
 }
 
 function closeActionsOnOutsideClick(event) {
@@ -1574,12 +1737,16 @@ async function scrollMessagesToLatest() {
 
 onMounted(() => {
   document.addEventListener('pointerdown', closeActionsOnOutsideClick)
+  document.addEventListener('scroll', positionActionMenu, true)
+  window.addEventListener('resize', positionActionMenu)
   pollClockTimer = window.setInterval(() => {
     pollClock.value = Date.now()
   }, 1000)
 })
 onBeforeUnmount(() => {
   document.removeEventListener('pointerdown', closeActionsOnOutsideClick)
+  document.removeEventListener('scroll', positionActionMenu, true)
+  window.removeEventListener('resize', positionActionMenu)
   clearTimeout(messageClickTimer)
   clearInterval(channelMessagesRefreshTimer)
   if (pollClockTimer) window.clearInterval(pollClockTimer)
@@ -1672,7 +1839,15 @@ onBeforeUnmount(() => {
                 {{ message.author }}
               </button>
               <strong v-else>{{ message.author }}</strong>
-              <time :datetime="message.createdAt">{{ message.time }}</time>
+              <time
+                :datetime="message.createdAt"
+                :data-time-tooltip="message.fullTime"
+                :aria-label="message.fullTime"
+                tabindex="0"
+              >
+                {{ message.time }}
+              </time>
+              <span v-if="message.editedAt" class="composer-conversation__edited">(edited)</span>
               <span v-if="isPinned(message)" class="composer-conversation__pinned">PINNED</span>
             </header>
 
@@ -1804,6 +1979,22 @@ onBeforeUnmount(() => {
               >
             </div>
 
+            <button
+              v-if="message.replySummary.count > 0"
+              type="button"
+              class="composer-conversation__thread-summary"
+              :aria-label="`${message.replySummary.count} ${message.replySummary.count === 1 ? 'reply' : 'replies'}${message.replySummary.lastReplyLabel ? `, last reply ${message.replySummary.lastReplyLabel}` : ''}`"
+              @click="openThread(message)"
+            >
+              <span>
+                {{ message.replySummary.count }}
+                {{ message.replySummary.count === 1 ? 'reply' : 'replies' }}
+              </span>
+              <span v-if="message.replySummary.lastReplyLabel">
+                Last reply: {{ message.replySummary.lastReplyLabel }}
+              </span>
+            </button>
+
             <div
               v-if="!message.deleted"
               class="composer-conversation__actions"
@@ -1885,12 +2076,17 @@ onBeforeUnmount(() => {
                   aria-label="More message actions"
                   title="More actions"
                   :aria-expanded="openMenuId === message.id"
-                  @click="openMenuId = openMenuId === message.id ? null : message.id"
+                  @click="toggleMessageMenu($event, message)"
                 >
                   ⋯
                 </button>
               </div>
-              <div v-if="openMenuId === message.id" class="composer-conversation__menu">
+              <div
+                v-if="openMenuId === message.id"
+                ref="actionMenu"
+                class="composer-conversation__menu"
+                :style="actionMenuPosition"
+              >
                 <button type="button" @click="copyMessage(message)">
                   <svg
                     aria-hidden="true"
@@ -1968,6 +2164,10 @@ onBeforeUnmount(() => {
                   <span aria-hidden="true">↩</span>
                   <span>Reply</span>
                   <span class="composer-conversation__shortcuts"><kbd>Ctrl</kbd><kbd>J</kbd></span>
+                </button>
+                <button type="button" @click="openThread(message)">
+                  <span aria-hidden="true">↳</span>
+                  <span>View replies</span>
                 </button>
                 <button type="button" @click="setReminder(message)">
                   <span aria-hidden="true">◷</span>
@@ -2192,7 +2392,14 @@ onBeforeUnmount(() => {
           </div>
           <footer class="composer-conversation__delete-footer">
             <button type="button" class="is-cancel" @click="closeDeleteDialog">Cancel</button>
-            <button type="button" class="is-delete" @click="confirmMessageDeletion">Delete</button>
+            <button
+              type="button"
+              class="is-delete"
+              :disabled="deletingMessage"
+              @click="confirmMessageDeletion"
+            >
+              {{ deletingMessage ? 'Deleting…' : 'Delete' }}
+            </button>
           </footer>
         </section>
       </div>
@@ -2388,11 +2595,21 @@ onBeforeUnmount(() => {
         </footer>
       </form>
     </div>
+
+    <div v-if="threadMessage" class="composer-conversation__thread-overlay">
+      <ThreadPanel
+        :message="threadMessage"
+        :channel-id="channelId"
+        :team-id="conversation ? null : teamsStore.activeTeamId"
+        @close="threadMessage = null"
+      />
+    </div>
   </section>
 </template>
 
 <style scoped>
 .composer-conversation {
+  position: relative;
   display: flex;
   min-height: 0;
   flex: 1;
@@ -2467,6 +2684,31 @@ onBeforeUnmount(() => {
   min-width: 0;
 }
 
+.composer-conversation__thread-summary {
+  display: flex;
+  min-height: 28px;
+  align-items: center;
+  gap: 12px;
+  margin: 4px 0 0;
+  border: 0;
+  border-radius: 0 0 4px 4px;
+  background: #eceef6;
+  padding: 3px 10px 6px;
+  color: #777b8d;
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+}
+
+.composer-conversation__thread-summary span:first-child {
+  color: #4c52c8;
+}
+
+.composer-conversation__thread-summary:hover span:first-child {
+  text-decoration: underline;
+}
+
 .composer-conversation__message-heading {
   display: flex;
   align-items: baseline;
@@ -2497,6 +2739,41 @@ onBeforeUnmount(() => {
   margin-top: 8px;
   color: #696d81;
   font-size: 12px;
+}
+
+.composer-conversation__message-heading time {
+  position: relative;
+}
+
+.composer-conversation__message-heading time::after {
+  position: absolute;
+  z-index: 20;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  width: max-content;
+  max-width: min(320px, 80vw);
+  border-radius: 4px;
+  background: #30313a;
+  padding: 6px 9px;
+  color: #fff;
+  content: attr(data-time-tooltip);
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.4;
+  opacity: 0;
+  pointer-events: none;
+  transform: translate(-50%, 3px);
+  transition:
+    opacity 120ms ease,
+    transform 120ms ease;
+  visibility: hidden;
+}
+
+.composer-conversation__message-heading time:hover::after,
+.composer-conversation__message-heading time:focus-visible::after {
+  opacity: 1;
+  transform: translate(-50%, 0);
+  visibility: visible;
 }
 
 .composer-conversation__pinned {
@@ -3340,26 +3617,36 @@ onBeforeUnmount(() => {
 }
 
 .composer-conversation__menu {
+  z-index: 1000;
   display: grid;
-  min-width: 160px;
-  margin-top: 4px;
+  width: 224px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  box-sizing: border-box;
   padding: 5px;
   border: 1px solid #e6e7ed;
   border-radius: 7px;
   background: white;
   box-shadow: 0 8px 24px #14141f2e;
+  overscroll-behavior: contain;
 }
 
 .composer-conversation__menu button {
   display: grid;
-  grid-template-columns: 24px minmax(0, 1fr) auto;
+  grid-template-columns: 20px minmax(0, 1fr) auto;
   align-items: center;
-  gap: 8px;
-  padding: 8px 10px;
+  min-width: 0;
+  gap: 7px;
+  padding: 8px;
   border-radius: 4px;
   color: #303044;
   text-align: left;
   cursor: pointer;
+}
+
+.composer-conversation__menu button > span:nth-child(2) {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .composer-conversation__menu button:hover {
@@ -3378,6 +3665,21 @@ onBeforeUnmount(() => {
 .composer-conversation__menu button svg {
   width: 20px;
   height: 20px;
+}
+
+.composer-conversation__menu .composer-conversation__shortcuts {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.composer-conversation__thread-overlay {
+  position: absolute;
+  z-index: 30;
+  inset: 0 0 0 auto;
+  width: min(390px, 100%);
+  border-left: 1px solid #e1e3eb;
+  background: #fff;
+  box-shadow: -8px 0 24px #14141f1f;
 }
 
 .composer-conversation__menu .composer-conversation__delete-action {

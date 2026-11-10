@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
-import { repliesApi } from '@/features/replies/repliesApi'
+import { repliesApi } from '@/features/dms/Repliesapi'
 import { useDmStore } from '@/features/dms/stores/dms'
 import { useTeamsStore } from '@/stores/teams'
 
