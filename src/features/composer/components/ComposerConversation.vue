@@ -5,7 +5,7 @@ import 'vue3-emoji-picker/css'
 import { useChannelsStore } from '@/features/channels'
 import { pinMessage, unpinMessage } from '@/features/channels/api/channels.api'
 import { useDmStore } from '@/features/dms/stores/dms'
-import { getAuthUser } from '@/features/auth/session'
+import { getAuthUser, getAuthUserId } from '@/features/auth/session'
 import { useMessagesStore } from '@/features/messages/messages'
 import {
   createLinkPreview,
@@ -16,6 +16,7 @@ import {
   timeLabel,
 } from '@/features/messages/message-utils'
 import { useUiStore } from '@/stores/ui'
+import { useTeamsStore } from '@/stores/teams'
 import { useUserStore } from '@/features/account/composables/useUserStore'
 import { useRemindersStore } from '@/features/search/reminders'
 import { addMockMessage, removeMockMessage, updateMockMessage } from '@/features/search/search'
@@ -40,6 +41,7 @@ const props = defineProps({
 const dms = useDmStore()
 const pollApi = usePoll()
 const channelsStore = useChannelsStore()
+const teamsStore = useTeamsStore()
 const ui = useUiStore()
 const userStore = useUserStore()
 const messageStore = useMessagesStore()
@@ -54,6 +56,7 @@ const scheduleDelete = ref(false)
 const scheduledDeleteAt = ref('')
 const openReactionId = ref(null)
 const reminderTarget = ref(null)
+const snoozeTarget = ref(null)
 const forwardTarget = ref(null)
 const forwardDestinationId = ref('')
 const dmVisibleCount = ref(20)
@@ -80,8 +83,37 @@ const conversation = computed(() => {
   return dms.conversations.find((item) => String(item.id) === String(props.conversationId)) || null
 })
 const conversationLabel = computed(() =>
-  conversation.value ? dms.titleOf(conversation.value) : channelId.value.replaceAll('-', ' '),
+  conversation.value
+    ? dms.titleOf(conversation.value)
+    : (channelsStore.getById(channelId.value)?.name || channelId.value.replaceAll('-', ' ')),
 )
+const canSendMessages = computed(() => {
+  if (props.conversationType === 'dm') return true
+
+  const channel = channelsStore.getById(channelId.value)
+  if (!channel) return !channelsStore.loaded
+
+  const userId = getAuthUserId() ?? dms.meId
+  const isChannelAdmin =
+    teamsStore.isAdmin ||
+    channel.canManage ||
+    channel.isOwner ||
+    (userId != null &&
+      String(channel.createdById ?? channel.createdBy) === String(userId))
+  if (channel.isMember === false) return false
+
+  if (channel.messagePermission === 'creator_only' || channel.messagePermission === 'admins') {
+    return isChannelAdmin
+  }
+  if (channel.messagePermission === 'selected_members') {
+    return (
+      isChannelAdmin ||
+      (userId != null &&
+        (channel.allowedSenderIds || []).some((id) => String(id) === String(userId)))
+    )
+  }
+  return channel.isMember !== false
+})
 
 const messagesLoading = computed(() => Boolean(conversation.value) && dms.messagesLoading)
 const messagesError = computed(() => (conversation.value ? dms.messagesError : ''))
@@ -105,7 +137,8 @@ const deletedReminders = computed(() =>
         String(reminder.conversationId ?? 'general') === channelId.value &&
         (reminder.conversationType === 'dm' ? 'dm' : 'channel') ===
           currentReminderConversationType.value &&
-        (reminder.dismissed || !reminder.fired),
+        (reminder.dismissed || !reminder.fired) &&
+        !reminder.hideFromChat,
     )
     .sort((a, b) => new Date(a.deletedAt || a.remindAt) - new Date(b.deletedAt || b.remindAt)),
 )
@@ -236,13 +269,14 @@ function isImportantMessage(message) {
 }
 
 const reminderMessage = computed(() => {
-  if (!reminderTarget.value) return null
+  const target = reminderTarget.value || snoozeTarget.value
+  if (!target) return null
   return {
     conversationId: channelId.value,
     conversationName: conversationLabel.value,
     conversationType: props.conversationType,
-    messageId: String(reminderTarget.value.id),
-    text: reminderTarget.value.text ?? reminderTarget.value.content ?? '',
+    messageId: String(target.messageId ?? target.id),
+    text: target.text ?? target.content ?? '',
   }
 })
 
@@ -261,7 +295,22 @@ function dismissDueReminder(reminder) {
 }
 
 function snoozeDueReminder(reminder) {
-  reminderStore.snooze(reminder.id)
+  snoozeTarget.value = reminder
+}
+
+function reminderModalClosed() {
+  reminderTarget.value = null
+  snoozeTarget.value = null
+}
+
+function reminderSaved() {
+  ui.toast(
+    snoozeTarget.value ? 'Reminder snoozed' : 'Reminder set',
+    snoozeTarget.value
+      ? 'The reminder has been scheduled again.'
+      : 'You will be reminded about this message.',
+    'success',
+  )
 }
 
 watch(
@@ -333,7 +382,7 @@ async function togglePin(message) {
       ui.toast('Unable to pin message', 'This direct message is not available on the server yet.', 'error')
       return
     }
-  } else if (message.backendSynced !== true) {
+  } else if (message.backendSynced !== true && message.serverBacked !== true) {
     ui.toast('Unable to pin message', 'This channel message is not available on the server yet.', 'error')
     return
   }
@@ -1057,10 +1106,6 @@ function closeMessageActions() {
   openReactionId.value = null
 }
 
-function reminderSaved() {
-  ui.toast('Reminder set', 'You will be reminded about this message.', 'success')
-}
-
 function closeActionsOnOutsideClick(event) {
   const target = event.target instanceof Element ? event.target : event.target?.parentElement
   if (!target?.closest('.composer-conversation__actions')) closeMessageActions()
@@ -1618,7 +1663,6 @@ onBeforeUnmount(() => {
               </button>
               <strong v-else>{{ message.author }}</strong>
               <time :datetime="message.createdAt">{{ message.time }}</time>
-              <span v-if="message.editedAt" class="composer-conversation__edited">(edited)</span>
               <span v-if="isPinned(message)" class="composer-conversation__pinned">PINNED</span>
             </header>
 
@@ -2001,7 +2045,7 @@ onBeforeUnmount(() => {
             </p>
             <footer class="composer-conversation__reminder-actions">
               <button type="button" @click="dismissDueReminder(reminder)">Delete Reminder</button>
-              <span aria-hidden="true">|</span>
+              <span class="composer-conversation__reminder-action-divider" aria-hidden="true"></span>
               <button
                 type="button"
                 title="Snooze for 5 minutes"
@@ -2076,6 +2120,7 @@ onBeforeUnmount(() => {
       <button type="button" aria-label="Cancel reply" @click="replyTo = null">×</button>
     </div>
     <MessageComposer
+      v-if="canSendMessages"
       :channel-id="channelId"
       :create-poll="createPollInChannel"
       :poll-loading="pollApi.loading.value"
@@ -2085,11 +2130,20 @@ onBeforeUnmount(() => {
       @gif="addGif"
       @clear-poll-error="pollApi.clearError"
     />
+    <div
+      v-else-if="conversationType !== 'dm'"
+      class="mx-4 mb-3 rounded-sm bg-[#f0f0f7] px-4 py-3 text-sm text-slate-500"
+      role="status"
+    >
+      Only certain people can post in this channel.
+    </div>
 
     <SetReminderModal
       v-if="reminderMessage"
       :message="reminderMessage"
-      @close="reminderTarget = null"
+      :mode="snoozeTarget ? 'snooze' : 'create'"
+      :reminder="snoozeTarget"
+      @close="reminderModalClosed"
       @saved="reminderSaved"
     />
 
@@ -2476,8 +2530,9 @@ onBeforeUnmount(() => {
 }
 
 .composer-conversation__reminder-notice {
-  margin: 18px 0 18px 42px;
-  padding: 0 0 8px;
+  margin: 0 0 12px;
+  padding: 12px 12px 8px;
+  background: #f7f7fb;
   color: #25263a;
 }
 
@@ -2485,30 +2540,30 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: flex-start;
   gap: 8px;
-  margin: 0 0 4px -39px;
+  margin: 0 0 4px;
   color: #696d81;
-  font-size: 12px;
+  font-size: 16px;
   line-height: 1.5;
 }
 
 .composer-conversation__reminder-time svg {
-  width: 22px;
-  height: 22px;
-  flex: 0 0 22px;
+  width: 30px;
+  height: 30px;
+  flex: 0 0 30px;
   color: #ff334b;
 }
 
 .composer-conversation__reminder-content {
   display: flex;
   align-items: flex-start;
-  gap: 12px;
+  gap: 16px;
   min-width: 0;
 }
 
 .composer-conversation__reminder-system-icon {
-  width: 30px;
-  height: 30px;
-  flex: 0 0 30px;
+  width: 32px;
+  height: 32px;
+  flex: 0 0 32px;
   border-radius: 50%;
   object-fit: cover;
 }
@@ -2521,26 +2576,26 @@ onBeforeUnmount(() => {
 .composer-conversation__reminder-heading {
   display: flex;
   align-items: baseline;
-  gap: 10px;
-  margin: 0 0 7px;
-  font-size: 14px;
+  gap: 28px;
+  margin: 0 0 10px;
+  font-size: 18px;
 }
 
 .composer-conversation__reminder-heading time {
   color: #696d81;
-  font-size: 12px;
+  font-size: 16px;
 }
 
 .composer-conversation__reminder-label {
   display: block;
-  margin-bottom: 4px;
-  font-size: 14px;
+  margin-bottom: 6px;
+  font-size: 18px;
 }
 
 .composer-conversation__reminder-message {
   margin: 0;
   overflow-wrap: anywhere;
-  font-size: 14px;
+  font-size: 18px;
   white-space: pre-wrap;
 }
 
@@ -2552,9 +2607,9 @@ onBeforeUnmount(() => {
 .composer-conversation__reminder-actions {
   display: flex;
   align-items: center;
-  gap: 8px;
-  margin-top: 20px;
-  font-size: 12px;
+  gap: 10px;
+  margin-top: 44px;
+  font-size: 16px;
 }
 
 .composer-conversation__reminder-actions button {
@@ -2568,6 +2623,12 @@ onBeforeUnmount(() => {
 
 .composer-conversation__reminder-actions button:first-child {
   color: #ff334b;
+}
+
+.composer-conversation__reminder-action-divider {
+  width: 1px;
+  height: 20px;
+  background: #d3d5de;
 }
 
 .composer-conversation__reminder-actions button:hover {

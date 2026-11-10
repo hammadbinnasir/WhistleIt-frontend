@@ -2,6 +2,8 @@
 import { computed, nextTick, onBeforeUnmount } from 'vue'
 import { useUiStore } from '@/stores/ui'
 import { useDmStore } from '@/stores/dms'
+import { useChannelsStore } from '@/features/channels'
+import { messageSegments } from '@/features/messages/message-utils'
 import pinnedMessagesEmptyIcon from '@/assets/pinned-messages-empty.svg'
 
 const props = defineProps({
@@ -10,6 +12,7 @@ const props = defineProps({
 })
 const ui = useUiStore()
 const dms = useDmStore()
+const channels = useChannelsStore()
 const currentPinnedMessages = computed(() =>
   ui.pinnedMessages.filter((item) => {
     const conversation = item.conversation || {}
@@ -24,6 +27,24 @@ const currentPinnedMessages = computed(() =>
   }),
 )
 const hasPinnedMessages = computed(() => currentPinnedMessages.value.length > 0)
+const panelTitle = computed(() => {
+  const id = String(props.conversationId ?? '')
+  if (props.conversationType === 'dm') {
+    const conversation = dms.conversations.find((item) => String(item.id) === id)
+    const name =
+      (conversation && dms.titleOf(conversation)) ||
+      currentPinnedMessages.value[0]?.conversation?.name ||
+      'Direct message'
+    return `Pinned Messages With ${name}`
+  }
+
+  const channel = channels.getById(id)
+  const name =
+    channel?.name ||
+    currentPinnedMessages.value[0]?.conversation?.name ||
+    (id ? id.replaceAll('-', ' ') : 'Channel')
+  return `Pinned Messages In ${name}`
+})
 let highlightTimer
 
 function initials(name) {
@@ -78,7 +99,7 @@ onBeforeUnmount(() => clearTimeout(highlightTimer))
 <template>
   <aside class="flex h-full w-full flex-col bg-white">
     <header class="flex items-center justify-between border-b border-slate-200 px-5 py-4">
-      <h2 class="text-xl text-slate-700">Pinned Messages</h2>
+      <h2 class="text-xl text-slate-700">{{ panelTitle }}</h2>
       <button
         class="cursor-pointer text-3xl font-black text-slate-800 hover:text-indigo-600"
         aria-label="Close pinned messages"
@@ -144,7 +165,24 @@ onBeforeUnmount(() => clearTimeout(highlightTimer))
                 JUMP
               </button>
             </div>
-            <p class="mt-1 break-words text-slate-700">{{ message.content || message.text }}</p>
+            <p
+              class="break-words text-slate-700"
+              :class="conversationType === 'dm' ? 'mt-1' : 'mt-1 rounded bg-slate-100 px-3 py-2'"
+            >
+              <template
+                v-for="(segment, index) in messageSegments(message.content || message.text || '')"
+                :key="`${message.id}-${index}`"
+              >
+                <a
+                  v-if="segment.href"
+                  :href="segment.href"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  class="text-indigo-600 underline"
+                >{{ segment.text }}</a>
+                <span v-else>{{ segment.text }}</span>
+              </template>
+            </p>
           </div>
         </div>
       </li>

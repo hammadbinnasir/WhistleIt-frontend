@@ -13,7 +13,7 @@ API root. There is no in-memory channel data source.
 | Browse/search  | `GET /v1/{company}/teams/{team}/channels?q={query}` |
 | Create         | `POST /v1/{company}/teams/{team}/channels` with `{ name, description, type }` |
 | Get            | `GET /v1/{company}/teams/{team}/channels/{channel}` |
-| Update         | `PATCH /v1/{company}/teams/{team}/channels/{channel}` with `{ name, description }` |
+| Update         | `PATCH /v1/{company}/teams/{team}/channels/{channel}` with channel fields; message permissions use `{ message_permission: "everyone"|"creator_only"|"selected_members", allowed_sender_ids: [] }` |
 | Delete         | `DELETE /v1/{company}/teams/{team}/channels/{channel}` |
 | List members   | `GET /v1/{company}/teams/{team}/channels/{channel}/members` |
 | Available members | `GET /v1/{company}/teams/{team}/channels/{channel}/available-members` |

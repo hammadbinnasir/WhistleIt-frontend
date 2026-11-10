@@ -85,6 +85,11 @@ export function normalizeChannel(raw = {}) {
     ),
     canManage: Boolean(record.canManage ?? record.can_manage ?? record.isOwner ?? record.is_owner),
     messagePermission: record.messagePermission ?? record.message_permission ?? 'everyone',
+    allowedSenderIds: Array.isArray(record.allowedSenderIds ?? record.allowed_sender_ids)
+      ? (record.allowedSenderIds ?? record.allowed_sender_ids).map((id) =>
+          String(typeof id === 'object' ? id.id ?? id.user_id : id),
+        )
+      : [],
   }
 }
 

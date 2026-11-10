@@ -19,6 +19,12 @@ import {
 } from '@/features/messages/channelMessageService'
 
 const emojiPickerProps = vi.hoisted(() => vi.fn())
+const reminderApi = vi.hoisted(() => ({
+  createReminder: vi.fn(),
+  deleteReminder: vi.fn(),
+  listReminders: vi.fn(),
+}))
+vi.mock('@/features/search/remindersApi', () => reminderApi)
 const pollsApi = vi.hoisted(() => ({
   closePoll: vi.fn(),
   createPoll: vi.fn(),
@@ -26,8 +32,25 @@ const pollsApi = vi.hoisted(() => ({
   getPollResult: vi.fn(),
   submitPollAnswer: vi.fn(),
 }))
-
 vi.mock('../api/polls.api', () => pollsApi)
+const scheduledMessagesApi = vi.hoisted(() => ({
+  createScheduledMessage: vi.fn(async (message) => ({
+    id: 'scheduled-server-message',
+    body: message.body,
+    scheduled_at: message.scheduled_at,
+  })),
+  getScheduledMessages: vi.fn().mockResolvedValue([]),
+}))
+vi.mock('../api/scheduledMessagesApi', () => scheduledMessagesApi)
+const pinApi = vi.hoisted(() => ({
+  pinMessage: vi.fn().mockResolvedValue({}),
+  unpinMessage: vi.fn().mockResolvedValue(undefined),
+}))
+vi.mock('@/features/channels/api/channels.api', async (importOriginal) => ({
+  ...(await importOriginal()),
+  pinMessage: pinApi.pinMessage,
+  unpinMessage: pinApi.unpinMessage,
+}))
 
 vi.mock('@/features/messages/channelMessageService', () => ({
   getChannelMessages: vi.fn(),
@@ -65,12 +88,27 @@ describe('composer conversation', () => {
     setActivePinia(createPinia())
     setupDmsTestState()
     resetUserStore()
+    reminderApi.createReminder.mockReset().mockImplementation(async (reminder) => ({
+      ...reminder,
+      id: 'server-reminder',
+      fired: false,
+    }))
+    reminderApi.deleteReminder.mockReset().mockResolvedValue()
+    reminderApi.listReminders.mockReset().mockResolvedValue([])
     Object.values(pollsApi).forEach((mock) => mock.mockReset())
     pollsApi.closePoll.mockResolvedValue({ closed: true })
     pollsApi.createPoll.mockResolvedValue({ poll: { id: 'server-poll-default' } })
     pollsApi.getPollQuestions.mockResolvedValue([])
     pollsApi.getPollResult.mockResolvedValue({})
     pollsApi.submitPollAnswer.mockResolvedValue({ accepted: true })
+    scheduledMessagesApi.createScheduledMessage.mockReset().mockImplementation(async (message) => ({
+      id: 'scheduled-server-message',
+      body: message.body,
+      scheduled_at: message.scheduled_at,
+    }))
+    scheduledMessagesApi.getScheduledMessages.mockReset().mockResolvedValue([])
+    pinApi.pinMessage.mockReset().mockResolvedValue({})
+    pinApi.unpinMessage.mockReset().mockResolvedValue(undefined)
     getChannelMessages.mockReset()
     getChannelMessages.mockResolvedValue({
       success: true,
@@ -124,6 +162,126 @@ describe('composer conversation', () => {
         { page: 1, perPage: 15 },
       )
     })
+    wrapper.unmount()
+  })
+
+  it('shows the restriction notice to members and the composer to channel admins in creator-only mode', async () => {
+    sessionStorage.setItem('authUser', JSON.stringify({ id: 'member-1' }))
+    const channels = useChannelsStore()
+    channels.upsertChannel({
+      id: 'restricted-channel',
+      name: 'Restricted',
+      isMember: true,
+      createdById: 'creator-1',
+      canManage: false,
+      isOwner: false,
+      messagePermission: 'creator_only',
+      allowedSenderIds: [],
+    })
+
+    const wrapper = mount(ComposerConversation, {
+      props: { conversationId: 'restricted-channel', conversationType: 'channel' },
+    })
+
+    expect(wrapper.findComponent(MessageComposer).exists()).toBe(false)
+    expect(wrapper.text()).toContain('Only certain people can post in this channel.')
+
+    channels.upsertChannel({
+      ...channels.getById('restricted-channel'),
+      canManage: true,
+    })
+    await nextTick()
+    expect(wrapper.findComponent(MessageComposer).exists()).toBe(true)
+    expect(wrapper.text()).not.toContain('Only certain people can post in this channel.')
+    wrapper.unmount()
+  })
+
+  it('shows the composer to selected members and admins, with a restriction notice to others', async () => {
+    sessionStorage.setItem('authUser', JSON.stringify({ id: 'member-1' }))
+    const channels = useChannelsStore()
+    channels.upsertChannel({
+      id: 'selected-channel',
+      name: 'Selected',
+      isMember: true,
+      createdById: 'creator-1',
+      canManage: false,
+      isOwner: false,
+      messagePermission: 'selected_members',
+      allowedSenderIds: ['member-2'],
+    })
+
+    const wrapper = mount(ComposerConversation, {
+      props: { conversationId: 'selected-channel', conversationType: 'channel' },
+    })
+    expect(wrapper.findComponent(MessageComposer).exists()).toBe(false)
+    expect(wrapper.text()).toContain('Only certain people can post in this channel.')
+
+    channels.upsertChannel({
+      ...channels.getById('selected-channel'),
+      allowedSenderIds: ['member-1', 'member-2'],
+    })
+    await nextTick()
+    expect(wrapper.findComponent(MessageComposer).exists()).toBe(true)
+    expect(wrapper.text()).not.toContain('Only certain people can post in this channel.')
+
+    channels.upsertChannel({
+      ...channels.getById('selected-channel'),
+      allowedSenderIds: ['member-2'],
+      createdById: 'member-1',
+    })
+    await nextTick()
+    expect(wrapper.findComponent(MessageComposer).exists()).toBe(true)
+    wrapper.unmount()
+  })
+
+  it('shows the restriction notice to users who are not channel members', () => {
+    sessionStorage.setItem('authUser', JSON.stringify({ id: 'outsider' }))
+    const channels = useChannelsStore()
+    channels.channels.push({
+      id: 'private-channel',
+      name: 'Private',
+      isMember: false,
+      messagePermission: 'everyone',
+      allowedSenderIds: [],
+    })
+
+    const wrapper = mount(ComposerConversation, {
+      props: { conversationId: 'private-channel', conversationType: 'channel' },
+    })
+
+    expect(wrapper.findComponent(MessageComposer).exists()).toBe(false)
+    expect(wrapper.text()).toContain('Only certain people can post in this channel.')
+    wrapper.unmount()
+  })
+
+  it('shows the composer to channel admins in all message permission modes', async () => {
+    sessionStorage.setItem('authUser', JSON.stringify({ id: 'admin-1' }))
+    const channels = useChannelsStore()
+    channels.upsertChannel({
+      id: 'admin-channel',
+      name: 'Admin channel',
+      isMember: true,
+      createdById: 'creator-1',
+      canManage: true,
+      isOwner: false,
+      messagePermission: 'creator_only',
+      allowedSenderIds: [],
+    })
+
+    const wrapper = mount(ComposerConversation, {
+      props: { conversationId: 'admin-channel', conversationType: 'channel' },
+    })
+
+    for (const messagePermission of ['creator_only', 'selected_members', 'everyone']) {
+      channels.upsertChannel({
+        ...channels.getById('admin-channel'),
+        messagePermission,
+        allowedSenderIds: [],
+      })
+      await nextTick()
+      expect(wrapper.findComponent(MessageComposer).exists()).toBe(true)
+    }
+
     wrapper.unmount()
   })
 
@@ -361,16 +519,60 @@ describe('composer conversation', () => {
 
     await buttonWithText(wrapper, 'Snooze').trigger('click')
 
-    expect(reminderStore.dueItems.map((reminder) => reminder.id)).toEqual([
-      'due-reminder-other-conversation',
-    ])
-    expect(reminderStore.items).toHaveLength(1)
+    expect(wrapper.get('[role="dialog"] #reminder-title').text()).toBe('Snooze Reminder')
+    await wrapper.get('[role="dialog"]').trigger('submit')
+
+    await vi.waitFor(() => {
+      expect(reminderStore.dueItems.map((reminder) => reminder.id)).toEqual([
+        'due-reminder-other-conversation',
+      ])
+      expect(reminderStore.items).toHaveLength(1)
+    })
     expect(reminderStore.items[0].fired).toBe(false)
+    expect(reminderApi.createReminder).toHaveBeenCalledWith(
+      expect.objectContaining({
+        conversationId: 'general',
+        conversationName: 'General',
+        messageId: 'message-1',
+        text: 'Check https://example.com',
+      }),
+    )
   })
 
-  it('shows deleted reminders in their original conversation only', async () => {
+  it('removes a due reminder from chat when Delete Reminder is clicked', async () => {
     const reminderStore = useRemindersStore()
-    reminderStore.add({
+    const reminderTime = new Date(Date.now() - 60_000).toISOString()
+    reminderStore.deletedItems.push({
+      id: 'due-reminder-delete',
+      fired: true,
+      dismissed: false,
+      conversationId: 'general',
+      conversationName: 'General',
+      conversationType: 'channel',
+      messageId: 'message-delete',
+      text: 'Remove this reminder from chat',
+      remindAt: reminderTime,
+      firedAt: reminderTime,
+    })
+    const wrapper = mount(ComposerConversation)
+
+    expect(wrapper.text()).toContain('Remove this reminder from chat')
+    await buttonWithText(wrapper, 'Delete Reminder').trigger('click')
+
+    await vi.waitFor(() => {
+      expect(wrapper.text()).not.toContain('Remove this reminder from chat')
+      expect(reminderStore.dueItems).toHaveLength(0)
+    })
+    expect(reminderStore.deletedItems[0]).toMatchObject({
+      id: 'due-reminder-delete',
+      dismissed: true,
+      hideFromChat: true,
+    })
+  })
+
+  it('keeps deleted reminders in the panel history but hides them from chat', async () => {
+    const reminderStore = useRemindersStore()
+    await reminderStore.add({
       conversationId: 'general',
       conversationName: 'General',
       conversationType: 'channel',
@@ -379,20 +581,23 @@ describe('composer conversation', () => {
       remindAt: new Date(Date.now() + 60_000).toISOString(),
     })
     const reminderId = reminderStore.items[0].id
-    reminderStore.remove(reminderId)
+    await reminderStore.remove(reminderId)
 
     const wrapper = mount(ComposerConversation, {
       props: { conversationId: 'general', conversationType: 'channel' },
     })
 
-    expect(wrapper.text()).toContain('Reminder deleted at')
-    expect(wrapper.text()).toContain('Deleted reminder message')
-    expect(wrapper.text()).toContain('Reminder deleted')
+    expect(wrapper.text()).not.toContain('Reminder deleted at')
+    expect(wrapper.text()).not.toContain('Deleted reminder message')
 
     const otherConversation = mount(ComposerConversation, {
       props: { conversationId: 'other-channel', conversationType: 'channel' },
     })
     expect(otherConversation.text()).not.toContain('Deleted reminder message')
+    expect(reminderStore.deletedItems[0]).toMatchObject({
+      dismissed: true,
+      hideFromChat: true,
+    })
   })
 
   it('does not open a message menu when left click is set to default', async () => {
@@ -1198,6 +1403,7 @@ describe('composer conversation', () => {
     await wrapper.get('.reminder-dialog').trigger('submit')
 
     const reminders = useRemindersStore()
+    await vi.waitFor(() => expect(reminders.items).toHaveLength(1))
     expect(reminders.items[0]).toMatchObject({
       text: 'Remember this update',
       title: 'Review tomorrow',
