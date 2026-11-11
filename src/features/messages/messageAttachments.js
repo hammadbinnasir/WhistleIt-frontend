@@ -1,3 +1,6 @@
+import { getAuthToken } from '@/features/auth/session'
+import { http } from '@/features/channels/api/http'
+
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://10.0.105.90:8000/api'
 
 export function normalizeMessageAttachments(message = {}) {
@@ -28,26 +31,31 @@ export function messageAttachmentKind(attachment) {
 }
 
 export function messageAttachmentUrl(attachment) {
-  if (typeof attachment?.localPreviewUrl === 'string' && attachment.localPreviewUrl) {
-    return attachment.localPreviewUrl
-  }
-  const directUrl =
-    attachment?.url ??
-    attachment?.fileUrl ??
-    attachment?.downloadUrl ??
-    attachment?.attachment_url ??
-    attachment?.file_url ??
-    attachment?.download_url ??
-    attachment?.signed_url
   const baseUrl = new URL(API_BASE_URL, globalThis.location?.origin || 'http://localhost')
+  const directUrls = [
+    attachment?.url,
+    attachment?.fileUrl,
+    attachment?.downloadUrl,
+    attachment?.attachment_url,
+    attachment?.file_url,
+    attachment?.download_url,
+    attachment?.signed_url,
+  ]
 
-  if (typeof directUrl === 'string' && directUrl.trim()) {
-    return new URL(directUrl, baseUrl.origin).href
+  for (const directUrl of directUrls) {
+    if (typeof directUrl !== 'string' || !directUrl.trim() || /^blob:/i.test(directUrl.trim())) {
+      continue
+    }
+    const url = new URL(directUrl.trim(), baseUrl.origin)
+    if (url.protocol === 'http:' || url.protocol === 'https:') return url.href
   }
 
-  const path = attachment?.path ?? attachment?.storage_path ?? attachment?.file_path
+  const path = [attachment?.path, attachment?.storage_path, attachment?.file_path].find(
+    (value) => typeof value === 'string' && value.trim() && !/^blob:/i.test(value.trim()),
+  )
   if (typeof path !== 'string' || !path.trim()) return ''
 
+  if (/^https?:\/\//i.test(path.trim())) return new URL(path.trim()).href
   const relativePath = path
     .trim()
     .replace(/^\/+/, '')
@@ -56,4 +64,50 @@ export function messageAttachmentUrl(attachment) {
     .map(encodeURIComponent)
     .join('/')
   return new URL(`/storage/${relativePath}`, baseUrl.origin).href
+}
+
+export function messageAttachmentEndpoint(
+  attachment,
+  { conversationType, companyId, teamId, channelId, messageId } = {},
+) {
+  const attachmentId =
+    attachment?.id ??
+    attachment?.attachment_id ??
+    attachment?.attachmentId ??
+    attachment?.file_id ??
+    attachment?.fileId
+  const requiredIds =
+    conversationType === 'dm'
+      ? [companyId, channelId, messageId, attachmentId]
+      : conversationType === 'channel'
+        ? [companyId, teamId, channelId, messageId, attachmentId]
+        : []
+
+  if (!requiredIds.length || requiredIds.some((id) => id == null || String(id).trim() === '')) {
+    throw new Error('The attachment is missing its message or file ID.')
+  }
+
+  const encode = (value) => encodeURIComponent(String(value))
+  const messagePath =
+    conversationType === 'dm'
+      ? `/v1/${encode(companyId)}/direct-channels/${encode(channelId)}/messages/${encode(messageId)}`
+      : `/v1/${encode(companyId)}/teams/${encode(teamId)}/channels/${encode(channelId)}/messages/${encode(messageId)}`
+  return `${messagePath}/attachments/${encode(attachmentId)}`
+}
+
+export async function fetchMessageAttachment(attachment, context) {
+  const path = messageAttachmentEndpoint(attachment, context)
+  const rememberToken =
+    typeof sessionStorage !== 'undefined'
+      ? sessionStorage.getItem('rememberToken') || getAuthToken()
+      : getAuthToken()
+  const blob = await http(path, {
+    responseType: 'blob',
+    ...(rememberToken ? { headers: { 'ex-remember-token': rememberToken } } : {}),
+  })
+
+  if (!(blob instanceof Blob)) {
+    throw new Error('The attachment download did not return file data.')
+  }
+  return blob
 }

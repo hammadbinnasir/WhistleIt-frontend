@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  messageAttachmentEndpoint,
   messageAttachmentKind,
   messageAttachmentUrl,
   normalizeMessageAttachments,
@@ -35,6 +36,51 @@ describe('message attachment helpers', () => {
     expect(messageAttachmentUrl({ attachment_url: 'https://cdn.example.com/photo.jpg' })).toBe(
       'https://cdn.example.com/photo.jpg',
     )
+  })
+
+  it('ignores browser blob URLs and falls back to the backend storage path', () => {
+    expect(
+      messageAttachmentUrl({
+        url: 'blob:http://localhost:5173/ade47f67-984a-4a2f-98fe-d42f270b7c10',
+        localPreviewUrl: 'blob:http://localhost:5173/ade47f67-984a-4a2f-98fe-d42f270b7c10',
+        path: 'messages/channel-1/photo.jpg',
+      }),
+    ).toBe('http://10.0.105.90:8000/storage/messages/channel-1/photo.jpg')
+  })
+
+  it('does not return a blob URL as a server attachment URL', () => {
+    expect(messageAttachmentUrl({ url: 'blob:http://localhost:5173/file-1' })).toBe('')
+  })
+
+  it('builds the channel message attachment endpoint', () => {
+    expect(
+      messageAttachmentEndpoint(
+        { id: 'attachment-1' },
+        {
+          conversationType: 'channel',
+          companyId: 'company-1',
+          teamId: 'team-1',
+          channelId: 'channel-1',
+          messageId: 'message-1',
+        },
+      ),
+    ).toBe(
+      '/v1/company-1/teams/team-1/channels/channel-1/messages/message-1/attachments/attachment-1',
+    )
+  })
+
+  it('builds the direct channel message attachment endpoint', () => {
+    expect(
+      messageAttachmentEndpoint(
+        { attachment_id: 'attachment-1' },
+        {
+          conversationType: 'dm',
+          companyId: 'company-1',
+          channelId: 'dm-1',
+          messageId: 'message-1',
+        },
+      ),
+    ).toBe('/v1/company-1/direct-channels/dm-1/messages/message-1/attachments/attachment-1')
   })
 
   it('returns an empty URL if the backend did not include a URL or path', () => {
