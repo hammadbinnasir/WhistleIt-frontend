@@ -33,6 +33,8 @@ export function messageAttachmentUrl(attachment) {
   }
   const directUrl =
     attachment?.url ??
+    attachment?.fileUrl ??
+    attachment?.downloadUrl ??
     attachment?.attachment_url ??
     attachment?.file_url ??
     attachment?.download_url ??

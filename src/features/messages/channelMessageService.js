@@ -81,7 +81,10 @@ async function request(build, { rejectUnsuccessful = false } = {}) {
             .flat()
             .find((message) => typeof message === 'string' && message.trim())
           throw new Error(
-            response.message || response.error || validationMessage || 'The server rejected the delete request.',
+            response.message ||
+              response.error ||
+              validationMessage ||
+              'The server rejected the delete request.',
           )
         }
         response = response.data
@@ -146,21 +149,39 @@ export function sendChannelMessage(companyId, teamId, channelId, payload) {
   return request(() => {
     const path = collectionPath(companyId, teamId, channelId)
     assertPayload(payload, { requireContent: true })
-    const { content, attachment, ...metadata } = payload
+    const { content, attachment, attachmentSource, ...metadata } = payload
     if (attachment) {
       const body = new FormData()
       if (content?.trim()) body.append('body', content.trim())
-      body.append('attachment', attachment)
+      const recentFile = attachmentSource === 'recent'
+      body.append(recentFile ? 'file' : 'attachment', attachment, attachment.name)
+      if (recentFile) {
+        body.append('companyId', String(companyId))
+        body.append('chatId', String(channelId))
+        body.append('fileName', attachment.name)
+      }
       Object.entries(metadata).forEach(([key, value]) => {
         if (value == null) return
         const formValue =
-          typeof value === 'boolean' ? (value ? '1' : '0') : typeof value === 'string' ? value : JSON.stringify(value)
+          typeof value === 'boolean'
+            ? value
+              ? '1'
+              : '0'
+            : typeof value === 'string'
+              ? value
+              : JSON.stringify(value)
         body.append(key, formValue)
       })
       return [path, { method: 'POST', body }]
     }
 
-    return [path, { method: 'POST', body: { ...metadata, body: content.trim() } }]
+    return [
+      path,
+      {
+        method: 'POST',
+        body: { ...metadata, ...(content?.trim() ? { body: content.trim() } : {}) },
+      },
+    ]
   })
 }
 

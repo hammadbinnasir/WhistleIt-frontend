@@ -13,6 +13,7 @@ import {
 
 const props = defineProps({
   channelId: { type: [String, Number], default: null },
+  companyId: { type: [String, Number], default: null },
   conversationType: { type: String, default: 'channel' },
   createPoll: { type: Function, default: null },
   pollLoading: { type: Boolean, default: false },
@@ -1167,6 +1168,22 @@ function removeAttachment() {
   clearAttachment()
 }
 
+function handleRecentFileSelected(file) {
+  emit('send', {
+    content: content.value.trim(),
+    attachment: file,
+    attachmentSource: 'recent',
+    ...(important.value ? { important: true } : {}),
+  })
+  content.value = ''
+  if (editor.value) editor.value.innerHTML = ''
+  activeFormats.value = []
+  activeList.value = ''
+  codeMode.value = false
+  important.value = false
+  savedSelectionRange = null
+}
+
 function handleMediaAction(action, payload) {
   if (action === 'emoji') {
     insertAtSelection(payload)
@@ -1542,11 +1559,13 @@ function handleFormKeydown(event) {
 
       <MediaToolbar
         class="message-composer__media"
+        :company-id="companyId"
         :recording="recording"
         :microphone-disabled="Boolean(voiceNote) || voiceNoteUploading"
         @mousedown.prevent="saveSelection(true)"
         @action="handleMediaAction"
         @file-selected="handleFileSelected"
+        @recent-file-selected="handleRecentFileSelected"
       />
     </div>
   </form>

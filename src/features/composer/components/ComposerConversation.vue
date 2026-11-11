@@ -1127,7 +1127,8 @@ async function addMessage(payload) {
     }
 
     const channelMessages = messageStore.messagesFor(channelId.value)
-    const responseMessageId = result.data?.id ?? result.data?.message_id ?? result.data?.messageId
+    const responseMessageId =
+      result.data?.id ?? result.data?.message_id ?? result.data?.messageId
     const sentMessage = responseMessageId
       ? channelMessages.find((message) => String(message.id) === String(responseMessageId))
       : [...channelMessages].reverse().find((message) => message.content === payload.content)
@@ -3289,6 +3290,7 @@ onBeforeUnmount(() => {
       ref="messageComposer"
       v-if="canSendMessages"
       :channel-id="channelId"
+      :company-id="teamsStore.activeWorkspaceId"
       :conversation-type="conversationType"
       :create-poll="createPollInChannel"
       :poll-loading="pollApi.loading.value"
