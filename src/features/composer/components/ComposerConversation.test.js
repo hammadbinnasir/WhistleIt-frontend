@@ -928,6 +928,8 @@ describe('composer conversation', () => {
     await vi.waitFor(() =>
       expect(wrapper.find('.composer-conversation__poll-card').exists()).toBe(true),
     )
+    await vi.waitFor(() => expect(wrapper.find('.composer-conversation__poll-card').exists()).toBe(true))
+    await vi.waitFor(() => expect(sendChannelMessage).toHaveBeenCalledOnce())
 
     expect(wrapper.get('.composer-conversation__poll-card').text()).toContain('Lunch vote')
     expect(
@@ -950,6 +952,16 @@ describe('composer conversation', () => {
     expect(pollsApi.createPoll.mock.calls[0][1]).not.toHaveProperty('start_at')
     expect(pollsApi.createPoll.mock.calls[0][1]).not.toHaveProperty('close_at')
     expect(pollsApi.createPoll.mock.calls[0][1]).not.toHaveProperty('id')
+    expect(sendChannelMessage).toHaveBeenCalledWith(
+      'company-1',
+      'team-1',
+      'general',
+      expect.objectContaining({ content: 'Lunch vote', poll_id: 'server-poll-default' }),
+    )
+    expect(useMessagesStore().messagesFor('general').at(-1)).toMatchObject({
+      poll_id: 'server-poll-default',
+      content: 'Lunch vote',
+    })
     await wrapper.get('.composer-conversation__poll-actions button:last-child').trigger('click')
     await vi.waitFor(() => expect(pollsApi.closePoll).toHaveBeenCalledOnce())
     expect(wrapper.get('.composer-conversation__poll-card').text()).toContain('Closed')
@@ -957,6 +969,16 @@ describe('composer conversation', () => {
 
   it('sends and stores a created poll in the active DM conversation', async () => {
     const dms = useDmStore()
+    const sendDmMessage = vi.spyOn(dmApi, 'sendMessage').mockImplementation(
+      async (_companyId, channelId, payload) => ({
+        id: 'dm-poll-message-server-id',
+        from: dms.meId,
+        text: payload.body,
+        createdAt: new Date().toISOString(),
+        poll_id: payload.poll_id,
+        channelId,
+      }),
+    )
     dms.conversations.push({
       id: 'dm-poll-channel',
       title: 'Poll test DM',
@@ -980,8 +1002,179 @@ describe('composer conversation', () => {
       'dm-poll-channel',
       expect.objectContaining({ title: 'DM poll' }),
     )
-    expect(dms.conversations[0].messages[0].poll.title).toBe('DM poll')
+    expect(sendDmMessage).toHaveBeenCalledWith('company-1', 'dm-poll-channel', {
+      body: 'DM poll',
+      is_important: false,
+      poll_id: 'server-poll-default',
+    })
+    await vi.waitFor(() =>
+      expect(dms.conversations[0].messages[0].id).toBe('dm-poll-message-server-id'),
+    )
+    expect(dms.conversations[0].messages[0]).toMatchObject({
+      poll_id: 'server-poll-default',
+      poll: { title: 'DM poll', id: 'server-poll-default' },
+    })
     expect(wrapper.text()).toContain('DM poll')
+    wrapper.unmount()
+    sendDmMessage.mockRestore()
+  })
+
+  it('renders a poll card from a fetched message that contains poll_id', async () => {
+    const messages = useMessagesStore()
+    messages.messagesByChannel.general = [
+      {
+        id: 'server-poll-message',
+        content: 'Shared poll',
+        poll_id: 'server-poll-from-message',
+        author: 'Another user',
+        mine: false,
+        createdAt: new Date().toISOString(),
+      },
+    ]
+    const wrapper = mount(ComposerConversation)
+
+    expect(wrapper.get('.composer-conversation__poll-card').attributes('data-poll-id')).toBe(
+      'server-poll-from-message',
+    )
+    expect(wrapper.get('.composer-conversation__poll-card').text()).toContain('Shared poll')
+    wrapper.unmount()
+  })
+
+  it('shows only poll summary in the message and full poll details after Participate', async () => {
+    const messages = useMessagesStore()
+    messages.messagesByChannel.general = [
+      {
+        id: 'compact-poll-message',
+        content: 'Lunch poll',
+        poll_id: 'compact-server-poll',
+        author: 'Another user',
+        mine: false,
+        createdAt: new Date().toISOString(),
+        poll: {
+          id: 'compact-server-poll',
+          title: 'Lunch poll',
+          description: 'Choose what we should order',
+          audience: 'public',
+          questions: [],
+        },
+      },
+    ]
+    pollsApi.getPollQuestions.mockResolvedValueOnce({
+      result: [
+        {
+          id: 'lunch-question',
+          question: 'What should we order?',
+          type: 'choice',
+          required: true,
+          choices: ['Pizza', 'Salad'],
+        },
+      ],
+    })
+    const wrapper = mount(ComposerConversation)
+    const card = wrapper.get('.composer-conversation__poll-card')
+
+    expect(card.text()).toContain('Lunch poll')
+    expect(card.text()).toContain('Open')
+    expect(card.text()).toContain('Public')
+    expect(card.text()).not.toContain('Choose what we should order')
+    expect(card.text()).not.toContain('What should we order?')
+    expect(card.text()).not.toContain('Pizza')
+    expect(card.text()).not.toContain('Salad')
+
+    await card
+      .findAll('button')
+      .find((button) => button.text().includes('Participate'))
+      .trigger('click')
+    await vi.waitFor(() =>
+      expect(document.querySelector('.composer-conversation__poll-response-modal')).not.toBeNull(),
+    )
+    const dialog = document.querySelector('.composer-conversation__poll-response-modal')
+    expect(dialog.textContent).toContain('Lunch poll')
+    expect(dialog.textContent).toContain('Description: Choose what we should order')
+    expect(dialog.textContent).toContain('Q1. What should we order?')
+    expect(dialog.textContent).toContain('Pizza')
+    expect(dialog.textContent).toContain('Salad')
+    wrapper.unmount()
+  })
+
+  it("shows You're Done for a previously answered poll and prevents another participation", async () => {
+    const messages = useMessagesStore()
+    const dms = useDmStore()
+    localStorage.setItem(
+      `whistleit:participated-polls:${dms.meId}`,
+      JSON.stringify(['already-voted-poll']),
+    )
+    messages.messagesByChannel.general = [
+      {
+        id: 'already-voted-message',
+        content: 'Vote',
+        poll_id: 'already-voted-poll',
+        author: 'Another user',
+        mine: false,
+        createdAt: new Date().toISOString(),
+        poll: {
+          id: 'already-voted-poll',
+          title: 'Vote',
+          questions: [{ id: 'question-1', text: 'Ready?', type: 'choice', options: ['Yes'] }],
+        },
+      },
+    ]
+    const wrapper = mount(ComposerConversation)
+    const card = wrapper.get('.composer-conversation__poll-card')
+
+    expect(card.text()).toContain("You're Done")
+    expect(card.text()).not.toContain('Participate')
+    await card.get('button.is-done').trigger('click')
+    expect(document.querySelector('.composer-conversation__poll-response-modal')).toBeNull()
+    expect(pollsApi.getPollQuestions).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it('renders open-ended answers from results when the message has no question data', async () => {
+    const messages = useMessagesStore()
+    messages.messagesByChannel.general = [
+      {
+        id: 'poll-without-question-data',
+        content: 'vote',
+        poll_id: 'server-poll-with-answer',
+        author: 'Another user',
+        mine: false,
+        createdAt: new Date().toISOString(),
+        poll: {
+          id: 'server-poll-with-answer',
+          title: 'vote',
+          description: 'Da',
+          audience: 'public',
+        },
+      },
+    ]
+    pollsApi.getPollResult.mockResolvedValueOnce({
+      result: [
+        {
+          id: 'question-age',
+          poll_id: 'server-poll-with-answer',
+          type: 'open_ended',
+          question: 'age',
+          total_votes: 1,
+          answers: [{ answer: 'i am good', users: 'Hammad Kazmi' }],
+        },
+      ],
+      pagination: { current_page: 1, total: 1 },
+    })
+    const wrapper = mount(ComposerConversation)
+
+    await wrapper
+      .get('.composer-conversation__poll-card')
+      .findAll('button')
+      .find((button) => button.text().includes('View All Results'))
+      .trigger('click')
+
+    await vi.waitFor(() =>
+      expect(document.body.textContent).toContain('i am good'),
+    )
+    expect(document.body.textContent).toContain('Q1. age')
+    expect(document.body.textContent).toContain('Total Responses: 1')
+    expect(document.body.textContent).not.toContain('Unable to load poll results')
     wrapper.unmount()
   })
 
@@ -1151,20 +1344,47 @@ describe('composer conversation', () => {
     await nextTick()
     document.querySelector('.composer-conversation__poll-response-footer button').click()
     await vi.waitFor(() => expect(pollsApi.submitPollAnswer).toHaveBeenCalledOnce())
-    await vi.waitFor(() => expect(wrapper.text()).toContain("You're Done"))
-
-    expect(wrapper.text()).toContain("You're Done")
+    await vi.waitFor(() =>
+      expect(wrapper.get('.composer-conversation__poll-card').text()).toContain("You're Done"),
+    )
+    expect(wrapper.get('.composer-conversation__poll-card').text()).not.toContain('Participate')
     expect(pollsApi.submitPollAnswer).toHaveBeenCalledWith({
       channel_id: 'general',
       poll_id: 'open-ended-poll',
       answers: { 'open-question-1': 'Improve documentation' },
     })
+    await vi.waitFor(() =>
+      expect(wrapper.get('.composer-conversation__poll-card').text()).not.toContain('Participate'),
+    )
+    pollsApi.getPollResult.mockResolvedValueOnce({
+      result: [
+        {
+          id: 'open-question-1',
+          poll_id: 'open-ended-poll',
+          type: 'open_ended',
+          question: 'What should we improve?',
+          total_votes: 1,
+          answers: [{ answer: 'mai theek houn', users: 'Hammad Kazmi' }],
+        },
+      ],
+      pagination: { total: 1 },
+    })
+    const resultRequestCount = pollsApi.getPollResult.mock.calls.length
     await wrapper
       .findAll('button')
       .find((button) => button.text().includes('View All Results'))
       .trigger('click')
+    await vi.waitFor(() =>
+      expect(pollsApi.getPollResult).toHaveBeenCalledTimes(resultRequestCount + 1),
+    )
+    expect(pollsApi.getPollResult).toHaveBeenLastCalledWith({
+      channel_id: 'general',
+      poll_id: 'open-ended-poll',
+    })
     await nextTick()
-    expect(document.body.textContent).toContain('Improve documentation')
+    expect(document.body.textContent).toContain('mai theek houn')
+    expect(document.body.textContent).toContain('Total Responses:')
+    expect(document.body.textContent).not.toContain('Improve documentation')
     const closeButton = document.querySelector(
       '.composer-conversation__poll-response-footer .is-close',
     )
@@ -1175,7 +1395,7 @@ describe('composer conversation', () => {
     wrapper.unmount()
   })
 
-  it('shows scheduled poll start and end times before participation', async () => {
+  it('shows scheduled poll status without timing details in the message card', async () => {
     const messages = useMessagesStore()
     messages.messagesByChannel.general = [
       {
@@ -1195,9 +1415,9 @@ describe('composer conversation', () => {
     ]
     const wrapper = mount(ComposerConversation)
 
-    expect(wrapper.text()).toContain('Starts')
-    expect(wrapper.text()).toContain('Ends')
     expect(wrapper.text()).toContain('Scheduled')
+    expect(wrapper.text()).not.toContain('Starts')
+    expect(wrapper.text()).not.toContain('Ends')
     expect(wrapper.text()).not.toContain('Participate')
     expect(wrapper.text()).not.toContain('View All Results')
     wrapper.unmount()
@@ -1223,7 +1443,8 @@ describe('composer conversation', () => {
     ]
     const wrapper = mount(ComposerConversation)
 
-    expect(wrapper.text()).toContain('Which option?')
+    expect(wrapper.get('.composer-conversation__poll-card').text()).toContain('Team choice')
+    expect(wrapper.get('.composer-conversation__poll-card').text()).not.toContain('Which option?')
     expect(
       wrapper
         .findAll('.composer-conversation__poll-actions button')
@@ -1257,9 +1478,22 @@ describe('composer conversation', () => {
     )
     await wrapper.get('.composer-conversation__poll-actions button').trigger('click')
     await vi.waitFor(() => expect(pollsApi.createPoll).toHaveBeenCalledOnce())
-    expect(messages.messagesByChannel.general[0].poll.id).toBe('server-poll-migrated')
+    await vi.waitFor(() => expect(sendChannelMessage).toHaveBeenCalledOnce())
+    const publishedMessage = messages.messagesByChannel.general.find(
+      (message) => message.poll?.id === 'server-poll-migrated',
+    )
+    expect(publishedMessage).toBeDefined()
     expect(wrapper.get('.composer-conversation__poll-card').attributes('data-poll-id')).toBe(
       'server-poll-migrated',
+    )
+    expect(sendChannelMessage).toHaveBeenCalledWith(
+      'company-1',
+      'team-1',
+      'general',
+      expect.objectContaining({
+        content: 'Legacy poll',
+        poll_id: 'server-poll-migrated',
+      }),
     )
     await wrapper.get('.composer-conversation__poll-actions button').trigger('click')
     await vi.waitFor(() => expect(pollsApi.getPollQuestions).toHaveBeenCalledOnce())

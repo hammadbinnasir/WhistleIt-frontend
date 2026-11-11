@@ -363,6 +363,7 @@ export const dmApi = {
   sendMessage(companyId, channelId, payload) {
     requireCompany(companyId, 'send a message')
     requireChannel(channelId)
+    //console.log('sendMessage payload:', payload);
     if ('attachments' in payload) {
       throw new Error('Only one message attachment is supported.')
     }
