@@ -601,7 +601,7 @@ onBeforeUnmount(() => {
       class="h-full w-[min(432px,40vw)] shrink-0 border-l border-slate-200 bg-white shadow-lg"
       aria-label="Poll history panel"
     >
-      <PollHistoryPanel />
+      <PollHistoryPanel :channel-id="selectedChannelId || ''" />
     </aside>
 
     <aside

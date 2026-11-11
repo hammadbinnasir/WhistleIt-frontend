@@ -59,6 +59,36 @@ describe('ui store', () => {
     ])
   })
 
+  it('records plain-title channel polls and restores them after a store refresh', () => {
+    const ui = useUiStore()
+    ui.addPoll(
+      {
+        id: 'poll-message-1',
+        poll_id: 'poll-1',
+        content: 'My poll',
+        createdAt: '2026-11-11T10:00:00.000Z',
+        poll: { id: 'poll-1', title: 'My poll', audience: 'public' },
+      },
+      { id: 'channel-1', name: 'Research', kind: 'public' },
+    )
+
+    expect(ui.polls).toContainEqual(
+      expect.objectContaining({
+        id: 'poll-1',
+        title: 'My poll',
+        conversation: { id: 'channel-1', name: 'Research', kind: 'public' },
+      }),
+    )
+    expect(
+      JSON.parse(localStorage.getItem('whistleit:channel-poll-history'))['channel-1'],
+    ).toHaveLength(1)
+
+    setActivePinia(createPinia())
+    expect(useUiStore().polls).toContainEqual(
+      expect.objectContaining({ id: 'poll-1', title: 'My poll' }),
+    )
+  })
+
   it('opens and closes search panels and channel settings', () => {
     const ui = useUiStore()
 
