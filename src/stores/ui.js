@@ -5,6 +5,7 @@ import { computed, ref } from 'vue'
 // Server data (messages, channels from the API) does NOT belong here.
 export const useUiStore = defineStore('ui', () => {
   const PINNED_MESSAGES_STORAGE_KEY = 'whistleit:pinned-messages'
+  const POLL_HISTORY_STORAGE_KEY = 'whistleit:channel-poll-history'
 
   function loadPinnedMessages() {
     try {
@@ -24,6 +25,33 @@ export const useUiStore = defineStore('ui', () => {
     }
   }
 
+  function loadPollHistory() {
+    try {
+      const saved = JSON.parse(localStorage.getItem(POLL_HISTORY_STORAGE_KEY) || '{}')
+      return saved && typeof saved === 'object' && !Array.isArray(saved) ? saved : {}
+    } catch (error) {
+      console.error('Unable to load channel poll history:', error)
+      return {}
+    }
+  }
+
+  function persistPollHistory(poll) {
+    const channelId = String(poll.conversation?.id ?? '')
+    if (!channelId || poll.conversation?.kind === 'dm') return
+
+    try {
+      const history = loadPollHistory()
+      const channelPolls = Array.isArray(history[channelId]) ? history[channelId] : []
+      const existingIndex = channelPolls.findIndex((item) => String(item.id) === String(poll.id))
+      if (existingIndex === -1) channelPolls.unshift(poll)
+      else channelPolls[existingIndex] = { ...channelPolls[existingIndex], ...poll }
+      history[channelId] = channelPolls
+      localStorage.setItem(POLL_HISTORY_STORAGE_KEY, JSON.stringify(history))
+    } catch (error) {
+      console.error('Unable to save channel poll history:', error)
+    }
+  }
+
   // state
   const selectedChannelId = ref(null)
   const sidebarOpen = ref(true)
@@ -32,7 +60,7 @@ export const useUiStore = defineStore('ui', () => {
   const channelSettingsTab = ref('settings')
   const toasts = ref([])
   const pinnedMessages = ref(loadPinnedMessages())
-  const polls = ref([])
+  const polls = ref(Object.values(loadPollHistory()).flat())
   let nextToastId = 0
 
   // modal visibility flags
@@ -66,18 +94,33 @@ export const useUiStore = defineStore('ui', () => {
   }
   function addPoll(message, conversation) {
     const content = message.content || message.text || ''
+    const pollData = message.poll || {}
     const titleMatch = content.match(/^Poll:\s*(.+)$/m)
-    if (!titleMatch) return
-    const existing = polls.value.some((poll) => poll.id === String(message.id))
-    if (existing) return
-    polls.value.unshift({
-      id: String(message.id || Date.now()),
-      title: titleMatch[1].trim(),
+    if (!titleMatch && !message.poll && message.poll_id == null && message.pollId == null) return
+    const pollId = pollData.id ?? message.poll_id ?? message.pollId ?? message.id ?? Date.now()
+    const poll = {
+      id: String(pollId),
+      title:
+        pollData.title ??
+        pollData.question ??
+        message.poll_title ??
+        message.pollTitle ??
+        titleMatch?.[1]?.trim() ??
+        content,
       content,
       conversation,
       createdAt: message.createdAt || new Date().toISOString(),
-      status: 'Open',
-    })
+      status: pollData.status ?? (pollData.closed || pollData.is_closed ? 'Closed' : 'Open'),
+      audience: pollData.audience ?? pollData.audience_responses ?? 'public',
+    }
+    const existingIndex = polls.value.findIndex(
+      (item) =>
+        String(item.id) === poll.id &&
+        String(item.conversation?.id ?? '') === String(conversation?.id ?? ''),
+    )
+    if (existingIndex === -1) polls.value.unshift(poll)
+    else polls.value[existingIndex] = { ...polls.value[existingIndex], ...poll }
+    persistPollHistory(poll)
   }
   function togglePinnedMessage(message, conversation) {
     const id = String(message.id)
