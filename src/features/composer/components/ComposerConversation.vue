@@ -272,7 +272,6 @@ const renderedMessages = computed(() => {
         : voiceNoteId && normalizedContent.trim().toLowerCase() === 'voice message'
           ? ''
           : normalizedContent
-          : normalizeMessageText(messageContent)
       const pollId = message.poll_id ?? message.pollId
       const poll =
         message.poll ??
