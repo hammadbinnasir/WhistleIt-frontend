@@ -739,14 +739,31 @@ describe('composer conversation', () => {
     expect(wrapper.find('.composer-conversation__menu').exists()).toBe(true)
   })
 
-  it('opens the reminder dialog on double click when configured', async () => {
+  it('sets a one-hour reminder on a channel message double click when configured', async () => {
     useUserStore().hydrate({ preferences: { doubleClick: 'reminder' } })
     const wrapper = mount(ComposerConversation)
     await sendMessage(wrapper, 'Remind me about this')
+    const beforeDoubleClick = Date.now()
 
     await wrapper.get('.composer-conversation__message-bubble').trigger('dblclick')
 
-    expect(wrapper.get('[aria-label="Reminder title"]').exists()).toBe(true)
+    const reminders = useRemindersStore()
+    await vi.waitFor(() => expect(reminders.items).toHaveLength(1))
+    expect(reminders.items[0]).toMatchObject({
+      conversationId: 'general',
+      conversationType: 'channel',
+      text: 'Remind me about this',
+    })
+    expect(
+      Math.abs(
+        new Date(reminders.items[0].remindAt).getTime() - beforeDoubleClick - 60 * 60 * 1000,
+      ),
+    ).toBeLessThan(1000)
+    expect(wrapper.find('[aria-label="Reminder title"]').exists()).toBe(false)
+    expect(wrapper.find('.composer-conversation__message-reminder').text()).toMatch(
+      /^Remind you at /,
+    )
+    expect(useUiStore().toasts[0].title).toBe('Reminder set')
   })
 
   it('shows due reminders in chat and snoozes them back to the reminder list', async () => {

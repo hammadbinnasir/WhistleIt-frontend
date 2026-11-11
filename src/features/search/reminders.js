@@ -17,13 +17,18 @@ export const useRemindersStore = defineStore('reminders', {
   getters: {
     sorted: (s) => [...s.items].sort((a, b) => new Date(a.remindAt) - new Date(b.remindAt)),
     dueItems: (s) =>
-      s.deletedItems.filter((reminder) => reminder.fired && reminder.firedAt && !reminder.dismissed),
+      s.deletedItems.filter(
+        (reminder) => reminder.fired && reminder.firedAt && !reminder.dismissed,
+      ),
   },
   actions: {
     async fetch() {
       this.loading = true
       try {
-        this.items = await listReminders()
+        const processedIds = new Set(this.deletedItems.map((reminder) => String(reminder.id)))
+        this.items = (await listReminders()).filter(
+          (reminder) => !processedIds.has(String(reminder.id)),
+        )
         this.checkDueReminders()
       } finally {
         this.loading = false
@@ -152,6 +157,11 @@ export const useRemindersStore = defineStore('reminders', {
         Notification.requestPermission()
       const tick = () => {
         this.checkDueReminders()
+        if (!document.hidden && !this.loading) {
+          void this.fetch().catch((error) => {
+            console.error('Unable to refresh reminders:', error)
+          })
+        }
       }
       tick()
       this.timer = setInterval(tick, 15000)
