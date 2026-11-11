@@ -54,6 +54,25 @@ export function unwrap(response) {
   return response && 'data' in response ? response.data : response
 }
 
+export function recentAtOf(data) {
+  const recent = data?.recent ?? data?.channel ?? data
+  return (
+    recent?.recent_at ??
+    recent?.recentAt ??
+    recent?.last_recent_at ??
+    recent?.lastRecentAt ??
+    recent?.last_opened_at ??
+    recent?.lastOpenedAt ??
+    recent?.last_viewed_at ??
+    recent?.lastViewedAt ??
+    recent?.updated_at ??
+    recent?.updatedAt ??
+    recent?.created_at ??
+    recent?.createdAt ??
+    ''
+  )
+}
+
 function membersFrom(data) {
   const list = Array.isArray(data)
     ? data
@@ -326,6 +345,21 @@ export const dmApi = {
       }
       return list.map((channel) => normalizeChannel(channel))
     })
+  },
+
+  // PATCH /v1/{company}/direct-channels/{channel}/recent
+  markRecent(companyId, channelId) {
+    requireCompany(companyId, 'mark a conversation as recent')
+    requireChannel(channelId)
+    return apiRequest(`/v1/${encode(companyId)}/direct-channels/${encode(channelId)}/recent`, {
+      method: 'PATCH',
+      body: JSON.stringify({ is_recent: true }),
+    })
+      .then((response) => recentAtOf(unwrap(response)))
+      .catch((cause) => {
+        if (cause instanceof SyntaxError && cause.status === 204) return ''
+        throw cause
+      })
   },
 
   // POST /v1/{company}/direct-channels  (1-to-1)

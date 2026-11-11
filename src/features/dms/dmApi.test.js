@@ -267,6 +267,71 @@ describe('DM API', () => {
     expect(apiRequest).toHaveBeenCalledWith('/v1/company%201/direct-channels')
   })
 
+  it('marks a direct conversation as recent and returns its recent timestamp', async () => {
+    apiRequest.mockResolvedValue({
+      success: true,
+      data: { last_recent_at: '2026-03-17T10:00:00Z' },
+    })
+
+    await expect(dmApi.markRecent('company-1', 'channel-1')).resolves.toBe(
+      '2026-03-17T10:00:00Z',
+    )
+    expect(apiRequest).toHaveBeenCalledWith(
+      '/v1/company-1/direct-channels/channel-1/recent',
+      {
+        method: 'PATCH',
+        body: JSON.stringify({ is_recent: true }),
+      },
+    )
+  })
+
+  it('URL-encodes company and channel IDs when marking a conversation recent', async () => {
+    apiRequest.mockResolvedValue(null)
+
+    await expect(dmApi.markRecent('company 1', 'channel/1')).resolves.toBe('')
+    expect(apiRequest).toHaveBeenCalledWith(
+      '/v1/company%201/direct-channels/channel%2F1/recent',
+      {
+        method: 'PATCH',
+        body: JSON.stringify({ is_recent: true }),
+      },
+    )
+  })
+
+  it.each([
+    'recent_at',
+    'recentAt',
+    'last_recent_at',
+    'lastRecentAt',
+    'updated_at',
+    'updatedAt',
+    'created_at',
+    'createdAt',
+  ])('reads the %s timestamp from the recent response', async (field) => {
+    apiRequest.mockResolvedValue({
+      success: true,
+      data: { [field]: '2026-03-17T10:00:00Z' },
+    })
+
+    await expect(dmApi.markRecent('company-1', 'channel-1')).resolves.toBe(
+      '2026-03-17T10:00:00Z',
+    )
+  })
+
+  it('propagates recent API errors and validates required IDs', async () => {
+    apiRequest.mockRejectedValueOnce(new Error('Recent update failed'))
+    await expect(dmApi.markRecent('company-1', 'channel-1')).rejects.toThrow(
+      'Recent update failed',
+    )
+
+    expect(() => dmApi.markRecent('', 'channel-1')).toThrow(
+      'A company ID is required to mark a conversation as recent.',
+    )
+    expect(() => dmApi.markRecent('company-1', '')).toThrow(
+      'A channel ID is required to load a direct conversation.',
+    )
+  })
+
   it('creates a direct channel for a company', async () => {
     const payload = { recipient_id: 'user-2' }
     const response = { success: true, data: { id: 'channel-1' } }

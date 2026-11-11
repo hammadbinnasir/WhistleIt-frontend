@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { getUser } from '@/features/account/api'
 import { dmApi, normalizePublicCustomStatus } from '@/features/dms/dmApi'
 import { useActivityStore } from '@/stores/activity'
@@ -9,6 +9,8 @@ import { useTeamsStore } from '@/stores/teams'
 const STORAGE_KEY = 'whistleit:dm-messages'
 // localStorage: conversations ki list + users -> { [company]: { userId, me, conversations, users } }
 const CONVERSATIONS_KEY = 'whistleit:dm-conversations'
+// localStorage: locally dismissed conversation IDs -> { [company]: string[] }
+const CLOSED_CONVERSATIONS_KEY = 'whistleit:dm-closed-conversations'
 const MAX_CACHED_MESSAGES = 200
 // Naye messages (dusre user ke) lane ke liye active conversation har itne ms baad check hoti hai
 const POLL_INTERVAL = 4000
@@ -94,6 +96,15 @@ function saveConversationCache(companyId, data) {
   all[companyId] = data
   writeJson(CONVERSATIONS_KEY, all)
 }
+function readClosedConversationIds(companyId) {
+  const ids = readJson(CLOSED_CONVERSATIONS_KEY)[companyId]
+  return Array.isArray(ids) ? ids : []
+}
+function saveClosedConversationIds(companyId, ids) {
+  const all = readJson(CLOSED_CONVERSATIONS_KEY)
+  all[companyId] = ids
+  writeJson(CLOSED_CONVERSATIONS_KEY, all)
+}
 
 function lastActivity(conversation) {
   const times = conversation.messages
@@ -110,7 +121,7 @@ export const useDmStore = defineStore('dms', () => {
   const conversations = ref([])
   const usersById = ref({})
   const activeId = ref(null)
-  const closedIds = ref([])
+  const closedIds = ref(readClosedConversationIds(teamsStore.activeWorkspaceId))
 
   const loading = ref(false)
   const error = ref('')
@@ -144,6 +155,10 @@ export const useDmStore = defineStore('dms', () => {
   let learnedMe = '' // server ke jawab se seekha hua apna asli user id
 
   const companyId = computed(() => teamsStore.activeWorkspaceId)
+
+  watch(companyId, (company) => {
+    closedIds.value = readClosedConversationIds(company)
+  })
 
   // ---------- helpers ----------
   function mergeUsers(list = []) {
@@ -268,6 +283,7 @@ export const useDmStore = defineStore('dms', () => {
     try {
       localStorage.removeItem(STORAGE_KEY)
       localStorage.removeItem(CONVERSATIONS_KEY)
+      localStorage.removeItem(CLOSED_CONVERSATIONS_KEY)
     } catch {
       /* ignore */
     }
@@ -283,6 +299,7 @@ export const useDmStore = defineStore('dms', () => {
 
     initialization = (async () => {
       const company = companyId.value
+      closedIds.value = readClosedConversationIds(company)
       // 1) Pehle saved data foran dikhao
       if (!conversations.value.length) hydrateFromCache(company)
       const cachedFavorites = new Set(
@@ -565,10 +582,22 @@ export const useDmStore = defineStore('dms', () => {
     if (!conversation) return false
 
     closedIds.value = closedIds.value.filter((x) => x !== id)
+    saveClosedConversationIds(companyId.value, closedIds.value)
     activeId.value = id
     conversation.unreadCount = 0
     detailError.value = ''
     messagesError.value = ''
+
+    if (conversation.type === 'dm' && dmApi.markRecent) {
+      void dmApi
+        .markRecent(companyId.value, id)
+        .then((recentAt) => {
+          if (recentAt) conversation.recentAt = recentAt
+        })
+        .catch((cause) => {
+          actionError.value = errorMessage(cause)
+        })
+    }
 
     void loadMessages(id)
     return true
@@ -583,6 +612,7 @@ export const useDmStore = defineStore('dms', () => {
 
   function closeConversation(id) {
     if (!closedIds.value.includes(id)) closedIds.value.push(id)
+    saveClosedConversationIds(companyId.value, closedIds.value)
     if (activeId.value === id) activeId.value = null
   }
 

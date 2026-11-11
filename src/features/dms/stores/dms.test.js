@@ -10,6 +10,7 @@ vi.mock('@/features/dms/dmApi', () => ({
     listTeamNonMembers: vi.fn(),
     getDirectChannel: vi.fn(),
     createDirectChannel: vi.fn(),
+    markRecent: vi.fn(),
     listMessages: vi.fn(), // <- add
     sendMessage: vi.fn(), // <- add
     updateMessage: vi.fn(), // <- add
@@ -51,6 +52,7 @@ describe('dms store', () => {
         { id: 'm1', from: 'u2', text: 'Received', createdAt: '2026-01-01T10:00:00Z' },
       ]),
     ])
+    dmApi.markRecent.mockResolvedValue(null)
     dmApi.listCompanyMembers.mockResolvedValue([])
     dmApi.listTeamMembers.mockResolvedValue([])
     dmApi.listTeamNonMembers.mockResolvedValue([])
@@ -85,6 +87,38 @@ describe('dms store', () => {
     expect(dms.usersById.u2.name).toBe('User u2')
     expect(dms.sorted).toHaveLength(1)
     expect(dmApi.listDirectChannels).toHaveBeenCalledWith('company-1')
+  })
+
+  it('keeps a closed conversation hidden after store reload and restores it when reopened', async () => {
+    const dms = useDmStore()
+    await dms.init()
+
+    dms.closeConversation('c1')
+    expect(dms.sorted).toHaveLength(0)
+    expect(
+      JSON.parse(localStorage.getItem('whistleit:dm-closed-conversations'))['company-1'],
+    ).toEqual(['c1'])
+
+    setActivePinia(createPinia())
+    useTeamsStore().activeWorkspaceId = 'company-1'
+    const reloadedDms = useDmStore()
+    await reloadedDms.init()
+
+    expect(reloadedDms.sorted).toHaveLength(0)
+    expect(reloadedDms.openConversation('c1')).toBe(true)
+    expect(reloadedDms.sorted.map((conversation) => conversation.id)).toContain('c1')
+    expect(
+      JSON.parse(localStorage.getItem('whistleit:dm-closed-conversations'))['company-1'],
+    ).toEqual([])
+  })
+
+  it('marks direct conversations recent when opened', async () => {
+    const dms = useDmStore()
+    await dms.init()
+
+    dms.openConversation('c1')
+
+    expect(dmApi.markRecent).toHaveBeenCalledWith('company-1', 'c1')
   })
 
   it('loads company members and makes them available by user ID', async () => {
