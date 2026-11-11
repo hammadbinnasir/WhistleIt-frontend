@@ -11,8 +11,11 @@ import {
   leaveChannel,
   listAvailableMembers,
   listChannels,
+  listChannelMessages,
   listMembers,
   removeChannelMember,
+  sendChannelMessage,
+  sendChannelVoiceMessage,
   updateChannel,
 } from './channels.api'
 
@@ -54,6 +57,56 @@ describe('channel API routes', () => {
       ['channel-4', false],
     ])
     expect(browseResults.map(({ memberCount }) => memberCount)).toEqual([7, 3])
+  })
+
+  it('sends channel message attachments as multipart files', async () => {
+    const attachment = new File(['report'], 'report.txt', { type: 'text/plain' })
+
+    await sendChannelMessage('channel-3', {
+      content: 'Please review this file',
+      attachment,
+    })
+
+    const [, options] = http.mock.calls.at(-1)
+    expect(http).toHaveBeenLastCalledWith(`${channelPath}/messages`, {
+      method: 'POST',
+      body: expect.any(FormData),
+    })
+    expect(options.body.get('body')).toBe('Please review this file')
+    expect(options.body.get('attachment')).toBeInstanceOf(File)
+    expect(options.body.get('attachment').name).toBe('report.txt')
+  })
+
+  it('posts announcement voice messages to the workspace team channel', async () => {
+    await sendChannelVoiceMessage('channel-3', 'voice-note-9', 'Meeting notes')
+
+    expect(http).toHaveBeenLastCalledWith(`${channelPath}/messages`, {
+      method: 'POST',
+      body: { body: 'Meeting notes', voice_note_id: 'voice-note-9' },
+    })
+  })
+
+  it('normalizes a voice-note relation nested under the message sender', async () => {
+    http.mockResolvedValue({
+      success: true,
+      data: {
+        messages: [
+          {
+            id: 'voice-message-1',
+            channel_id: 'channel-3',
+            body: '<p>Voice message</p>',
+            sender: {
+              id: 'user-42',
+              voice_note: { id: 'voice-note-9', mime_type: 'audio/webm' },
+            },
+          },
+        ],
+      },
+    })
+
+    await expect(listChannelMessages('channel-3')).resolves.toMatchObject([
+      { id: 'voice-message-1', voiceNoteId: 'voice-note-9' },
+    ])
   })
 
   it('does not fetch members per channel just to resolve creator names while listing', async () => {

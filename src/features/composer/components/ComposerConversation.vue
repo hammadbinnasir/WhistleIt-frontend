@@ -3,12 +3,17 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import EmojiPicker from 'vue3-emoji-picker'
 import 'vue3-emoji-picker/css'
 import { useChannelsStore } from '@/features/channels'
-import { pinMessage, unpinMessage } from '@/features/channels/api/channels.api'
+import {
+  pinMessage,
+  sendChannelVoiceMessage,
+  unpinMessage,
+} from '@/features/channels/api/channels.api'
 import { useDmStore } from '@/features/dms/stores/dms'
-import { useRepliesStore } from '@/features/dms/stores/Replies'
-import ThreadPanel from '@/features/dms/components/Threadpanel.vue'
+import VoiceNotePlayer from '@/features/media/VoiceNotePlayer.vue'
+import MessageAttachment from '@/features/messages/MessageAttachment.vue'
 import { getAuthUser, getAuthUserId } from '@/features/auth/session'
 import { useMessagesStore } from '@/features/messages/messages'
+import { useRepliesStore } from '@/features/messages/replies'
 import { useTeamsStore } from '@/stores/teams'
 import { forwardChannelMessage } from '@/features/messages/channelMessageService'
 import {
@@ -27,10 +32,7 @@ import { useRemindersStore } from '@/features/search/reminders'
 import { addMockMessage, removeMockMessage, updateMockMessage } from '@/features/search/search'
 import SetReminderModal from '@/features/search/SetReminderModal.vue'
 import systemProfile from '@/assets/system-profile.webp'
-import {
-  createScheduledMessage,
-  getScheduledMessages,
-} from '../api/scheduledMessagesApi'
+import { createScheduledMessage, getScheduledMessages } from '../api/scheduledMessagesApi'
 import { usePoll } from '../composables/usePoll'
 import MessageComposer from './MessageComposer.vue'
 import PollMessage from './PollMessage.vue'
@@ -53,12 +55,13 @@ const userStore = useUserStore()
 const messageStore = useMessagesStore()
 const reminderStore = useRemindersStore()
 const messagesContainer = ref(null)
-const actionMenu = ref(null)
+const messageComposer = ref(null)
 const editingId = ref(null)
 const editDraft = ref('')
 const replyTo = ref(null)
 const openMenuId = ref(null)
 const menuAnchor = ref(null)
+const actionMenu = ref(null)
 const actionMenuPosition = ref({})
 const deleteTarget = ref(null)
 const deletingMessage = ref(false)
@@ -96,7 +99,7 @@ const conversation = computed(() => {
 const conversationLabel = computed(() =>
   conversation.value
     ? dms.titleOf(conversation.value)
-    : (channelsStore.getById(channelId.value)?.name || channelId.value.replaceAll('-', ' ')),
+    : channelsStore.getById(channelId.value)?.name || channelId.value.replaceAll('-', ' '),
 )
 const canSendMessages = computed(() => {
   if (props.conversationType === 'dm') return true
@@ -109,8 +112,7 @@ const canSendMessages = computed(() => {
     teamsStore.isAdmin ||
     channel.canManage ||
     channel.isOwner ||
-    (userId != null &&
-      String(channel.createdById ?? channel.createdBy) === String(userId))
+    (userId != null && String(channel.createdById ?? channel.createdBy) === String(userId))
   const isAllowedSender =
     userId != null &&
     (channel.allowedSenderIds || []).some((sender) => {
@@ -242,14 +244,18 @@ const renderedMessages = computed(() => {
     })
     .sort((a, b) => new Date(a.createdAt || 0) - new Date(b.createdAt || 0))
     .map((message) => {
+      const voiceNoteId = message.voiceNoteId ?? message.voice_note_id ?? message.voice_note?.id
+      const messageContent = message.text ?? message.content ?? ''
       const content = message.deleted
         ? '(message deleted)'
-        : normalizeMessageText(message.text ?? message.content ?? '')
+        : voiceNoteId && messageContent.trim().toLowerCase() === 'voice message'
+          ? ''
+          : normalizeMessageText(messageContent)
       const author =
         message.from === dms.meId
           ? currentUser
           : message.from
-            ? dms.usersById[message.from]?.name || conversationLabel.value
+            ? dms.usersById[message.from]?.name || message.author || conversationLabel.value
             : message.author || currentUser
       const authorId = message.from ?? message.authorId ?? author
       const grouped =
@@ -454,11 +460,19 @@ function openMessageAuthor(message) {
 async function togglePin(message) {
   if (props.conversationType === 'dm') {
     if (!message.backendSynced) {
-      ui.toast('Unable to pin message', 'This direct message is not available on the server yet.', 'error')
+      ui.toast(
+        'Unable to pin message',
+        'This direct message is not available on the server yet.',
+        'error',
+      )
       return
     }
-  } else if (message.backendSynced !== true && message.serverBacked !== true) {
-    ui.toast('Unable to pin message', 'This channel message is not available on the server yet.', 'error')
+  } else if (!message.serverBacked && message.backendSynced !== true) {
+    ui.toast(
+      'Unable to pin message',
+      'This channel message is not available on the server yet.',
+      'error',
+    )
     return
   }
 
@@ -484,21 +498,33 @@ async function addMessage(payload) {
     is_important: Boolean(payload.important),
     ...(replyTo.value ? { replyTo: { ...replyTo.value } } : {}),
   }
+  const hasContent = typeof payload.content === 'string' && payload.content.trim()
+  const hasAttachment = Boolean(payload.attachment)
   const canSendToChannelApi =
     !conversation.value &&
-    typeof payload.content === 'string' &&
-    payload.content.trim() &&
-    !payload.attachments?.length &&
+    (hasContent || hasAttachment) &&
     !payload.poll &&
     !payload.gif &&
     !payload.scheduledAt &&
+    !payload.voiceNoteId &&
     !replyTo.value
 
   if (canSendToChannelApi) {
     const result = await messageStore.postChannelMessage(channelId.value, messagePayload)
     if (!result.success) {
-      ui.toast('Message not sent', result.error || 'The channel message could not be sent.', 'error')
+      ui.toast(
+        'Message not sent',
+        result.error || 'The channel message could not be sent.',
+        'error',
+      )
       return
+    }
+    if (result.attachmentPersisted === false) {
+      ui.toast(
+        'Attachment not confirmed',
+        'The message was sent, but the server did not confirm that the attachment was saved.',
+        'warning',
+      )
     }
 
     const channelMessages = messageStore.messagesFor(channelId.value)
@@ -520,14 +546,50 @@ async function addMessage(payload) {
     return
   }
 
-  const sentMessage = conversation.value
-    ? dms.sendMessage(conversation.value.id, messagePayload)
-    : messageStore.sendMessage(
+  let sentMessage
+  if (conversation.value) {
+    sentMessage = dms.sendMessage(conversation.value.id, messagePayload)
+    if (sentMessage && payload.voiceNoteId) {
+      messageComposer.value?.clearVoiceNote(payload.voiceNoteId)
+    }
+  } else if (payload.voiceNoteId) {
+    try {
+      const saved = await sendChannelVoiceMessage(
         channelId.value,
-        messagePayload,
+        payload.voiceNoteId,
+        payload.content,
+      )
+      sentMessage = messageStore.sendMessage(
+        channelId.value,
+        {
+          ...messagePayload,
+          id: saved?.id,
+          createdAt: saved?.created_at ?? saved?.createdAt,
+          voiceNoteId: String(payload.voiceNoteId),
+          backendSynced: true,
+        },
         currentUserName.value,
         conversationMeta.value.name,
       )
+      messageComposer.value?.clearVoiceNote(payload.voiceNoteId)
+    } catch (error) {
+      console.error('Unable to send channel voice message:', error)
+      messageComposer.value?.setVoiceNoteSending(false)
+      ui.toast(
+        'Voice message not sent',
+        error.message || 'The voice message could not be sent.',
+        'error',
+      )
+      return
+    }
+  } else {
+    sentMessage = messageStore.sendMessage(
+      channelId.value,
+      messagePayload,
+      currentUserName.value,
+      conversationMeta.value.name,
+    )
+  }
   if (!sentMessage) {
     ui.toast('Message not sent', 'The conversation could not be found.', 'error')
     return
@@ -567,7 +629,7 @@ function addScheduledMessage(message) {
     timezone: message.timeZone,
     conversation_type: props.conversationType,
     ...(message.important ? { important: true } : {}),
-    ...(message.attachments?.length ? { attachments: message.attachments } : {}),
+    ...(message.attachment ? { attachment: message.attachment } : {}),
   }
 
   createScheduledMessage(payload)
@@ -583,7 +645,11 @@ function addScheduledMessage(message) {
     .catch((error) => {
       removeScheduledMessage(optimisticId)
       console.error('Unable to schedule message:', error)
-      ui.toast('Message not scheduled', error.message || 'The scheduled message could not be created.', 'error')
+      ui.toast(
+        'Message not scheduled',
+        error.message || 'The scheduled message could not be created.',
+        'error',
+      )
     })
 }
 
@@ -607,12 +673,9 @@ function normalizeScheduledMessage(response, fallback = {}) {
     'processed',
     'success',
   ].includes(status)
-  const sentAt =
-    source.sentAt ??
-    source.sent_at ??
-    (isPending ? '' : scheduledAt)
+  const sentAt = source.sentAt ?? source.sent_at ?? (isPending ? '' : scheduledAt)
   const createdAt = isPending
-    ? source.createdAt ?? source.created_at ?? new Date().toISOString()
+    ? (source.createdAt ?? source.created_at ?? new Date().toISOString())
     : sentAt || scheduledAt || source.createdAt || source.created_at || new Date().toISOString()
   return {
     ...source,
@@ -723,16 +786,10 @@ function isScheduledMessageDelivered(message) {
 function mergeScheduledMessages(existing, incoming) {
   if (!existing) return incoming
   if (!incoming) return existing
-  if (
-    isCompletedScheduledMessage(existing) &&
-    !isCompletedScheduledMessage(incoming)
-  ) {
+  if (isCompletedScheduledMessage(existing) && !isCompletedScheduledMessage(incoming)) {
     return { ...incoming, ...existing }
   }
-  if (
-    !isOptimisticScheduledMessage(existing) &&
-    isOptimisticScheduledMessage(incoming)
-  ) {
+  if (!isOptimisticScheduledMessage(existing) && isOptimisticScheduledMessage(incoming)) {
     return { ...incoming, ...existing }
   }
   return { ...existing, ...incoming }
@@ -752,15 +809,10 @@ function appendScheduledMessage(message) {
   const fingerprint = scheduledMessageFingerprint(message)
   const existingIndex = messages.findIndex(
     (item) =>
-      String(item.id) === String(message.id) ||
-      scheduledMessageFingerprint(item) === fingerprint,
+      String(item.id) === String(message.id) || scheduledMessageFingerprint(item) === fingerprint,
   )
   if (existingIndex >= 0) {
-    messages.splice(
-      existingIndex,
-      1,
-      mergeScheduledMessages(messages[existingIndex], message),
-    )
+    messages.splice(existingIndex, 1, mergeScheduledMessages(messages[existingIndex], message))
     persistLocalScheduledMessage(message)
     return
   }
@@ -837,8 +889,7 @@ function persistLocalScheduledMessage(message) {
     )
     if (index >= 0) {
       messages.splice(index, 1, mergeScheduledMessages(messages[index], message))
-    }
-    else messages.push(message)
+    } else messages.push(message)
     saved[key] = messages
     localStorage.setItem(LOCAL_SCHEDULED_MESSAGES_KEY, JSON.stringify(saved))
   } catch (error) {
@@ -862,7 +913,10 @@ function loadLocalScheduledMessages() {
   const saved = readLocalScheduledMessages()
   const direct = saved[String(channelId.value)]
   const values = Array.isArray(direct) ? direct : []
-  values.map((item) => normalizeScheduledMessage(item)).filter(Boolean).forEach(appendScheduledMessage)
+  values
+    .map((item) => normalizeScheduledMessage(item))
+    .filter(Boolean)
+    .forEach(appendScheduledMessage)
 }
 
 function loadScheduledMessages() {
@@ -882,7 +936,7 @@ function loadScheduledMessages() {
               item.channel_id ??
                 item.conversation_id ??
                 item.conversationId ??
-              requestedConversationId,
+                requestedConversationId,
             ) === requestedConversationId,
         )
         .forEach(appendScheduledMessage)
@@ -890,23 +944,6 @@ function loadScheduledMessages() {
     .catch((error) => {
       console.error('Unable to load scheduled messages:', error)
     })
-}
-
-function addGif(gif) {
-  const message = { content: '', gif }
-  const sentMessage = conversation.value
-    ? dms.sendMessage(conversation.value.id, message)
-    : messageStore.sendMessage(
-        channelId.value,
-        message,
-        currentUserName.value,
-        conversationMeta.value.name,
-      )
-  if (!sentMessage) {
-    ui.toast('GIF not sent', 'The conversation could not be found.', 'error')
-    return
-  }
-  scrollMessagesToLatest()
 }
 
 async function loadOlder() {
@@ -950,7 +987,11 @@ async function saveEdit(message) {
       editDraft.value,
     )
     if (!result.success) {
-      ui.toast('Message not updated', result.error || 'The channel message could not be updated.', 'error')
+      ui.toast(
+        'Message not updated',
+        result.error || 'The channel message could not be updated.',
+        'error',
+      )
       return
     }
     updateMockMessage(message.id, editDraft.value.trim())
@@ -1197,14 +1238,21 @@ async function forwardMessage() {
   } else {
     const result = await messageStore.postChannelMessage(destination.id, payload)
     if (!result.success) {
-      ui.toast('Unable to forward message', result.error || 'The channel message could not be sent.', 'error')
+      ui.toast(
+        'Unable to forward message',
+        result.error || 'The channel message could not be sent.',
+        'error',
+      )
       return
     }
     const forwarded =
       result.data ??
       messageStore
         .messagesFor(destination.id)
-        .find((message) => message.forwardedFrom === payload.forwardedFrom && message.content === payload.content)
+        .find(
+          (message) =>
+            message.forwardedFrom === payload.forwardedFrom && message.content === payload.content,
+        )
     if (forwarded) {
       addMockMessage({
         id: forwarded.id,
@@ -1308,7 +1356,7 @@ function pollQuestionsFromResponse(response) {
     text: question.text ?? question.question ?? '',
     type: ['open-ended', 'open_ended'].includes(question.type)
       ? 'openEnded'
-      : question.type ?? 'choice',
+      : (question.type ?? 'choice'),
     required: question.required !== false,
     multiple: question.multiple ?? question.multiple_select ?? false,
     options: question.options ?? question.choices ?? [],
@@ -1320,7 +1368,12 @@ function normalizePollResult(response, poll) {
   if (
     !result ||
     typeof result !== 'object' ||
-    (!result.totalVotes && !result.total_votes && !result.total && !result.questions && !result.results && !result.responses)
+    (!result.totalVotes &&
+      !result.total_votes &&
+      !result.total &&
+      !result.questions &&
+      !result.results &&
+      !result.responses)
   ) {
     return null
   }
@@ -1370,9 +1423,7 @@ async function createPollInChannel(targetChannelId, pollDraft, existingMessage =
     required: question.required,
     // The backend currently validates two options for open-ended questions, then discards them.
     options:
-      question.type === 'openEnded'
-        ? ['__open_ended__', '__open_ended__']
-        : question.options,
+      question.type === 'openEnded' ? ['__open_ended__', '__open_ended__'] : question.options,
     ...(question.type === 'rating'
       ? { rating_scale: Number(question.ratingType.split('-')[1]) }
       : {}),
@@ -1383,11 +1434,12 @@ async function createPollInChannel(targetChannelId, pollDraft, existingMessage =
     description,
     questions: apiQuestions,
     audience_responses: audience,
-    results_visibility: {
-      private: 'owner_only',
-      'after-close': 'after_close',
-      realtime: 'real_time',
-    }[resultsVisibility] ?? resultsVisibility,
+    results_visibility:
+      {
+        private: 'owner_only',
+        'after-close': 'after_close',
+        realtime: 'real_time',
+      }[resultsVisibility] ?? resultsVisibility,
     start_now: startNow,
     schedule_start: scheduleStartEnabled,
     schedule_close: scheduleCloseEnabled,
@@ -1418,15 +1470,14 @@ async function createPollInChannel(targetChannelId, pollDraft, existingMessage =
           ? responsePoll.scheduleStart
           : responsePoll.start_at !== undefined
             ? responsePoll.start_at
-            : pollDraft.scheduleStart ?? '',
+            : (pollDraft.scheduleStart ?? ''),
       scheduleClose:
         responsePoll.scheduleClose !== undefined
           ? responsePoll.scheduleClose
           : responsePoll.close_at !== undefined
             ? responsePoll.close_at
-            : pollDraft.scheduleClose ?? '',
-      audience:
-        responsePoll.audience ?? responsePoll.audience_responses ?? pollDraft.audience,
+            : (pollDraft.scheduleClose ?? ''),
+      audience: responsePoll.audience ?? responsePoll.audience_responses ?? pollDraft.audience,
       resultsVisibility:
         responsePoll.resultsVisibility ??
         responsePoll.results_visibility ??
@@ -1497,10 +1548,11 @@ function canClosePoll(message) {
   const authUserId = getAuthUser()?.id ?? getAuthUser()?.userId
   return Boolean(
     message.mine ||
-      (creatorId != null && [dms.meId, authUserId].some((id) => id != null && String(id) === String(creatorId))) ||
-      poll.canClose === true ||
-      poll.can_close === true ||
-      poll.permissions?.close === true,
+    (creatorId != null &&
+      [dms.meId, authUserId].some((id) => id != null && String(id) === String(creatorId))) ||
+    poll.canClose === true ||
+    poll.can_close === true ||
+    poll.permissions?.close === true,
   )
 }
 
@@ -1612,7 +1664,11 @@ async function viewPollResults(pollId) {
     const result = normalizePollResult(response, message.poll)
     if (result) pollResults.value = { ...pollResults.value, [pollId]: result }
   } catch (error) {
-    ui.toast('Unable to load poll results', error.message || 'Poll results could not be loaded.', 'error')
+    ui.toast(
+      'Unable to load poll results',
+      error.message || 'Poll results could not be loaded.',
+      'error',
+    )
   }
 }
 
@@ -1659,7 +1715,11 @@ async function submitPollResponse() {
   )
   if (missingRequiredResponse) return
   if (poll.questions.some((question) => question.id == null && question.question_id == null)) {
-    ui.toast('Vote not submitted', 'Poll questions could not be loaded. Reopen the poll and try again.', 'error')
+    ui.toast(
+      'Vote not submitted',
+      'Poll questions could not be loaded. Reopen the poll and try again.',
+      'error',
+    )
     return
   }
   const answers = Object.fromEntries(
@@ -1669,8 +1729,8 @@ async function submitPollResponse() {
         if (question.type === 'openEnded') {
           answer = String(pollResponses.value[questionIndex] || '').trim()
         } else if (question.multiple) {
-          answer = question.options.filter((_, optionIndex) =>
-            pollResponses.value[pollResponseKey(questionIndex, optionIndex)],
+          answer = question.options.filter(
+            (_, optionIndex) => pollResponses.value[pollResponseKey(questionIndex, optionIndex)],
           )
         } else {
           const optionIndex = pollResponses.value[questionIndex]
@@ -1678,13 +1738,17 @@ async function submitPollResponse() {
         }
         return [question.id ?? question.question_id, answer]
       })
-      .filter(([, answer]) => Array.isArray(answer) ? answer.length > 0 : Boolean(answer)),
+      .filter(([, answer]) => (Array.isArray(answer) ? answer.length > 0 : Boolean(answer))),
   )
   if (!Object.keys(answers).length) return
   try {
     await pollApi.submitPollAnswer({ channel_id: channelId.value, poll_id: poll.id, answers })
   } catch (error) {
-    ui.toast('Vote not submitted', error.message || 'Your response could not be submitted.', 'error')
+    ui.toast(
+      'Vote not submitted',
+      error.message || 'Your response could not be submitted.',
+      'error',
+    )
     return
   }
   const existingResult = pollResults.value[poll.id] || {
@@ -1725,7 +1789,11 @@ async function submitPollResponse() {
     const result = normalizePollResult(response, poll)
     if (result) pollResults.value = { ...pollResults.value, [poll.id]: result }
   } catch (error) {
-    ui.toast('Vote submitted', error.message || 'Your vote was saved, but results are unavailable.', 'error')
+    ui.toast(
+      'Vote submitted',
+      error.message || 'Your vote was saved, but results are unavailable.',
+      'error',
+    )
   }
 }
 
@@ -1875,7 +1943,11 @@ onBeforeUnmount(() => {
                   :scheduled="isPollScheduled(message.poll)"
                   :already-voted="
                     participatedPolls.has(message.poll.id) ||
-                    Boolean(message.poll.alreadyVoted ?? message.poll.already_voted ?? message.poll.user_has_voted)
+                    Boolean(
+                      message.poll.alreadyVoted ??
+                      message.poll.already_voted ??
+                      message.poll.user_has_voted,
+                    )
                   "
                   :can-close="canClosePoll(message)"
                   :loading="pollApi.loading.value"
@@ -1939,12 +2011,20 @@ onBeforeUnmount(() => {
                   class="composer-conversation__scheduled"
                   :title="`Scheduled to send ${scheduledMessageLabel(message)} (${message.timeZone || 'local time'})`"
                 >
-                  Scheduled for {{ scheduledMessageLabel(message) }}
-                  ({{ message.timeZone || 'local time' }})
+                  Scheduled for {{ scheduledMessageLabel(message) }} ({{
+                    message.timeZone || 'local time'
+                  }})
                 </span>
                 <span v-if="message.deleteScheduledAt" class="composer-conversation__scheduled">
                   Scheduled to delete {{ new Date(message.deleteScheduledAt).toLocaleString() }}
                 </span>
+
+                <VoiceNotePlayer
+                  v-if="message.voiceNoteId || message.voice_note_id || message.voice_note?.id"
+                  :voice-note-id="
+                    message.voiceNoteId || message.voice_note_id || message.voice_note.id
+                  "
+                />
 
                 <ul
                   v-if="message.attachments?.length"
@@ -1953,8 +2033,9 @@ onBeforeUnmount(() => {
                   <li
                     v-for="(file, fileIndex) in message.attachments"
                     :key="file.id || `${file.name}-${file.size}-${fileIndex}`"
+                    class="composer-conversation__attachment"
                   >
-                    {{ file.name }}
+                    <MessageAttachment :attachment="file" />
                   </li>
                 </ul>
 
@@ -2176,7 +2257,7 @@ onBeforeUnmount(() => {
                 </button>
               </div>
             </div>
-            
+
             <span
               v-if="message.status === 'sending'"
               class="composer-conversation__sent-status composer-conversation__sent-status--sending"
@@ -2195,7 +2276,11 @@ onBeforeUnmount(() => {
             </button>
 
             <span
-              v-if="message.mine && !message.deleted && (!message.scheduled || isScheduledMessageDelivered(message))"
+              v-if="
+                message.mine &&
+                !message.deleted &&
+                (!message.scheduled || isScheduledMessageDelivered(message))
+              "
               class="composer-conversation__sent-status"
               aria-label="Sent"
             >
@@ -2222,7 +2307,9 @@ onBeforeUnmount(() => {
             <circle cx="12" cy="12" r="9" />
             <path d="M12 7v5l3 2" />
           </svg>
-          <span>Reminded you at {{ formatReminderDate(reminder.firedAt || reminder.remindAt) }}</span>
+          <span
+            >Reminded you at {{ formatReminderDate(reminder.firedAt || reminder.remindAt) }}</span
+          >
         </div>
         <div class="composer-conversation__reminder-content">
           <img
@@ -2249,13 +2336,17 @@ onBeforeUnmount(() => {
                   :href="segment.href"
                   target="_blank"
                   rel="noopener noreferrer"
-                >{{ segment.text }}</a>
+                  >{{ segment.text }}</a
+                >
                 <span v-else>{{ segment.text }}</span>
               </template>
             </p>
             <footer class="composer-conversation__reminder-actions">
               <button type="button" @click="dismissDueReminder(reminder)">Delete Reminder</button>
-              <span class="composer-conversation__reminder-action-divider" aria-hidden="true"></span>
+              <span
+                class="composer-conversation__reminder-action-divider"
+                aria-hidden="true"
+              ></span>
               <button
                 type="button"
                 title="Snooze for 5 minutes"
@@ -2285,7 +2376,10 @@ onBeforeUnmount(() => {
             <circle cx="12" cy="12" r="9" />
             <path d="M12 7v5l3 2" />
           </svg>
-          <span>Reminder deleted at {{ formatReminderDate(reminder.deletedAt || reminder.remindAt) }}</span>
+          <span
+            >Reminder deleted at
+            {{ formatReminderDate(reminder.deletedAt || reminder.remindAt) }}</span
+          >
         </div>
         <div class="composer-conversation__reminder-content">
           <img
@@ -2312,7 +2406,8 @@ onBeforeUnmount(() => {
                   :href="segment.href"
                   target="_blank"
                   rel="noopener noreferrer"
-                >{{ segment.text }}</a>
+                  >{{ segment.text }}</a
+                >
                 <span v-else>{{ segment.text }}</span>
               </template>
             </p>
@@ -2330,14 +2425,15 @@ onBeforeUnmount(() => {
       <button type="button" aria-label="Cancel reply" @click="replyTo = null">×</button>
     </div>
     <MessageComposer
+      ref="messageComposer"
       v-if="canSendMessages"
       :channel-id="channelId"
+      :conversation-type="conversationType"
       :create-poll="createPollInChannel"
       :poll-loading="pollApi.loading.value"
       :poll-error="pollApi.error.value"
       @send="addMessage"
       @schedule="addScheduledMessage"
-      @gif="addGif"
       @clear-poll-error="pollApi.clearError"
     />
     <div
@@ -2429,12 +2525,24 @@ onBeforeUnmount(() => {
             >
               <i
                 class="composer-conversation__poll-status-icon"
-                :class="isPollClosed(activePoll) ? 'is-closed' : isPollScheduled(activePoll) ? 'is-scheduled' : 'is-open'"
+                :class="
+                  isPollClosed(activePoll)
+                    ? 'is-closed'
+                    : isPollScheduled(activePoll)
+                      ? 'is-scheduled'
+                      : 'is-open'
+                "
                 aria-hidden="true"
               >
                 {{ isPollClosed(activePoll) ? '×' : isPollScheduled(activePoll) ? '◷' : '✓' }}
               </i>
-              {{ isPollClosed(activePoll) ? 'Closed' : isPollScheduled(activePoll) ? 'Scheduled' : 'Open' }}
+              {{
+                isPollClosed(activePoll)
+                  ? 'Closed'
+                  : isPollScheduled(activePoll)
+                    ? 'Scheduled'
+                    : 'Open'
+              }}
             </span>
             <span class="composer-conversation__poll-meta-divider" aria-hidden="true"></span>
             <span class="composer-conversation__poll-visibility">
@@ -2520,7 +2628,7 @@ onBeforeUnmount(() => {
             <textarea
               v-else-if="question.type === 'openEnded'"
               v-model="pollResponses[questionIndex]"
-                :disabled="pollApi.loading.value"
+              :disabled="pollApi.loading.value"
               class="composer-conversation__poll-open-ended-input"
               :aria-label="`Response to question ${questionIndex + 1}`"
               :placeholder="
@@ -2577,7 +2685,7 @@ onBeforeUnmount(() => {
     >
       <form class="composer-conversation__forward-dialog" @submit.prevent="forwardMessage">
         <h2>Forward message</h2>
-        <p>{{ forwardTarget.content || 'Attachment or GIF' }}</p>
+        <p>{{ forwardTarget.content || 'Attachment' }}</p>
         <label for="forward-destination">Send to</label>
         <select id="forward-destination" v-model="forwardDestinationId" required>
           <option value="" disabled>Select a conversation</option>
@@ -3840,10 +3948,15 @@ onBeforeUnmount(() => {
 }
 
 .composer-conversation__attachment-list {
-  margin: 6px 0 0;
-  padding-left: 20px;
-  color: #696d81;
-  font-size: 13px;
+  display: grid;
+  gap: 8px;
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.composer-conversation__attachment {
+  min-width: 0;
 }
 
 .composer-conversation__replying {

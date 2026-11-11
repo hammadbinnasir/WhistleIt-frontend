@@ -386,9 +386,7 @@ describe('DM API', () => {
 
     await dmApi.listMessages('company 1', 'channel/1')
 
-    expect(apiRequest).toHaveBeenCalledWith(
-      '/v1/company%201/direct-channels/channel%2F1/messages',
-    )
+    expect(apiRequest).toHaveBeenCalledWith('/v1/company%201/direct-channels/channel%2F1/messages')
   })
 
   it('gets one message of a direct channel', async () => {
@@ -403,6 +401,17 @@ describe('DM API', () => {
       text: 'Hello',
     })
     expect(apiRequest).toHaveBeenCalledWith('/v1/company-1/direct-channels/channel-1/messages/m1')
+  })
+
+  it('normalizes the backend singular attachment field on direct messages', () => {
+    expect(
+      normalizeMessage({
+        id: 'm1',
+        attachment: [{ id: 'file-1', name: 'men.jpg', path: 'messages/men.jpg' }],
+      }),
+    ).toMatchObject({
+      attachments: [{ id: 'file-1', name: 'men.jpg', path: 'messages/men.jpg' }],
+    })
   })
 
   it('sends a message to a direct channel', async () => {
@@ -468,10 +477,10 @@ describe('DM API', () => {
     await expect(
       dmApi.updateMessage('company-1', 'channel-1', 'm9', { body: 'Edited' }),
     ).resolves.toBeNull()
-    expect(apiRequest).toHaveBeenCalledWith(
-      '/v1/company-1/direct-channels/channel-1/messages/m9',
-      { method: 'PATCH', body: JSON.stringify({ body: 'Edited' }) },
-    )
+    expect(apiRequest).toHaveBeenCalledWith('/v1/company-1/direct-channels/channel-1/messages/m9', {
+      method: 'PATCH',
+      body: JSON.stringify({ body: 'Edited' }),
+    })
   })
 
   it('deletes a message of a direct channel', async () => {
@@ -479,10 +488,9 @@ describe('DM API', () => {
 
     await dmApi.deleteMessage('company-1', 'channel-1', 'm9')
 
-    expect(apiRequest).toHaveBeenCalledWith(
-      '/v1/company-1/direct-channels/channel-1/messages/m9',
-      { method: 'DELETE' },
-    )
+    expect(apiRequest).toHaveBeenCalledWith('/v1/company-1/direct-channels/channel-1/messages/m9', {
+      method: 'DELETE',
+    })
   })
 
   it('requires the IDs for message requests', () => {

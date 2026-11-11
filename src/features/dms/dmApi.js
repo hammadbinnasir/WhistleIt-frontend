@@ -34,8 +34,15 @@ function currentUser() {
 }
 function meId() {
   const user = currentUser()
-  const id = [user?.id, user?.user_id, user?.userId, user?._id, user?.uuid, user?.sub, user?.user?.id]
-    .find((value) => value != null && value !== '')
+  const id = [
+    user?.id,
+    user?.user_id,
+    user?.userId,
+    user?._id,
+    user?.uuid,
+    user?.sub,
+    user?.user?.id,
+  ].find((value) => value != null && value !== '')
   return id == null ? '' : String(id)
 }
 
@@ -80,11 +87,10 @@ function nameOf(source = {}) {
 }
 
 function customStatusOf(raw, user) {
-  const value =
-    raw.customStatus ?? raw.custom_status ?? user.customStatus ?? user.custom_status
+  const value = raw.customStatus ?? raw.custom_status ?? user.customStatus ?? user.custom_status
   const status = value && typeof value === 'object' ? value : {}
   const text =
-    (typeof value === 'string' ? value : status.text ?? status.status_text) ??
+    (typeof value === 'string' ? value : (status.text ?? status.status_text)) ??
     raw.customStatusText ??
     raw.custom_status_text ??
     user.customStatusText ??
@@ -176,10 +182,14 @@ export function normalizeMessage(raw) {
     (raw.updated_at && raw.updated_at !== raw.created_at ? raw.updated_at : undefined)
   return {
     ...raw,
-    id: String(raw.id),
+    id: String(raw.id ?? raw.message_id ?? raw.messageId),
     backendSynced: true,
     from: String(
-      raw.sender_id ?? raw.user_id ?? raw.from ?? (sender && typeof sender === 'object' ? sender.id : '') ?? '',
+      raw.sender_id ??
+        raw.user_id ??
+        raw.from ??
+        (sender && typeof sender === 'object' ? sender.id : '') ??
+        '',
     ),
     text: normalizeMessageContent(raw.content ?? raw.text ?? raw.body ?? ''),
     createdAt: raw.created_at ?? raw.createdAt ?? '',
@@ -237,7 +247,9 @@ function normalizeChannel(channel, forcedType) {
 
   // Message bhejne wale bhi conversation ke member hain
   const members = [
-    ...new Set([meId(), ...participants.map((p) => p.id), ...messages.map((m) => m.from)].filter(Boolean)),
+    ...new Set(
+      [meId(), ...participants.map((p) => p.id), ...messages.map((m) => m.from)].filter(Boolean),
+    ),
   ]
 
   return {
@@ -351,9 +363,36 @@ export const dmApi = {
   sendMessage(companyId, channelId, payload) {
     requireCompany(companyId, 'send a message')
     requireChannel(channelId)
+    if ('attachments' in payload) {
+      throw new Error('Only one message attachment is supported.')
+    }
+    const voiceNoteId = payload.voice_note_id ?? payload.voiceNoteId
+    const body = payload.body
+    const attachment = payload.attachment
+    if (attachment != null && (typeof Blob === 'undefined' || !(attachment instanceof Blob))) {
+      throw new Error('Message attachment must be a file.')
+    }
+    const requestPayload = {
+      ...payload,
+      body: voiceNoteId && !String(body ?? '').trim() ? 'Voice message' : body,
+      ...(voiceNoteId ? { voice_note_id: String(voiceNoteId) } : {}),
+    }
+    if (attachment) {
+      const formData = new FormData()
+      if (requestPayload.body?.trim()) formData.append('body', requestPayload.body.trim())
+      formData.append('attachment', attachment)
+      Object.entries(requestPayload).forEach(([key, value]) => {
+        if (key === 'body' || key === 'attachment' || value == null) return
+        formData.append(key, typeof value === 'string' ? value : JSON.stringify(value))
+      })
+      return apiRequest(messagesPath(companyId, channelId), {
+        method: 'POST',
+        body: formData,
+      }).then((response) => normalizeMessage(messageFrom(unwrap(response))))
+    }
     return apiRequest(messagesPath(companyId, channelId), {
       method: 'POST',
-      body: JSON.stringify(payload),
+      body: JSON.stringify(requestPayload),
     }).then((response) => normalizeMessage(messageFrom(unwrap(response))))
   },
 

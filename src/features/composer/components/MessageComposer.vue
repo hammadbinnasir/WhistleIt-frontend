@@ -1,26 +1,22 @@
 <script setup>
 import { ref, computed, nextTick, onBeforeUnmount, onMounted } from 'vue'
 import MediaToolbar from '../../media/MediaToolbar.vue'
-import { useUserStore } from '@/features/account/composables/useUserStore'
 import { normalizeMessageText } from '../messageText'
+import {
+  discardVoiceNote,
+  getVoiceNote,
+  getVoiceNoteFile,
+  uploadVoiceNote,
+} from '../../media/voiceNotesApi'
 
 const props = defineProps({
   channelId: { type: [String, Number], default: null },
+  conversationType: { type: String, default: 'channel' },
   createPoll: { type: Function, default: null },
   pollLoading: { type: Boolean, default: false },
   pollError: { type: String, default: '' },
 })
-const emit = defineEmits([
-  'send',
-  'schedule',
-  'attachment',
-  'video',
-  'microphone',
-  'gif',
-  'clear-poll-error',
-])
-const userStore = useUserStore()
-
+const emit = defineEmits(['send', 'schedule', 'attachment', 'microphone', 'clear-poll-error'])
 const editor = ref(null)
 const scheduleTrigger = ref(null)
 const scheduleMenu = ref(null)
@@ -55,9 +51,26 @@ const pollStartDate = ref('')
 const pollStartTime = ref('')
 const pollCloseDate = ref('')
 const pollCloseTime = ref('')
-const attachments = ref([])
-const messageIsReady = computed(() => content.value.trim().length > 0 || Boolean(pollDraft.value))
-const scheduleIsReady = computed(() => messageIsReady.value || attachments.value.length > 0)
+const attachment = ref(null)
+const recording = ref(false)
+const recordingStarting = ref(false)
+const mediaRecorder = ref(null)
+const recordingSeconds = ref(0)
+const voiceNoteUploading = ref(false)
+const voiceNoteSending = ref(false)
+const voiceNote = ref(null)
+const voiceNotePreviewUrl = ref('')
+const voiceNoteError = ref('')
+const messageIsReady = computed(
+  () =>
+    content.value.trim().length > 0 ||
+    Boolean(attachment.value) ||
+    Boolean(pollDraft.value) ||
+    Boolean(voiceNote.value),
+)
+const scheduleIsReady = computed(
+  () => content.value.trim().length > 0 || Boolean(pollDraft.value) || Boolean(attachment.value),
+)
 const scheduleTimeZone = 'Asia/Karachi'
 let savedSelectionRange = null
 let scheduleErrorTimer = null
@@ -87,13 +100,45 @@ const pollCanBeCreated = computed(() => {
   if (!pollIsReady.value) return false
   if (pollStartNow.value) return true
   if (!pollScheduleStart.value || !pollStartDate.value || !pollStartTime.value) return false
-  return (
-    !pollScheduleClose.value ||
-    Boolean(pollCloseDate.value && pollCloseTime.value)
-  )
+  return !pollScheduleClose.value || Boolean(pollCloseDate.value && pollCloseTime.value)
 })
 
-onBeforeUnmount(() => clearTimeout(scheduleErrorTimer))
+let recorderStream = null
+let recorderChunks = []
+let voiceNoteUrl = ''
+let composerUnmounted = false
+let recordingStartedAt = 0
+let recordingTimer = null
+let recordingCancelled = false
+let recordingRequestId = 0
+
+const recordingDuration = computed(() => {
+  const hours = Math.floor(recordingSeconds.value / 3600)
+    .toString()
+    .padStart(2, '0')
+  const minutes = Math.floor((recordingSeconds.value % 3600) / 60)
+    .toString()
+    .padStart(2, '0')
+  const seconds = (recordingSeconds.value % 60).toString().padStart(2, '0')
+  return `${hours}:${minutes}:${seconds}`
+})
+
+function stopRecordingTimer() {
+  if (recordingTimer) clearInterval(recordingTimer)
+  recordingTimer = null
+}
+
+onBeforeUnmount(() => {
+  composerUnmounted = true
+  clearTimeout(scheduleErrorTimer)
+  stopRecordingTimer()
+  if (mediaRecorder.value?.state === 'recording') {
+    mediaRecorder.value.onstop = null
+    mediaRecorder.value.stop()
+  }
+  if (recorderStream) recorderStream.getTracks().forEach((track) => track.stop())
+  if (voiceNoteUrl) URL.revokeObjectURL(voiceNoteUrl)
+})
 
 function handleSchedulePointerDown(event) {
   if (
@@ -675,14 +720,23 @@ function saveCustomSchedule() {
 }
 
 function sendMessage() {
-  if (!messageIsReady.value) return
+  if (
+    !messageIsReady.value ||
+    recording.value ||
+    voiceNoteUploading.value ||
+    voiceNoteSending.value
+  ) {
+    return
+  }
 
   emit('send', {
     content: content.value.trim(),
-    attachments: [...attachments.value],
+    ...(attachment.value ? { attachment: attachment.value } : {}),
     ...(pollDraft.value ? { poll: pollDraft.value } : {}),
     ...(important.value ? { important: true } : {}),
+    ...(voiceNote.value ? { voiceNoteId: voiceNote.value.id } : {}),
   })
+  if (voiceNote.value) voiceNoteSending.value = true
   content.value = ''
   editor.value.innerHTML = ''
   activeFormats.value = []
@@ -690,9 +744,190 @@ function sendMessage() {
   codeMode.value = false
   important.value = false
   savedSelectionRange = null
-  attachments.value = []
+  attachment.value = null
   pollDraft.value = null
 }
+
+function clearVoiceNote(id) {
+  if (id != null && String(id) !== voiceNote.value?.id) return
+  if (voiceNoteUrl) URL.revokeObjectURL(voiceNoteUrl)
+  voiceNoteUrl = ''
+  voiceNotePreviewUrl.value = ''
+  voiceNote.value = null
+  voiceNoteError.value = ''
+  voiceNoteSending.value = false
+}
+
+function setVoiceNoteSending(isSending) {
+  voiceNoteSending.value = Boolean(isSending)
+}
+
+async function saveRecording(blob, duration) {
+  if (!blob.size) {
+    voiceNoteError.value = 'The recording was empty. Please try again.'
+    return
+  }
+  if (voiceNoteUrl) URL.revokeObjectURL(voiceNoteUrl)
+  voiceNoteUrl = URL.createObjectURL(blob)
+  voiceNotePreviewUrl.value = voiceNoteUrl
+  voiceNoteUploading.value = true
+  voiceNoteError.value = ''
+  try {
+    const saved = await uploadVoiceNote(blob, {
+      channelId: props.channelId,
+      duration,
+    })
+    voiceNote.value = { id: saved.id, name: saved.file_name ?? saved.filename ?? 'Voice message' }
+    try {
+      const details = await getVoiceNote(saved.id)
+      const file = await getVoiceNoteFile(saved.id, details)
+      if (!(file instanceof Blob) || !file.size) {
+        throw new Error('The audio file was empty or unavailable.')
+      }
+      if (voiceNoteUrl) URL.revokeObjectURL(voiceNoteUrl)
+      voiceNoteUrl = URL.createObjectURL(file)
+      voiceNotePreviewUrl.value = voiceNoteUrl
+    } catch (error) {
+      voiceNoteError.value =
+        error instanceof Error
+          ? `Recording uploaded, but preview failed: ${error.message}`
+          : 'Recording uploaded, but preview failed.'
+    }
+  } catch (error) {
+    if (voiceNoteUrl) URL.revokeObjectURL(voiceNoteUrl)
+    voiceNoteUrl = ''
+    voiceNotePreviewUrl.value = ''
+    voiceNoteError.value =
+      error instanceof Error ? error.message : 'Could not upload the voice recording.'
+  } finally {
+    voiceNoteUploading.value = false
+  }
+}
+
+async function startRecording() {
+  if (voiceNote.value || voiceNoteUploading.value || recordingStarting.value) return
+  if (window.isSecureContext === false) {
+    voiceNoteError.value =
+      'Microphone access is blocked because this page is not secure. Open it at http://localhost:5173 on this computer, or use a trusted HTTPS address.'
+    return
+  }
+  if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
+    voiceNoteError.value = 'Voice recording is not supported by this browser.'
+    return
+  }
+  const requestId = ++recordingRequestId
+  recording.value = true
+  recordingStarting.value = true
+  recordingSeconds.value = 0
+  recordingCancelled = false
+  voiceNoteError.value = ''
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+    if (requestId !== recordingRequestId || composerUnmounted) {
+      stream.getTracks().forEach((track) => track.stop())
+      return
+    }
+    recorderStream = stream
+    const supportedType = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4'].find((type) =>
+      MediaRecorder.isTypeSupported?.(type),
+    )
+    const recorder = new MediaRecorder(
+      recorderStream,
+      supportedType ? { mimeType: supportedType } : undefined,
+    )
+    recorderChunks = []
+    recorder.addEventListener('dataavailable', (event) => {
+      if (event.data.size) recorderChunks.push(event.data)
+    })
+    recorder.addEventListener('error', () => {
+      voiceNoteError.value = 'The voice recording failed. Please try again.'
+      recording.value = false
+      recordingStarting.value = false
+      stopRecordingTimer()
+      mediaRecorder.value = null
+      recorderStream?.getTracks().forEach((track) => track.stop())
+      recorderStream = null
+    })
+    recorder.addEventListener('stop', () => {
+      const duration = Math.max(1, Math.ceil((Date.now() - recordingStartedAt) / 1000))
+      const recordingBlob = new Blob(recorderChunks, {
+        type: recorder.mimeType || 'audio/webm',
+      })
+      mediaRecorder.value = null
+      recorderStream?.getTracks().forEach((track) => track.stop())
+      recorderStream = null
+      recording.value = false
+      recordingStarting.value = false
+      stopRecordingTimer()
+      if (composerUnmounted) return
+      const wasCancelled = recordingCancelled
+      recordingCancelled = false
+      if (!wasCancelled) void saveRecording(recordingBlob, duration)
+    })
+    mediaRecorder.value = recorder
+    recorder.start(1000)
+    recordingStarting.value = false
+    recordingCancelled = false
+    recordingStartedAt = Date.now()
+    stopRecordingTimer()
+    recordingTimer = setInterval(() => {
+      recordingSeconds.value = Math.floor((Date.now() - recordingStartedAt) / 1000)
+    }, 250)
+  } catch (error) {
+    stopRecordingTimer()
+    recorderStream?.getTracks().forEach((track) => track.stop())
+    recorderStream = null
+    if (requestId === recordingRequestId) {
+      recording.value = false
+      recordingStarting.value = false
+      voiceNoteError.value =
+        error instanceof Error
+          ? `Could not access the microphone: ${error.message}`
+          : 'Could not access the microphone.'
+    }
+  }
+}
+
+function toggleRecording() {
+  if (recording.value) {
+    stopRecording()
+    return
+  }
+  void startRecording()
+}
+
+function stopRecording() {
+  if (recordingStarting.value) return
+  if (mediaRecorder.value?.state === 'recording') mediaRecorder.value.stop()
+}
+
+function cancelRecording() {
+  if (!recording.value) return
+  recordingCancelled = true
+  if (recordingStarting.value) {
+    recordingRequestId += 1
+    recording.value = false
+    recordingStarting.value = false
+    return
+  }
+  stopRecording()
+}
+
+async function removeVoiceNote() {
+  if (!voiceNote.value || voiceNoteUploading.value || voiceNoteSending.value) return
+  const id = voiceNote.value.id
+  try {
+    await discardVoiceNote(id)
+    clearVoiceNote(id)
+  } catch (error) {
+    voiceNoteError.value =
+      error instanceof Error
+        ? `Could not discard the voice recording: ${error.message}`
+        : 'Could not discard the voice recording.'
+  }
+}
+
+defineExpose({ clearVoiceNote, setVoiceNoteSending })
 
 function scheduleMessage() {
   if (!scheduleIsReady.value) {
@@ -705,7 +940,7 @@ function scheduleMessage() {
     content: content.value.trim(),
     scheduledAt: scheduledAt.value,
     timeZone: scheduleTimeZone,
-    attachments: [...attachments.value],
+    ...(attachment.value ? { attachment: attachment.value } : {}),
     ...(important.value ? { important: true } : {}),
   })
   content.value = ''
@@ -715,7 +950,7 @@ function scheduleMessage() {
   codeMode.value = false
   important.value = false
   savedSelectionRange = null
-  attachments.value = []
+  attachment.value = null
   scheduleOpen.value = false
   customScheduleOpen.value = false
   scheduledAt.value = ''
@@ -813,7 +1048,9 @@ function setPollQuestionType(question, type, questionIndex) {
   if (type === 'rating') {
     pollQuestions.value = [question]
     pollQuestionFocused.value = [pollQuestionFocused.value[questionIndex] || false]
-    pollValidationErrors.value.questions = [pollValidationErrors.value.questions[questionIndex] || false]
+    pollValidationErrors.value.questions = [
+      pollValidationErrors.value.questions[questionIndex] || false,
+    ]
     pollValidationErrors.value.choices = [false]
   }
   question.type = type
@@ -882,12 +1119,8 @@ async function createPollDraft() {
     startNow: pollStartNow.value,
     scheduleStartEnabled: pollScheduleStart.value,
     scheduleCloseEnabled: pollScheduleClose.value,
-    scheduleStart: pollScheduleStart.value
-      ? `${pollStartDate.value}T${pollStartTime.value}`
-      : '',
-    scheduleClose: pollScheduleClose.value
-      ? `${pollCloseDate.value}T${pollCloseTime.value}`
-      : '',
+    scheduleStart: pollScheduleStart.value ? `${pollStartDate.value}T${pollStartTime.value}` : '',
+    scheduleClose: pollScheduleClose.value ? `${pollCloseDate.value}T${pollCloseTime.value}` : '',
   }
   if (props.createPoll && props.channelId != null) {
     const createdPoll = await props.createPoll(props.channelId, draft)
@@ -900,7 +1133,7 @@ async function createPollDraft() {
     codeMode.value = false
     important.value = false
     savedSelectionRange = null
-    attachments.value = []
+    attachment.value = null
     return
   }
   pollDraft.value = draft
@@ -908,22 +1141,22 @@ async function createPollDraft() {
   sendMessage()
 }
 
-function handleFilesSelected(files) {
-  if (files.length) {
-    attachments.value = [...attachments.value, ...files]
-    emit('attachment', files)
-  }
+function handleFileSelected(file) {
+  if (!file) return
+  attachment.value = file
+  emit('attachment', file)
 }
 
-function removeAttachment(index) {
-  attachments.value = attachments.value.filter((_, fileIndex) => fileIndex !== index)
+function removeAttachment() {
+  attachment.value = null
 }
 
 function handleMediaAction(action, payload) {
   if (action === 'emoji') {
     insertAtSelection(payload)
-  } else if (action === 'gif') {
-    emit('gif', payload)
+  } else if (action === 'microphone') {
+    toggleRecording()
+    emit('microphone')
   } else {
     emit(action)
   }
@@ -936,23 +1169,7 @@ function handleMediaAction(action, payload) {
 function handleKeydown(event) {
   if (event.key !== 'Enter') return
 
-  if (activeList.value && !event.shiftKey) {
-    const selection = document.getSelection()
-    const anchor = selection?.anchorNode
-    const currentElement =
-      anchor?.nodeType === Node.ELEMENT_NODE ? anchor : anchor?.parentElement
-    const currentList = currentElement?.closest('ol, ul')
-
-    if (!currentList || !editor.value?.contains(currentList)) {
-      activeList.value = ''
-    } else {
-      return
-    }
-  }
-
-  const sendOnEnter = userStore.state.preferences.enterKey === 'send'
-  const shouldSend = event.shiftKey ? !sendOnEnter : sendOnEnter
-  if (!shouldSend) return
+  if (event.shiftKey) return
 
   event.preventDefault()
   sendMessage()
@@ -964,10 +1181,42 @@ function handleKeydown(event) {
     <div class="message-composer__input-row">
       <div class="message-composer__editor-area">
         <span v-if="important" class="message-composer__important">IMPORTANT!</span>
+        <div
+          v-if="recording || voiceNoteUploading"
+          class="message-composer__voice-status"
+          role="status"
+        >
+          {{
+            recording
+              ? 'Recording voice message… Select the microphone again to stop.'
+              : 'Uploading voice recording…'
+          }}
+        </div>
+        <div v-if="voiceNote || voiceNoteUploading" class="message-composer__voice-draft">
+          <strong>{{ voiceNote?.name ?? 'Voice message' }}</strong>
+          <audio v-if="voiceNotePreviewUrl" :src="voiceNotePreviewUrl" controls preload="metadata">
+            Your browser does not support audio playback.
+          </audio>
+          <button
+            v-if="voiceNote"
+            type="button"
+            :disabled="voiceNoteUploading || voiceNoteSending"
+            @click="removeVoiceNote"
+          >
+            Discard recording
+          </button>
+        </div>
+        <p v-if="voiceNoteError" class="message-composer__voice-error" role="alert">
+          {{ voiceNoteError }}
+        </p>
         <article v-if="pollDraft" class="message-composer__poll-draft" aria-label="Poll draft">
           <strong>{{ pollDraft.title }}</strong>
           <span v-if="pollDraft.description">{{ pollDraft.description }}</span>
-          <small>{{ pollDraft.questions.length }} question{{ pollDraft.questions.length === 1 ? '' : 's' }}</small>
+          <small
+            >{{ pollDraft.questions.length }} question{{
+              pollDraft.questions.length === 1 ? '' : 's'
+            }}</small
+          >
         </article>
         <label class="sr-only" for="message-composer-input">Message</label>
         <div
@@ -1014,7 +1263,7 @@ function handleKeydown(event) {
           type="submit"
           aria-label="Send message"
           title="Send message"
-          :disabled="!messageIsReady"
+          :disabled="!messageIsReady || recording || voiceNoteUploading || voiceNoteSending"
         >
           <svg
             viewBox="0 0 24 24"
@@ -1134,10 +1383,10 @@ function handleKeydown(event) {
       </div>
     </Teleport>
 
-    <div v-if="attachments.length" class="message-composer__attachments" aria-label="Attachments">
-      <span v-for="(file, index) in attachments" :key="`${file.name}-${index}`">
-        {{ file.name }}
-        <button type="button" :aria-label="`Remove ${file.name}`" @click="removeAttachment(index)">
+    <div v-if="attachment" class="message-composer__attachments" aria-label="Attachment">
+      <span>
+        {{ attachment.name }}
+        <button type="button" :aria-label="`Remove ${attachment.name}`" @click="removeAttachment">
           &times;
         </button>
       </span>
@@ -1236,9 +1485,11 @@ function handleKeydown(event) {
 
       <MediaToolbar
         class="message-composer__media"
+        :recording="recording"
+        :microphone-disabled="Boolean(voiceNote) || voiceNoteUploading"
         @mousedown.prevent="saveSelection(true)"
         @action="handleMediaAction"
-        @files-selected="handleFilesSelected"
+        @file-selected="handleFileSelected"
       />
     </div>
   </form>
@@ -1560,14 +1811,19 @@ function handleKeydown(event) {
             <h3>Schedule Settings</h3>
             <label class="message-composer__poll-schedule-option">
               <input v-model="pollStartNow" type="checkbox" />
-              <span><strong>Start this poll now</strong><small>Send Desktop Notifications</small></span>
+              <span
+                ><strong>Start this poll now</strong><small>Send Desktop Notifications</small></span
+              >
             </label>
             <div class="message-composer__poll-schedule-divider"></div>
             <label class="message-composer__poll-schedule-option">
               <input v-model="pollScheduleStart" type="checkbox" />
               <span><strong>Schedule Poll to Start</strong></span>
             </label>
-            <div class="message-composer__poll-date-fields" :class="{ 'is-disabled': !pollScheduleStart }">
+            <div
+              class="message-composer__poll-date-fields"
+              :class="{ 'is-disabled': !pollScheduleStart }"
+            >
               <label>
                 <span>Select date</span>
                 <input v-model="pollStartDate" type="date" :disabled="!pollScheduleStart" />
@@ -1582,10 +1838,15 @@ function handleKeydown(event) {
               <input v-model="pollScheduleClose" type="checkbox" />
               <span>
                 <strong>Schedule Poll to Close</strong>
-                <small>If you don't want to close the poll manually schedule it to be closed.</small>
+                <small
+                  >If you don't want to close the poll manually schedule it to be closed.</small
+                >
               </span>
             </label>
-            <div class="message-composer__poll-date-fields" :class="{ 'is-disabled': !pollScheduleClose }">
+            <div
+              class="message-composer__poll-date-fields"
+              :class="{ 'is-disabled': !pollScheduleClose }"
+            >
               <label>
                 <span>Select date</span>
                 <input v-model="pollCloseDate" type="date" :disabled="!pollScheduleClose" />
@@ -1631,6 +1892,58 @@ function handleKeydown(event) {
       </section>
     </div>
   </Teleport>
+  <Teleport to="body">
+    <div
+      v-if="recording"
+      class="message-composer__recording-backdrop"
+      @keydown.esc.prevent="cancelRecording"
+    >
+      <section
+        class="message-composer__recording-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="message-recording-title"
+        aria-describedby="message-recording-timer"
+      >
+        <button
+          class="message-composer__recording-close"
+          type="button"
+          aria-label="Cancel recording"
+          @click="cancelRecording"
+        >
+          <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path d="m7 7 10 10M17 7 7 17" />
+          </svg>
+        </button>
+        <h2 id="message-recording-title">Voice Message Recording</h2>
+        <div class="message-composer__recording-microphone" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none">
+            <rect x="9" y="3" width="6" height="12" rx="3" />
+            <path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21m-3 0h6" />
+          </svg>
+        </div>
+        <p id="message-recording-timer" class="message-composer__recording-timer" role="timer">
+          {{ recordingDuration }}
+        </p>
+        <p v-if="recordingStarting" class="message-composer__recording-hint" role="status">
+          Waiting for microphone access…
+        </p>
+        <footer class="message-composer__recording-footer">
+          <button type="button" class="message-composer__recording-cancel" @click="cancelRecording">
+            Cancel
+          </button>
+          <button
+            type="button"
+            class="message-composer__recording-stop"
+            :disabled="recordingStarting"
+            @click="stopRecording"
+          >
+            Stop
+          </button>
+        </footer>
+      </section>
+    </div>
+  </Teleport>
 </template>
 
 <style scoped>
@@ -1650,6 +1963,166 @@ function handleKeydown(event) {
   flex: 1;
   min-width: 0;
   padding: 4px 0 4px 4px;
+}
+
+.message-composer__voice-status,
+.message-composer__voice-draft {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 6px 8px;
+  color: #55596d;
+  font-size: 13px;
+}
+
+.message-composer__voice-draft audio {
+  width: min(300px, 100%);
+  height: 44px;
+}
+
+.message-composer__voice-draft button {
+  padding: 4px 8px;
+  border: 1px solid #d5d7e0;
+  border-radius: 4px;
+  background: #fff;
+  color: #34364b;
+  cursor: pointer;
+}
+
+.message-composer__voice-draft button:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.message-composer__voice-error {
+  margin: 4px 8px;
+  color: #b42318;
+  font-size: 12px;
+}
+
+.message-composer__recording-backdrop {
+  position: fixed;
+  z-index: 2200;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background: rgb(0 0 0 / 40%);
+}
+
+.message-composer__recording-modal {
+  position: relative;
+  display: flex;
+  box-sizing: border-box;
+  width: min(500px, 100%);
+  min-height: 360px;
+  flex-direction: column;
+  align-items: center;
+  padding: 24px 24px 0;
+  border-radius: 5px;
+  background: #fff;
+  box-shadow: 0 8px 28px rgb(0 0 0 / 20%);
+}
+
+.message-composer__recording-modal h2 {
+  margin: 0;
+  color: #242424;
+  font-size: 20px;
+  font-weight: 600;
+  text-align: center;
+}
+
+.message-composer__recording-close {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  display: grid;
+  width: 22px;
+  height: 22px;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: #f0f1f8;
+  color: #34364b;
+  cursor: pointer;
+}
+
+.message-composer__recording-close svg {
+  width: 14px;
+  height: 14px;
+  stroke: currentColor;
+  stroke-width: 1.8;
+}
+
+.message-composer__recording-microphone {
+  display: grid;
+  width: 68px;
+  height: 68px;
+  place-items: center;
+  margin-top: 66px;
+  border-radius: 50%;
+  background: #ff3454;
+  color: #fff;
+}
+
+.message-composer__recording-microphone svg {
+  width: 30px;
+  height: 30px;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.8;
+}
+
+.message-composer__recording-timer {
+  margin: 40px 0 36px;
+  color: #151515;
+  font-size: 18px;
+  font-variant-numeric: tabular-nums;
+}
+
+.message-composer__recording-hint {
+  margin: -24px 0 18px;
+  color: #696d81;
+  font-size: 13px;
+}
+
+.message-composer__recording-footer {
+  display: flex;
+  width: calc(100% + 48px);
+  justify-content: flex-end;
+  gap: 12px;
+  margin-top: auto;
+  padding: 16px 8px;
+  border-top: 1px solid #e1e1e1;
+}
+
+.message-composer__recording-footer button {
+  min-width: 84px;
+  height: 36px;
+  padding: 0 18px;
+  border: 0;
+  font-size: 13px;
+  font-weight: 600;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.message-composer__recording-cancel {
+  background: transparent;
+  color: #333;
+}
+
+.message-composer__recording-stop {
+  background: #ff3454;
+  color: #fff;
+}
+
+.message-composer__recording-stop:disabled {
+  cursor: wait;
+  opacity: 0.6;
 }
 
 .message-composer__input {

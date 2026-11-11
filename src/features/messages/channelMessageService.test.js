@@ -62,6 +62,37 @@ describe('channel message service', () => {
     })
   })
 
+  it('sends message text and attached files together as multipart data', async () => {
+    const attachment = new File(['report'], 'report.txt', { type: 'text/plain' })
+
+    await sendChannelMessage('company-1', 'team-2', 'channel-3', {
+      content: 'Please review this file',
+      attachment,
+    })
+
+    const [, options] = http.mock.calls[0]
+    expect(options.method).toBe('POST')
+    expect(options.body).toBeInstanceOf(FormData)
+    expect(options.body.get('body')).toBe('Please review this file')
+    expect(options.body.get('message')).toBeNull()
+    expect(options.body.get('attachment')).toBeInstanceOf(File)
+    expect(options.body.get('attachment').name).toBe('report.txt')
+  })
+
+  it('sends an attachment without adding an empty message field', async () => {
+    const attachment = new File(['report'], 'report.txt', { type: 'text/plain' })
+
+    await sendChannelMessage('company-1', 'team-2', 'channel-3', {
+      content: '',
+      attachment,
+    })
+
+    const [, options] = http.mock.calls[0]
+    expect(options.body.get('body')).toBeNull()
+    expect(options.body.get('attachment')).toBeInstanceOf(File)
+    expect(options.body.get('attachment').name).toBe('report.txt')
+  })
+
   it('updates a message with the provided patch body', async () => {
     const payload = { content: 'Updated' }
 
@@ -146,9 +177,9 @@ describe('channel message service', () => {
   it('returns a consistent error response when the API request fails', async () => {
     http.mockRejectedValue(new Error('Message not found'))
 
-    await expect(getChannelMessage('company-1', 'team-2', 'channel-3', 'message-4')).resolves.toEqual(
-      { success: false, error: 'Message not found' },
-    )
+    await expect(
+      getChannelMessage('company-1', 'team-2', 'channel-3', 'message-4'),
+    ).resolves.toEqual({ success: false, error: 'Message not found' })
   })
 
   it('handles non-Error rejections', async () => {
@@ -193,10 +224,12 @@ describe('channel message service', () => {
   })
 
   it('requires collection IDs when sending a message', async () => {
-    await expect(sendChannelMessage('', 'team-2', 'channel-3', { content: 'Hi' })).resolves.toEqual({
-      success: false,
-      error: 'Company, team, and channel IDs are required.',
-    })
+    await expect(sendChannelMessage('', 'team-2', 'channel-3', { content: 'Hi' })).resolves.toEqual(
+      {
+        success: false,
+        error: 'Company, team, and channel IDs are required.',
+      },
+    )
     expect(http).not.toHaveBeenCalled()
   })
 
@@ -205,7 +238,10 @@ describe('channel message service', () => {
 
     await expect(send(undefined)).resolves.toMatchObject({ success: false })
     await expect(send([])).resolves.toMatchObject({ success: false })
-    await expect(send({})).resolves.toEqual({ success: false, error: 'Message content is required.' })
+    await expect(send({})).resolves.toEqual({
+      success: false,
+      error: 'Message content is required.',
+    })
     await expect(send({ content: '   ' })).resolves.toEqual({
       success: false,
       error: 'Message content must be a non-empty string.',
@@ -217,6 +253,14 @@ describe('channel message service', () => {
     await expect(send({ content: 'Hi', parentMessageId: 12 })).resolves.toEqual({
       success: false,
       error: 'Parent message ID must be a string or null.',
+    })
+    await expect(send({ content: 'Hi', attachment: {} })).resolves.toEqual({
+      success: false,
+      error: 'Message attachment must be a file.',
+    })
+    await expect(send({ content: 'Hi', attachments: [] })).resolves.toEqual({
+      success: false,
+      error: 'Only one message attachment is supported.',
     })
     expect(http).not.toHaveBeenCalled()
   })

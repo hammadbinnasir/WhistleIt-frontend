@@ -10,6 +10,7 @@ import {
   sendChannelMessage,
   updateChannelMessage as patchChannelMessage,
 } from './channelMessageService'
+import { normalizeMessageAttachments } from './messageAttachments'
 
 const STORAGE_KEY = 'whistleit:channel-messages'
 const PAGE_SIZE = 20
@@ -30,6 +31,56 @@ function isDeletedMessage(record) {
   )
   const deletedAt = record.deleted_at ?? record.deletedAt
   return deletedFlag || (deletedAt != null && deletedAt !== '')
+}
+
+function voiceNoteIdFrom(record) {
+  const queue = [{ value: record, depth: 0 }]
+  const seen = new Set()
+  const idKeys = ['voice_note_id', 'voiceNoteId', 'voiceNoteID']
+  const relationKeys = ['voice_note', 'voiceNote', 'voice_note_data', 'voiceNoteData']
+  const wrapperKeys = [
+    'message',
+    'channel_message',
+    'data',
+    'result',
+    'payload',
+    'sender',
+    'user',
+    'author',
+  ]
+
+  while (queue.length) {
+    const { value, depth } = queue.shift()
+    if (!value || typeof value !== 'object' || seen.has(value)) continue
+    seen.add(value)
+
+    for (const key of idKeys) {
+      const id = value[key]
+      if (id != null && String(id).trim()) return String(id)
+    }
+
+    for (const key of relationKeys) {
+      const relation = value[key]
+      if (typeof relation === 'string' || typeof relation === 'number') {
+        if (String(relation).trim()) return String(relation)
+      } else if (relation && typeof relation === 'object') {
+        const id =
+          relation.id ?? relation.voice_note_id ?? relation.voiceNoteId ?? relation.voiceNoteID
+        if (id != null && String(id).trim()) return String(id)
+        if (depth < 4) queue.push({ value: relation, depth: depth + 1 })
+      }
+    }
+
+    if (depth < 4) {
+      for (const key of wrapperKeys) {
+        const nested = value[key]
+        if (nested && typeof nested === 'object') {
+          queue.push({ value: nested, depth: depth + 1 })
+        }
+      }
+    }
+  }
+  return null
 }
 
 function loadMessages() {
@@ -94,50 +145,57 @@ export const useMessagesStore = defineStore('messages', () => {
     if (!record || typeof record !== 'object') {
       throw new Error('The channel messages response contains an invalid message.')
     }
+    const message = record.message ?? record.channel_message ?? record
+    const voiceNoteId = voiceNoteIdFrom(record)
     const sender =
-      record.sender && typeof record.sender === 'object'
-        ? record.sender
-        : record.user && typeof record.user === 'object'
-          ? record.user
-          : record.author && typeof record.author === 'object'
-            ? record.author
+      message.sender && typeof message.sender === 'object'
+        ? message.sender
+        : message.user && typeof message.user === 'object'
+          ? message.user
+          : message.author && typeof message.author === 'object'
+            ? message.author
             : {}
-    const id = record.id ?? record.message_id ?? record.messageId
+    const id = message.id ?? message.message_id ?? message.messageId
     if (id == null) throw new Error('A channel message is missing its ID.')
-    const senderId = record.sender_id ?? record.user_id ?? record.from ?? sender.id ?? sender.user_id
+    const senderId =
+      message.sender_id ?? message.user_id ?? message.from ?? sender.id ?? sender.user_id
     const userId = getAuthUserId()
     const deleted = isDeletedMessage(record)
+    const attachments = deleted ? [] : normalizeMessageAttachments(record)
     const content = deleted
       ? ''
       : normalizeMessageContent(record.content ?? record.body ?? record.text ?? record.message ?? '')
 
     return {
       ...record,
+      ...message,
       id: String(id),
       content: String(content),
       text: String(content),
+      ...(voiceNoteId != null ? { voiceNoteId: String(voiceNoteId) } : {}),
       serverBacked: true,
       backendSynced: true,
       deleted,
       ...(deleted
         ? {
-            deletedAt: record.deleted_at ?? record.deletedAt ?? new Date().toISOString(),
+            deletedAt: message.deleted_at ?? message.deletedAt ?? new Date().toISOString(),
             attachments: [],
             reactions: [],
           }
         : {}),
+      ...(!deleted && attachments.length ? { attachments } : {}),
       author:
-        record.author_name ??
-        record.sender_name ??
+        message.author_name ??
+        message.sender_name ??
         sender.name ??
         sender.full_name ??
-        (typeof record.author === 'string' ? record.author : ''),
+        (typeof message.author === 'string' ? message.author : ''),
       ...(senderId != null ? { from: String(senderId), authorId: String(senderId) } : {}),
       mine: userId != null && senderId != null && String(userId) === String(senderId),
-      createdAt: record.created_at ?? record.createdAt ?? record.created_on ?? '',
-      editedAt: record.edited_at ?? record.editedAt,
-      forwardedFrom: record.forwarded_from ?? record.forwardedFrom,
-      reactions: deleted ? [] : Array.isArray(record.reactions) ? record.reactions : [],
+      createdAt: message.created_at ?? message.createdAt ?? message.created_on ?? '',
+      editedAt: message.edited_at ?? message.editedAt,
+      forwardedFrom: message.forwarded_from ?? message.forwardedFrom,
+      reactions: deleted ? [] : Array.isArray(message.reactions) ? message.reactions : [],
     }
   }
 
@@ -218,16 +276,38 @@ export const useMessagesStore = defineStore('messages', () => {
           .map((message) => [String(message.id), message]),
       )
       for (const message of fetched) {
-        if (!deletedIds.has(message.id)) merged.set(message.id, message)
+        if (deletedIds.has(message.id)) continue
+        const existing = merged.get(message.id)
+        const voiceNoteId =
+          message.voiceNoteId ??
+          message.voice_note_id ??
+          message.voice_note?.id ??
+          existing?.voiceNoteId ??
+          existing?.voice_note_id ??
+          existing?.voice_note?.id
+        if (voiceNoteId != null) message.voiceNoteId = String(voiceNoteId)
+        if (existing?.attachments?.length && message.attachments?.length) {
+          const localAttachments = new Map(
+            existing.attachments
+              .filter((attachment) => attachment.localPreviewUrl)
+              .map((attachment) => [attachment.name, attachment.localPreviewUrl]),
+          )
+          message.attachments = message.attachments.map((attachment) => ({
+            ...attachment,
+            ...(localAttachments.has(attachment.name)
+              ? { localPreviewUrl: localAttachments.get(attachment.name) }
+              : {}),
+          }))
+        } else if (!message.attachments?.length && existing?.attachments?.length) {
+          message.attachments = existing.attachments
+        }
+        merged.set(message.id, message)
       }
       for (const message of visiblePending) merged.set(String(message.id), message)
       messagesByChannel.value[key] = sortMessages([...merged.values()])
 
       const responsePage = Number(pagination?.current_page ?? pagination?.currentPage ?? page)
-      currentPageByChannel.value[key] = Math.max(
-        currentPageByChannel.value[key] || 0,
-        responsePage,
-      )
+      currentPageByChannel.value[key] = Math.max(currentPageByChannel.value[key] || 0, responsePage)
       const lastPage = Number(pagination?.last_page ?? pagination?.lastPage)
       if (Number.isFinite(lastPage) && lastPage > 0) {
         lastPageByChannel.value[key] = lastPage
@@ -251,7 +331,9 @@ export const useMessagesStore = defineStore('messages', () => {
     const key = String(channelId ?? '')
     const content = typeof payload?.content === 'string' ? payload.content.trim() : ''
     if (!key.trim()) return { success: false, error: 'A channel ID is required to send a message.' }
-    if (!content) return { success: false, error: 'Message content is required.' }
+    if (!content && !payload?.attachment) {
+      return { success: false, error: 'Message content is required.' }
+    }
 
     const teams = useTeamsStore()
     const companyId = teams.activeWorkspaceId
@@ -265,9 +347,6 @@ export const useMessagesStore = defineStore('messages', () => {
 
     const metadata = { ...payload }
     delete metadata.content
-    if (Array.isArray(metadata.attachments) && metadata.attachments.length === 0) {
-      delete metadata.attachments
-    }
     const result = await sendChannelMessage(companyId, teamId, key, {
       ...metadata,
       content,
@@ -278,9 +357,35 @@ export const useMessagesStore = defineStore('messages', () => {
     }
 
     const createdRecord = findCreatedMessage(result.data)
+    const serverConfirmedAttachment = Boolean(
+      payload.attachment && normalizeMessageAttachments(createdRecord ?? {}).length,
+    )
     if (createdRecord) {
+      const localPreviewUrl =
+        payload.attachment && typeof URL.createObjectURL === 'function'
+          ? URL.createObjectURL(payload.attachment)
+          : null
+      const responseAttachments = normalizeMessageAttachments(createdRecord)
+      const localAttachments =
+        payload.attachment && localPreviewUrl
+          ? responseAttachments.length
+            ? responseAttachments.map((attachment) => ({
+                ...attachment,
+                ...(attachment.name === payload.attachment.name ? { localPreviewUrl } : {}),
+              }))
+            : [
+                {
+                  name: payload.attachment.name,
+                  size: payload.attachment.size,
+                  type: payload.attachment.type,
+                  localOnly: true,
+                  localPreviewUrl,
+                },
+              ]
+          : responseAttachments
       const message = {
         ...normalizeMessage(createdRecord),
+        attachments: localAttachments,
         ...(payload.forwardedFrom ? { forwardedFrom: payload.forwardedFrom } : {}),
         mine: true,
       }
@@ -294,7 +399,12 @@ export const useMessagesStore = defineStore('messages', () => {
     }
 
     await fetchChannelMessages(key)
-    return { success: true, data: createdRecord }
+    if (payload.attachment && !serverConfirmedAttachment) persist()
+    return {
+      success: true,
+      data: createdRecord,
+      ...(payload.attachment ? { attachmentPersisted: serverConfirmedAttachment } : {}),
+    }
   }
 
   async function updateServerMessage(channelId, messageId, content) {
@@ -353,15 +463,17 @@ export const useMessagesStore = defineStore('messages', () => {
   function hasOlderMessages(channelId) {
     const key = String(channelId)
     const visibleCount = visibleCounts.value[key] || PAGE_SIZE
-    return (
-      messagesFor(key).length > visibleCount ||
-      Boolean(hasMorePagesByChannel.value[key])
-    )
+    return messagesFor(key).length > visibleCount || Boolean(hasMorePagesByChannel.value[key])
   }
 
   function persist() {
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(messagesByChannel.value))
+      localStorage.setItem(
+        STORAGE_KEY,
+        JSON.stringify(messagesByChannel.value, (key, value) =>
+          key === 'localPreviewUrl' ? undefined : value,
+        ),
+      )
     } catch (error) {
       console.error('Unable to save messages to browser storage:', error)
     }
@@ -452,17 +564,28 @@ export const useMessagesStore = defineStore('messages', () => {
   function sendMessage(channelId, payload, author, conversationName = String(channelId)) {
     const key = String(channelId)
     const message = {
-      id: createId(),
-      backendSynced: false,
-      content: payload.content,
+      backendSynced: payload.backendSynced === true,
+      id: payload.id == null ? createId() : String(payload.id),
+      content: payload.content ?? '',
       author,
       authorId: 'current-user',
       mine: true,
-      createdAt: new Date().toISOString(),
+      createdAt: payload.createdAt ?? new Date().toISOString(),
       reactions: [],
       ...(payload.replyTo ? { replyTo: payload.replyTo } : {}),
       ...(payload.forwardedFrom ? { forwardedFrom: payload.forwardedFrom } : {}),
-      ...(payload.attachments?.length ? { attachments: [...payload.attachments] } : {}),
+      ...(payload.voiceNoteId ? { voiceNoteId: String(payload.voiceNoteId) } : {}),
+      ...(payload.attachment
+        ? {
+            attachments: [
+              {
+                name: payload.attachment.name,
+                size: payload.attachment.size,
+                type: payload.attachment.type,
+              },
+            ],
+          }
+        : {}),
       ...(payload.important ? { important: true } : {}),
       ...(payload.gif ? { gif: payload.gif } : {}),
       ...(payload.scheduledAt
@@ -484,7 +607,7 @@ export const useMessagesStore = defineStore('messages', () => {
       })
     }
     persist()
-    if (!message.scheduled) {
+    if (!message.scheduled && !message.backendSynced) {
       void syncMessage(channelId, message, payload)
     }
     return message
@@ -524,6 +647,72 @@ export const useMessagesStore = defineStore('messages', () => {
       message.syncError = error.message || 'Unable to sync channel message.'
       persist()
     }
+  }
+
+  function mergeChannelMessages(channelId, incoming) {
+    const key = String(channelId)
+    const merged = new Map(messagesFor(key).map((message) => [String(message.id), message]))
+    const reconciledIds = new Set()
+    for (const message of incoming) {
+      if (message?.id == null) continue
+      const id = String(message.id)
+      let existing = merged.get(id)
+      if (
+        !existing &&
+        !(message.voiceNoteId ?? message.voice_note_id ?? message.voice_note?.id) &&
+        message.mine
+      ) {
+        const messageTime = Date.parse(message.createdAt || '')
+        const candidates = [...merged.values()]
+          .filter((candidate) => {
+            const candidateTime = Date.parse(candidate.createdAt || '')
+            const candidateVoiceNoteId =
+              candidate.voiceNoteId ?? candidate.voice_note_id ?? candidate.voice_note?.id
+            return (
+              !reconciledIds.has(String(candidate.id)) &&
+              candidateVoiceNoteId &&
+              candidate.mine &&
+              String(candidate.content ?? candidate.text ?? '')
+                .trim()
+                .toLowerCase() === 'voice message' &&
+              String(message.content ?? message.text ?? '')
+                .trim()
+                .toLowerCase() === 'voice message' &&
+              Number.isFinite(messageTime) &&
+              Number.isFinite(candidateTime) &&
+              Math.abs(messageTime - candidateTime) <= 5 * 60_000
+            )
+          })
+          .sort(
+            (left, right) =>
+              Math.abs(Date.parse(left.createdAt) - messageTime) -
+              Math.abs(Date.parse(right.createdAt) - messageTime),
+          )
+        existing = candidates[0]
+        if (existing) {
+          merged.delete(String(existing.id))
+          reconciledIds.add(String(existing.id))
+        }
+      }
+      merged.set(id, {
+        ...existing,
+        ...message,
+        id,
+        voiceNoteId:
+          message.voiceNoteId ??
+          message.voice_note_id ??
+          message.voice_note?.id ??
+          existing?.voiceNoteId ??
+          existing?.voice_note_id ??
+          existing?.voice_note?.id,
+        reactions: message.reactions ?? existing?.reactions ?? [],
+        mine: message.mine ?? existing?.mine ?? false,
+      })
+    }
+    messagesByChannel.value[key] = [...merged.values()].sort(
+      (left, right) => new Date(left.createdAt || 0) - new Date(right.createdAt || 0),
+    )
+    persist()
   }
 
   function editMessage(channelId, messageId, content) {
@@ -569,7 +758,13 @@ export const useMessagesStore = defineStore('messages', () => {
   function deleteServerMessage(channelId, messageId) {
     const key = String(channelId ?? '')
     const message = messagesFor(key).find((item) => String(item.id) === String(messageId))
-    if (!message || !message.serverBacked || !message.mine || message.scheduled || message.deleted) {
+    if (
+      !message ||
+      !message.serverBacked ||
+      !message.mine ||
+      message.scheduled ||
+      message.deleted
+    ) {
       return { success: false, error: 'Only your unscheduled messages can be deleted.' }
     }
     const requestKey = `${key}:${message.id}`
@@ -596,13 +791,7 @@ export const useMessagesStore = defineStore('messages', () => {
     persist()
 
     const restoreMessage = () => {
-      for (const field of [
-        'deleted',
-        'deletedAt',
-        'deleteScheduledAt',
-        'gif',
-        'poll',
-      ]) {
+      for (const field of ['deleted', 'deletedAt', 'deleteScheduledAt', 'gif', 'poll']) {
         if (!Object.hasOwn(previousMessage, field)) delete message[field]
       }
       Object.assign(message, previousMessage)
@@ -623,7 +812,8 @@ export const useMessagesStore = defineStore('messages', () => {
         restoreMessage()
         return {
           success: false,
-          error: error instanceof Error ? error.message : 'The channel message could not be deleted.',
+          error:
+            error instanceof Error ? error.message : 'The channel message could not be deleted.',
         }
       })
       .finally(() => serverDeletionRequests.delete(requestKey))
@@ -683,6 +873,7 @@ export const useMessagesStore = defineStore('messages', () => {
     updateServerMessage,
     deleteServerMessage,
     sendMessage,
+    mergeChannelMessages,
     editMessage,
     deleteMessage,
     toggleReaction,
