@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 import { useRemindersStore } from './reminders'
 
@@ -22,6 +22,10 @@ describe('reminders store', () => {
       id: `server-${++id}`,
       fired: false,
     }))
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
   })
 
   it('moves due reminders out of the active list and makes them available in chat', async () => {
@@ -64,6 +68,52 @@ describe('reminders store', () => {
     expect(store.items).toHaveLength(0)
     expect(store.dueItems).toHaveLength(1)
     store.stopWatcher()
+  })
+
+  it('refreshes channel reminders from the API while the watcher is running', async () => {
+    vi.useFakeTimers()
+    const sharedReminder = {
+      id: 'shared-reminder',
+      conversationId: 'channel-1',
+      conversationName: 'Channel One',
+      conversationType: 'channel',
+      messageId: 'message-1',
+      text: 'Visible to channel members',
+      remindAt: new Date(Date.now() + 60_000).toISOString(),
+      fired: false,
+    }
+    api.listReminders.mockResolvedValueOnce([]).mockResolvedValueOnce([sharedReminder])
+    const store = useRemindersStore()
+
+    store.startWatcher()
+    await vi.advanceTimersByTimeAsync(15_000)
+
+    expect(api.listReminders).toHaveBeenCalledTimes(2)
+    expect(store.items).toContainEqual(sharedReminder)
+    store.stopWatcher()
+  })
+
+  it('does not re-add or notify reminders already processed on this device', async () => {
+    const store = useRemindersStore()
+    store.deletedItems.push({
+      id: 'processed-reminder',
+      fired: true,
+      firedAt: new Date().toISOString(),
+      dismissed: false,
+    })
+    api.listReminders.mockResolvedValue([
+      {
+        id: 'processed-reminder',
+        conversationId: 'channel-1',
+        text: 'Already shown',
+        remindAt: new Date(Date.now() - 60_000).toISOString(),
+      },
+    ])
+
+    await store.fetch()
+
+    expect(store.items).toHaveLength(0)
+    expect(store.dueItems).toHaveLength(1)
   })
 
   it('keeps due reminders available after reloading the store', async () => {

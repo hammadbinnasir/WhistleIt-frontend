@@ -271,6 +271,13 @@ async function leave() {
   leaving.value = true
   try {
     await channels.leaveChannel(props.channel.id, newAdminId.value || undefined)
+    if (newAdminId.value) {
+      ui.toast(
+        'Channel admin transferred',
+        `${selectedNewAdmin.value?.name || 'The selected member'} is now the channel admin.`,
+        'success',
+      )
+    }
     emit('left')
   } catch (error) {
     leaveError.value = error?.message || 'Unable to leave this channel. Please try again.'

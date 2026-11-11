@@ -31,6 +31,20 @@ function rememberManagedChannel(id) {
   }
 }
 
+function forgetManagedChannel(id) {
+  const key = String(id)
+  managedChannelIds.delete(key)
+  if (typeof localStorage === 'undefined') return
+  try {
+    const ids = getManagedChannelIds()
+    ids.delete(key)
+    managedChannelIds.delete(key)
+    localStorage.setItem(MANAGED_CHANNELS_STORAGE_KEY, JSON.stringify([...ids]))
+  } catch {
+    // The in-memory permission is still cleared for this session.
+  }
+}
+
 function withPersistedManagement(channel) {
   return {
     ...channel,
@@ -258,6 +272,7 @@ export const useChannelsStore = defineStore('channels', () => {
 
   async function leaveChannel(id, newAdminId) {
     await api.leaveChannel(id, newAdminId)
+    forgetManagedChannel(id)
     removeChannel(id)
     patchBrowse(id, { isMember: false })
   }

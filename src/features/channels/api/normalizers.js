@@ -36,6 +36,25 @@ export function normalizeChannel(raw = {}) {
   const rawMember = record.isMember ?? record.is_member
   const type = String(record.type ?? record.channel_type ?? '').toLowerCase()
   const rawMessagePermission = record.messagePermission ?? record.message_permission ?? 'everyone'
+  const rawAdmins =
+    record.adminIds ??
+    record.admin_ids ??
+    record.channelAdminIds ??
+    record.channel_admin_ids ??
+    record.admins ??
+    record.channel_admins ??
+    []
+  const adminIds = (Array.isArray(rawAdmins) ? rawAdmins : [rawAdmins])
+    .map((admin) => {
+      if (admin == null || typeof admin === 'boolean') return null
+      if (typeof admin === 'object') {
+        return admin.id ?? admin.user_id ?? admin.userId ?? admin.member_id
+      }
+      return admin
+    })
+    .filter((adminId) => adminId != null)
+    .map(String)
+  const isAdmin = Boolean(record.isAdmin ?? record.is_admin ?? record.isChannelAdmin ?? record.is_channel_admin)
   const createdByRaw =
     record.createdBy ??
     record.created_by ??
@@ -84,7 +103,11 @@ export function normalizeChannel(raw = {}) {
         record.owner ??
         false,
     ),
-    canManage: Boolean(record.canManage ?? record.can_manage ?? record.isOwner ?? record.is_owner),
+    canManage: Boolean(
+      record.canManage ?? record.can_manage ?? record.isOwner ?? record.is_owner ?? isAdmin,
+    ),
+    isAdmin,
+    adminIds,
     messagePermission:
       rawMessagePermission === 'specific' ? 'selected_members' : rawMessagePermission,
     allowedSenderIds: Array.isArray(record.allowedSenderIds ?? record.allowed_sender_ids)
