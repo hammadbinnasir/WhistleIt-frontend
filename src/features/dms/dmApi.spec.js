@@ -443,14 +443,11 @@ describe('DM API', () => {
   it('deletes a message of a direct channel', async () => {
     apiRequest.mockResolvedValue({ success: true, data: null })
 
-    await dmApi.deleteMessage('company-1', 'channel-1', 'm9', 'Original text')
+    await dmApi.deleteMessage('company-1', 'channel-1', 'm9')
 
     expect(apiRequest).toHaveBeenCalledWith(
       '/v1/company-1/direct-channels/channel-1/messages/m9',
-      {
-        method: 'PATCH',
-        body: JSON.stringify({ body: 'Original text', is_deleted: true }),
-      },
+      { method: 'DELETE' },
     )
   })
 

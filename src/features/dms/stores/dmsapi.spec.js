@@ -495,19 +495,17 @@ describe('dms store', () => {
     expect(dms.actionError).toBe('Forbidden')
   })
 
-  it('sends PATCH and puts the message back when it fails', async () => {
+  it('sends DELETE and puts the message back when it fails', async () => {
     dmApi.listDirectChannels.mockResolvedValue([
       makeConversation('c1', 'u2', [{ id: 'm1', from: 'u1', text: 'Mine', createdAt: '' }]),
     ])
-    dmApi.deleteMessage.mockRejectedValue(new Error('Failed to fetch'))
+    dmApi.deleteMessage.mockRejectedValue(Object.assign(new Error('Forbidden'), { status: 403 }))
     const dms = useDmStore()
     await dms.init()
 
     expect(dms.deleteMessage('c1', 'm1')).toBe(true)
-    expect(dmApi.deleteMessage).toHaveBeenCalledWith('company-1', 'c1', 'm1', 'Mine')
-    expect(dms.conversations[0].messages).toHaveLength(0)
-
-    await vi.waitFor(() => expect(dms.conversations[0].messages[0]?.text).toBe('Mine'))
+    expect(dmApi.deleteMessage).toHaveBeenCalledWith('company-1', 'c1', 'm1')
+    await vi.waitFor(() => expect(dms.conversations[0].messages[0]).toMatchObject({ text: 'Mine', deleted: false }))
   })
 
   it('refreshes one message with GET single message', async () => {

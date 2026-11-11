@@ -453,7 +453,7 @@ describe('dms store', () => {
     await dms.init()
 
     expect(dms.deleteMessage('c1', 'm1')).toBe(true)
-    expect(dmApi.deleteMessage).toHaveBeenCalledWith('company-1', 'c1', 'm1', 'Mine')
+    expect(dmApi.deleteMessage).toHaveBeenCalledWith('company-1', 'c1', 'm1')
     expect(dms.conversations[0].messages[0].deleted).toBe(true)
 
     await vi.waitFor(() => expect(dms.conversations[0].messages[0].deleted).toBe(false))
@@ -1261,9 +1261,11 @@ describe('dms store', () => {
 
     await vi.waitFor(() =>
       expect(dmApi.sendMessage).toHaveBeenCalledWith('company-1', 'c1', {
-        body: 'hlw',
+        body: '[Forwarded] hlw',
         is_forwarded: true,
         forwarded_from: 'Muniba Naseer in General',
+        forward_tag: 'Muniba Naseer in General',
+        is_important: false,
       }),
     )
   })
