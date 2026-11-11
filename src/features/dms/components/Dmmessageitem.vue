@@ -29,6 +29,7 @@ const copied = ref(false)
 
 const isLocal = computed(() => String(props.message.id).startsWith('local-'))
 const mine = computed(() => props.message.from === dms.meId)
+const isDeleted = computed(() => Boolean(props.message.deleted))
 const author = computed(() => {
   const name = dms.usersById[props.message.from]?.name
   return name || (mine.value ? 'You' : 'Unknown user')
@@ -85,10 +86,9 @@ function remove() {
       <div class="flex flex-wrap items-baseline gap-x-3">
         <span class="text-lg font-semibold text-slate-800">{{ author }}</span>
         <TimeAgo :value="message.createdAt" />
-        <span v-if="message.editedAt" class="text-xs text-slate-400">(edited)</span>
+        <span v-if="message.editedAt && !isDeleted" class="text-xs text-slate-400">(edited)</span>
       </div>
-
-      <div v-if="editing" class="mt-1 flex gap-2">
+      <div v-if="editing && !isDeleted" class="mt-1 flex gap-2">
         <input
           v-model="editText"
           class="min-w-0 flex-1 rounded border-2 border-indigo-300 px-2 py-1 outline-none focus:border-indigo-500"
@@ -100,6 +100,13 @@ function remove() {
         <button class="px-2 text-sm text-slate-600" @click="editing = false">Cancel</button>
       </div>
       <p
+        v-else-if="isDeleted"
+        class="mt-1 text-[15px] italic leading-relaxed text-slate-500"
+        data-test="message-deleted"
+      >
+        (message deleted)
+      </p>
+      <p
         v-else
         class="whitespace-pre-wrap break-words text-[15px] leading-relaxed"
         :class="message.status === 'sending' ? 'text-slate-400' : 'text-slate-700'"
@@ -108,13 +115,14 @@ function remove() {
         {{ message.text }}
       </p>
 
-      <p v-if="message.status === 'sending'" class="text-xs text-slate-400">Sending…</p>
-      <p v-else-if="message.status === 'failed'" class="text-xs text-red-600">
+      <p v-if="!isDeleted && message.status === 'sending'" class="text-xs text-slate-400">Sending…</p>
+      <p v-else-if="!isDeleted && message.status === 'failed'" class="text-xs text-red-600">
         Not sent{{ message.error && message.error !== 'Not sent' ? `: ${message.error}` : '' }}
         <button class="ml-1 underline" @click="dms.retryMessage(conversationId, message.id)">Retry</button>
       </p>
 
       <MessageReactions
+        v-if="!isDeleted"
         ref="reactionsRef"
         class="mt-2"
         :reactions="message.reactions ?? []"
@@ -123,12 +131,18 @@ function remove() {
         @toggle="react"
       />
 
-      <ReplySummary class="mt-1 -ml-2" :count="replyCount" :last-reply-at="lastReplyAt" @open="openThread" />
+      <ReplySummary
+        v-if="!isDeleted"
+        class="mt-1 -ml-2"
+        :count="replyCount"
+        :last-reply-at="lastReplyAt"
+        @open="openThread"
+      />
     </div>
 
     <!-- Hover toolbar -->
     <div
-      v-if="!editing"
+      v-if="!editing && !isDeleted"
       class="absolute -top-3 right-6 z-20 hidden items-center gap-0.5 rounded-md border border-slate-200 bg-white p-1 shadow-sm group-hover:flex group-focus-within:flex"
     >
       <button class="flex h-8 w-8 items-center justify-center rounded text-slate-600 hover:bg-slate-100" title="Add reaction" aria-label="Add reaction" @click="openPicker">

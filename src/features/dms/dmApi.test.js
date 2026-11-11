@@ -295,6 +295,31 @@ describe('DM API', () => {
     expect(apiRequest).toHaveBeenCalledWith('/v1/company%201/direct-channels')
   })
 
+  it('loads direct channels from nested paginated API response data', async () => {
+    apiRequest.mockResolvedValue({
+      success: true,
+      data: {
+        data: {
+          direct_channels: {
+            data: [
+              {
+                direct_channel: {
+                  id: 'channel-nested',
+                  participants: [{ id: 'user-2', name: 'Alex' }],
+                  messages: [],
+                },
+              },
+            ],
+          },
+        },
+      },
+    })
+
+    await expect(dmApi.listDirectChannels('company-1')).resolves.toMatchObject([
+      { conversation: { id: 'channel-nested' } },
+    ])
+  })
+
   it('marks a direct conversation as recent and returns its recent timestamp', async () => {
     apiRequest.mockResolvedValue({
       success: true,
@@ -681,6 +706,61 @@ describe('DM API', () => {
     ).toMatchObject({ forwardedFrom: 'forwarded' })
   })
 
+  it('recognizes the forwarded body marker when the API omits forwarding metadata', () => {
+    expect(normalizeMessage({ id: 'm12', body: '[Forwarded] Forwarded text' })).toMatchObject({
+      text: 'Forwarded text',
+      forwardedFrom: 'forwarded',
+    })
+  })
+
+  it('recognizes backend deleted flags and does not infer an edit from delete updated_at', async () => {
+    apiRequest.mockResolvedValue({
+      success: true,
+      data: {
+        messages: [
+          {
+            id: 'm13',
+            body: 'Original text',
+            created_at: '2026-11-11T09:00:00Z',
+            updated_at: '2026-11-11T09:05:00Z',
+            is_deleted: ' TRUE ',
+          },
+          {
+            id: 'm14',
+            body: 'Original text',
+            is_deleted: false,
+            deleted_at: '2026-11-11T09:05:00Z',
+          },
+          {
+            id: 'm15',
+            body: 'Original text',
+            deleted: true,
+            edited_at: '2026-11-11T09:04:00Z',
+          },
+          {
+            message: {
+              id: 'm16',
+              body: 'Original text',
+              updated_at: '2026-11-11T09:05:00Z',
+              created_at: '2026-11-11T09:00:00Z',
+            },
+            is_deleted: '1',
+          },
+        ],
+      },
+    })
+
+    const messages = await dmApi.listMessages('company-1', 'channel-1')
+
+    expect(messages).toMatchObject([
+      { id: 'm13', deleted: true },
+      { id: 'm14', deleted: true },
+      { id: 'm15', deleted: true },
+      { id: 'm16', deleted: true },
+    ])
+    expect(messages.every((message) => !message.editedAt)).toBe(true)
+  })
+
   it('removes API paragraph wrappers from direct-message bodies', () => {
     expect(normalizeMessage({ id: 'm12', body: '<p>byeee</p>' })).toMatchObject({
       text: 'byeee',
@@ -699,14 +779,46 @@ describe('DM API', () => {
     })
   })
 
-  it('deletes a message of a direct channel', async () => {
-    apiRequest.mockResolvedValue({ success: true, data: null })
+  it('deletes a message of a direct channel and normalizes the deleted response', async () => {
+    apiRequest.mockResolvedValue({
+      success: true,
+      message: 'Message deleted successfully.',
+      data: {
+        message: {
+          id: 'm9',
+          channel_id: 'channel-1',
+          parent_id: null,
+          body: null,
+          sender: null,
+          attachment: [],
+          embeds: [],
+          mentions: [],
+          is_important: null,
+          is_forwarded: false,
+          forward_tag: null,
+          forwarded_from_message_id: null,
+          is_deleted: true,
+          placeholder: 'This message was deleted.',
+          edited_at: null,
+          created_at: '2026-11-11 09:50:19',
+          updated_at: '2026-11-11 15:14:42',
+          reactions: null,
+        },
+      },
+    })
 
-    await dmApi.deleteMessage('company-1', 'channel-1', 'm9', 'Original text')
+    const deletedMessage = await dmApi.deleteMessage('company-1', 'channel-1', 'm9')
+    expect(deletedMessage).toMatchObject({
+      id: 'm9',
+      deleted: true,
+      is_deleted: true,
+      text: '',
+      placeholder: 'This message was deleted.',
+    })
+    expect(deletedMessage).not.toHaveProperty('editedAt')
 
     expect(apiRequest).toHaveBeenCalledWith('/v1/company-1/direct-channels/channel-1/messages/m9', {
-      method: 'PATCH',
-      body: JSON.stringify({ body: 'Original text', is_deleted: true }),
+      method: 'DELETE',
     })
   })
 

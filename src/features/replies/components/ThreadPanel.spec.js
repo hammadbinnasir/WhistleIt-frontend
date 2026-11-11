@@ -60,6 +60,33 @@ describe('ThreadPanel', () => {
     expect(wrapper.get('[data-test="reply-count"]').text()).toBe('1 Reply')
   })
 
+  it('shows deleted parent and reply placeholders without revealing their text', async () => {
+    repliesApi.listReplies.mockResolvedValue([
+      { id: 'r1', from: 'u2', text: 'Deleted reply secret', deleted: true },
+    ])
+    const wrapper = mountPanel({
+      message: { ...parent, text: 'Deleted parent secret', deleted: true },
+    })
+    await flushPromises()
+
+    expect(wrapper.get('[data-test="parent"]').text()).toContain('(message deleted)')
+    expect(wrapper.findAll('[data-test="deleted-message"]')).toHaveLength(2)
+    expect(wrapper.text()).not.toContain('Deleted parent secret')
+    expect(wrapper.text()).not.toContain('Deleted reply secret')
+  })
+
+  it('labels forwarded parent messages and replies', async () => {
+    repliesApi.listReplies.mockResolvedValue([
+      { id: 'r1', from: 'u2', text: 'Forwarded reply', forwardedFrom: 'forwarded' },
+    ])
+    const wrapper = mountPanel({
+      message: { ...parent, forwardedFrom: 'forwarded' },
+    })
+    await flushPromises()
+
+    expect(wrapper.findAll('[data-test="forwarded-label"]')).toHaveLength(2)
+  })
+
   it('uses the team channel thread when a team ID is given', async () => {
     mountPanel({ teamId: 't1', channelId: 'general' })
     await flushPromises()

@@ -525,11 +525,46 @@ describe('dms store', () => {
     await dms.init()
 
     expect(dms.deleteMessage('c1', 'm1')).toBe(true)
-    expect(dmApi.deleteMessage).toHaveBeenCalledWith('company-1', 'c1', 'm1', 'Mine')
+    expect(dmApi.deleteMessage).toHaveBeenCalledWith('company-1', 'c1', 'm1')
     expect(dms.conversations[0].messages[0].deleted).toBe(true)
 
     await vi.waitFor(() => expect(dms.conversations[0].messages[0].deleted).toBe(false))
     expect(dms.conversations[0].messages[0].text).toBe('Mine')
+  })
+
+  it('does not restore cached edit metadata onto a deleted message during polling', async () => {
+    dmApi.listDirectChannels.mockResolvedValue([
+      makeConversation('c1', 'u2', [
+        {
+          id: 'm1',
+          from: 'u1',
+          text: 'Original',
+          createdAt: '2026-11-11T09:00:00Z',
+          editedAt: '2026-11-11T09:05:00Z',
+        },
+      ]),
+    ])
+    dmApi.listMessages.mockResolvedValue([
+      {
+        id: 'm1',
+        from: '',
+        text: '',
+        deleted: true,
+        editedAt: undefined,
+        edited_at: null,
+        createdAt: '2026-11-11T09:00:00Z',
+      },
+    ])
+    const dms = useDmStore()
+    await dms.init()
+    dms.openConversation('c1')
+    await vi.waitFor(() => expect(dms.messagesLoading).toBe(false))
+    await dms.pollOnce()
+
+    expect(dms.conversations[0].messages[0]).toMatchObject({ deleted: true })
+    expect(dms.conversations[0].messages[0].editedAt).toBeUndefined()
+    expect(dms.conversations[0].messages[0].edited_at).toBeUndefined()
+    dms.stopPolling()
   })
 
   it('refreshes one message with GET single message', async () => {
@@ -640,16 +675,18 @@ describe('dms store', () => {
       await dms.init()
       dms.openConversation('c1')
       await vi.advanceTimersByTimeAsync(0)
-      dms.stopPolling() // conversation kholne par 4 sec wala chalu ho gaya tha
+      dms.stopPolling()
       dmApi.listMessages.mockClear()
 
-      dms.startPolling(1000)
-      await vi.advanceTimersByTimeAsync(3000)
-      expect(dmApi.listMessages).toHaveBeenCalledTimes(3)
+      dms.startPolling()
+      await vi.advanceTimersByTimeAsync(29_999)
+      expect(dmApi.listMessages).not.toHaveBeenCalled()
+      await vi.advanceTimersByTimeAsync(1)
+      expect(dmApi.listMessages).toHaveBeenCalledTimes(1)
 
       dms.stopPolling()
-      await vi.advanceTimersByTimeAsync(3000)
-      expect(dmApi.listMessages).toHaveBeenCalledTimes(3)
+      await vi.advanceTimersByTimeAsync(30_000)
+      expect(dmApi.listMessages).toHaveBeenCalledTimes(1)
     } finally {
       vi.useRealTimers()
     }
@@ -759,6 +796,52 @@ describe('dms store', () => {
     dms.stopPolling()
   })
 
+  it('keeps cached reactions after reload when message responses omit reaction records as empty arrays', async () => {
+    const dms = useDmStore()
+    await dms.init()
+
+    expect(dms.toggleReaction('c1', 'm1', '👍')).toBe(true)
+    await vi.waitFor(() =>
+      expect(dms.conversations[0].messages[0].reactions).toEqual([
+        { emoji: '👍', users: ['u1'] },
+      ]),
+    )
+    dms.stopPolling()
+
+    setActivePinia(createPinia())
+    useTeamsStore().activeWorkspaceId = 'company-1'
+    dmApi.listDirectChannels.mockResolvedValue([
+      makeConversation('c1', 'u2', [
+        {
+          id: 'm1',
+          from: 'u2',
+          text: 'Received',
+          createdAt: '2026-01-01T10:00:00Z',
+          reactions: [],
+        },
+      ]),
+    ])
+    dmApi.listMessages.mockResolvedValue([
+      {
+        id: 'm1',
+        from: 'u2',
+        text: 'Received',
+        createdAt: '2026-01-01T10:00:00Z',
+        reactions: [],
+      },
+    ])
+
+    const reloaded = useDmStore()
+    await reloaded.init()
+    reloaded.openConversation('c1')
+    await vi.waitFor(() => expect(reloaded.messagesLoading).toBe(false))
+
+    expect(reloaded.conversations[0].messages[0].reactions).toEqual([
+      { emoji: '👍', users: ['u1'] },
+    ])
+    reloaded.stopPolling()
+  })
+
   it('does not let a poll undo a reaction that is still being sent', async () => {
     reactionsApi.toggleReaction.mockImplementation(() => new Promise(() => {}))
     const dms = useDmStore()
@@ -788,7 +871,7 @@ describe('dms store', () => {
         { id: 'm2', from: 'u2', text: 'Arrived without reload', createdAt: '2026-01-01T10:01:00Z' },
       ])
 
-      await vi.advanceTimersByTimeAsync(4000)
+      await vi.advanceTimersByTimeAsync(30_000)
 
       expect(dmApi.listMessages).toHaveBeenCalledWith('company-1', 'c1')
       expect(dms.conversations[0].messages.at(-1).text).toBe('Arrived without reload')
@@ -906,6 +989,41 @@ describe('dms store', () => {
       ['m3', false],
     ])
     dms.stopPolling()
+  })
+
+  it('uses the DELETE response as authoritative deleted state and clears stale edit metadata', async () => {
+    dmApi.deleteMessage.mockResolvedValue({
+      id: 'm1',
+      from: '',
+      text: '',
+      deleted: true,
+      is_deleted: true,
+      editedAt: '2026-11-11T09:05:00Z',
+    })
+    dmApi.listDirectChannels.mockResolvedValue([
+      makeConversation('c1', 'u2', [
+        {
+          id: 'm1',
+          from: 'u1',
+          text: 'Original message',
+          createdAt: '2026-11-11T09:00:00Z',
+          editedAt: '2026-11-11T09:04:00Z',
+        },
+      ]),
+    ])
+    const dms = useDmStore()
+    await dms.init()
+
+    expect(dms.deleteMessage('c1', 'm1')).toBe(true)
+    await vi.waitFor(() =>
+      expect(dms.conversations[0].messages[0]).toMatchObject({
+        from: 'u1',
+        deleted: true,
+        is_deleted: true,
+        text: '',
+      }),
+    )
+    expect(dms.conversations[0].messages[0].editedAt).toBeUndefined()
   })
 
   it('does not mark older messages deleted just because they are outside the latest page', async () => {
@@ -1338,7 +1456,7 @@ describe('dms store', () => {
 
     await vi.waitFor(() =>
       expect(dmApi.sendMessage).toHaveBeenCalledWith('company-1', 'c1', {
-        body: 'hlw',
+        body: '[Forwarded] hlw',
         is_forwarded: true,
         forwarded_from: 'Muniba Naseer in General',
         forward_tag: 'Muniba Naseer in General',
@@ -1395,15 +1513,22 @@ describe('dms store', () => {
 
   // ---------------- Fixes: send pipeline, outbox, unread, storage ----------------
 
-  it('actually sends right away (optimistic copy first) and never shows "Not sent" on success', async () => {
-    const dms = useDmStore()
-    await dms.init()
+  it('shows an optimistic sending message, waits 30 seconds, then sends successfully', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    try {
+      const dms = useDmStore()
+      await dms.init()
 
-    const sent = dms.sendMessage('c1', { content: 'Foran jaye' })
-    expect(dms.conversations[0].messages.at(-1)).toMatchObject({ id: sent.id, status: 'sending' })
-    await vi.waitFor(() => expect(dms.conversations[0].messages.at(-1).id).toBe('server-1'))
-    expect(dmApi.sendMessage).toHaveBeenCalledTimes(1)
-    expect(dms.conversations[0].messages.some((m) => m.status === 'failed')).toBe(false)
+      const sent = dms.sendMessage('c1', { content: 'Foran jaye' })
+      expect(dms.conversations[0].messages.at(-1)).toMatchObject({ id: sent.id, status: 'sending' })
+      expect(dmApi.sendMessage).not.toHaveBeenCalled()
+      await vi.advanceTimersByTimeAsync(30_000)
+      await vi.waitFor(() => expect(dms.conversations[0].messages.at(-1).id).toBe('server-1'))
+      expect(dmApi.sendMessage).toHaveBeenCalledTimes(1)
+      expect(dms.conversations[0].messages.some((m) => m.status === 'failed')).toBe(false)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('does not mark a message "Not sent" (or resend it) when the POST succeeds without a message body', async () => {
@@ -1438,7 +1563,7 @@ describe('dms store', () => {
     answer({ id: 'srv-3', from: 'u1', text: 'Galti se', createdAt: new Date().toISOString() })
 
     await vi.waitFor(() =>
-      expect(dmApi.deleteMessage).toHaveBeenCalledWith('company-1', 'c1', 'srv-3', 'Galti se'),
+      expect(dmApi.deleteMessage).toHaveBeenCalledWith('company-1', 'c1', 'srv-3'),
     )
     expect(dms.conversations[0].messages.some((m) => m.text === 'Galti se')).toBe(false)
   })
@@ -1486,7 +1611,7 @@ describe('dms store', () => {
 
       await dms.flushOutbox()
       expect(dmApi.updateMessage).toHaveBeenLastCalledWith('company-1', 'c1', 'm1', { body: 'Edited offline' })
-      expect(dmApi.deleteMessage).toHaveBeenLastCalledWith('company-1', 'c1', 'm2', 'Delete me')
+      expect(dmApi.deleteMessage).toHaveBeenLastCalledWith('company-1', 'c1', 'm2')
       expect(reactionsApi.toggleReaction).toHaveBeenCalledTimes(2)
       expect(dms.outbox).toHaveLength(0)
       expect(dms.conversations[0].messages[0].syncPending).toBeUndefined()
@@ -1563,7 +1688,7 @@ describe('dms store', () => {
       expect(dmApi.deleteMessage).not.toHaveBeenCalled()
 
       await vi.advanceTimersByTimeAsync(61_000)
-      expect(dmApi.deleteMessage).toHaveBeenCalledWith('company-1', 'c1', 'm1', 'Later')
+      expect(dmApi.deleteMessage).toHaveBeenCalledWith('company-1', 'c1', 'm1')
       expect(dms.conversations[0].messages[0].deleted).toBe(true)
     } finally {
       vi.useRealTimers()
