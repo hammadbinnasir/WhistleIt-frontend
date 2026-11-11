@@ -638,6 +638,33 @@ describe('composer conversation', () => {
     wrapper.unmount()
   })
 
+  it.each(['channel', 'dm'])('preserves underline formatting when rendering a %s message', async (type) => {
+    const message = {
+      id: `underline-${type}-message`,
+      content: '<u>Important text</u>',
+      author: 'Another user',
+      from: 'user-2',
+      mine: false,
+      createdAt: new Date().toISOString(),
+    }
+    let wrapper
+    if (type === 'dm') {
+      useDmStore().conversations = [
+        { id: 'underline-dm', type: 'dm', members: [useDmStore().meId, 'user-2'], messages: [message] },
+      ]
+      wrapper = mount(ComposerConversation, {
+        props: { conversationId: 'underline-dm', conversationType: 'dm' },
+      })
+    } else {
+      useMessagesStore().messagesByChannel.general = [message]
+      wrapper = mount(ComposerConversation)
+    }
+
+    expect(wrapper.get('.composer-conversation__message-bubble u').text()).toBe('Important text')
+    expect(wrapper.text()).not.toContain('<u>')
+    wrapper.unmount()
+  })
+
   it('sends the important flag to the channel API and renders the backend flag', async () => {
     const wrapper = mount(ComposerConversation)
     const composer = wrapper.findComponent(MessageComposer)
@@ -696,11 +723,75 @@ describe('composer conversation', () => {
       expect(dms.conversations[0].messages.at(-1).id).toBe('important-dm-server-message'),
     )
 
-    expect(sendDmMessage).toHaveBeenCalledWith('company-1', 'important-dm', {
-      body: 'Urgent direct message',
-      is_important: true,
-    })
+    expect(sendDmMessage).toHaveBeenCalledWith(
+      'company-1',
+      'important-dm',
+      expect.objectContaining({
+        body: 'Urgent direct message',
+        isCode: false,
+        senderId: dms.meId,
+        receiverId: 'user-2',
+        timestamp: expect.any(String),
+        is_important: true,
+      }),
+    )
     expect(wrapper.text()).toContain('IMPORTANT!')
+    wrapper.unmount()
+    sendDmMessage.mockRestore()
+  })
+
+  it('sends code-mode metadata to the DM API and renders the delivered message as code', async () => {
+    const dms = useDmStore()
+    dms.conversations.push({ id: 'code-dm', members: [dms.meId, 'user-2'], messages: [] })
+    const sendDmMessage = vi
+      .spyOn(dmApi, 'sendMessage')
+      .mockImplementation(async (_companyId, channelId, payload) => ({
+        id: 'code-dm-server-message',
+        from: payload.senderId,
+        text: payload.text,
+        is_code: null,
+        createdAt: payload.timestamp,
+        channelId,
+      }))
+    const wrapper = mount(ComposerConversation, {
+      props: { conversationId: 'code-dm', conversationType: 'dm' },
+    })
+    const composer = wrapper.findComponent(MessageComposer)
+    const editor = composer.get('[contenteditable="true"]')
+    editor.element.textContent = 'const answer = 42'
+    editor.element.dispatchEvent(new Event('input', { bubbles: true }))
+    await nextTick()
+    const range = document.createRange()
+    range.selectNodeContents(editor.element)
+    const selection = document.getSelection()
+    selection.removeAllRanges()
+    selection.addRange(range)
+
+    await composer.get('button[aria-label="Code block"]').trigger('mousedown')
+    await composer.get('button[aria-label="Code block"]').trigger('click')
+    expect(composer.text()).toContain('Code mode on')
+    await composer.get('form').trigger('submit')
+
+    await vi.waitFor(() =>
+      expect(dms.conversations.find((item) => item.id === 'code-dm').messages.at(-1).id).toBe(
+        'code-dm-server-message',
+      ),
+    )
+    expect(sendDmMessage).toHaveBeenCalledWith(
+      'company-1',
+      'code-dm',
+      expect.objectContaining({
+        body: 'const answer = 42',
+        text: 'const answer = 42',
+        is_code: true,
+        senderId: dms.meId,
+        receiverId: 'user-2',
+        timestamp: expect.any(String),
+      }),
+    )
+    expect(wrapper.get('.composer-conversation__message-bubble pre code').text()).toBe(
+      'const answer = 42',
+    )
     wrapper.unmount()
     sendDmMessage.mockRestore()
   })
@@ -1058,11 +1149,15 @@ describe('composer conversation', () => {
       'dm-poll-channel',
       expect.objectContaining({ title: 'DM poll' }),
     )
-    expect(sendDmMessage).toHaveBeenCalledWith('company-1', 'dm-poll-channel', {
-      body: 'DM poll',
-      is_important: false,
-      poll_id: 'server-poll-default',
-    })
+    expect(sendDmMessage).toHaveBeenCalledWith(
+      'company-1',
+      'dm-poll-channel',
+      expect.objectContaining({
+        body: 'DM poll',
+        is_important: false,
+        poll_id: 'server-poll-default',
+      }),
+    )
     await vi.waitFor(() =>
       expect(dms.conversations[0].messages[0].id).toBe('dm-poll-message-server-id'),
     )
@@ -1093,6 +1188,7 @@ describe('composer conversation', () => {
       'server-poll-from-message',
     )
     expect(wrapper.get('.composer-conversation__poll-card').text()).toContain('Shared poll')
+    expect(wrapper.text().match(/Shared poll/g)).toHaveLength(1)
     wrapper.unmount()
   })
 
@@ -1186,6 +1282,42 @@ describe('composer conversation', () => {
     wrapper.unmount()
   })
 
+  it('prevents the poll creator from participating and explains why on hover', async () => {
+    const messages = useMessagesStore()
+    const dms = useDmStore()
+    messages.messagesByChannel.general = [
+      {
+        id: 'creator-poll-message',
+        content: 'Creator poll',
+        poll_id: 'creator-poll',
+        author: 'You',
+        mine: true,
+        createdAt: new Date().toISOString(),
+        poll: {
+          id: 'creator-poll',
+          title: 'Creator poll',
+          creatorId: dms.meId,
+          questions: [{ text: 'Choose?', type: 'choice', options: ['A', 'B'] }],
+        },
+      },
+    ]
+    const wrapper = mount(ComposerConversation)
+    const tooltip = wrapper.get('.composer-conversation__poll-tooltip')
+    const participateButton = tooltip.get('button')
+
+    expect(participateButton.attributes('disabled')).toBeDefined()
+    expect(tooltip.attributes('title')).toBe(
+      'You are the creator and cannot participate in this poll.',
+    )
+    expect(tooltip.attributes('data-tooltip')).toBe(
+      'You are the creator and cannot participate in this poll.',
+    )
+    await participateButton.trigger('click')
+    expect(document.querySelector('.composer-conversation__poll-response-modal')).toBeNull()
+    expect(pollsApi.getPollQuestions).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
   it('renders open-ended answers from results when the message has no question data', async () => {
     const messages = useMessagesStore()
     messages.messagesByChannel.general = [
@@ -1229,6 +1361,159 @@ describe('composer conversation', () => {
     expect(document.body.textContent).toContain('Q1. age')
     expect(document.body.textContent).toContain('Total Responses: 1')
     expect(document.body.textContent).not.toContain('Unable to load poll results')
+    wrapper.unmount()
+  })
+
+  it('renders choice result objects as option labels and vote counts', async () => {
+    const messages = useMessagesStore()
+    messages.messagesByChannel.general = [
+      {
+        id: 'choice-poll-message',
+        content: 'My poll',
+        poll_id: 'choice-results-poll',
+        author: 'Another user',
+        mine: false,
+        createdAt: new Date().toISOString(),
+        poll: {
+          id: 'choice-results-poll',
+          title: 'My poll',
+          questions: [],
+        },
+      },
+    ]
+    pollsApi.getPollResult.mockResolvedValueOnce({
+      result: [
+        {
+          id: 'choice-question',
+          question: 'What is your Name',
+          type: 'choice',
+          total_votes: 1,
+          choices: [
+            { choice: '1', votes: 0, users: [] },
+            { choice: '2', votes: 0, users: [] },
+            { choice: '3', votes: 0, users: [] },
+            { choice: '4', votes: 1, users: ['Muhammad Abdullah Tariq'] },
+            { choice: '5', votes: 0, users: [] },
+          ],
+        },
+      ],
+      pagination: { total: 1 },
+    })
+    const wrapper = mount(ComposerConversation)
+
+    await wrapper
+      .get('.composer-conversation__poll-card')
+      .findAll('button')
+      .find((button) => button.text().includes('View All Results'))
+      .trigger('click')
+
+    const dialog = () => document.querySelector('.composer-conversation__poll-response-modal')
+    await vi.waitFor(() => expect(dialog()?.textContent).toContain('Q1. What is your Name'))
+    expect(dialog().textContent).toContain('100%')
+    expect(dialog().textContent).toContain('1 VOTE')
+    expect(dialog().textContent).not.toContain('"choice"')
+    for (const option of ['1', '2', '3', '4', '5']) {
+      expect(dialog().textContent).toContain(option)
+    }
+    wrapper.unmount()
+  })
+
+  it('shows after-close guidance until the poll closes, then displays its results', async () => {
+    const messages = useMessagesStore()
+    const dms = useDmStore()
+    messages.messagesByChannel.general = [
+      {
+        id: 'after-close-poll-message',
+        content: 'Poll results',
+        poll_id: 'after-close-poll',
+        author: 'You',
+        mine: true,
+        createdAt: new Date().toISOString(),
+        poll: {
+          id: 'after-close-poll',
+          title: 'Poll results',
+          creatorId: dms.meId,
+          resultsVisibility: 'after_close',
+          questions: [{ text: 'Favorite?', type: 'choice', options: ['Tea', 'Coffee'] }],
+        },
+      },
+    ]
+    pollsApi.getPollResult.mockResolvedValueOnce({
+      result: [
+        {
+          question: 'Favorite?',
+          type: 'choice',
+          total_votes: 1,
+          choices: [
+            { choice: 'Tea', votes: 1, users: ['user-2'] },
+            { choice: 'Coffee', votes: 0, users: [] },
+          ],
+        },
+      ],
+    })
+    const wrapper = mount(ComposerConversation)
+    const card = wrapper.get('.composer-conversation__poll-card')
+    const resultsButton = () =>
+      card.findAll('button').find((button) => button.text().includes('View All Results'))
+
+    await resultsButton().trigger('click')
+    const dialog = () => document.querySelector('.composer-conversation__poll-response-modal')
+    await vi.waitFor(() =>
+      expect(dialog()?.textContent).toContain(
+        'Poll is not closed yet. The results will be shown when the poll is closed!',
+      ),
+    )
+    expect(pollsApi.getPollResult).not.toHaveBeenCalled()
+    dialog().querySelector('button[aria-label="Close poll response"]').click()
+    await nextTick()
+
+    await card
+      .findAll('button')
+      .find((button) => button.text().includes('Close Poll'))
+      .trigger('click')
+    await vi.waitFor(() => expect(card.text()).toContain('Closed'))
+    await resultsButton().trigger('click')
+    await vi.waitFor(() => expect(dialog()?.textContent).toContain('Total Votes: 1'))
+    expect(dialog().textContent).toContain('100%')
+    expect(pollsApi.getPollResult).toHaveBeenCalledTimes(1)
+    wrapper.unmount()
+  })
+
+  it('restricts owner-only results to the poll creator', async () => {
+    const messages = useMessagesStore()
+    messages.messagesByChannel.general = [
+      {
+        id: 'private-results-poll-message',
+        content: 'Private results',
+        poll_id: 'private-results-poll',
+        author: 'Another user',
+        mine: false,
+        createdAt: new Date().toISOString(),
+        poll: {
+          id: 'private-results-poll',
+          title: 'Private results',
+          creatorId: 'another-user',
+          resultsVisibility: 'owner_only',
+          questions: [],
+        },
+      },
+    ]
+    const wrapper = mount(ComposerConversation)
+
+    await wrapper
+      .get('.composer-conversation__poll-card')
+      .findAll('button')
+      .find((button) => button.text().includes('View All Results'))
+      .trigger('click')
+
+    await vi.waitFor(() =>
+      expect(document.body.textContent).toContain(
+        'Results are visible to the poll creator only.',
+      ),
+    )
+    expect(document.body.textContent).toContain('Creator: Another user')
+    expect(document.body.textContent).not.toContain('Creator: You')
+    expect(pollsApi.getPollResult).not.toHaveBeenCalled()
     wrapper.unmount()
   })
 
@@ -1716,11 +2001,19 @@ describe('composer conversation', () => {
     })
 
     await vi.waitFor(() => {
-      expect(sendDmMessage).toHaveBeenCalledWith('company-1', conversation.id, {
-        body: 'Voice message',
-        voice_note_id: 'voice-note-sent',
-        is_important: false,
-      })
+      expect(sendDmMessage).toHaveBeenCalledWith(
+        'company-1',
+        conversation.id,
+        expect.objectContaining({
+          body: 'Voice message',
+          isCode: false,
+          senderId: dms.meId,
+          receiverId: 'u2',
+          timestamp: expect.any(String),
+          voice_note_id: 'voice-note-sent',
+          is_important: false,
+        }),
+      )
     })
     await vi.waitFor(() => expect(wrapper.findAll('.voice-note-player__audio')).toHaveLength(2))
     expect(wrapper.findAll('.composer-conversation__message-bubble p')).toHaveLength(0)

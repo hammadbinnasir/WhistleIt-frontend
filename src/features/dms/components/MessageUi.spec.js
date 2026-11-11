@@ -147,6 +147,17 @@ describe('DmMessageItem', () => {
     wrapper.unmount()
   })
 
+  it('renders received code-mode messages in a dark, multiline code block', () => {
+    const code = 'const answer = 42\n  return answer'
+    const wrapper = setup({ id: 'code-message', from: 'u2', text: code, isCode: true, createdAt: '' })
+
+    const codeBlock = wrapper.get('[data-test="message-text"]')
+    expect(codeBlock.element.tagName).toBe('PRE')
+    expect(codeBlock.classes()).toContain('bg-slate-950')
+    expect(codeBlock.text()).toBe(code)
+    wrapper.unmount()
+  })
+
   it('opens the thread from the replies line and the toolbar', async () => {
     const wrapper = setup({ id: 'm1', from: 'u2', text: 'Hi', createdAt: '', replyCount: 2 })
     await wrapper.get('[data-test="reply-summary"]').trigger('click')

@@ -172,6 +172,9 @@ export const useMessagesStore = defineStore('messages', () => {
       id: String(id),
       content: String(content),
       text: String(content),
+      ...((message.isCode ?? message.is_code) !== undefined
+        ? { isCode: Boolean(message.isCode ?? message.is_code) }
+        : {}),
       ...(voiceNoteId != null ? { voiceNoteId: String(voiceNoteId) } : {}),
       serverBacked: true,
       backendSynced: true,
@@ -254,6 +257,9 @@ export const useMessagesStore = defineStore('messages', () => {
         if (!message.forwardedFrom && previous?.forwardedFrom) {
           message.forwardedFrom = previous.forwardedFrom
         }
+        if (message.isCode === undefined && previous?.isCode !== undefined) {
+          message.isCode = previous.isCode
+        }
         return message
       })
       const deletedMessages = currentMessages.filter((message) => message.deleted)
@@ -329,9 +335,10 @@ export const useMessagesStore = defineStore('messages', () => {
 
   async function postChannelMessage(channelId, payload) {
     const key = String(channelId ?? '')
-    const content = typeof payload?.content === 'string' ? payload.content.trim() : ''
+    const rawContent = typeof payload?.content === 'string' ? payload.content : ''
+    const content = payload?.isCode ? rawContent : rawContent.trim()
     if (!key.trim()) return { success: false, error: 'A channel ID is required to send a message.' }
-    if (!content && !payload?.attachment) {
+    if (!content.trim() && !payload?.attachment) {
       return { success: false, error: 'Message content is required.' }
     }
 
@@ -350,6 +357,8 @@ export const useMessagesStore = defineStore('messages', () => {
     const result = await sendChannelMessage(companyId, teamId, key, {
       ...metadata,
       content,
+      text: content,
+      isCode: Boolean(payload.isCode),
     })
     if (!result.success) {
       errorsByChannel.value[key] = result.error
@@ -386,6 +395,7 @@ export const useMessagesStore = defineStore('messages', () => {
       const message = {
         ...normalizeMessage(createdRecord),
         attachments: localAttachments,
+        isCode: Boolean(payload.isCode),
         ...(payload.forwardedFrom ? { forwardedFrom: payload.forwardedFrom } : {}),
         mine: true,
       }
@@ -571,6 +581,7 @@ export const useMessagesStore = defineStore('messages', () => {
       authorId: 'current-user',
       mine: true,
       createdAt: payload.createdAt ?? new Date().toISOString(),
+      isCode: Boolean(payload.isCode),
       reactions: [],
       ...(payload.replyTo ? { replyTo: payload.replyTo } : {}),
       ...(payload.forwardedFrom ? { forwardedFrom: payload.forwardedFrom } : {}),
@@ -620,6 +631,8 @@ export const useMessagesStore = defineStore('messages', () => {
       const apiPayload = {
         ...metadata,
         content: payload.content ?? payload.body ?? '',
+        text: payload.content ?? payload.body ?? '',
+        isCode: Boolean(payload.isCode),
         ...(replyTo?.id != null ? { parentMessageId: String(replyTo.id) } : {}),
       }
       const result = await sendChannelMessage(

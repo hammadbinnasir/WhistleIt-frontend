@@ -331,11 +331,20 @@ describe('dms store', () => {
     expect(sent).toMatchObject({ text: '', voiceNoteId: 'voice-note-3', status: 'sending' })
 
     await vi.waitFor(() => {
-      expect(dmApi.sendMessage).toHaveBeenCalledWith('company-1', 'c1', {
-        body: 'Voice message',
-        voice_note_id: 'voice-note-3',
-        is_important: false,
-      })
+      expect(dmApi.sendMessage).toHaveBeenCalledWith(
+        'company-1',
+        'c1',
+        expect.objectContaining({
+          body: 'Voice message',
+          isCode: false,
+          senderId: 'u1',
+          receiverId: 'u2',
+          text: '',
+          timestamp: expect.any(String),
+          voice_note_id: 'voice-note-3',
+          is_important: false,
+        }),
+      )
     })
   })
 

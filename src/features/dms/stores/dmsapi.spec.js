@@ -332,10 +332,19 @@ describe('dms store', () => {
 
     const sent = dms.sendMessage('c1', { content: 'Hello Muniba' })
     expect(sent).toMatchObject({ status: 'sending', text: 'Hello Muniba' })
-    expect(dmApi.sendMessage).toHaveBeenCalledWith('company-1', 'c1', {
-      body: 'Hello Muniba',
-      is_important: false,
-    })
+    expect(dmApi.sendMessage).toHaveBeenCalledWith(
+      'company-1',
+      'c1',
+      expect.objectContaining({
+        body: 'Hello Muniba',
+        isCode: false,
+        senderId: 'u1',
+        receiverId: 'u2',
+        text: 'Hello Muniba',
+        timestamp: expect.any(String),
+        is_important: false,
+      }),
+    )
 
     await vi.waitFor(() => expect(dms.conversations[0].messages.at(-1).id).toBe('server-1'))
     expect(dms.conversations[0].messages.at(-1)).toMatchObject({ text: 'Hello Muniba', from: 'u1' })
@@ -351,11 +360,20 @@ describe('dms store', () => {
     })
 
     await vi.waitFor(() =>
-      expect(dmApi.sendMessage).toHaveBeenCalledWith('company-1', 'c1', {
-        body: 'Forwarded text',
-        forwardedFrom: 'Aiman in General',
-        is_important: false,
-      }),
+      expect(dmApi.sendMessage).toHaveBeenCalledWith(
+        'company-1',
+        'c1',
+        expect.objectContaining({
+          body: 'Forwarded text',
+          text: 'Forwarded text',
+          isCode: false,
+          senderId: 'u1',
+          receiverId: 'u2',
+          timestamp: expect.any(String),
+          forwardedFrom: 'Aiman in General',
+          is_important: false,
+        }),
+      ),
     )
     await vi.waitFor(() => expect(dms.conversations[0].messages.at(-1).id).toBe('server-1'))
     expect(dms.conversations[0].messages.at(-1)).toMatchObject({
@@ -392,11 +410,20 @@ describe('dms store', () => {
         status: 'sending',
       })
       await vi.waitFor(() => {
-        expect(dmApi.sendMessage).toHaveBeenCalledWith('company-1', 'c1', {
-          body: 'Please review this file',
-          attachment,
-          is_important: false,
-        })
+        expect(dmApi.sendMessage).toHaveBeenCalledWith(
+          'company-1',
+          'c1',
+          expect.objectContaining({
+            body: 'Please review this file',
+            text: 'Please review this file',
+            isCode: false,
+            senderId: 'u1',
+            receiverId: 'u2',
+            timestamp: expect.any(String),
+            attachment,
+            is_important: false,
+          }),
+        )
       })
       await vi.waitFor(() => expect(dms.conversations[0].messages.at(-1).id).toBe('server-1'))
       expect(dms.conversations[0].messages.at(-1).attachments).toEqual([

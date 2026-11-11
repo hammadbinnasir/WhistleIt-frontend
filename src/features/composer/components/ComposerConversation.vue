@@ -422,7 +422,8 @@ const renderedMessages = computed(() => {
         ...(poll ? { poll } : {}),
         content,
         important: isImportantMessage(message),
-        formattedContent: formattedMessageHtml(content),
+        isCode: Boolean(message.isCode ?? message.is_code),
+        formattedContent: formattedMessageHtml(content, message.isCode ?? message.is_code),
         author,
         authorId,
         mine: message.mine ?? message.from === dms.meId,
@@ -461,7 +462,9 @@ const renderedMessages = computed(() => {
           if (conversation.value) rendered.content = clean
         } else if (!conversation.value && shown !== rendered.content) {
           // Channel: "<p>hi</p>" ki jagah "hi" dikhao (edit / copy ke liye asli content wahi rehta hai)
-          rendered.formattedContent = formattedMessageHtml(shown)
+          if (!hasUnderlineMarkup(rendered.content)) {
+            rendered.formattedContent = formattedMessageHtml(shown)
+          }
           rendered.segments = messageSegments(shown)
           rendered.preview = createLinkPreview(shown)
         }
@@ -490,7 +493,9 @@ const renderedMessages = computed(() => {
         const plain = htmlToPlainText(rendered.content)
         if (plain !== rendered.content) {
           rendered.content = plain
-          rendered.formattedContent = formattedMessageHtml(plain)
+          if (!hasUnderlineMarkup(message.content ?? message.text)) {
+            rendered.formattedContent = formattedMessageHtml(plain)
+          }
           rendered.segments = messageSegments(plain)
           rendered.preview = createLinkPreview(plain)
         }
@@ -830,6 +835,9 @@ function htmlToPlainText(value) {
     .replace(/\n{3,}/g, '\n\n')
     .trim()
 }
+function hasUnderlineMarkup(value) {
+  return /<u>([\s\S]*?)<\/u>/i.test(String(value ?? ''))
+}
 
 // ---------- (naya) ⋯ menu / emoji picker: neeche jagah na ho to UPAR khule ----------
 const flipUpId = ref(null)
@@ -1134,8 +1142,19 @@ async function addMessage(payload) {
     return
   }
 
+  const senderId = getAuthUserId() ?? dms.meId
+  const recipientIds = conversation.value?.members
+    ?.filter((memberId) => memberId != null && String(memberId) !== String(senderId))
+    .map(String)
+  const { isCode, ...payloadFields } = payload
   const messagePayload = {
-    ...payload,
+    ...payloadFields,
+    is_code: Boolean(payload.is_code ?? isCode),
+    senderId,
+    ...(recipientIds?.length
+      ? { receiverId: recipientIds.length === 1 ? recipientIds[0] : recipientIds }
+      : {}),
+    timestamp: new Date().toISOString(),
     is_important: Boolean(payload.important),
     ...(replyTo.value ? { replyTo: { ...replyTo.value } } : {}),
   }
@@ -2080,8 +2099,24 @@ function pollQuestionsFromResponse(response) {
       : (question.type ?? 'choice'),
     required: question.required !== false,
     multiple: question.multiple ?? question.multiple_select ?? false,
-    options: question.options ?? question.choices ?? [],
+    options: normalizePollOptions(question.options ?? question.choices ?? []),
   }))
+}
+
+function normalizePollOptions(options) {
+  if (!Array.isArray(options)) return []
+  return options.map((option) => {
+    if (!option || typeof option !== 'object') return option
+    return (
+      option.text ??
+      option.label ??
+      option.choice ??
+      option.value ??
+      option.name ??
+      option.option ??
+      ''
+    )
+  })
 }
 
 function normalizePollResult(response, poll) {
@@ -2114,7 +2149,7 @@ function normalizePollResult(response, poll) {
       ) ||
       sourceQuestions[questionIndex] ||
       {}
-    const sourceVotes = source.votes ?? source.answers ?? source.options ?? []
+    const sourceVotes = source.votes ?? source.answers ?? source.options ?? source.choices ?? []
     const sourceResponses =
       source.responses ?? (question.type === 'openEnded' ? source.answers : null)
     const responses = Array.isArray(sourceResponses)
@@ -2375,7 +2410,14 @@ function hasAlreadyVoted(poll) {
 async function participateInPoll(pollId) {
   if (pollApi.loading.value || !hasServerPollId({ id: pollId })) return
   const message = renderedMessages.value.find((item) => item.poll?.id === pollId)
-  if (!message?.poll || hasAlreadyVoted(message.poll) || !isPollActive(message.poll)) return
+  if (
+    !message?.poll ||
+    isPollCreator(message) ||
+    hasAlreadyVoted(message.poll) ||
+    !isPollActive(message.poll)
+  ) {
+    return
+  }
   activePoll.value = message.poll
   activePollMode.value = 'respond'
   pollResponses.value = {}
@@ -2406,6 +2448,64 @@ async function closePoll(pollId) {
   } catch (error) {
     ui.toast('Unable to close poll', error.message || 'The poll could not be closed.', 'error')
   }
+}
+
+function pollResultsVisibility(poll) {
+  const visibility = String(
+    poll?.resultsVisibility ?? poll?.results_visibility ?? '',
+  )
+    .toLowerCase()
+    .replaceAll('-', '_')
+
+  if (['private', 'owner_only'].includes(visibility)) return 'owner_only'
+  if (['after_close', 'afterclose'].includes(visibility)) return 'after_close'
+  if (['realtime', 'real_time'].includes(visibility)) return 'real_time'
+  return null
+}
+
+function isPollCreator(message) {
+  const poll = message?.poll
+  if (message?.mine) return true
+  const creatorId = poll?.creatorId ?? poll?.creator_id ?? poll?.createdBy ?? poll?.created_by
+  if (creatorId == null) return false
+
+  const currentUserIds = [dms.meId, getAuthUserId(), getAuthUser()?.id, getAuthUser()?.userId]
+  return currentUserIds.some((id) => id != null && String(id) === String(creatorId))
+}
+
+function pollCreatorLabel(poll) {
+  const message = renderedMessages.value.find(
+    (item) => String(item.poll?.id) === String(poll?.id),
+  )
+  if (isPollCreator(message)) return 'You'
+
+  const creator = poll?.creator ?? poll?.creatorName ?? poll?.creator_name
+  const creatorName =
+    typeof creator === 'string'
+      ? creator.trim()
+      : (creator?.name ?? creator?.fullName ?? creator?.full_name ?? '')
+  if (creatorName && creatorName.toLowerCase() !== 'you') return creatorName
+  if (message?.author && message.author !== 'You') return message.author
+
+  const creatorId = poll?.creatorId ?? poll?.creator_id ?? poll?.createdBy ?? poll?.created_by
+  return creatorId == null ? 'Unknown' : String(creatorId)
+}
+
+function pollResultsUnavailableMessage(poll) {
+  const visibility = pollResultsVisibility(poll)
+  if (visibility === 'owner_only') {
+    const message = renderedMessages.value.find(
+      (item) => String(item.poll?.id) === String(poll?.id),
+    )
+    if (!isPollCreator(message)) return 'Results are visible to the poll creator only.'
+  }
+  if (visibility === 'after_close' && !isPollClosed(poll)) {
+    return 'Poll is not closed yet. The results will be shown when the poll is closed!'
+  }
+  if (!pollResults.value[poll?.id] && !pollApi.loading.value) {
+    return 'Results are not available for this poll.'
+  }
+  return ''
 }
 
 function pollStartTime(poll) {
@@ -2475,6 +2575,13 @@ async function viewPollResults(pollId) {
   activePoll.value = message.poll
   activePollMode.value = 'results'
   pollResponses.value = {}
+  const visibility = pollResultsVisibility(message.poll)
+  if (
+    (visibility === 'owner_only' && !isPollCreator(message)) ||
+    (visibility === 'after_close' && !isPollClosed(message.poll))
+  ) {
+    return
+  }
   try {
     const response = await pollApi.getPollResult(pollResultQueryParams(message.poll))
     const result = normalizePollResult(response, message.poll)
@@ -2828,6 +2935,7 @@ onBeforeUnmount(() => {
                   :poll="message.poll"
                   :backend-available="hasServerPollId(message.poll)"
                   :can-publish="message.mine"
+                  :is-creator="isPollCreator(message)"
                   :closed="isPollClosed(message.poll)"
                   :scheduled="isPollScheduled(message.poll)"
                   :already-voted="hasAlreadyVoted(message.poll)"
@@ -2862,7 +2970,11 @@ onBeforeUnmount(() => {
                 </form>
 
                 <template v-else>
-                  <p v-if="message.content" v-html="message.formattedContent"></p>
+                  <div
+                    v-if="message.content && !message.poll"
+                    :class="{ 'composer-conversation__code-message': message.isCode }"
+                    v-html="message.formattedContent"
+                  ></div>
                   <img
                     v-if="message.gif"
                     class="composer-conversation__gif"
@@ -3471,7 +3583,7 @@ onBeforeUnmount(() => {
             </button>
           </header>
           <div class="composer-conversation__poll-response-summary">
-            <span>Creator: {{ activePoll.creator || 'You' }}</span>
+            <span>Creator: {{ pollCreatorLabel(activePoll) }}</span>
             <span
               class="composer-conversation__poll-status"
               :class="{ 'is-closed': isPollClosed(activePoll) }"
@@ -3507,11 +3619,19 @@ onBeforeUnmount(() => {
           <p v-if="activePoll.description" class="composer-conversation__poll-response-description">
             Description: {{ activePoll.description }}
           </p>
-          <div
-            v-for="(question, questionIndex) in activePoll.questions"
-            :key="questionIndex"
-            class="composer-conversation__poll-response-question"
+          <p
+            v-if="activePollMode === 'results' && pollResultsUnavailableMessage(activePoll)"
+            class="composer-conversation__poll-results-unavailable"
+            role="status"
           >
+            {{ pollResultsUnavailableMessage(activePoll) }}
+          </p>
+          <template v-else>
+            <div
+              v-for="(question, questionIndex) in activePoll.questions"
+              :key="questionIndex"
+              class="composer-conversation__poll-response-question"
+            >
             <h3>Q{{ questionIndex + 1 }}. {{ question.text }}<b v-if="question.required"> *</b></h3>
             <template v-if="activePollMode === 'results'">
               <div
@@ -3607,7 +3727,8 @@ onBeforeUnmount(() => {
                 <span>{{ option }}</span>
               </label>
             </div>
-          </div>
+            </div>
+          </template>
           <footer class="composer-conversation__poll-response-footer">
             <p v-if="pollApi.error.value" role="alert">{{ pollApi.error.value }}</p>
             <button
@@ -3870,6 +3991,45 @@ onBeforeUnmount(() => {
 .composer-conversation__message-bubble p {
   margin: 0;
   white-space: pre-wrap;
+}
+
+.composer-conversation__message-bubble :deep(code) {
+  border-radius: 3px;
+  background: #000;
+  color: #fff;
+  font-family: monospace;
+}
+
+.composer-conversation__message-bubble :deep(p > code) {
+  padding: 2px 5px;
+}
+
+.composer-conversation__message-bubble :deep(pre) {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 100%;
+  margin: 0;
+  padding: 8px;
+  overflow-x: auto;
+  border-radius: 5px;
+  background: #242424;
+  color: #f5f5f5;
+  font-family: monospace;
+  font-size: 14px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.composer-conversation__message-bubble .composer-conversation__code-message {
+  margin: 0;
+}
+
+.composer-conversation__message-bubble :deep(pre code) {
+  display: block;
+  padding: 0;
+  background: transparent;
+  color: inherit;
 }
 
 .composer-conversation__message-bubble a {
@@ -4443,6 +4603,14 @@ onBeforeUnmount(() => {
   margin: 0;
   padding: 0 28px 14px;
   color: #696d81;
+}
+
+.composer-conversation__poll-results-unavailable {
+  margin: 18px 28px 24px;
+  padding: 24px;
+  background: #edeef6;
+  color: #34364a;
+  text-align: center;
 }
 
 .composer-conversation__poll-response-question {
