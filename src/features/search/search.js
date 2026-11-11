@@ -75,8 +75,7 @@ function applyFilters(
   return list.filter(
     (i) =>
       (!needle || String(i[textKey]).toLowerCase().includes(needle)) &&
-      (!userIds.length ||
-        userIds.map(String).includes(String(i.userId))) &&
+      (!userIds.length || userIds.map(String).includes(String(i.userId))) &&
       (!date ||
         (dateMode === 'before' && String(i.createdAt || '').slice(0, 10) < date) ||
         (dateMode === 'after' && String(i.createdAt || '').slice(0, 10) > date) ||
@@ -105,11 +104,12 @@ export async function searchMessages(p) {
   }
 }
 
-function getSearchableMessages({ dmMessages = [] } = {}) {
+function getSearchableMessages({ dmMessages = [], channelMessages = [] } = {}) {
   const combined = [
+    ...(Array.isArray(channelMessages) ? channelMessages : []),
+    ...(Array.isArray(dmMessages) ? dmMessages : []),
     ...MESSAGES,
     ...readStoredChannelMessages(),
-    ...(Array.isArray(dmMessages) ? dmMessages : []),
   ]
   return combined.filter(
     (message, index, messages) =>
