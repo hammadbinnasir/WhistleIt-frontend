@@ -100,6 +100,20 @@ describe('channel API normalizers', () => {
     })
   })
 
+  it('does not treat an owner profile object as the current user owning the channel', () => {
+    expect(
+      normalizeChannel({
+        id: 'channel-owner',
+        name: 'Owner channel',
+        owner: { id: 'creator-1', name: 'Channel Creator' },
+      }),
+    ).toMatchObject({
+      createdById: 'creator-1',
+      isOwner: false,
+      canManage: false,
+    })
+  })
+
   it('does not assume a channel without membership data is joined', () => {
     expect(normalizeChannel({ id: 'channel-4', name: 'Design Reviews' }).isMember).toBe(false)
     expect(normalizeChannel({ id: 'channel-5', name: 'Random', is_member: 'false' }).isMember).toBe(
