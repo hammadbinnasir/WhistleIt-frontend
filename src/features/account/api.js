@@ -26,6 +26,13 @@ export function updateUserPreferences(userId, preferences) {
   })
 }
 
+export function updateUserEmailVisibility(userId, visible) {
+  return http(userPath(userId, '/email-visibility'), {
+    method: 'PATCH',
+    body: { email_visibility: visible },
+  })
+}
+
 export function updateUserStatus(userId, status) {
   return http(userPath(userId, '/status'), { method: 'PUT', body: status })
 }

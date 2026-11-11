@@ -304,9 +304,7 @@ const renderedMessages = computed(() => {
             ) ||
             (typeof message.replyTo === 'object' && message.replyTo && 'id' in message.replyTo
               ? message.replyTo
-              : allMessages.value.find(
-                  (item) => String(item.id) === String(message.replyTo),
-                ))
+              : allMessages.value.find((item) => String(item.id) === String(message.replyTo)))
           : null
       const rendered = {
         ...message,
@@ -1254,7 +1252,11 @@ async function forwardMessage() {
   }
   if (!conversation.value) {
     if (!forwardTarget.value.serverBacked) {
-      ui.toast('Unable to forward message', 'Wait until the message is sent, then try again.', 'error')
+      ui.toast(
+        'Unable to forward message',
+        'Wait until the message is sent, then try again.',
+        'error',
+      )
       return
     }
 
@@ -1305,7 +1307,11 @@ async function forwardMessage() {
       destinationPayload,
     )
     if (!result.success) {
-      ui.toast('Unable to forward message', result.error || 'The channel message could not be forwarded.', 'error')
+      ui.toast(
+        'Unable to forward message',
+        result.error || 'The channel message could not be forwarded.',
+        'error',
+      )
       return
     }
     if (destination.type === 'channel') {
@@ -1380,10 +1386,7 @@ function positionActionMenu() {
   const placeAbove = height <= spaceAbove || spaceAbove >= spaceBelow
   const availableHeight = placeAbove ? spaceAbove : spaceBelow
   const displayedHeight = Math.min(height, availableHeight)
-  const left = Math.max(
-    margin,
-    Math.min(anchorRect.right - width, viewportWidth - width - margin),
-  )
+  const left = Math.max(margin, Math.min(anchorRect.right - width, viewportWidth - width - margin))
   const top = placeAbove
     ? Math.max(margin, anchorRect.top - gap - displayedHeight)
     : Math.min(viewportHeight - margin - displayedHeight, anchorRect.bottom + gap)
@@ -1475,18 +1478,16 @@ function normalizePollResult(response, poll) {
   const legacyResponses = result?.responses ?? payload?.responses
   const responseQuestions = pollQuestionsFromResponse(sourceQuestions)
   const pollQuestions =
-    Array.isArray(poll?.questions) && poll.questions.length
-      ? poll.questions
-      : responseQuestions
+    Array.isArray(poll?.questions) && poll.questions.length ? poll.questions : responseQuestions
   const questions = pollQuestions.map((question, questionIndex) => {
     const questionId = question.id ?? question.question_id
     const source =
       sourceQuestions.find(
         (item) =>
-          item &&
-          questionId != null &&
-          String(item.id ?? item.question_id) === String(questionId),
-      ) || sourceQuestions[questionIndex] || {}
+          item && questionId != null && String(item.id ?? item.question_id) === String(questionId),
+      ) ||
+      sourceQuestions[questionIndex] ||
+      {}
     const sourceVotes = source.votes ?? source.answers ?? source.options ?? []
     const sourceResponses =
       source.responses ?? (question.type === 'openEnded' ? source.answers : null)
@@ -1541,9 +1542,7 @@ function removePublishedDraft(targetChannelId, existingMessage, targetConversati
   const messages = targetConversation
     ? targetConversation.messages
     : messageStore.messagesByChannel[String(targetChannelId)] || []
-  const index = messages.findIndex(
-    (message) => String(message.id) === String(existingMessage.id),
-  )
+  const index = messages.findIndex((message) => String(message.id) === String(existingMessage.id))
   if (index !== -1) messages.splice(index, 1)
 }
 
@@ -1572,12 +1571,12 @@ async function sendPollMessage(targetChannelId, poll, existingMessage = null) {
     throw new Error(result.error || 'The poll message could not be sent to the channel.')
   }
 
-  const responseMessageId =
-    result.data?.id ?? result.data?.message_id ?? result.data?.messageId
+  const responseMessageId = result.data?.id ?? result.data?.message_id ?? result.data?.messageId
   const channelMessages = messageStore.messagesFor(targetChannelId)
-  let message = responseMessageId == null
-    ? channelMessages.find((item) => String(item.poll_id ?? '') === String(poll.id))
-    : channelMessages.find((item) => String(item.id) === String(responseMessageId))
+  let message =
+    responseMessageId == null
+      ? channelMessages.find((item) => String(item.poll_id ?? '') === String(poll.id))
+      : channelMessages.find((item) => String(item.id) === String(responseMessageId))
   if (!message && responseMessageId != null) {
     message = {
       ...result.data,
@@ -1844,9 +1843,7 @@ async function viewPollResults(pollId) {
   activePollMode.value = 'results'
   pollResponses.value = {}
   try {
-    const response = await pollApi.getPollResult(
-      pollResultQueryParams(message.poll),
-    )
+    const response = await pollApi.getPollResult(pollResultQueryParams(message.poll))
     const result = normalizePollResult(response, message.poll)
     if (result) {
       if (result.pollQuestions.length) {
@@ -2134,7 +2131,14 @@ onBeforeUnmount(() => {
             <div
               class="composer-conversation__message-bubble"
               :class="{ 'composer-conversation__message-bubble--deleted': message.deleted }"
-              :data-poll-title="message.content?.match(/^Poll:\s*(.+)$/m)?.[1]?.trim()"
+              :data-poll-id="message.poll?.id"
+              :data-poll-title="
+                message.poll?.title ??
+                message.poll?.question ??
+                message.poll_title ??
+                message.pollTitle ??
+                message.content?.match(/^Poll:\s*(.+)$/m)?.[1]?.trim()
+              "
               @click="handleMessageClick($event, message)"
               @dblclick="handleMessageDoubleClick($event, message)"
             >

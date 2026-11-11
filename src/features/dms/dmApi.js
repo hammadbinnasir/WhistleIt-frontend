@@ -163,7 +163,7 @@ function normalizeUser(raw) {
   return {
     id: String(user.id ?? raw.user_id ?? raw.id ?? ''),
     name: nameOf(raw) ?? nameOf(user) ?? '',
-    email: raw.email ?? user.email ?? '',
+    email: raw.email ?? user.email ?? raw.account?.email ?? user.account?.email ?? '',
     avatarUrl: raw.avatar_url ?? raw.avatarUrl ?? user.avatar_url ?? user.avatarUrl ?? '',
     ...(customStatus ? { customStatus } : {}),
   }

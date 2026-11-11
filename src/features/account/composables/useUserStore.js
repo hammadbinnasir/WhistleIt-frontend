@@ -6,6 +6,7 @@ import {
   getUserProfile,
   updateUserProfile,
   updateUserPreferences,
+  updateUserEmailVisibility,
   updateUserPassword,
   updateUserStatus,
   uploadUserAvatar,
@@ -308,7 +309,10 @@ async function saveSettings({ profile, photo, removePhoto, preferences, security
     await updateUserPreferences(requireUserId(), preferences)
     Object.assign(state.preferences, preferences)
   }
-  if (security) Object.assign(state.security, security)
+  if (security && security.hideEmail !== state.security.hideEmail) {
+    await updateUserEmailVisibility(requireUserId(), !security.hideEmail)
+    Object.assign(state.security, security)
+  }
 }
 
 async function leaveTeam() {

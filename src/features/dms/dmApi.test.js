@@ -41,6 +41,27 @@ describe('DM API', () => {
     expect(apiRequest).toHaveBeenCalledWith('/company/company-1/members')
   })
 
+  it('loads company member email from nested account records', async () => {
+    apiRequest.mockResolvedValue({
+      success: true,
+      data: {
+        members: [
+          {
+            user: {
+              id: 'user-2',
+              full_name: 'Alex Member',
+              account: { email: 'alex@example.com' },
+            },
+          },
+        ],
+      },
+    })
+
+    await expect(dmApi.listCompanyMembers('company-1')).resolves.toMatchObject([
+      { id: 'user-2', email: 'alex@example.com' },
+    ])
+  })
+
   it('preserves custom status details from company member records', async () => {
     apiRequest.mockResolvedValue({
       success: true,
