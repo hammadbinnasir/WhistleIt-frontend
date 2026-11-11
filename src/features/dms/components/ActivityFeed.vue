@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, getCurrentInstance, onBeforeUnmount, onDeactivated, onMounted, ref, watch } from 'vue'
 import { useActivityStore } from '@/stores/activity'
 import { useDmStore } from '@/features/dms/stores/dms'
 import { useMessagesStore } from '@/features/messages/messages'
@@ -30,6 +30,7 @@ const reminders = useRemindersStore()
 const channels = useChannelsStore()
 const teams = useTeamsStore()
 const emit = defineEmits(['open-conversation', 'open-user-chat'])
+const instance = getCurrentInstance()
 
 const activeTab = ref('recent-dms')
 const tabPage = ref(0)
@@ -59,166 +60,313 @@ async function deleteReminder(id) {
   }
 }
 
+// Ek dafa mein itne cards hi DOM mein (hazaron messages par panel atak jata tha)
+const PAGE_SIZE = 40
+const PER_CONVERSATION = 40 // Recent Messages: har chat ke aakhri itne hi
+const visibleLimit = ref(PAGE_SIZE)
+watch(activeTab, () => {
+  visibleLimit.value = PAGE_SIZE
+})
+function showMore() {
+  visibleLimit.value += PAGE_SIZE
+}
+
 onMounted(() => {
   void activity.init()
-  void dms.init()
+  // Haal hi mein load hua ho to dobara network/localStorage ka kaam nahi
+  void (dms.ensureLoaded ? dms.ensureLoaded() : dms.init())
 })
 
-const recentDms = computed(() =>
-  dms.sorted
-    .filter((conversation) => conversation.type === 'dm')
-    .map((conversation) => ({
-      conversation,
-      message: conversation.messages.at(-1),
-    })),
-)
+// When the panel is hidden or kept alive, never leave the full-screen workflow
+// overlay (fixed inset-0) or an open thread behind — it blocks clicks on the whole app.
+function resetTransientState() {
+  workflowTemplate.value = null
+  activeThread.value = null
+}
+onDeactivated(resetTransientState)
+onBeforeUnmount(resetTransientState)
 
-const recentMessages = computed(() => {
-  const dmMessages = dms.conversations.flatMap((conversation) =>
-    conversation.messages.map((message) => ({ conversation, message })),
-  )
-  const channelMessages = Object.entries(messageStore.messagesByChannel).flatMap(
-    ([conversationId, messages]) => {
-      const channel = channels.getById(conversationId)
-      const conversation = {
-        id: conversationId,
-        type: 'channel',
-        name: channel?.name || conversationId.replaceAll('-', ' '),
-      }
-      return messages.map((message) => ({ conversation, message }))
-    },
-  )
-  return [...dmMessages, ...channelMessages].sort(
-    (a, b) =>
-      new Date(b.message.createdAt || 0).getTime() - new Date(a.message.createdAt || 0).getTime(),
-  )
+/* ---------- safe data helpers ---------- */
+
+function asArray(value) {
+  return Array.isArray(value) ? value.filter((item) => item != null) : []
+}
+
+function toTime(value) {
+  const time = new Date(value ?? 0).getTime()
+  return Number.isNaN(time) ? 0 : time
+}
+
+// Duplicate keys in v-for corrupt Vue's DOM patching, after which the page stops
+// responding until reload. Every list entry gets a guaranteed-unique key.
+function withUniqueKeys(entries, baseKey) {
+  const seen = new Map()
+  return entries.map((entry, index) => {
+    const base = String(baseKey(entry, index))
+    const count = seen.get(base) || 0
+    seen.set(base, count + 1)
+    return { ...entry, key: count ? `${base}#${count}` : base }
+  })
+}
+
+function userById(id) {
+  if (id == null) return null
+  return dms.usersById?.[id] || null
+}
+
+// Naam -> user id (har row par poori users list scan karne ki jagah ek Map)
+const userIdByName = computed(() => {
+  const map = new Map()
+  for (const user of asArray(dms.users)) if (user.name && !map.has(user.name)) map.set(user.name, user.id)
+  return map
 })
 
-const threadConversation = computed(
-  () =>
-    dms.conversations.find(
-      (conversation) => conversation.id === activeThread.value?.conversationId,
-    ) || null,
-)
-const threadReplies = computed(
-  () =>
-    threadConversation.value?.messages.filter(
-      (message) => message.threadId === activeThread.value?.message.id,
-    ) || [],
-)
+// Intl formatters banana mehenga hai: ek dafa bana kar dobara istemal
+const dateTimeFormat = new Intl.DateTimeFormat('en-US', {
+  month: 'long',
+  day: 'numeric',
+  year: 'numeric',
+  hour: 'numeric',
+  minute: '2-digit',
+})
+const monthDayFormat = new Intl.DateTimeFormat('en-US', { month: 'long', day: 'numeric' })
+const timeFormat = new Intl.DateTimeFormat('en-US', { hour: 'numeric', minute: '2-digit' })
 
-const scheduledMessages = computed(() =>
-  recentMessages.value
-    .filter(({ message }) => message.scheduled)
-    .sort(
-      (a, b) =>
-        new Date(a.message.scheduledAt).getTime() - new Date(b.message.scheduledAt).getTime(),
-    ),
-)
+const visibleChannels = computed(() => asArray(channels.visibleChannels))
 
-const pinnedMessages = computed(() =>
-  ui.pinnedMessages.map(({ conversation, ...message }) => {
-    const directConversation = dms.conversations.find(
-      (item) => String(item.id) === String(conversation?.id),
-    )
-    const isDm = Boolean(
-      directConversation || conversation?.kind === 'dm' || conversation?.type === 'dm',
-    )
+/* ---------- lists ---------- */
 
-    return {
-      conversation: {
-        ...conversation,
-        ...(directConversation || {}),
-        type: isDm ? 'dm' : 'channel',
-        name: directConversation
-          ? titleOf(directConversation)
-          : conversation?.name || conversation?.id,
-      },
-      message,
-    }
-  }),
-)
-
-const upcomingReminders = computed(() =>
-  reminders.sorted.filter(
-    (reminder) => !reminder.fired && new Date(reminder.remindAt).getTime() > Date.now(),
+const allRecentDms = computed(() =>
+  withUniqueKeys(
+    asArray(dms.sorted)
+      .filter((conversation) => conversation.type === 'dm')
+      .map((conversation) => ({
+        conversation,
+        message: asArray(conversation.messages).at(-1) || null,
+      })),
+    ({ conversation }, index) => `dm-${conversation.id ?? index}`,
   ),
 )
 
-const mentions = computed(() => activity.sorted.filter((item) => item.type === 'mention'))
+function channelConversation(conversationId) {
+  const channel = channels.getById?.(conversationId)
+  return {
+    id: conversationId,
+    type: 'channel',
+    name: channel?.name || String(conversationId).replaceAll('-', ' '),
+  }
+}
+
+// Har chat ke sirf aakhri PER_CONVERSATION messages (poori history sort/render nahi)
+const allRecentMessages = computed(() => {
+  const entries = []
+  for (const conversation of asArray(dms.conversations)) {
+    for (const message of asArray(conversation.messages).slice(-PER_CONVERSATION)) {
+      entries.push({ conversation, message })
+    }
+  }
+  for (const [conversationId, messages] of Object.entries(messageStore.messagesByChannel || {})) {
+    const conversation = channelConversation(conversationId)
+    for (const message of asArray(messages).slice(-PER_CONVERSATION)) {
+      entries.push({ conversation, message })
+    }
+  }
+  entries.sort((a, b) => toTime(b.message.createdAt) - toTime(a.message.createdAt))
+  return entries
+})
+
+const recentMessages = computed(() =>
+  withUniqueKeys(
+    allRecentMessages.value.slice(0, visibleLimit.value),
+    ({ conversation, message }, index) =>
+      `${conversation.type || 'dm'}-${conversation.id}-${message.id ?? `i${index}`}`,
+  ),
+)
+const recentDms = computed(() => allRecentDms.value.slice(0, visibleLimit.value))
+
+const threadConversation = computed(
+  () =>
+    asArray(dms.conversations).find(
+      (conversation) => String(conversation.id) === String(activeThread.value?.conversationId),
+    ) || null,
+)
+const threadReplies = computed(() =>
+  withUniqueKeys(
+    asArray(threadConversation.value?.messages)
+      .filter((message) => message.threadId === activeThread.value?.message?.id)
+      .map((message) => ({ message })),
+    ({ message }, index) => `reply-${message.id ?? index}`,
+  ),
+)
+
+const scheduledMessages = computed(() => {
+  const entries = []
+  for (const conversation of asArray(dms.conversations)) {
+    for (const message of asArray(conversation.messages)) {
+      if (message.scheduled) entries.push({ conversation, message })
+    }
+  }
+  for (const [conversationId, messages] of Object.entries(messageStore.messagesByChannel || {})) {
+    const conversation = channelConversation(conversationId)
+    for (const message of asArray(messages)) {
+      if (message?.scheduled) entries.push({ conversation, message })
+    }
+  }
+  entries.sort((a, b) => toTime(a.message.scheduledAt) - toTime(b.message.scheduledAt))
+  return withUniqueKeys(
+    entries,
+    ({ conversation, message }, index) => `scheduled-${conversation.id}-${message.id ?? `i${index}`}`,
+  )
+})
+
+// Is tab mein abhi aur cards hain jo DOM mein nahi?
+const hasMoreInTab = computed(() => {
+  if (activeTab.value === 'recent-dms') return allRecentDms.value.length > visibleLimit.value
+  if (activeTab.value === 'recent-messages') return allRecentMessages.value.length > visibleLimit.value
+  return false
+})
+
+const pinnedMessages = computed(() =>
+  withUniqueKeys(
+    asArray(ui.pinnedMessages).map(({ conversation, ...message }) => {
+      const directConversation = asArray(dms.conversations).find(
+        (item) => String(item.id) === String(conversation?.id),
+      )
+      const isDm = Boolean(
+        directConversation || conversation?.kind === 'dm' || conversation?.type === 'dm',
+      )
+
+      return {
+        conversation: {
+          ...(conversation || {}),
+          ...(directConversation || {}),
+          type: isDm ? 'dm' : 'channel',
+          name: directConversation
+            ? titleOf(directConversation)
+            : conversation?.name || conversation?.id || 'Conversation',
+        },
+        message,
+      }
+    }),
+    ({ conversation, message }, index) =>
+      `pinned-${conversation.id ?? 'x'}-${message.id ?? `i${index}`}`,
+  ),
+)
+
+const upcomingReminders = computed(() =>
+  asArray(reminders.sorted).filter(
+    (reminder) => !reminder.fired && toTime(reminder.remindAt) > Date.now(),
+  ),
+)
+
+const mentions = computed(() => asArray(activity.sorted).filter((item) => item.type === 'mention'))
 const unreadMentionCount = computed(() => mentions.value.filter((item) => !item.read).length)
 const visibleTabs = computed(() => (tabPage.value === 0 ? tabs.slice(0, 5) : tabs.slice(2)))
 const activeTabIsEmpty = computed(() => {
   switch (activeTab.value) {
     case 'recent-dms':
-      return !dms.loading && !dms.error && !recentDms.value.length
+      return !dms.loading && !allRecentDms.value.length
     case 'recent-messages':
-      return !dms.loading && !dms.error && !recentMessages.value.length
+      return !dms.loading && !allRecentMessages.value.length
     case 'scheduled':
-      return !dms.loading && !dms.error && !scheduledMessages.value.length
+      return !dms.loading && !scheduledMessages.value.length
     case 'pinned':
-      return !dms.loading && !dms.error && !pinnedMessages.value.length
+      return !pinnedMessages.value.length
     case 'reminders':
       return !upcomingReminders.value.length
     case 'mentions':
-      return activity.loaded && !activity.loading && !activity.error && !mentions.value.length
+      return !activity.loading && !mentions.value.length
     default:
       return false
   }
 })
 
 const filteredWorkflows = computed(() => {
+  const workflows = asArray(activity.workflows)
   const query = workflowSearch.value.trim().toLowerCase()
-  if (!query) return activity.workflows
-  return activity.workflows.filter((workflow) =>
+  if (!query) return workflows
+  return workflows.filter((workflow) =>
     [workflow.name, workflow.channelName, workflow.message, workflow.recurrence]
       .filter(Boolean)
-      .some((value) => value.toLowerCase().includes(query)),
+      .some((value) => String(value).toLowerCase().includes(query)),
   )
 })
 
+/* ---------- display helpers ---------- */
+
 function titleOf(conversation) {
-  return (
-    (conversation?.members ? dms.titleOf(conversation) : '') ||
-    conversation?.name ||
-    'Direct message'
-  )
+  let title
+  try {
+    title = conversation?.members ? dms.titleOf?.(conversation) : ''
+  } catch {
+    title = ''
+  }
+  return title || conversation?.name || 'Direct message'
 }
 
 function initials(name) {
-  return name
-    .split(/\s+/)
-    .map((part) => part[0])
-    .slice(0, 2)
-    .join('')
-    .toUpperCase()
+  return (
+    String(name || '')
+      .trim()
+      .split(/\s+/)
+      .filter(Boolean)
+      .map((part) => part[0])
+      .slice(0, 2)
+      .join('')
+      .toUpperCase() || '?'
+  )
+}
+
+// Composer HTML bhejta hai (<p>hi</p>): yahan saaf text
+function plainText(value) {
+  if (typeof value !== 'string' || !/<\/?[a-z][^>]*>|&lt;\/?[a-z]/i.test(value)) return value
+  return value
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/(p|div|li|h[1-6]|blockquote|pre)>/gi, '\n')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&quot;/g, '"')
+    .replace(/&#0?39;|&apos;/g, "'")
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim()
 }
 
 function displayMessage(message) {
-  if (message.text || message.content) return message.text || message.content
+  if (!message) return 'No messages yet.'
+  if (message.deleted) return '(message deleted)'
+  if (message.text || message.content) return plainText(message.text || message.content)
   if (message.attachments?.length) return `${message.attachments.length} attachment(s).`
   return 'Message'
 }
 
 function authorName(message, conversation) {
-  return dms.usersById[message.from]?.name || message.author || titleOf(conversation)
+  return userById(message?.from)?.name || message?.author || titleOf(conversation)
+}
+
+function replyAuthorName(message) {
+  return userById(message?.from)?.name || 'You'
+}
+
+function threadAuthorName() {
+  return userById(activeThread.value?.message?.from)?.name || titleOf(threadConversation.value)
 }
 
 function authorUserId(message) {
-  if (message.mine || message.from === dms.meId) return null
+  if (!message || message.mine || message.from === dms.meId) return null
   const authorId = message.from ?? message.authorId
-  if (dms.usersById[authorId]) return authorId
-  return dms.users.find((user) => user.name === message.author)?.id || null
-}
-
-function openAuthorChat(message) {
-  const userId = authorUserId(message)
-  if (!userId || userId === dms.meId) return
-  emit('open-user-chat', userId)
+  if (userById(authorId)) return authorId
+  return userIdByName.value.get(message.author) || null
 }
 
 function messageParts(message) {
-  return messageSegments(message.text || message.content || '')
+  try {
+    return asArray(messageSegments(message?.text || message?.content || ''))
+  } catch {
+    return [{ text: message?.text || message?.content || '' }]
+  }
 }
 
 function pinnedDate(value) {
@@ -234,13 +382,8 @@ function pinnedDate(value) {
       ? 'Today'
       : date.toDateString() === yesterday.toDateString()
         ? 'Yesterday'
-        : new Intl.DateTimeFormat('en-US', { month: 'long', day: 'numeric' }).format(date)
-  const time = new Intl.DateTimeFormat('en-US', {
-    hour: 'numeric',
-    minute: '2-digit',
-  })
-    .format(date)
-    .toLowerCase()
+        : monthDayFormat.format(date)
+  const time = timeFormat.format(date).toLowerCase()
   return `${prefix} at ${time}`
 }
 
@@ -248,25 +391,89 @@ function formatDate(value) {
   if (!value) return '—'
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return '—'
-  return new Intl.DateTimeFormat('en-US', {
-    month: 'long',
-    day: 'numeric',
-    year: 'numeric',
-    hour: 'numeric',
-    minute: '2-digit',
-  }).format(date)
+  return dateTimeFormat.format(date)
+}
+
+/* ---------- navigation ---------- */
+
+function hasListener(propName) {
+  const handler = instance?.vnode.props?.[propName]
+  return typeof handler === 'function' || Array.isArray(handler)
+}
+
+function closeActivityPanel() {
+  resetTransientState()
+  if (typeof ui.closePanel === 'function') ui.closePanel()
+  else ui.activePanel = null
+}
+
+// Used when the parent does not handle the events, so clicks are never dead.
+function openConversationDirectly({ id, type }) {
+  if (type === 'dm') {
+    if (!dms.openConversation?.(id)) return
+    ui.selectChannel?.(null)
+  } else {
+    dms.deactivateConversation?.()
+    ui.selectChannel?.(id)
+  }
+  closeActivityPanel()
+}
+
+// (naya) Parent ne event le liya: DM ko store mein bhi kholo (pehle se khula ho to dobara nahi)
+function finishOpeningDm(id) {
+  if (String(dms.activeId ?? '') !== String(id) && !dms.openConversation?.(id)) return
+  ui.selectChannel?.(null)
+  closeActivityPanel()
+}
+
+function openUserChatDirectly(userId) {
+  dms.startDm?.(userId)
+  ui.selectChannel?.(null)
+  closeActivityPanel()
+}
+
+function navigate(target) {
+  if (target?.id == null) return
+  const payload = { id: target.id, type: target.type === 'channel' ? 'channel' : 'dm' }
+  resetTransientState()
+  try {
+    if (hasListener('onOpenConversation')) {
+      emit('open-conversation', payload)
+      // (naya) DM list jaisa hi: parent sirf event sune tab bhi DM store mein khule, channel hate
+      // aur Activity panel band ho (warna header aata hai magar messages / composer nahi)
+      if (payload.type === 'dm') finishOpeningDm(payload.id)
+    } else openConversationDirectly(payload)
+  } catch (error) {
+    console.error('Unable to open conversation from activity:', error)
+  }
+}
+
+function openAuthorChat(message) {
+  const userId = authorUserId(message)
+  if (!userId || userId === dms.meId) return
+  resetTransientState()
+  try {
+    if (hasListener('onOpenUserChat')) {
+      emit('open-user-chat', userId)
+      // (naya) DM list jaisa hi: panel band, channel hate (DM parent ne khol diya)
+      ui.selectChannel?.(null)
+      closeActivityPanel()
+    } else openUserChatDirectly(userId)
+  } catch (error) {
+    console.error('Unable to open direct message from activity:', error)
+  }
 }
 
 function openConversation(conversationId) {
-  emit('open-conversation', { id: conversationId, type: 'dm' })
+  navigate({ id: conversationId, type: 'dm' })
 }
 
 function openActivityConversation(conversation) {
-  emit('open-conversation', { id: conversation.id, type: conversation.type })
+  navigate({ id: conversation?.id, type: conversation?.type })
 }
 
 function openThread(conversation, message) {
-  if (!message) return
+  if (!message || conversation?.id == null) return
   activeThread.value = { conversationId: conversation.id, message }
 }
 
@@ -336,7 +543,7 @@ function openWorkflowForm(template) {
   workflowName.value = template === 'schedule' ? 'Schedule Message' : 'Welcome Newcomer'
   workflowMessage.value =
     template === 'schedule' ? '' : 'Welcome to the channel! We are glad to have you here.'
-  workflowChannelId.value = channels.visibleChannels[0]?.id || ''
+  workflowChannelId.value = visibleChannels.value[0]?.id || ''
   workflowSchedule.value = '09:00'
   workflowTimeZone.value = 'Asia/Karachi'
   workflowRecurrence.value = 'weekly'
@@ -344,8 +551,12 @@ function openWorkflowForm(template) {
   workflowEndDate.value = ''
 }
 
+function closeWorkflowForm() {
+  workflowTemplate.value = null
+}
+
 function saveWorkflow() {
-  const channel = channels.getById(workflowChannelId.value)
+  const channel = channels.getById?.(workflowChannelId.value)
   if (!workflowTemplate.value || !channel || !workflowName.value.trim()) return
 
   activity.createWorkflow({
@@ -373,7 +584,7 @@ function saveWorkflow() {
         class="grid h-10 w-8 shrink-0 place-items-center text-xl text-slate-600 hover:text-indigo-600"
         aria-label="Close activities"
         title="Close activities"
-        @click="ui.activePanel = null"
+        @click="closeActivityPanel"
       >
         <svg viewBox="0 0 24 24" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="2">
           <path d="m15 18-6-6 6-6" />
@@ -445,11 +656,12 @@ function saveWorkflow() {
       role="alert"
     >
       {{ activity.error }}
-      <button class="ml-2 underline" @click="activity.refresh()">Retry</button>
+      <button type="button" class="ml-2 underline" @click="activity.refresh()">Retry</button>
     </p>
     <p
-      v-else-if="activity.loading"
+      v-else-if="activity.loading && !activity.loaded"
       class="border-b border-slate-100 px-5 py-2 text-sm text-slate-500"
+      aria-live="polite"
     >
       Loading activity…
     </p>
@@ -482,8 +694,8 @@ function saveWorkflow() {
 
         <div v-else-if="activeTab === 'recent-dms'" class="space-y-4 p-5">
           <article
-            v-for="{ conversation, message } in recentDms"
-            :key="conversation.id"
+            v-for="{ conversation, message, key } in recentDms"
+            :key="key"
             class="rounded-xl border border-slate-200 p-4"
           >
             <div class="mb-3 flex items-center gap-2 text-sm text-slate-600">
@@ -528,12 +740,21 @@ function saveWorkflow() {
               </button>
             </div>
           </article>
+          <button
+            v-if="hasMoreInTab"
+            type="button"
+            class="mx-auto block rounded border border-slate-300 px-4 py-1.5 text-sm hover:bg-slate-50"
+            data-test="activity-show-more"
+            @click="showMore"
+          >
+            Show more
+          </button>
         </div>
 
         <div v-else-if="activeTab === 'recent-messages'" class="space-y-4 p-5">
           <article
-            v-for="{ conversation, message } in recentMessages"
-            :key="`${conversation.id}-${message.id}`"
+            v-for="{ conversation, message, key } in recentMessages"
+            :key="key"
             class="rounded-xl border border-slate-200 p-4"
           >
             <div class="mb-3 flex items-center gap-2 text-sm text-slate-600">
@@ -554,11 +775,7 @@ function saveWorkflow() {
               <span
                 class="grid h-12 w-12 shrink-0 place-items-center rounded-md bg-emerald-500 font-semibold text-white"
               >
-                {{
-                  initials(
-                    dms.usersById[message.from]?.name || message.author || titleOf(conversation),
-                  )
-                }}
+                {{ initials(authorName(message, conversation)) }}
               </span>
               <div class="min-w-0 flex-1">
                 <button
@@ -570,9 +787,7 @@ function saveWorkflow() {
                 >
                   {{ authorName(message, conversation) }}
                 </button>
-                <strong v-else class="block">{{
-                  dms.usersById[message.from]?.name || message.author || titleOf(conversation)
-                }}</strong>
+                <strong v-else class="block">{{ authorName(message, conversation) }}</strong>
                 <p class="break-words text-slate-700">{{ displayMessage(message) }}</p>
               </div>
               <button
@@ -593,12 +808,21 @@ function saveWorkflow() {
               </button>
             </div>
           </article>
+          <button
+            v-if="hasMoreInTab"
+            type="button"
+            class="mx-auto block rounded border border-slate-300 px-4 py-1.5 text-sm hover:bg-slate-50"
+            data-test="activity-show-more"
+            @click="showMore"
+          >
+            Show more
+          </button>
         </div>
 
         <div v-else-if="activeTab === 'scheduled'" class="space-y-4 p-5">
           <article
-            v-for="{ conversation, message } in scheduledMessages"
-            :key="`${conversation.id}-${message.id}`"
+            v-for="{ conversation, message, key } in scheduledMessages"
+            :key="key"
             class="flex items-center gap-4 rounded-xl border border-slate-200 p-4"
           >
             <div class="min-w-0 flex-1">
@@ -620,8 +844,8 @@ function saveWorkflow() {
 
         <div v-else-if="activeTab === 'pinned'" class="space-y-3 p-4">
           <article
-            v-for="{ conversation, message } in pinnedMessages"
-            :key="`${conversation.id}-${message.id}`"
+            v-for="{ conversation, message, key } in pinnedMessages"
+            :key="key"
             class="rounded-xl border border-slate-200 p-2.5"
           >
             <div class="mb-1.5 flex flex-wrap items-center gap-x-2 gap-y-1">
@@ -943,17 +1167,11 @@ function saveWorkflow() {
             <span
               class="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-violet-600 text-sm font-semibold text-white"
             >
-              {{
-                initials(
-                  dms.usersById[activeThread.message.from]?.name || titleOf(threadConversation),
-                )
-              }}
+              {{ initials(threadAuthorName()) }}
             </span>
             <div class="min-w-0">
               <div class="flex flex-wrap items-baseline gap-x-3">
-                <strong>{{
-                  dms.usersById[activeThread.message.from]?.name || titleOf(threadConversation)
-                }}</strong>
+                <strong>{{ threadAuthorName() }}</strong>
                 <time class="text-sm text-slate-500">{{
                   formatDate(activeThread.message.createdAt)
                 }}</time>
@@ -964,15 +1182,19 @@ function saveWorkflow() {
             </div>
           </article>
           <div v-if="threadReplies.length" class="mt-5 space-y-4 border-t border-slate-100 pt-4">
-            <article v-for="reply in threadReplies" :key="reply.id" class="flex gap-3">
+            <article
+              v-for="{ message: reply, key } in threadReplies"
+              :key="key"
+              class="flex gap-3"
+            >
               <span
                 class="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-indigo-100 text-xs font-semibold text-indigo-700"
               >
-                {{ initials(dms.usersById[reply.from]?.name || 'You') }}
+                {{ initials(replyAuthorName(reply)) }}
               </span>
               <div class="min-w-0">
                 <div class="flex flex-wrap items-baseline gap-x-3">
-                  <strong>{{ dms.usersById[reply.from]?.name || 'You' }}</strong>
+                  <strong>{{ replyAuthorName(reply) }}</strong>
                   <time class="text-sm text-slate-500">{{ formatDate(reply.createdAt) }}</time>
                 </div>
                 <p
@@ -1001,7 +1223,8 @@ function saveWorkflow() {
     <div
       v-if="workflowTemplate"
       class="fixed inset-0 z-[70] flex items-center justify-center bg-slate-900/50 p-4"
-      @click.self="workflowTemplate = null"
+      @click.self="closeWorkflowForm"
+      @keydown.esc="closeWorkflowForm"
     >
       <form
         class="max-h-[90vh] w-full max-w-lg space-y-4 overflow-y-auto rounded-xl bg-white p-6 shadow-xl"
@@ -1019,7 +1242,7 @@ function saveWorkflow() {
             type="button"
             aria-label="Close"
             class="text-xl text-slate-500"
-            @click="workflowTemplate = null"
+            @click="closeWorkflowForm"
           >
             ×
           </button>
@@ -1043,14 +1266,14 @@ function saveWorkflow() {
           >
             <option value="" disabled>Select a channel</option>
             <option
-              v-for="channel in channels.visibleChannels"
+              v-for="channel in visibleChannels"
               :key="channel.id"
               :value="channel.id"
             >
               {{ channel.name }}
             </option>
           </select>
-          <span v-if="!channels.visibleChannels.length" class="mt-1 block text-xs text-amber-700">
+          <span v-if="!visibleChannels.length" class="mt-1 block text-xs text-amber-700">
             Join a channel before creating a workflow.
           </span>
         </label>
@@ -1125,13 +1348,13 @@ function saveWorkflow() {
           <button
             type="button"
             class="rounded px-4 py-2 text-sm text-slate-600 hover:bg-slate-100"
-            @click="workflowTemplate = null"
+            @click="closeWorkflowForm"
           >
             Cancel
           </button>
           <button
             type="submit"
-            :disabled="!channels.visibleChannels.length"
+            :disabled="!visibleChannels.length"
             class="rounded bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-indigo-300"
           >
             Create workflow

@@ -398,7 +398,7 @@ export const useMessagesStore = defineStore('messages', () => {
       }
     }
 
-    await fetchChannelMessages(key)
+    void fetchChannelMessages(key)
     if (payload.attachment && !serverConfirmedAttachment) persist()
     return {
       success: true,
@@ -786,6 +786,7 @@ export const useMessagesStore = defineStore('messages', () => {
     if (timer) clearTimeout(timer)
     deletionTimers.delete(timerKey)
     const previousMessage = { ...message }
+    const content = message.content ?? message.text ?? ''
     delete message.deleteScheduledAt
     finalizeDeletion(message)
     persist()
@@ -801,7 +802,7 @@ export const useMessagesStore = defineStore('messages', () => {
     const messageBody = [previousMessage.content, previousMessage.text, previousMessage.body].find(
       (value) => typeof value === 'string' && value.trim(),
     )
-    const request = removeChannelMessage(companyId, teamId, key, message.id, messageBody)
+    const request = removeChannelMessage(companyId, teamId, key, message.id, messageBody ?? content)
       .then((result) => {
         if (!result.success) restoreMessage()
         return result.success

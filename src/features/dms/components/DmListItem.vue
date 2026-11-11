@@ -44,6 +44,19 @@ const customTooltip = computed(() =>
     isOwnStatus.value ? userStore.state.customStatusExpiresAt : null,
   ),
 )
+const unread = computed(() => Math.max(0, Number(props.conversation.unreadCount) || 0))
+// (naya) PATCH .../recent ki halat: 'saving' | 'pending' | 'error' | ''
+const recentStatus = computed(() => dms.recentStatusOf?.(props.conversation.id) ?? '')
+const recentTitle = computed(
+  () =>
+    ({
+      saving: 'Syncing…',
+      pending: 'Saved on this device. Will sync when the connection is back.',
+      // (naya) wajah bhi: mouse le jaane par pata chale kya hua
+      error: `Could not sync${dms.recentErrorOf?.(props.conversation.id) ? `: ${dms.recentErrorOf(props.conversation.id)}` : ''}. Open the conversation again to retry.`,
+    })[recentStatus.value] ?? '',
+)
+const unreadLabel = computed(() => (unread.value > 99 ? '99+' : String(unread.value)))
 const tooltip = computed(() =>
   partnerId.value
     ? ({ online: 'Online', away: 'Away', offline: 'Offline' })[state.value] ?? 'Offline'
@@ -89,13 +102,31 @@ const tooltip = computed(() =>
         </span>
       </span>
 
-      <!-- Unread badge -->
-      <span v-if="!active" class="flex items-center gap-2">
+      <!-- (naya) recent sync: chalti request / offline queue / fail (dobara kholne par retry) -->
+      <span
+        v-if="recentStatus"
+        class="flex h-4 w-4 shrink-0 items-center justify-center group-hover:invisible"
+        :title="recentTitle"
+        :aria-label="recentTitle"
+        role="status"
+        :data-test="`recent-${recentStatus}`"
+      >
         <span
-          v-if="conversation.unreadCount"
-          class="rounded-full bg-red-500 px-1.5 text-xs font-semibold text-white group-hover:invisible"
+          v-if="recentStatus === 'saving'"
+          class="h-3 w-3 animate-spin rounded-full border-2 border-indigo-300 border-t-transparent"
+        />
+        <span v-else-if="recentStatus === 'pending'" class="text-xs leading-none text-indigo-300">◷</span>
+        <span v-else class="text-xs font-bold leading-none text-red-400">!</span>
+      </span>
+
+      <!-- Unread badge: laal gol circle (chat kholte hi 0 ho kar chhup jata hai) -->
+      <span v-if="!active && unread" class="flex shrink-0 items-center">
+        <span
+          class="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-red-500 px-1 text-[11px] font-bold leading-none text-white tabular-nums group-hover:invisible"
+          :aria-label="`${unread} unread ${unread === 1 ? 'message' : 'messages'}`"
+          data-test="unread-badge"
         >
-          {{ conversation.unreadCount }}
+          {{ unreadLabel }}
         </span>
       </span>
     </button>

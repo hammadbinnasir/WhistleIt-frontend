@@ -13,8 +13,9 @@ import { useDmStore } from '@/features/dms/stores/dms'
 import VoiceNotePlayer from '@/features/media/VoiceNotePlayer.vue'
 import MessageAttachment from '@/features/messages/MessageAttachment.vue'
 import { getAuthUser, getAuthUserId } from '@/features/auth/session'
+import { usePresenceStore } from '@/features/dms/stores/presence'
+import { useRepliesStore } from '@/features/replies/stores/replies'
 import { useMessagesStore } from '@/features/messages/messages'
-import { useRepliesStore } from '@/features/dms/stores/Replies'
 import { useTeamsStore } from '@/stores/teams'
 import { forwardChannelMessage } from '@/features/messages/channelMessageService'
 import {
@@ -38,6 +39,11 @@ import { usePoll } from '../composables/usePoll'
 import MessageComposer from './MessageComposer.vue'
 import PollMessage from './PollMessage.vue'
 import { normalizeMessageText } from '../messageText'
+import PresenceDot from '@/features/dms/components/PresenceDot.vue'
+import TimeAgo from '@/features/dms/components/TimeAgo.vue'
+import ReplySummary from '@/features/replies/components/ReplySummary.vue'
+import ThreadPanel from '@/features/replies/components/ThreadPanel.vue'
+import { dayLabel } from '@/features/dms/utils/time'
 import pinChatIcon from '@/assets/pin-chat.svg'
 import unpinChatIcon from '@/assets/unpin-chat.svg'
 
@@ -45,6 +51,18 @@ const props = defineProps({
   conversationId: { type: [String, Number], default: null },
   conversationType: { type: String, default: 'channel' },
 })
+
+// (naya) Yeh constants upar hain: setup ke dauran (watch immediate) bhi istemal hote hain,
+// neeche hote to "Cannot access 'HTML_TAG' before initialization" se poori chat khali ho jati
+// ---------- (naya) <p>hi</p> / &lt;p&gt;hi&lt;/p&gt; ki jagah "hi" ----------
+const HTML_TAG = /<\/?(p|br|div|span|strong|b|em|i|u|s|strike|del|ul|ol|li|code|pre|blockquote|a|h[1-6])\b[^>]*>/i
+
+// (naya) Forward ka invisible nishan (dms.js / dmApi.js jaisa): doosre user ko bhi "(forwarded)"
+const FORWARD_MARK = '\u2063\u200b\u2063'
+
+// (naya) Forward ka nishan jo text ke saath server tak jata hai (dms.js jaisa)
+const FORWARD_TEXT_PREFIX = '[Forwarded] '
+const FORWARD_TEXT_RE = /^\s*\[forwarded\]\s*/i
 
 const dms = useDmStore()
 const pollApi = usePoll()
@@ -73,7 +91,7 @@ const reminderTarget = ref(null)
 const snoozeTarget = ref(null)
 const forwardTarget = ref(null)
 const forwardDestinationId = ref('')
-const threadMessage = ref(null)
+const channelThreadMessage = ref(null)
 const dmVisibleCount = ref(20)
 const pollParticipationStorageKey = `whistleit:participated-polls:${getAuthUserId() ?? dms.meId ?? 'anonymous'}`
 const storedParticipatedPolls = JSON.parse(
@@ -194,6 +212,48 @@ function retryMessage(message) {
   if (conversation.value) dms.retryMessage(conversation.value.id, message.id)
 }
 
+// (naya) Reply ka quote: asli message mile to uska naam / text (deleted ho to "(message deleted)")
+function replyPreviewOf(message, byId) {
+  if (!message.replyTo) return null
+  const ref = typeof message.replyTo === 'object' ? message.replyTo : { id: message.replyTo }
+  const original = ref.id != null ? byId.get(String(ref.id)) : null
+  const source = original || ref
+  const author =
+    source.author ||
+    (source.from
+      ? source.from === dms.meId
+        ? currentUserName.value
+        : dms.usersById[source.from]?.name
+      : '') ||
+    ref.author ||
+    'Message'
+  return {
+    id: ref.id,
+    author,
+    deleted: Boolean(original?.deleted),
+    content: source.content ?? source.text ?? ref.content ?? '',
+  }
+}
+
+// (naya) Schedule kiya hua delete cancel
+function cancelScheduledDelete(message) {
+  if (conversation.value) dms.cancelScheduledDelete?.(conversation.value.id, message.id)
+}
+
+// (naya) Offline banner: messages / edits / reactions queue mein, internet aate hi khud jaate hain
+const isOnline = ref(typeof navigator === 'undefined' ? true : navigator.onLine !== false)
+function updateOnline() {
+  isOnline.value = navigator.onLine !== false
+}
+onMounted(() => {
+  window.addEventListener('online', updateOnline)
+  window.addEventListener('offline', updateOnline)
+})
+onBeforeUnmount(() => {
+  window.removeEventListener('online', updateOnline)
+  window.removeEventListener('offline', updateOnline)
+})
+
 // Edit/delete API fail ho to toast dikhao
 watch(
   () => dms.actionError,
@@ -239,12 +299,49 @@ const visibleMessages = computed(() =>
     ? allMessages.value.slice(-dmVisibleCount.value)
     : messageStore.visibleMessagesFor(channelId.value),
 )
+// (naya) DM: adhoora / ajeeb shakal ka message (list ka preview, purana cache, kachcha server data)
+// poori chat ko khali na kare: text hamesha string, reactions { emoji, users: [] }, attachments bina null
+function dmTextOf(value) {
+  if (typeof value === 'string') return value
+  if (value == null) return value
+  if (typeof value === 'object') {
+    const inner = value.html ?? value.text ?? value.body ?? value.content
+    return typeof inner === 'string' ? inner : ''
+  }
+  return String(value)
+}
+function safeDmMessage(message) {
+  const safe = { ...message }
+  for (const field of ['text', 'content', 'body']) {
+    if (field in safe && safe[field] != null && typeof safe[field] !== 'string') safe[field] = dmTextOf(safe[field])
+  }
+  if (!Array.isArray(safe.reactions)) {
+    safe.reactions = []
+  } else {
+    safe.reactions = safe.reactions
+      .filter((r) => r && typeof r === 'object' && r.emoji != null && r.emoji !== '')
+      .map((r) => {
+        const users = r.users ?? r.user_ids ?? r.userIds
+        return Array.isArray(users) ? r : { ...r, users: [] }
+      })
+  }
+  if ('attachments' in safe) {
+    safe.attachments = Array.isArray(safe.attachments)
+      ? safe.attachments.filter((file) => file && typeof file === 'object')
+      : []
+  }
+  return safe
+}
+
 const renderedMessages = computed(() => {
   const currentUser = currentUserName.value
+  const byId = new Map(allMessages.value.filter(Boolean).map((item) => [String(item.id), item])) // (naya)
   let previous = null
 
   return [...visibleMessages.value]
     .filter((message, index, messages) => {
+      if (conversation.value && !message) return false // (naya) DM: khali entry se chat crash na ho
+      if (conversation.value && isHiddenThreadReply(message)) return false // (naya) DM: thread reply sirf card mein
       if (!message.scheduled || !isScheduledMessageDelivered(message)) return true
       const content = String(message.content ?? message.text ?? message.body ?? '').trim()
       const scheduledAt = scheduledTimestamp(message)
@@ -264,6 +361,7 @@ const renderedMessages = computed(() => {
     })
     .sort((a, b) => new Date(a.createdAt || 0) - new Date(b.createdAt || 0))
     .map((message) => {
+      if (conversation.value) message = safeDmMessage(message)
       const voiceNoteId = message.voiceNoteId ?? message.voice_note_id ?? message.voice_note?.id
       const messageContent = message.text ?? message.content ?? ''
       const normalizedContent = normalizeMessageText(messageContent)
@@ -326,6 +424,55 @@ const renderedMessages = computed(() => {
         reactions: message.reactions || [],
       }
       rendered.replySummary = replySummaryFor(rendered)
+      if (conversation.value && rendered.reply) rendered.reply = replyPreviewOf(message, byId) // (naya) DM: asli naam/text
+      // (naya) Text mein HTML tags aa jayein (<p>hi</p>) to saaf text dikhao (forward bhi saaf jata hai)
+      // (naya) Forward ka invisible nishan (channel / purana cache): "(forwarded)" + nishan hatao
+      if (conversation.value && typeof rendered.content === 'string' && rendered.content.includes(FORWARD_MARK)) {
+        rendered.content = rendered.content.split(FORWARD_MARK).join('')
+        rendered.formattedContent = formattedMessageHtml(rendered.content)
+        rendered.forwardedFrom = rendered.forwardedFrom || 'forwarded'
+      }
+      // (naya) "[Forwarded] ..." (server se aaya nishan): prefix hatao, neeche "(forwarded)"
+      if (!rendered.deleted && typeof rendered.content === 'string') {
+        const shown = htmlToPlainText(rendered.content)
+        if (FORWARD_TEXT_RE.test(shown)) {
+          const clean = shown.replace(FORWARD_TEXT_RE, '')
+          rendered.forwardedFrom = rendered.forwardedFrom || 'forwarded'
+          rendered.formattedContent = formattedMessageHtml(clean)
+          rendered.segments = messageSegments(clean)
+          rendered.preview = createLinkPreview(clean)
+          if (conversation.value) rendered.content = clean
+        } else if (!conversation.value && shown !== rendered.content) {
+          // Channel: "<p>hi</p>" ki jagah "hi" dikhao (edit / copy ke liye asli content wahi rehta hai)
+          rendered.formattedContent = formattedMessageHtml(shown)
+          rendered.segments = messageSegments(shown)
+          rendered.preview = createLinkPreview(shown)
+        }
+      }
+      // (naya) Channel: is browser se forward kiya hua message -> "(forwarded)"
+      if (!conversation.value && !rendered.forwardedFrom && isRememberedForward(channelId.value, message)) {
+        rendered.forwardedFrom = 'forwarded'
+      }
+      // (naya) Backend replies_count na de: parent_id wale replies se ginti (doosre user ko bhi)
+      // DM thread summary (localStorage + network): jo ginti bari ho, aur sab se naya "last reply"
+      if (conversation.value) {
+        const info = dms.threadInfo?.(conversation.value.id, message.id)
+        if (info?.count && info.count >= (rendered.replyCount || 0)) {
+          rendered.replyCount = info.count
+          const ours = Date.parse(info.lastAt)
+          const theirs = Date.parse(rendered.lastReplyAt)
+          if (Number.isFinite(ours) && (!Number.isFinite(theirs) || ours > theirs)) rendered.lastReplyAt = info.lastAt
+        }
+      }
+      if (conversation.value && !message.deleted && typeof rendered.content === 'string') {
+        const plain = htmlToPlainText(rendered.content)
+        if (plain !== rendered.content) {
+          rendered.content = plain
+          rendered.formattedContent = formattedMessageHtml(plain)
+          rendered.segments = messageSegments(plain)
+          rendered.preview = createLinkPreview(plain)
+        }
+      }
       previous = rendered
       return rendered
     })
@@ -388,6 +535,418 @@ function replySummaryFor(message) {
       : '',
   }
 }
+
+// ---------- DM: online dot, replies thread (naya) ----------
+const presence = usePresenceStore()
+const replies = repliesStore
+const threadMessageId = ref(null) // DM ka khula "Reply Thread"
+
+// Avatar par online/away/offline dot: jab author ka asli user id maloom ho (sirf DM)
+function presenceUserId(message) {
+  if (!conversation.value) return null
+  const id = message.from ?? message.authorId
+  return id && dms.usersById[id] ? id : null
+}
+
+// Replies API sirf server par gaye DM messages ke liye
+function canThread(message) {
+  return (
+    Boolean(conversation.value) &&
+    Boolean(message) && // (naya)
+    !message.deleted &&
+    !message.scheduled &&
+    !String(message.id).startsWith('local-')
+  )
+}
+function replyTarget(message) {
+  return { channelId: String(conversation.value.id), messageId: String(message.id) }
+}
+// (naya) replies store ki purani (khali) ginti DM list wali ginti ko na chhupaye: dono mein se bari
+function dmThreadSummary(message) {
+  const info = dms.threadInfo?.(conversation.value.id, message.id)
+  const count = Math.max(
+    replies.countOf(replyTarget(message), message.replyCount ?? 0) ?? 0,
+    message.replyCount ?? 0,
+    info?.count ?? 0,
+  )
+  const times = [replies.lastReplyAtOf(replyTarget(message), message.lastReplyAt), message.lastReplyAt, info?.lastAt]
+    .filter(Boolean)
+  const lastAt = times.reduce((a, b) => (Date.parse(b) > Date.parse(a) ? b : a), times[0])
+  return { count, lastAt }
+}
+function replyCountOf(message) {
+  if (conversation.value) return dmThreadSummary(message).count // (naya)
+  return replies.countOf(replyTarget(message), message.replyCount ?? 0)
+}
+function lastReplyAtOf(message) {
+  if (conversation.value) return dmThreadSummary(message).lastAt ?? message.lastReplyAt // (naya)
+  return replies.lastReplyAtOf(replyTarget(message), message.lastReplyAt)
+}
+function openThread(message) {
+  if (conversation.value) {
+    if (!canThread(message)) return
+    threadMessageId.value = message.id
+  } else {
+    channelThreadMessage.value = message
+  }
+  openMenuId.value = null
+}
+
+// Replies API reply ko ek id deti hai, DM / channel list mein wahi reply doosri id se aata hai:
+// isliye id ke ilawa bhejne wala + text + waqt (2 min) se bhi pehchano
+function sameAsReply(message, reply, parentId) {
+  if (!message || String(message.id) === String(parentId)) return false
+  const author = String(message.from ?? message.authorId ?? '')
+  const replyAuthor = String(reply.from ?? reply.authorId ?? reply.user_id ?? '')
+  const text = htmlToPlainText(String(message.text ?? message.content ?? '')).trim()
+  const replyText = htmlToPlainText(String(reply.text ?? reply.content ?? reply.body ?? '')).trim()
+  const gap = Math.abs(Date.parse(message.createdAt) - Date.parse(reply.createdAt))
+  return Boolean(
+    text &&
+      text === replyText &&
+      (!author || !replyAuthor || author === replyAuthor) &&
+      Number.isFinite(gap) &&
+      gap < 2 * 60_000,
+  )
+}
+function replyCopiesIn(list, parent, threadReplies) {
+  const ids = []
+  for (const reply of threadReplies ?? []) {
+    if (reply?.id != null) ids.push(String(reply.id))
+    for (const message of list) {
+      if (sameAsReply(message, reply, parent.id)) ids.push(String(message.id))
+    }
+  }
+  return ids
+}
+const knownThreadReplyIds = computed(() => {
+  if (!conversation.value) return []
+  const ids = []
+  const list = allMessages.value
+  for (const message of list) {
+    if (!canThread(message)) continue
+    ids.push(...replyCopiesIn(list, message, replies.repliesOf(replyTarget(message))))
+  }
+  return ids
+})
+watch(
+  knownThreadReplyIds,
+  (ids) => {
+    if (ids.length && conversation.value) dms.markThreadReplies?.(conversation.value.id, ids)
+  },
+  { immediate: true },
+)
+
+// (naya) Reply Thread ki list (bhejte hi optimistic bhi) -> store ki thread summary (localStorage)
+// Isse "N replies · Last reply" foran badalta hai aur reload ke baad bhi rehta hai.
+const loadedThreads = computed(() => {
+  if (!conversation.value) return []
+  const out = []
+  for (const message of allMessages.value) {
+    if (!canThread(message)) continue
+    const list = replies.repliesOf(replyTarget(message)) ?? []
+    if (list.length) out.push({ parentId: String(message.id), list })
+  }
+  return out
+})
+watch(
+  loadedThreads,
+  (threads) => {
+    if (!conversation.value) return
+    for (const { parentId, list } of threads) dms.noteThreadReplies?.(conversation.value.id, parentId, list)
+  },
+  { immediate: true },
+)
+
+// (naya) DM: thread reply ka parent (backend jo bhi naam de)
+function parentIdOf(message) {
+  const id =
+    message?.parentId ??
+    message?.parent_id ??
+    message?.parent_message_id ??
+    message?.parentMessageId ??
+    message?.thread_parent_id ??
+    message?.reply_parent_id ??
+    message?.reply_to_id ??
+    message?.reply_to_message_id ??
+    message?.thread_id
+  return id == null || id === '' ? null : String(id)
+}
+
+// (naya) DM: yeh message kisi thread ka reply hai? (to main chat mein nahi, sirf card mein)
+function isHiddenThreadReply(message) {
+  if (!conversation.value || !message || message.scheduled) return false
+  if (parentIdOf(message)) return true
+  return knownThreadReplyIds.value.includes(String(message.id))
+}
+
+// ---------- (naya) Doosre user ki thread replies bhi dikhein ----------
+// Backend message list mein replies_count na bheje to "1 reply" kabhi nahi aata tha (sirf jisne
+// reply kiya usay pata tha). Khuli DM ke aakhri messages ki replies chupke se check karte hain.
+// Backend replies_count bheje to yeh koi request nahi karta.
+const REPLY_SCAN_EVERY_MS = 60_000 // har message ki replies zyada se zyada 1 dafa / minute
+const REPLY_SCAN_LAST = 10
+const replyScannedAt = new Map()
+let replyScanTimer = null
+let replyScanning = false
+async function scanReplyCounts() {
+  if (!conversation.value || replyScanning || (typeof document !== 'undefined' && document.hidden)) return
+  replyScanning = true
+  try {
+    const candidates = allMessages.value
+      .filter((m) => m && !m.replyCount && canThread(m) && !isHiddenThreadReply(m)) // undefined ya 0
+      // khula thread ThreadPanel khud poll karta hai: dobara request nahi
+      .filter((m) => String(m.id) !== String(threadMessageId.value))
+      .slice(-REPLY_SCAN_LAST)
+    for (const message of candidates) {
+      const key = `${conversation.value?.id}:${message.id}`
+      if (Date.now() - (replyScannedAt.get(key) ?? 0) < REPLY_SCAN_EVERY_MS) continue
+      replyScannedAt.set(key, Date.now())
+      try {
+        await replies.loadReplies(replyTarget(message), { force: true })
+      } catch {
+        /* agli dafa dobara */
+      }
+    }
+  } finally {
+    replyScanning = false
+  }
+}
+watch(
+  () => conversation.value?.id,
+  (id) => {
+    clearInterval(replyScanTimer)
+    replyScanTimer = null
+    if (id == null || typeof window === 'undefined') return
+    void scanReplyCounts()
+    replyScanTimer = window.setInterval(() => void scanReplyCounts(), REPLY_SCAN_EVERY_MS)
+  },
+  { immediate: true },
+)
+// naye message aaye to un ki replies bhi
+watch(
+  () => allMessages.value.at(-1)?.id,
+  () => void scanReplyCounts(),
+)
+onBeforeUnmount(() => clearInterval(replyScanTimer))
+
+// (naya) Jo messages kisi thread ke replies hain (Reply Thread card mein), woh main chat mein
+// alag message ki tarah na aayein: store ko bata do, woh unhein chat se hata deta hai
+
+
+
+// ---------- (naya) Channel mein forward kiye messages yaad rakho ----------
+// Messages store forward ki maloomat (forwardedFrom) nahi rakhta, isliye bhejne wale ko bhi
+// "(forwarded)" nahi dikhta tha. Yahan (localStorage mein) yaad rakhte hain, reload ke baad bhi.
+const FORWARDED_KEY = 'whistleit:forwarded-messages'
+function readForwarded() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(FORWARDED_KEY) || '{}')
+    return saved && typeof saved === 'object' ? saved : {}
+  } catch {
+    return {}
+  }
+}
+const forwardedByChannel = ref(readForwarded())
+function rememberForwarded(destinationId, sent, content) {
+  const key = String(destinationId)
+  const list = Array.isArray(forwardedByChannel.value[key]) ? [...forwardedByChannel.value[key]] : []
+  list.push({
+    id: sent?.id != null ? String(sent.id) : null,
+    text: htmlToPlainText(String(content ?? '')).replace(FORWARD_TEXT_RE, '').trim(),
+    at: Date.parse(sent?.createdAt ?? sent?.created_at ?? '') || Date.now(),
+  })
+  forwardedByChannel.value = { ...forwardedByChannel.value, [key]: list.slice(-200) }
+  try {
+    localStorage.setItem(FORWARDED_KEY, JSON.stringify(forwardedByChannel.value))
+  } catch {
+    /* storage full */
+  }
+}
+function isRememberedForward(key, message) {
+  const list = forwardedByChannel.value[String(key)]
+  if (!Array.isArray(list) || !message) return false
+  const id = String(message.id)
+  const text = htmlToPlainText(String(message.content ?? message.text ?? '')).trim()
+  const at = Date.parse(message.createdAt)
+  return list.some(
+    (item) =>
+      (item.id && item.id === id) ||
+      (item.text === text.replace(FORWARD_TEXT_RE, '') && Number.isFinite(at) && Math.abs(at - item.at) < 10 * 60_000),
+  )
+}
+
+function decodeEntities(value) {
+  return value
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#0?39;|&apos;/g, "'")
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+}
+function htmlToPlainText(value) {
+  if (typeof value !== 'string' || !value) return value
+  let text = value
+  if (!HTML_TAG.test(text) && /&lt;\/?[a-z]/i.test(text)) text = decodeEntities(text)
+  if (!HTML_TAG.test(text)) return value
+  text = text
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/(p|div|li|h[1-6]|blockquote|pre)>/gi, '\n')
+    .replace(/<li\b[^>]*>/gi, '• ')
+    .replace(/<[^>]+>/g, '')
+  return decodeEntities(text).replace(/\n{3,}/g, '\n\n').trim()
+}
+
+// ---------- (naya) ⋯ menu / emoji picker: neeche jagah na ho to UPAR khule ----------
+const flipUpId = ref(null)
+watch(
+  [openMenuId, openReactionId],
+  async ([menuId, reactionId]) => {
+    const id = menuId ?? reactionId
+    if (id == null) {
+      flipUpId.value = null
+      return
+    }
+    await nextTick()
+    const container = messagesContainer.value
+    const safeId = String(id).replace(/["\\]/g, '\\$&')
+    const article = container?.querySelector(`[data-message-id="${safeId}"]`)
+    const toolbar = article?.querySelector('.composer-conversation__action-toolbar')
+    if (!container || !toolbar) {
+      flipUpId.value = null
+      return
+    }
+    // Card ki asli unchai naap kar (zoom / font size par bhi sahi): neeche poora na aaye to upar
+    const panel = article.querySelector(
+      menuId != null ? '.composer-conversation__menu' : '.composer-conversation__reaction-picker',
+    )
+    const box = container.getBoundingClientRect()
+    const bar = toolbar.getBoundingClientRect()
+    const needed = (panel?.offsetHeight || (menuId != null ? 380 : 340)) + 16
+    // Chat box ya browser window, jo pehle khatam ho (dono ke andar poora dikhna chahiye)
+    const bottomLimit = Math.min(box.bottom, window.innerHeight || box.bottom)
+    const below = bottomLimit - bar.bottom
+    const above = bar.top - Math.max(box.top, 0)
+    flipUpId.value = below < needed && above > below ? id : null
+  },
+  { flush: 'post' },
+)
+const threadMessage = computed(() => {
+  if (!conversation.value) return channelThreadMessage.value
+  return threadMessageId.value != null
+    ? allMessages.value.find((item) => item.id === threadMessageId.value) || null
+    : null
+})
+// Thread wala message delete ho jaye, ya doosri conversation khule, to panel band
+watch(threadMessage, (message) => {
+  if (!message && conversation.value) threadMessageId.value = null
+})
+watch(
+  () => `${props.conversationType}:${props.conversationId}`,
+  () => {
+    threadMessageId.value = null
+    channelThreadMessage.value = null
+  },
+)
+// Emoji picker khula ho to store ko batao: picker se wahi emoji dobara chunne par hatao mat
+watch(openReactionId, (id) => dms.setReactionPicker?.(id), { flush: 'sync' })
+
+// (naya) Edit box: Enter = Save, Shift+Enter = nayi line, Esc = Cancel
+function onEditKeydown(event) {
+  if (editingId.value == null) return
+  const target = event.target
+  if (!(target instanceof HTMLTextAreaElement) || target.getAttribute('aria-label') !== 'Edit message') return
+  if (event.key === 'Escape') {
+    event.preventDefault()
+    cancelEdit()
+    return
+  }
+  if (event.key !== 'Enter' || event.shiftKey || event.isComposing) return
+  event.preventDefault()
+  const message = allMessages.value.find((item) => item.id === editingId.value)
+  if (message) saveEdit(message)
+}
+onMounted(() => document.addEventListener('keydown', onEditKeydown))
+onBeforeUnmount(() => document.removeEventListener('keydown', onEditKeydown))
+
+// (naya) DM pagination: 20-30 naye messages aane par purane screen se na hatein
+let lastDmKey = ''
+let lastDmCount = 0
+let growingForNewMessages = false
+watch(
+  () => [conversation.value?.id ?? '', allMessages.value.length],
+  ([id, count]) => {
+    if (!conversation.value) {
+      lastDmKey = ''
+      return
+    }
+    if (id === lastDmKey && count > lastDmCount) {
+      growingForNewMessages = true
+      dmVisibleCount.value += count - lastDmCount // dikhne wali "window" bhi utni badhao
+    }
+    lastDmKey = id
+    lastDmCount = count
+  },
+)
+// "Load older messages" (20 aur): upar jud kar screen apni jagah rahe, koode nahi
+watch(
+  dmVisibleCount,
+  (next, previous) => {
+    const container = messagesContainer.value
+    const forNew = growingForNewMessages
+    growingForNewMessages = false
+    if (!conversation.value || !container || forNew || next <= previous) return
+    const height = container.scrollHeight
+    const top = container.scrollTop
+    nextTick(() => {
+      container.scrollTop = top + container.scrollHeight - height
+    })
+  },
+  { flush: 'pre' },
+)
+// Apne paas ke sab dikh gaye aur server par aur purane hain: GET .../messages?page=N
+const dmCanLoadOlderFromServer = computed(
+  () =>
+    Boolean(conversation.value) &&
+    !hasOlderMessages.value &&
+    Boolean(dms.hasMoreOlder?.(conversation.value.id)),
+)
+// (naya) Upar scroll karte hi purane messages khud (button dabane ki zaroorat nahi)
+let autoLoading = false
+async function onMessagesScroll() {
+  const container = messagesContainer.value
+  if (!conversation.value || !container || autoLoading || container.scrollTop > 80) return
+  autoLoading = true
+  try {
+    if (hasOlderMessages.value) loadOlder()
+    else if (dmCanLoadOlderFromServer.value) await loadOlderFromServer()
+  } finally {
+    setTimeout(() => {
+      autoLoading = false
+    }, 300)
+  }
+}
+watch(
+  messagesContainer,
+  (element, previous) => {
+    previous?.removeEventListener('scroll', onMessagesScroll)
+    element?.addEventListener('scroll', onMessagesScroll, { passive: true })
+  },
+  { immediate: true },
+)
+onBeforeUnmount(() => messagesContainer.value?.removeEventListener('scroll', onMessagesScroll))
+
+async function loadOlderFromServer() {
+  const container = messagesContainer.value
+  const height = container?.scrollHeight || 0
+  const top = container?.scrollTop || 0
+  const added = await dms.loadOlderMessages(conversation.value.id)
+  await nextTick()
+  await new Promise((resolve) => setTimeout(resolve, 0)) // purana "neeche scroll" pehle ho le
+  if (container && added) container.scrollTop = top + container.scrollHeight - height
+}
+
 const reminderMessage = computed(() => {
   const target = reminderTarget.value || snoozeTarget.value
   if (!target) return null
@@ -446,6 +1005,7 @@ watch(
     forwardTarget.value = null
     clearInterval(channelMessagesRefreshTimer)
     channelMessagesRefreshTimer = null
+    loadScheduledMessages()
     if (props.conversationType === 'channel' && props.conversationId != null) {
       void messageStore.fetchChannelMessages(props.conversationId)
       channelMessagesRefreshTimer = window.setInterval(() => {
@@ -1104,6 +1664,11 @@ async function confirmMessageDeletion() {
     ui.toast('Message not deleted', 'Only your unscheduled messages can be deleted.', 'error')
     return
   }
+  // (naya) Sirf schedule hua hai: abhi pin / search se mat hatao
+  if (deleteAt && conversation.value) {
+    deleteTarget.value = null
+    return
+  }
   if (!conversation.value) removeMockMessage(message.id)
   if (isPinned(message)) ui.togglePinnedMessage(message, conversationMeta.value)
   deleteTarget.value = null
@@ -1161,14 +1726,15 @@ function toggleReaction(message, emoji) {
 }
 
 function beginReply(message) {
+  // (naya) Reply = side par "Reply Thread" card + message ke neeche "1 reply · Last reply".
+  // Jo message abhi server par nahi (local / scheduled), uska purana quote wala reply.
+  if (canThread(message)) {
+    openThread(message)
+    return
+  }
   replyTo.value = { id: message.id, author: message.author, content: message.content }
   openMenuId.value = null
   nextTick(() => document.querySelector('[contenteditable="true"]')?.focus())
-}
-
-function openThread(message) {
-  threadMessage.value = message
-  openMenuId.value = null
 }
 
 function setReminder(message) {
@@ -1245,11 +1811,19 @@ async function forwardMessage() {
   const payload = {
     content: forwardTarget.value.content,
     forwardedFrom: `${forwardTarget.value.author} in ${conversationLabel.value}`,
+    ...(conversation.value ? { forwardedFromMessageId: forwardTarget.value.id } : {}), // (naya) DM: backend forwarded_from_message_id
     ...(forwardTarget.value.attachments?.length
       ? { attachments: forwardTarget.value.attachments }
       : {}),
     ...(forwardTarget.value.gif ? { gif: forwardTarget.value.gif } : {}),
   }
+  // Forward HTML/plain-text payloads in the same format as regular messages.
+  if (typeof payload.content === 'string') payload.content = htmlToPlainText(payload.content)
+  if (destination.type !== 'dm') delete payload.forwardedFromMessageId
+  if (destination.type !== 'dm' && payload.content) {
+    payload.content = `${FORWARD_TEXT_PREFIX}${payload.content.replace(FORWARD_TEXT_RE, '')}`
+  }
+
   if (!conversation.value) {
     if (!forwardTarget.value.serverBacked) {
       ui.toast(
@@ -1339,10 +1913,8 @@ async function forwardMessage() {
       result.data ??
       messageStore
         .messagesFor(destination.id)
-        .find(
-          (message) =>
-            message.forwardedFrom === payload.forwardedFrom && message.content === payload.content,
-        )
+        .find((message) => message.forwardedFrom === payload.forwardedFrom && message.content === payload.content)
+    rememberForwarded(destination.id, forwarded, payload.content) // (naya) "(forwarded)" neeche
     if (forwarded) {
       addMockMessage({
         id: forwarded.id,
@@ -2023,6 +2595,21 @@ onBeforeUnmount(() => {
       >
         {{ loadingOlderMessages ? 'Loading older messages...' : 'Load older messages' }}
       </button>
+      <!-- (naya) Server se purane messages (GET .../messages?page=N) -->
+      <button
+        v-else-if="dmCanLoadOlderFromServer"
+        type="button"
+        class="composer-conversation__load-older"
+        data-test="load-older-server"
+        :disabled="dms.isLoadingOlder(conversation.id)"
+        @click="loadOlderFromServer"
+      >
+        {{ dms.isLoadingOlder(conversation.id) ? 'Loading older messages...' : 'Load older messages' }}
+      </button>
+      <!-- (naya) Internet nahi -->
+      <p v-if="conversation && !isOnline" class="composer-conversation__offline" role="status">
+        You're offline. New messages, edits and reactions will sync when you reconnect.
+      </p>
       <p
         v-if="props.conversationType === 'channel' && messageStore.loadingByChannel[channelId]"
         class="composer-conversation__status"
@@ -2062,6 +2649,10 @@ onBeforeUnmount(() => {
       </p>
       <template v-for="message in renderedMessages" :key="message.id">
         <div v-if="message.showDate" class="composer-conversation__date">
+          <!-- (naya) DM: din ki pill "Today" / "Yesterday" / "Oct 14, 2026" (purana label CSS se chhupta hai) -->
+          <span v-if="conversation" class="composer-conversation__dm-date">{{
+            dayLabel(message.createdAt)
+          }}</span>
           <span>{{ message.dateHeading }}</span>
         </div>
 
@@ -2079,6 +2670,14 @@ onBeforeUnmount(() => {
                 .join('')
                 .toUpperCase()
             }}
+            <!-- (naya) Online (hara) / Away (peela) / Offline (grey): live, sirf DM -->
+            <PresenceDot
+              v-if="presenceUserId(message)"
+              class="composer-conversation__presence"
+              :state="presence.stateOf(presenceUserId(message))"
+              ring="border-white"
+              :size="11"
+            />
           </span>
           <span v-else class="composer-conversation__avatar-spacer" aria-hidden="true"></span>
 
@@ -2116,7 +2715,13 @@ onBeforeUnmount(() => {
                 {{ message.author }}
               </button>
               <strong v-else>{{ message.author }}</strong>
+              <TimeAgo
+                v-if="conversation && message.createdAt"
+                class="composer-conversation__dm-time"
+                :value="message.createdAt"
+              />
               <time
+                v-else
                 :datetime="message.createdAt"
                 :data-time-tooltip="message.fullTime"
                 :aria-label="message.fullTime"
@@ -2143,6 +2748,8 @@ onBeforeUnmount(() => {
               @dblclick="handleMessageDoubleClick($event, message)"
             >
               <template v-if="!message.deleted">
+                <!-- (naya) DM + channel: upar wala "Forwarded from" chhupao, neeche "(forwarded)" -->
+                <span v-if="message.forwardedFrom" class="composer-conversation__dm-forward-marker" hidden />
                 <span v-if="message.forwardedFrom" class="composer-conversation__forwarded">
                   (forwarded)
                 </span>
@@ -2225,6 +2832,14 @@ onBeforeUnmount(() => {
                 </span>
                 <span v-if="message.deleteScheduledAt" class="composer-conversation__scheduled">
                   Scheduled to delete {{ new Date(message.deleteScheduledAt).toLocaleString() }}
+                  <button
+                    v-if="conversation"
+                    type="button"
+                    class="composer-conversation__inline-link"
+                    @click.stop="cancelScheduledDelete(message)"
+                  >
+                    Cancel
+                  </button>
                 </span>
 
                 <VoiceNotePlayer
@@ -2258,18 +2873,55 @@ onBeforeUnmount(() => {
                   >
                     {{ reaction.emoji }} {{ reaction.users.length }}
                   </button>
+                  <!-- (naya) DM: ☺+ se aur reaction (maujooda emoji picker khulta hai) -->
+                  <button
+                    v-if="conversation"
+                    type="button"
+                    class="composer-conversation__reaction-add"
+                    aria-label="Add reaction"
+                    title="Add reaction"
+                    @click.stop="openReactionId = openReactionId === message.id ? null : message.id"
+                  >
+                    <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                      <circle cx="12" cy="12" r="9" />
+                      <path d="M8 14s1.5 2 4 2 4-2 4-2" />
+                      <path d="M9 9h.01M15 9h.01" />
+                    </svg>
+                    <span aria-hidden="true">+</span>
+                  </button>
                 </div>
               </template>
               <p v-else class="composer-conversation__deleted-message">(message deleted)</p>
+              <!-- (naya) "(forwarded)" message ke neeche -->
+              <span
+                v-if="message.forwardedFrom && !message.deleted"
+                class="composer-conversation__forwarded composer-conversation__forwarded-below"
+                >(forwarded)</span
+              >
+              <!-- (naya) offline mein edit / delete / reaction: internet aate hi sync -->
+              <span
+                v-if="message.syncPending"
+                class="composer-conversation__sync-pending"
+                title="Saved on this device. Will sync when the connection is back."
+                >◷ Waiting for connection</span
+              >
               <span
                 v-if="message.editedAt && !message.deleted"
+                :class="'composer-conversation__edited-below'"
                 class="composer-conversation__edited"
                 >(edited)</span
               >
             </div>
 
+            <ReplySummary
+              v-if="canThread(message)"
+              class="composer-conversation__reply-summary"
+              :count="replyCountOf(message)"
+              :last-reply-at="lastReplyAtOf(message)"
+              @open="openThread(message)"
+            />
             <button
-              v-if="message.replySummary.count > 0"
+              v-else-if="!conversation && message.replySummary.count > 0"
               type="button"
               class="composer-conversation__thread-summary"
               :aria-label="`${message.replySummary.count} ${message.replySummary.count === 1 ? 'reply' : 'replies'}${message.replySummary.lastReplyLabel ? `, last reply ${message.replySummary.lastReplyLabel}` : ''}`"
@@ -2287,6 +2939,7 @@ onBeforeUnmount(() => {
             <div
               v-if="!message.deleted"
               class="composer-conversation__actions"
+              :class="{ 'composer-conversation__actions--up': flipUpId === message.id }"
               role="group"
               :aria-label="`Actions for ${message.author}'s message`"
             >
@@ -2652,6 +3305,15 @@ onBeforeUnmount(() => {
       Only certain people can post in this channel.
     </div>
 
+    <!-- (naya) Daayein taraf "Reply Thread" (DM replies API, polling se live) -->
+    <aside v-if="conversation && threadMessage" class="composer-conversation__thread">
+      <ThreadPanel
+        :message="threadMessage"
+        :channel-id="String(conversation.id)"
+        @close="threadMessageId = null"
+      />
+    </aside>
+
     <SetReminderModal
       v-if="reminderMessage"
       :message="reminderMessage"
@@ -2912,12 +3574,12 @@ onBeforeUnmount(() => {
       </form>
     </div>
 
-    <div v-if="threadMessage" class="composer-conversation__thread-overlay">
+    <div v-if="!conversation && threadMessage" class="composer-conversation__thread-overlay">
       <ThreadPanel
         :message="threadMessage"
         :channel-id="channelId"
         :team-id="conversation ? null : teamsStore.activeTeamId"
-        @close="threadMessage = null"
+        @close="channelThreadMessage = null"
       />
     </div>
   </section>
@@ -4314,5 +4976,196 @@ onBeforeUnmount(() => {
 .composer-conversation__sent-status--sending ~ .composer-conversation__sent-status,
 .composer-conversation__sent-status--failed ~ .composer-conversation__sent-status {
   display: none;
+}
+</style>
+
+<!-- (naya) DM: online dot, waqt, reactions ☺+, replies, Reply Thread.
+     Upar wale purane styles ko chheda nahi gaya. -->
+<style scoped>
+.composer-conversation__avatar {
+  position: relative;
+}
+
+.composer-conversation__presence {
+  position: absolute;
+  right: -3px;
+  bottom: -3px;
+}
+
+/* DM mein naya "3 days ago" dikhta hai, uske foran baad wala purana time chhupta hai */
+.composer-conversation__dm-time + time {
+  display: none;
+}
+
+/* DM: upar wala "Forwarded from …" chhupa, neeche "(forwarded)" */
+.composer-conversation__dm-forward-marker + .composer-conversation__forwarded {
+  display: none;
+}
+
+/* DM: din ki pill (purana label chhupa) */
+.composer-conversation__dm-date + span {
+  display: none;
+}
+
+.composer-conversation__dm-date {
+  padding: 4px 16px;
+  border: 1px solid #dfe2ea;
+  border-radius: 999px;
+  background: white;
+  color: #2f3142;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+/* DM: "(edited)" upar naam ke saath nahi, message ke neeche */
+.composer-conversation__dm-time ~ .composer-conversation__edited {
+  display: none;
+}
+
+.composer-conversation__edited-below {
+  display: block;
+  margin-top: 6px;
+}
+
+.composer-conversation__reaction-add {
+  display: inline-flex;
+  align-items: center;
+  gap: 1px;
+  color: #6b7085;
+}
+
+.composer-conversation__reaction-add svg {
+  width: 15px;
+  height: 15px;
+}
+
+.composer-conversation__reply-summary {
+  margin: 4px 0 0 -8px;
+}
+
+/* (naya) */
+.composer-conversation__forwarded-below {
+  margin: 6px 0 0;
+}
+
+.composer-conversation__sync-pending {
+  display: block;
+  margin-top: 4px;
+  color: #a3730a;
+  font-size: 11px;
+}
+
+.composer-conversation__offline {
+  margin: 0 0 12px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  background: #fff7e6;
+  color: #8a5a00;
+  font-size: 12px;
+  text-align: center;
+}
+
+.composer-conversation__inline-link {
+  margin-left: 6px;
+  color: #5552c7;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+/* (naya) ⋯ menu / emoji picker aakhri messages par upar khulein (composer ke peeche na katein) */
+.composer-conversation__actions--up {
+  z-index: 30;
+}
+
+.composer-conversation__actions--up .composer-conversation__menu {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 6px);
+  margin-top: 0;
+}
+
+.composer-conversation__actions--up .composer-conversation__reaction-picker {
+  top: auto;
+  bottom: calc(100% + 6px);
+}
+
+/* Menu ya picker khula ho to toolbar dikhta rahe aur dusre messages ke upar rahe */
+.composer-conversation__actions:has(.composer-conversation__menu),
+.composer-conversation__actions:has(.composer-conversation__reaction-picker) {
+  z-index: 30;
+}
+
+.composer-conversation__actions:has(.composer-conversation__menu) .composer-conversation__action-toolbar,
+.composer-conversation__actions:has(.composer-conversation__reaction-picker) .composer-conversation__action-toolbar {
+  opacity: 1;
+}
+
+.composer-conversation__actions {
+  right: 8px;
+}
+
+/* (naya) ⋯ menu ka UI */
+.composer-conversation__menu {
+  min-width: 210px;
+  margin-top: 6px;
+  padding: 6px;
+  border: 1px solid #e3e4ec;
+  border-radius: 10px;
+  background: #fff;
+  box-shadow: 0 12px 32px rgb(20 20 31 / 16%);
+}
+
+.composer-conversation__menu button {
+  width: 100%;
+  grid-template-columns: 22px minmax(0, 1fr) auto;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  color: #2f3142;
+  font-size: 14px;
+  line-height: 18px;
+}
+
+.composer-conversation__menu button:hover {
+  background: #f1f0fa;
+}
+
+.composer-conversation__menu button svg {
+  width: 18px;
+  height: 18px;
+  color: #5b5e73;
+}
+
+.composer-conversation__menu .composer-conversation__delete-action,
+.composer-conversation__menu .composer-conversation__delete-action svg {
+  color: #c92f43;
+}
+
+.composer-conversation__menu .composer-conversation__delete-action:hover {
+  background: #fdecee;
+}
+
+.composer-conversation__menu .composer-conversation__shortcuts kbd {
+  min-width: 18px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: #eef0f6;
+  color: #4a4c60;
+  font-size: 10px;
+  line-height: 16px;
+}
+
+/* Reply Thread: daayein taraf panel */
+.composer-conversation__thread {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 40;
+  display: flex;
+  width: min(440px, 100vw);
+  border-left: 1px solid #e4e6ed;
+  background: white;
+  box-shadow: -8px 0 24px rgb(37 38 58 / 12%);
 }
 </style>

@@ -1,5 +1,5 @@
 <script setup>
-import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useDmStore } from '@/features/dms/stores/dms'
 import { usePresenceStore } from '@/features/dms/stores/presence'
 import { useUiStore } from '@/stores/ui'
@@ -11,12 +11,63 @@ const presence = usePresenceStore()
 const ui = useUiStore()
 const open = ref(true)
 const panelOpen = ref(false)
+const starting = ref('') // jis user ke saath DM ban rahi hai
+
+const ORDER = { online: 0, away: 1, offline: 2 }
+
+// Pehle ki tarah baaki users bhi (jin se abhi DM nahi): online upar, phir naam se
+const suggestions = computed(() =>
+  [...dms.suggestedUsers]
+    .sort(
+      (a, b) =>
+        (ORDER[presence.stateOf(a.id)] ?? 2) - (ORDER[presence.stateOf(b.id)] ?? 2) ||
+        a.name.localeCompare(b.name),
+    )
+    .map((user) => ({
+      id: `user:${user.id}`,
+      userId: user.id,
+      type: 'dm',
+      members: [dms.meId, user.id],
+      name: '',
+      unreadCount: 0,
+      messages: [],
+    })),
+)
 
 function openConversation(conversationId) {
   if (!dms.openConversation(conversationId)) return
   ui.selectChannel(null)
   ui.closePanel()
 }
+
+// Suggested user par click: DM banao (ya maujooda kholo). Dohra click ignore.
+async function startWith(item) {
+  if (!item?.userId || starting.value) return
+  starting.value = item.userId
+  try {
+    await dms.startDm(item.userId)
+    ui.selectChannel(null)
+    ui.closePanel()
+  } catch (cause) {
+    ui.toast?.('Could not start the conversation', cause?.message || 'Please try again.', 'error')
+  } finally {
+    starting.value = ''
+  }
+}
+
+// Browser tab title mein bhi unread ginti: "(3) WhistleIt"
+const baseTitle = typeof document !== 'undefined' ? document.title.replace(/^\(\d+\+?\)\s*/, '') : ''
+watch(
+  () => dms.totalUnread,
+  (count) => {
+    if (typeof document === 'undefined') return
+    document.title = count ? `(${count > 99 ? '99+' : count}) ${baseTitle}` : baseTitle
+  },
+  { immediate: true },
+)
+onBeforeUnmount(() => {
+  if (typeof document !== 'undefined') document.title = baseTitle
+})
 
 watch(
   () =>
@@ -34,11 +85,15 @@ watch(
 onMounted(() => {
   void dms.init()
   void presence.init()
+  void dms.loadCompanyMembers() // baaki users (company + team members)
   dms.startPolling() // dusre user ke naye / edit / delete messages khud aate rahein
 })
 
 onBeforeUnmount(() => {
   dms.stopPolling()
+  // App/sidebar band (jaise logout): server ko "offline", phir status timers band
+  presence.goOffline()
+  presence.stopPolling()
 })
 </script>
 
@@ -103,6 +158,18 @@ onBeforeUnmount(() => {
         :conversation="c"
         :active="c.id === dms.activeId"
         @select="openConversation"
+        @close="dms.closeConversation"
+      />
+
+      <!-- Baaki users (click par DM shuru) -->
+      <DmListItem
+        v-for="item in suggestions"
+        :key="item.id"
+        :conversation="item"
+        :active="false"
+        :class="starting === item.userId ? 'opacity-60' : ''"
+        data-test="dm-suggestion"
+        @select="startWith(item)"
         @close="dms.closeConversation"
       />
     </template>

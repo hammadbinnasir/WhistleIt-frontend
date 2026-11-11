@@ -5,14 +5,15 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 vi.mock('@/features/dms/dmApi', () => ({
   dmApi: { meId: vi.fn(() => 'u1') },
 }))
-vi.mock('@/features/dms/Repliesapi', () => ({
+vi.mock('@/features/replies/repliesApi', () => ({
   repliesApi: { listReplies: vi.fn(), sendReply: vi.fn() },
 }))
 
-import { repliesApi } from '@/features/dms/Repliesapi'
+import { repliesApi } from '@/features/replies/repliesApi'
 import { useDmStore } from '@/features/dms/stores/dms'
+import { useRepliesStore } from '@/features/replies/stores/replies'
 import { useTeamsStore } from '@/stores/teams'
-import ThreadPanel from '../components/Threadpanel.vue'
+import ThreadPanel from './ThreadPanel.vue'
 
 const parent = { id: 'm1', from: 'u2', text: 'Parent message', createdAt: '2026-01-01T10:00:00Z' }
 
@@ -167,5 +168,19 @@ describe('ThreadPanel', () => {
     )
     expect(wrapper.text()).toContain('First reply')
     expect(wrapper.get('textarea').element.disabled).toBe(false)
+  })
+
+  it('watches the thread while open and stops when closed', async () => {
+    const wrapper = mountPanel()
+    await flushPromises()
+    repliesApi.listReplies.mockClear()
+
+    await useRepliesStore().pollOnce()
+    expect(repliesApi.listReplies).toHaveBeenCalledTimes(1)
+
+    wrapper.unmount()
+    repliesApi.listReplies.mockClear()
+    await useRepliesStore().pollOnce()
+    expect(repliesApi.listReplies).not.toHaveBeenCalled()
   })
 })

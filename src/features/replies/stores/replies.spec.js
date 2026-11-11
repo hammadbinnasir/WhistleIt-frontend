@@ -4,11 +4,11 @@ import { createPinia, setActivePinia } from 'pinia'
 vi.mock('@/features/dms/dmApi', () => ({
   dmApi: { meId: vi.fn(() => 'u1') },
 }))
-vi.mock('@/features/dms/Repliesapi', () => ({
+vi.mock('@/features/replies/repliesApi', () => ({
   repliesApi: { listReplies: vi.fn(), sendReply: vi.fn() },
 }))
 
-import { repliesApi } from '@/features/dms/Repliesapi'
+import { repliesApi } from '@/features/replies/repliesApi'
 import { useTeamsStore } from '@/stores/teams'
 import { REPLIES_STORAGE_KEY, targetFromKey, threadKey, useRepliesStore } from './Replies'
 
@@ -223,5 +223,55 @@ describe('replies store', () => {
 
     expect(localStorage.getItem(REPLIES_STORAGE_KEY)).toBeNull()
     expect(replies.repliesOf(dmThread)).toEqual([])
+  })
+
+  it('polls open threads and receives replies of the other user without reload', async () => {
+    vi.useFakeTimers()
+    try {
+      const replies = freshStore()
+      await replies.loadReplies(dmThread)
+      replies.watchThread(dmThread)
+      repliesApi.listReplies.mockResolvedValue([
+        { id: 'r1', from: 'u2', text: 'First reply', createdAt: '' },
+        { id: 'r2', from: 'u2', text: 'New from u2', createdAt: '' },
+      ])
+
+      await vi.advanceTimersByTimeAsync(4000)
+      expect(replies.repliesOf(dmThread).map((r) => r.text)).toEqual(['First reply', 'New from u2'])
+
+      replies.unwatchThread(dmThread) // thread band: polling band
+      repliesApi.listReplies.mockClear()
+      await vi.advanceTimersByTimeAsync(8000)
+      expect(repliesApi.listReplies).not.toHaveBeenCalled()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('polls silently without a loading state or error', async () => {
+    const replies = freshStore()
+    await replies.loadReplies(dmThread)
+    replies.watchThread(dmThread)
+    repliesApi.listReplies.mockRejectedValue(new Error('Failed to fetch'))
+
+    const polling = replies.pollOnce()
+    expect(replies.isLoading(dmThread)).toBe(false)
+    await polling
+
+    expect(replies.errorOf(dmThread)).toBe('')
+    expect(replies.repliesOf(dmThread).map((r) => r.text)).toEqual(['First reply'])
+    replies.unwatchThread(dmThread)
+  })
+
+  it('uses the larger of loaded replies and the server reply count, and the newest last reply time', async () => {
+    const replies = freshStore()
+    expect(replies.countOf(dmThread, 5)).toBe(5) // abhi load nahi hua: server ka count
+    expect(replies.lastReplyAtOf(dmThread, '2026-01-01T09:00:00Z')).toBe('2026-01-01T09:00:00Z')
+
+    await replies.loadReplies(dmThread) // 1 reply, 10:00
+    expect(replies.countOf(dmThread, 0)).toBe(1)
+    expect(replies.countOf(dmThread, 3)).toBe(3) // dusre user ke naye replies server count mein
+    expect(replies.lastReplyAtOf(dmThread, '2026-01-01T09:00:00Z')).toBe('2026-01-01T10:00:00Z')
+    expect(replies.lastReplyAtOf(dmThread, '2026-01-01T11:00:00Z')).toBe('2026-01-01T11:00:00Z')
   })
 })

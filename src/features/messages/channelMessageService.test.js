@@ -106,12 +106,12 @@ describe('channel message service', () => {
     })
   })
 
-  it('deletes a message through the delete API so its placeholder remains visible', async () => {
+  it('soft-deletes a message so its placeholder remains visible', async () => {
     await deleteChannelMessage('company-1', 'team-2', 'channel-3', 'message-4', 'Hello')
 
     expect(http).toHaveBeenCalledWith(messagePath, {
-      method: 'DELETE',
-      body: { body: 'Hello' },
+      method: 'PATCH',
+      body: { body: 'Hello', is_deleted: true },
     })
   })
 
