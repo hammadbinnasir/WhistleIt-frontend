@@ -106,6 +106,15 @@ describe('channel API normalizers', () => {
     expect(normalizeMember({ id: 'membership-1', user: { id: 'user-42' } }).id).toBe('user-42')
   })
 
+  it('preserves member email from nested account records', () => {
+    expect(normalizeMember({ user_id: 'user-1', account: { email: 'raw@example.com' } }).email).toBe(
+      'raw@example.com',
+    )
+    expect(
+      normalizeMember({ user: { id: 'user-2', account: { email: 'nested@example.com' } } }).email,
+    ).toBe('nested@example.com')
+  })
+
   it('preserves reported member presence and does not invent an offline state', () => {
     expect(normalizeMember({ user_id: 'user-1' }).status).toBeNull()
     expect(normalizeMember({ user_id: 'user-2', user: { presence: 'away' } }).status).toBe('away')

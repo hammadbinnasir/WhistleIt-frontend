@@ -3,9 +3,11 @@ import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { getUser, getUserProfile } from '@/features/account/api'
 import { useUserStore } from '@/features/account/composables/useUserStore'
 import { getAuthUserId } from '@/features/auth/session'
+import { dmApi } from '@/features/dms/dmApi'
 
 const props = defineProps({
   member: { type: Object, required: true },
+  workspaceId: { type: [String, Number], default: null },
 })
 const emit = defineEmits(['close', 'message'])
 
@@ -13,6 +15,15 @@ const userStore = useUserStore()
 const profile = ref({})
 const loading = ref(false)
 const error = ref('')
+const emailFields = [
+  'email',
+  'emailAddress',
+  'email_address',
+  'userEmail',
+  'user_email',
+  'accountEmail',
+  'account_email',
+]
 let requestVersion = 0
 
 const isOwnProfile = computed(
@@ -47,7 +58,7 @@ const name = computed(() => {
   return accountName || profileField('fullName', 'full_name', 'name') || props.member.name || 'Unknown user'
 })
 const email = computed(
-  () => profileField('email', 'emailAddress', 'email_address') || props.member.email || '',
+  () => profileField(...emailFields) || props.member.email || '',
 )
 const designation = computed(() => {
   if (isOwnProfile.value && userStore.profileLoaded.value) {
@@ -133,7 +144,25 @@ watch(
     try {
       const request =
         String(userId) === String(getAuthUserId()) ? getUserProfile(userId) : getUser(userId)
-      profile.value = (await request) ?? {}
+      const userResponse = (await request) ?? {}
+      if (version !== requestVersion) return
+      profile.value = userResponse
+
+      if (
+        String(userId) !== String(getAuthUserId()) &&
+        !profileField(...emailFields) &&
+        !props.member.email &&
+        props.workspaceId
+      ) {
+        const workspaceMembers = await dmApi.listCompanyMembers(props.workspaceId)
+        if (version !== requestVersion) return
+        const workspaceMember = workspaceMembers.find(
+          (workspaceMember) => String(workspaceMember.id) === String(userId),
+        )
+        if (workspaceMember?.email) {
+          profile.value = { ...userResponse, workspaceMember }
+        }
+      }
     } catch (cause) {
       if (version === requestVersion) {
         error.value =

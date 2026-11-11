@@ -141,7 +141,7 @@ export function normalizeMember(raw = {}) {
         '',
     ),
     name: raw.name ?? raw.full_name ?? raw.fullName ?? user.name ?? user.full_name ?? '',
-    email: raw.email ?? user.email ?? '',
+    email: raw.email ?? user.email ?? raw.account?.email ?? user.account?.email ?? '',
     avatarUrl:
       raw.avatarUrl ??
       raw.avatar_url ??

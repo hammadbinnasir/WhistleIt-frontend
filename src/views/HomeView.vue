@@ -106,7 +106,16 @@ function onAccountSettingsSaved(payload) {
     removed: 'Profile picture removed',
   }
   const message = messages[payload.photoAction]
-  if (message) ui.toast('Success!', message, 'success')
+  if (message) {
+    ui.toast('Success!', message, 'success')
+    return
+  }
+
+  if (payload.password) {
+    ui.toast('Success!', 'Password updated successfully', 'success')
+  } else if (payload.profile) {
+    ui.toast('Success!', 'Profile updated successfully', 'success')
+  }
 }
 
 function onAccountError(error) {
@@ -551,6 +560,7 @@ onBeforeUnmount(() => {
             <ProfilePanel
               v-if="ui.activePanel === 'profile' && activeProfileMember"
               :member="activeProfileMember"
+              :workspace-id="teamsStore.activeWorkspaceId"
               @close="closeMemberProfile"
               @message="messageProfileMember"
             />

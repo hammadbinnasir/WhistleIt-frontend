@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { getUser, getUserProfile } from '@/features/account/api'
 import { useUserStore } from '@/features/account/composables/useUserStore'
 import { getAuthUserId } from '@/features/auth/session'
+import { dmApi } from '@/features/dms/dmApi'
 import ProfilePanel from './ProfilePanel.vue'
 
 vi.mock('@/features/account/api', () => ({
@@ -15,10 +16,15 @@ vi.mock('@/features/auth/session', () => ({
   getAuthUserId: vi.fn(),
 }))
 
+vi.mock('@/features/dms/dmApi', () => ({
+  dmApi: { listCompanyMembers: vi.fn() },
+}))
+
 describe('ProfilePanel', () => {
   beforeEach(() => {
     getUser.mockReset()
     getUserProfile.mockReset()
+    dmApi.listCompanyMembers.mockReset()
     getAuthUserId.mockReturnValue('current-user')
     useUserStore().hydrate({ status: 'online' })
   })
@@ -106,6 +112,23 @@ describe('ProfilePanel', () => {
     expect(wrapper.findAll('.profile-panel__responsibilities li').map((item) => item.text())).toEqual(
       ['Design systems', 'Build things'],
     )
+    wrapper.unmount()
+  })
+
+  it('loads workspace email when the public user response omits it', async () => {
+    getUser.mockResolvedValue({ data: { user: { name: 'Alex Member' } } })
+    dmApi.listCompanyMembers.mockResolvedValue([
+      { id: 'other-user', name: 'Alex Member', email: 'alex@example.com' },
+    ])
+    const wrapper = mount(ProfilePanel, {
+      props: { member: { id: 'other-user', name: 'Alex Member' }, workspaceId: 'workspace-1' },
+    })
+    await flushPromises()
+
+    expect(getUser).toHaveBeenCalledWith('other-user')
+    expect(getUserProfile).not.toHaveBeenCalled()
+    expect(dmApi.listCompanyMembers).toHaveBeenCalledWith('workspace-1')
+    expect(wrapper.get('a[href="mailto:alex@example.com"]').text()).toBe('alex@example.com')
     wrapper.unmount()
   })
 
