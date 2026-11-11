@@ -55,7 +55,8 @@ const props = defineProps({
 // (naya) Yeh constants upar hain: setup ke dauran (watch immediate) bhi istemal hote hain,
 // neeche hote to "Cannot access 'HTML_TAG' before initialization" se poori chat khali ho jati
 // ---------- (naya) <p>hi</p> / &lt;p&gt;hi&lt;/p&gt; ki jagah "hi" ----------
-const HTML_TAG = /<\/?(p|br|div|span|strong|b|em|i|u|s|strike|del|ul|ol|li|code|pre|blockquote|a|h[1-6])\b[^>]*>/i
+const HTML_TAG =
+  /<\/?(p|br|div|span|strong|b|em|i|u|s|strike|del|ul|ol|li|code|pre|blockquote|a|h[1-6])\b[^>]*>/i
 
 // (naya) Forward ka invisible nishan (dms.js / dmApi.js jaisa): doosre user ko bhi "(forwarded)"
 const FORWARD_MARK = '\u2063\u200b\u2063'
@@ -133,11 +134,21 @@ const canSendMessages = computed(() => {
   if (!channel) return !channelsStore.loaded
 
   const userId = getAuthUserId() ?? dms.meId
+  const creatorId = channel.createdById ?? channel.created_by_id ?? channel.createdBy
+  const isChannelCreator =
+    channel.isOwner || (userId != null && creatorId != null && String(creatorId) === String(userId))
   const isChannelAdmin =
     teamsStore.isAdmin ||
     channel.canManage ||
-    channel.isOwner ||
-    (userId != null && String(channel.createdById ?? channel.createdBy) === String(userId))
+    channel.isAdmin ||
+    (userId != null &&
+      (channel.adminIds || []).some((admin) => {
+        const adminId =
+          admin && typeof admin === 'object'
+            ? (admin.id ?? admin.user_id ?? admin.userId ?? admin.member_id)
+            : admin
+        return adminId != null && String(adminId) === String(userId)
+      }))
   const isAllowedSender =
     userId != null &&
     (channel.allowedSenderIds || []).some((sender) => {
@@ -151,15 +162,16 @@ const canSendMessages = computed(() => {
     channel.messagePermission,
   )
 
-  if (usesSelectedMembersPermission && isAllowedSender) return true
-  if (channel.isMember === false) return false
-
-  if (channel.messagePermission === 'creator_only' || channel.messagePermission === 'admins') {
-    return isChannelAdmin
+  if (channel.messagePermission === 'creator_only') {
+    return isChannelCreator
+  }
+  if (channel.messagePermission === 'admins') {
+    return isChannelAdmin || isChannelCreator
   }
   if (usesSelectedMembersPermission) {
-    return isChannelAdmin || isAllowedSender
+    return isAllowedSender
   }
+  if (channel.isMember === false) return false
   return channel.isMember !== false
 })
 
@@ -313,7 +325,8 @@ function dmTextOf(value) {
 function safeDmMessage(message) {
   const safe = { ...message }
   for (const field of ['text', 'content', 'body']) {
-    if (field in safe && safe[field] != null && typeof safe[field] !== 'string') safe[field] = dmTextOf(safe[field])
+    if (field in safe && safe[field] != null && typeof safe[field] !== 'string')
+      safe[field] = dmTextOf(safe[field])
   }
   if (!Array.isArray(safe.reactions)) {
     safe.reactions = []
@@ -427,7 +440,11 @@ const renderedMessages = computed(() => {
       if (conversation.value && rendered.reply) rendered.reply = replyPreviewOf(message, byId) // (naya) DM: asli naam/text
       // (naya) Text mein HTML tags aa jayein (<p>hi</p>) to saaf text dikhao (forward bhi saaf jata hai)
       // (naya) Forward ka invisible nishan (channel / purana cache): "(forwarded)" + nishan hatao
-      if (conversation.value && typeof rendered.content === 'string' && rendered.content.includes(FORWARD_MARK)) {
+      if (
+        conversation.value &&
+        typeof rendered.content === 'string' &&
+        rendered.content.includes(FORWARD_MARK)
+      ) {
         rendered.content = rendered.content.split(FORWARD_MARK).join('')
         rendered.formattedContent = formattedMessageHtml(rendered.content)
         rendered.forwardedFrom = rendered.forwardedFrom || 'forwarded'
@@ -450,7 +467,11 @@ const renderedMessages = computed(() => {
         }
       }
       // (naya) Channel: is browser se forward kiya hua message -> "(forwarded)"
-      if (!conversation.value && !rendered.forwardedFrom && isRememberedForward(channelId.value, message)) {
+      if (
+        !conversation.value &&
+        !rendered.forwardedFrom &&
+        isRememberedForward(channelId.value, message)
+      ) {
         rendered.forwardedFrom = 'forwarded'
       }
       // (naya) Backend replies_count na de: parent_id wale replies se ginti (doosre user ko bhi)
@@ -461,7 +482,8 @@ const renderedMessages = computed(() => {
           rendered.replyCount = info.count
           const ours = Date.parse(info.lastAt)
           const theirs = Date.parse(rendered.lastReplyAt)
-          if (Number.isFinite(ours) && (!Number.isFinite(theirs) || ours > theirs)) rendered.lastReplyAt = info.lastAt
+          if (Number.isFinite(ours) && (!Number.isFinite(theirs) || ours > theirs))
+            rendered.lastReplyAt = info.lastAt
         }
       }
       if (conversation.value && !message.deleted && typeof rendered.content === 'string') {
@@ -569,8 +591,11 @@ function dmThreadSummary(message) {
     message.replyCount ?? 0,
     info?.count ?? 0,
   )
-  const times = [replies.lastReplyAtOf(replyTarget(message), message.lastReplyAt), message.lastReplyAt, info?.lastAt]
-    .filter(Boolean)
+  const times = [
+    replies.lastReplyAtOf(replyTarget(message), message.lastReplyAt),
+    message.lastReplyAt,
+    info?.lastAt,
+  ].filter(Boolean)
   const lastAt = times.reduce((a, b) => (Date.parse(b) > Date.parse(a) ? b : a), times[0])
   return { count, lastAt }
 }
@@ -603,10 +628,10 @@ function sameAsReply(message, reply, parentId) {
   const gap = Math.abs(Date.parse(message.createdAt) - Date.parse(reply.createdAt))
   return Boolean(
     text &&
-      text === replyText &&
-      (!author || !replyAuthor || author === replyAuthor) &&
-      Number.isFinite(gap) &&
-      gap < 2 * 60_000,
+    text === replyText &&
+    (!author || !replyAuthor || author === replyAuthor) &&
+    Number.isFinite(gap) &&
+    gap < 2 * 60_000,
   )
 }
 function replyCopiesIn(list, parent, threadReplies) {
@@ -653,7 +678,8 @@ watch(
   loadedThreads,
   (threads) => {
     if (!conversation.value) return
-    for (const { parentId, list } of threads) dms.noteThreadReplies?.(conversation.value.id, parentId, list)
+    for (const { parentId, list } of threads)
+      dms.noteThreadReplies?.(conversation.value.id, parentId, list)
   },
   { immediate: true },
 )
@@ -690,7 +716,8 @@ const replyScannedAt = new Map()
 let replyScanTimer = null
 let replyScanning = false
 async function scanReplyCounts() {
-  if (!conversation.value || replyScanning || (typeof document !== 'undefined' && document.hidden)) return
+  if (!conversation.value || replyScanning || (typeof document !== 'undefined' && document.hidden))
+    return
   replyScanning = true
   try {
     const candidates = allMessages.value
@@ -733,8 +760,6 @@ onBeforeUnmount(() => clearInterval(replyScanTimer))
 // (naya) Jo messages kisi thread ke replies hain (Reply Thread card mein), woh main chat mein
 // alag message ki tarah na aayein: store ko bata do, woh unhein chat se hata deta hai
 
-
-
 // ---------- (naya) Channel mein forward kiye messages yaad rakho ----------
 // Messages store forward ki maloomat (forwardedFrom) nahi rakhta, isliye bhejne wale ko bhi
 // "(forwarded)" nahi dikhta tha. Yahan (localStorage mein) yaad rakhte hain, reload ke baad bhi.
@@ -750,10 +775,14 @@ function readForwarded() {
 const forwardedByChannel = ref(readForwarded())
 function rememberForwarded(destinationId, sent, content) {
   const key = String(destinationId)
-  const list = Array.isArray(forwardedByChannel.value[key]) ? [...forwardedByChannel.value[key]] : []
+  const list = Array.isArray(forwardedByChannel.value[key])
+    ? [...forwardedByChannel.value[key]]
+    : []
   list.push({
     id: sent?.id != null ? String(sent.id) : null,
-    text: htmlToPlainText(String(content ?? '')).replace(FORWARD_TEXT_RE, '').trim(),
+    text: htmlToPlainText(String(content ?? ''))
+      .replace(FORWARD_TEXT_RE, '')
+      .trim(),
     at: Date.parse(sent?.createdAt ?? sent?.created_at ?? '') || Date.now(),
   })
   forwardedByChannel.value = { ...forwardedByChannel.value, [key]: list.slice(-200) }
@@ -772,7 +801,9 @@ function isRememberedForward(key, message) {
   return list.some(
     (item) =>
       (item.id && item.id === id) ||
-      (item.text === text.replace(FORWARD_TEXT_RE, '') && Number.isFinite(at) && Math.abs(at - item.at) < 10 * 60_000),
+      (item.text === text.replace(FORWARD_TEXT_RE, '') &&
+        Number.isFinite(at) &&
+        Math.abs(at - item.at) < 10 * 60_000),
   )
 }
 
@@ -795,7 +826,9 @@ function htmlToPlainText(value) {
     .replace(/<\/(p|div|li|h[1-6]|blockquote|pre)>/gi, '\n')
     .replace(/<li\b[^>]*>/gi, '• ')
     .replace(/<[^>]+>/g, '')
-  return decodeEntities(text).replace(/\n{3,}/g, '\n\n').trim()
+  return decodeEntities(text)
+    .replace(/\n{3,}/g, '\n\n')
+    .trim()
 }
 
 // ---------- (naya) ⋯ menu / emoji picker: neeche jagah na ho to UPAR khule ----------
@@ -856,7 +889,11 @@ watch(openReactionId, (id) => dms.setReactionPicker?.(id), { flush: 'sync' })
 function onEditKeydown(event) {
   if (editingId.value == null) return
   const target = event.target
-  if (!(target instanceof HTMLTextAreaElement) || target.getAttribute('aria-label') !== 'Edit message') return
+  if (
+    !(target instanceof HTMLTextAreaElement) ||
+    target.getAttribute('aria-label') !== 'Edit message'
+  )
+    return
   if (event.key === 'Escape') {
     event.preventDefault()
     cancelEdit()
@@ -1092,6 +1129,11 @@ async function togglePin(message) {
 }
 
 async function addMessage(payload) {
+  if (!canSendMessages.value) {
+    ui.toast('Message not sent', 'You do not have permission to post in this channel.', 'error')
+    return
+  }
+
   const messagePayload = {
     ...payload,
     is_important: Boolean(payload.important),
@@ -1127,8 +1169,7 @@ async function addMessage(payload) {
     }
 
     const channelMessages = messageStore.messagesFor(channelId.value)
-    const responseMessageId =
-      result.data?.id ?? result.data?.message_id ?? result.data?.messageId
+    const responseMessageId = result.data?.id ?? result.data?.message_id ?? result.data?.messageId
     const sentMessage = responseMessageId
       ? channelMessages.find((message) => String(message.id) === String(responseMessageId))
       : [...channelMessages].reverse().find((message) => message.content === payload.content)
@@ -1209,6 +1250,15 @@ async function addMessage(payload) {
 }
 
 function addScheduledMessage(message) {
+  if (!canSendMessages.value) {
+    ui.toast(
+      'Message not scheduled',
+      'You do not have permission to post in this channel.',
+      'error',
+    )
+    return
+  }
+
   const optimisticId = `scheduled-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
   const optimisticMessage = normalizeScheduledMessage(
     {
@@ -1914,7 +1964,10 @@ async function forwardMessage() {
       result.data ??
       messageStore
         .messagesFor(destination.id)
-        .find((message) => message.forwardedFrom === payload.forwardedFrom && message.content === payload.content)
+        .find(
+          (message) =>
+            message.forwardedFrom === payload.forwardedFrom && message.content === payload.content,
+        )
     rememberForwarded(destination.id, forwarded, payload.content) // (naya) "(forwarded)" neeche
     if (forwarded) {
       addMockMessage({
@@ -2180,6 +2233,11 @@ async function sendPollMessage(targetChannelId, poll, existingMessage = null) {
 }
 
 async function createPollInChannel(targetChannelId, pollDraft, existingMessage = null) {
+  if (!canSendMessages.value) {
+    ui.toast('Poll not created', 'You do not have permission to post in this channel.', 'error')
+    return null
+  }
+
   const {
     title,
     description,
@@ -2607,7 +2665,9 @@ onBeforeUnmount(() => {
         :disabled="dms.isLoadingOlder(conversation.id)"
         @click="loadOlderFromServer"
       >
-        {{ dms.isLoadingOlder(conversation.id) ? 'Loading older messages...' : 'Load older messages' }}
+        {{
+          dms.isLoadingOlder(conversation.id) ? 'Loading older messages...' : 'Load older messages'
+        }}
       </button>
       <!-- (naya) Internet nahi -->
       <p v-if="conversation && !isOnline" class="composer-conversation__offline" role="status">
@@ -2752,7 +2812,11 @@ onBeforeUnmount(() => {
             >
               <template v-if="!message.deleted">
                 <!-- (naya) DM + channel: upar wala "Forwarded from" chhupao, neeche "(forwarded)" -->
-                <span v-if="message.forwardedFrom" class="composer-conversation__dm-forward-marker" hidden />
+                <span
+                  v-if="message.forwardedFrom"
+                  class="composer-conversation__dm-forward-marker"
+                  hidden
+                />
                 <span v-if="message.forwardedFrom" class="composer-conversation__forwarded">
                   (forwarded)
                 </span>
@@ -2885,7 +2949,15 @@ onBeforeUnmount(() => {
                     title="Add reaction"
                     @click.stop="openReactionId = openReactionId === message.id ? null : message.id"
                   >
-                    <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                    <svg
+                      aria-hidden="true"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="1.8"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                    >
                       <circle cx="12" cy="12" r="9" />
                       <path d="M8 14s1.5 2 4 2 4-2 4-2" />
                       <path d="M9 9h.01M15 9h.01" />
@@ -5099,8 +5171,10 @@ onBeforeUnmount(() => {
   z-index: 30;
 }
 
-.composer-conversation__actions:has(.composer-conversation__menu) .composer-conversation__action-toolbar,
-.composer-conversation__actions:has(.composer-conversation__reaction-picker) .composer-conversation__action-toolbar {
+.composer-conversation__actions:has(.composer-conversation__menu)
+  .composer-conversation__action-toolbar,
+.composer-conversation__actions:has(.composer-conversation__reaction-picker)
+  .composer-conversation__action-toolbar {
   opacity: 1;
 }
 

@@ -58,6 +58,16 @@ describe('channel API normalizers', () => {
     ).toMatchObject({
       messagePermission: 'selected_members',
       allowedSenderIds: ['user-1', 'user-2'],
+      messagePermissionConfigured: true,
+      allowedSenderIdsConfigured: true,
+    })
+  })
+
+  it('marks omitted message permission fields as unconfigured', () => {
+    expect(normalizeChannel({ id: 'channel-default', name: 'Default' })).toMatchObject({
+      messagePermission: 'everyone',
+      messagePermissionConfigured: false,
+      allowedSenderIdsConfigured: false,
     })
   })
 
@@ -107,9 +117,9 @@ describe('channel API normalizers', () => {
   })
 
   it('preserves member email from nested account records', () => {
-    expect(normalizeMember({ user_id: 'user-1', account: { email: 'raw@example.com' } }).email).toBe(
-      'raw@example.com',
-    )
+    expect(
+      normalizeMember({ user_id: 'user-1', account: { email: 'raw@example.com' } }).email,
+    ).toBe('raw@example.com')
     expect(
       normalizeMember({ user: { id: 'user-2', account: { email: 'nested@example.com' } } }).email,
     ).toBe('nested@example.com')

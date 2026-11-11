@@ -5,7 +5,61 @@ import api from '../api'
 const MANAGED_CHANNELS_STORAGE_KEY = 'whistleit-managed-channel-ids'
 const MUTED_CHANNELS_STORAGE_KEY = 'whistleit-muted-channel-ids'
 const FAVORITE_CHANNELS_STORAGE_KEY = 'whistleit-favorite-channel-ids'
+const MESSAGE_PERMISSIONS_STORAGE_KEY = 'whistleit:channel-message-permissions'
 const managedChannelIds = new Set()
+
+function readMessagePermissionCache() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(MESSAGE_PERMISSIONS_STORAGE_KEY) || '{}')
+    return saved && typeof saved === 'object' && !Array.isArray(saved) ? saved : {}
+  } catch (error) {
+    console.error('Unable to load cached channel message permissions:', error)
+    return {}
+  }
+}
+
+function writeMessagePermissionCache(cache) {
+  try {
+    localStorage.setItem(MESSAGE_PERMISSIONS_STORAGE_KEY, JSON.stringify(cache))
+  } catch (error) {
+    console.error('Unable to save channel message permissions:', error)
+  }
+}
+
+function applyMessagePermissionCache(channel) {
+  const cache = readMessagePermissionCache()
+  const channelKey = String(channel.id)
+  const cached = cache[channelKey] || {}
+
+  const hasPermission = channel.messagePermissionConfigured ?? channel.messagePermission != null
+  const hasAllowedSenders = channel.allowedSenderIdsConfigured ?? channel.allowedSenderIds != null
+
+  if (hasPermission) cached.messagePermission = channel.messagePermission
+  if (hasAllowedSenders) cached.allowedSenderIds = channel.allowedSenderIds
+  if (hasPermission || hasAllowedSenders) {
+    cache[channelKey] = cached
+    writeMessagePermissionCache(cache)
+  }
+  if (cached.messagePermission == null && !Array.isArray(cached.allowedSenderIds)) return channel
+
+  return {
+    ...channel,
+    ...(!hasPermission && cached.messagePermission != null
+      ? { messagePermission: cached.messagePermission }
+      : {}),
+    ...(!hasAllowedSenders && Array.isArray(cached.allowedSenderIds)
+      ? { allowedSenderIds: cached.allowedSenderIds }
+      : {}),
+    messagePermissionConfigured: true,
+    allowedSenderIdsConfigured: true,
+  }
+}
+
+function persistMessagePermissions(id, { messagePermission, allowedSenderIds }) {
+  const cache = readMessagePermissionCache()
+  cache[String(id)] = { messagePermission, allowedSenderIds }
+  writeMessagePermissionCache(cache)
+}
 
 function getManagedChannelIds() {
   if (typeof localStorage === 'undefined') return new Set(managedChannelIds)
@@ -126,7 +180,11 @@ export const useChannelsStore = defineStore('channels', () => {
     return channels.value
       .filter((channel) => channel.isMember !== false && !channel.isArchived)
       .map((channel) => ({ channel, index: channels.value.indexOf(channel) }))
-      .sort((a, b) => Number(Boolean(b.channel.isFavorite)) - Number(Boolean(a.channel.isFavorite)) || a.index - b.index)
+      .sort(
+        (a, b) =>
+          Number(Boolean(b.channel.isFavorite)) - Number(Boolean(a.channel.isFavorite)) ||
+          a.index - b.index,
+      )
       .map(({ channel }) => channel)
   })
 
@@ -159,6 +217,7 @@ export const useChannelsStore = defineStore('channels', () => {
       .then((list) => {
         if (requestId !== channelsRequestId) return
         channels.value = list
+          .map(applyMessagePermissionCache)
           .map(withPersistedManagement)
           .map(withMutedPreference)
           .map(withFavoritePreference)
@@ -184,7 +243,10 @@ export const useChannelsStore = defineStore('channels', () => {
       const items = await api.browseChannels(query)
       if (requestId !== browseRequestId) return // a newer search superseded this one
       browse.value = {
-        items: items.map(withMutedPreference).map(withFavoritePreference),
+        items: items
+          .map(applyMessagePermissionCache)
+          .map(withMutedPreference)
+          .map(withFavoritePreference),
         loading: false,
         error: null,
       }
@@ -201,7 +263,8 @@ export const useChannelsStore = defineStore('channels', () => {
   async function fetchMembers(id, { limit = 10 } = {}) {
     const key = String(id)
     const previous = members.value[key] || { items: [], total: 0, loaded: false }
-    const hasEnoughMembers = previous.items.length >= limit || previous.total <= previous.items.length
+    const hasEnoughMembers =
+      previous.items.length >= limit || previous.total <= previous.items.length
     if (previous.loaded && hasEnoughMembers) return
     if (previous.loading && (previous.limit ?? 0) >= limit) return
 
@@ -219,7 +282,7 @@ export const useChannelsStore = defineStore('channels', () => {
   }
 
   async function fetchChannel(id) {
-    const channel = await api.getChannel(id)
+    const channel = applyMessagePermissionCache(await api.getChannel(id))
     const manageableChannel = withPersistedManagement(channel)
     const mutedChannel = withMutedPreference(manageableChannel)
     upsertChannel(mutedChannel)
@@ -243,21 +306,32 @@ export const useChannelsStore = defineStore('channels', () => {
   async function updateChannel(id, payload) {
     const channel = await api.updateChannel(id, payload)
     const current = getById(id)
+    const messagePermission =
+      payload.messagePermission !== undefined
+        ? payload.messagePermission
+        : (current?.messagePermission ?? channel.messagePermission)
+    const allowedSenderIds =
+      payload.allowedSenderIds !== undefined
+        ? payload.allowedSenderIds
+        : (current?.allowedSenderIds ?? channel.allowedSenderIds)
+    if (payload.messagePermission !== undefined || payload.allowedSenderIds !== undefined) {
+      persistMessagePermissions(id, { messagePermission, allowedSenderIds })
+    }
     const editable = {
       ...(payload.name !== undefined ? { name: channel.name } : {}),
       ...(payload.description !== undefined ? { description: channel.description } : {}),
       ...(payload.messagePermission !== undefined
-        ? { messagePermission: channel.messagePermission }
+        ? { messagePermission, messagePermissionConfigured: true }
         : {}),
       ...(payload.allowedSenderIds !== undefined
-        ? { allowedSenderIds: channel.allowedSenderIds }
+        ? { allowedSenderIds, allowedSenderIdsConfigured: true }
         : {}),
     }
     if (current) {
       patch(id, editable)
       patchBrowse(id, editable)
     }
-    return getById(id) || channel
+    return getById(id) || applyMessagePermissionCache(channel)
   }
 
   async function joinChannel(id) {
@@ -325,6 +399,7 @@ export const useChannelsStore = defineStore('channels', () => {
       removeChannel(channel.id)
       return
     }
+    channel = applyMessagePermissionCache(channel)
     channel = withPersistedManagement(channel)
     channel = withMutedPreference(channel)
     channel = withFavoritePreference(channel)

@@ -26,6 +26,13 @@ const emit = defineEmits([
 ])
 const ui = useUiStore()
 const channels = useChannelsStore()
+const isChannelCreator = computed(
+  () =>
+    Boolean(props.channel.isCreator || props.channel.isOwner) ||
+    (props.channel.createdById != null &&
+      getAuthUserId() != null &&
+      String(props.channel.createdById) === String(getAuthUserId())),
+)
 
 const tab = ref(ui.channelSettingsTab)
 const members = ref([])
@@ -77,6 +84,7 @@ function loadMessagePermission() {
 }
 
 function openMessagePermissions() {
+  if (!isChannelCreator.value) return
   loadMessagePermission()
   showMessagePermissions.value = true
 }
@@ -88,6 +96,7 @@ function closeMessagePermissions() {
 }
 
 function saveMessagePermissions() {
+  if (!isChannelCreator.value) return
   if (
     selectedMessagePermission.value === 'selected_members' &&
     !selectedAllowedSenderIds.value.length
@@ -734,7 +743,7 @@ const showSample = ref(false)
               easily
             </p>
           </div>
-          <div v-if="channel.canManage" class="rounded border border-slate-300 p-3">
+          <div v-if="isChannelCreator" class="rounded border border-slate-300 p-3">
             <h3 class="font-bold text-slate-700">Message Permissions</h3>
             <p class="mt-1 text-sm text-slate-500">
               Control who can send and reply to messages in this channel. By default everyone can
