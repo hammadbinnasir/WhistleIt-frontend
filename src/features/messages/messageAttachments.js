@@ -32,7 +32,11 @@ export function messageAttachmentUrl(attachment) {
     return attachment.localPreviewUrl
   }
   const directUrl =
-    attachment?.url ?? attachment?.file_url ?? attachment?.download_url ?? attachment?.signed_url
+    attachment?.url ??
+    attachment?.attachment_url ??
+    attachment?.file_url ??
+    attachment?.download_url ??
+    attachment?.signed_url
   const baseUrl = new URL(API_BASE_URL, globalThis.location?.origin || 'http://localhost')
 
   if (typeof directUrl === 'string' && directUrl.trim()) {

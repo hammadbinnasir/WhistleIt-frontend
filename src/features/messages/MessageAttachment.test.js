@@ -1,11 +1,5 @@
-import { flushPromises, mount } from '@vue/test-utils'
+import { mount } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-
-const httpMock = vi.hoisted(() => vi.fn())
-
-vi.mock('@/features/channels/api/http', () => ({
-  http: httpMock,
-}))
 
 import MessageAttachment from './MessageAttachment.vue'
 
@@ -14,7 +8,6 @@ const originalRevokeObjectURL = URL.revokeObjectURL
 
 describe('MessageAttachment', () => {
   beforeEach(() => {
-    httpMock.mockReset()
     URL.createObjectURL = vi.fn().mockReturnValue('blob:attachment-preview')
     URL.revokeObjectURL = vi.fn()
   })
@@ -26,69 +19,75 @@ describe('MessageAttachment', () => {
     else delete URL.revokeObjectURL
   })
 
-  it('loads images through the authenticated API client and displays the blob preview', async () => {
-    httpMock.mockResolvedValue(new Blob(['image-data'], { type: 'image/jpeg' }))
+  it('renders the URL returned by the API directly', () => {
     const wrapper = mount(MessageAttachment, {
       props: {
-        attachment: { name: 'photo.jpg', path: 'messages/channel-1/photo.jpg' },
+        attachment: { name: 'photo.jpg', file_url: 'https://cdn.example.com/photo.jpg' },
       },
     })
-    await flushPromises()
 
-    expect(httpMock).toHaveBeenCalledWith(
-      'http://10.0.105.90:8000/storage/messages/channel-1/photo.jpg',
-      { responseType: 'blob' },
+    expect(wrapper.get('img').attributes('src')).toBe('https://cdn.example.com/photo.jpg')
+    expect(wrapper.get('.message-attachment__name').text()).toContain('photo.jpg')
+    expect(wrapper.get('[download="photo.jpg"]').attributes('href')).toBe(
+      'https://cdn.example.com/photo.jpg',
     )
-    expect(wrapper.get('img').attributes('src')).toBe('blob:attachment-preview')
-    expect(wrapper.get('a').attributes('href')).toBe('blob:attachment-preview')
-    wrapper.unmount()
-    expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:attachment-preview')
   })
 
-  it('shows document details with open and download links', async () => {
-    httpMock.mockResolvedValue(new Blob(['pdf-data'], { type: 'application/pdf' }))
+  it('renders images from paths returned by the messages API', () => {
     const wrapper = mount(MessageAttachment, {
       props: {
-        attachment: { name: 'report.pdf', path: 'messages/channel-1/report.pdf', size: 2048 },
+        attachment: { name: 'men.jpg', path: 'messages/6aedba81/6af2d316.jpg' },
       },
     })
-    await flushPromises()
+
+    expect(wrapper.get('img').attributes('src')).toBe(
+      'http://10.0.105.90:8000/storage/messages/6aedba81/6af2d316.jpg',
+    )
+  })
+
+  it('shows only the download action for files', () => {
+    const wrapper = mount(MessageAttachment, {
+      props: {
+        attachment: {
+          name: 'report.pdf',
+          download_url: 'https://cdn.example.com/report.pdf',
+          size: 2048,
+        },
+      },
+    })
+
+    expect(wrapper.find('[aria-label="More attachment actions"]').exists()).toBe(false)
+    expect(wrapper.get('a[aria-label="Download report.pdf"]').attributes('download')).toBe(
+      'report.pdf',
+    )
+  })
+
+  it('shows document details with open and download links', () => {
+    const wrapper = mount(MessageAttachment, {
+      props: {
+        attachment: {
+          name: 'report.pdf',
+          download_url: 'https://cdn.example.com/report.pdf',
+          size: 2048,
+        },
+      },
+    })
 
     expect(wrapper.text()).toContain('PDF')
     expect(wrapper.text()).toContain('report.pdf')
     expect(wrapper.findAll('a').map((link) => link.attributes('href'))).toEqual([
-      'blob:attachment-preview',
-      'blob:attachment-preview',
+      'https://cdn.example.com/report.pdf',
     ])
+    expect(wrapper.get('.message-attachment__name').text()).toContain('1 File')
     expect(wrapper.get('[download="report.pdf"]').exists()).toBe(true)
   })
 
-  it('shows an explicit retryable error when the authenticated file request fails', async () => {
-    httpMock.mockRejectedValue(new Error('Forbidden'))
+  it('shows an explicit error when the API did not return a file URL or path', () => {
     const wrapper = mount(MessageAttachment, {
       props: {
-        attachment: { name: 'report.pdf', path: 'messages/channel-1/report.pdf' },
+        attachment: { name: 'report.pdf' },
       },
     })
-    await flushPromises()
-
-    expect(wrapper.get('[role="alert"]').text()).toContain('Forbidden')
-    expect(wrapper.get('button').text()).toBe('Retry')
-    expect(httpMock).toHaveBeenCalledTimes(1)
-  })
-
-  it('explains when a browser network or CORS failure blocks the file request', async () => {
-    httpMock.mockRejectedValue({ message: 'Failed to fetch', status: 0 })
-    const wrapper = mount(MessageAttachment, {
-      props: {
-        attachment: { name: 'photo.jpg', path: 'messages/channel-1/photo.jpg' },
-      },
-    })
-    await flushPromises()
-
-    expect(wrapper.get('[role="alert"]').text()).toContain(
-      'allow CORS for authenticated /storage requests',
-    )
-    expect(wrapper.get('button').text()).toBe('Retry')
+    expect(wrapper.get('[role="alert"]').text()).toContain('The server did not provide a file URL.')
   })
 })

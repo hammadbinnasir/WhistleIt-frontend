@@ -153,7 +153,9 @@ export function sendChannelMessage(companyId, teamId, channelId, payload) {
       body.append('attachment', attachment)
       Object.entries(metadata).forEach(([key, value]) => {
         if (value == null) return
-        body.append(key, typeof value === 'string' ? value : JSON.stringify(value))
+        const formValue =
+          typeof value === 'boolean' ? (value ? '1' : '0') : typeof value === 'string' ? value : JSON.stringify(value)
+        body.append(key, formValue)
       })
       return [path, { method: 'POST', body }]
     }

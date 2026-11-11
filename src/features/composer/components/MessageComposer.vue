@@ -2,6 +2,7 @@
 import { ref, computed, nextTick, onBeforeUnmount, onMounted } from 'vue'
 import MediaToolbar from '../../media/MediaToolbar.vue'
 import VoiceNotePlayer from '../../media/VoiceNotePlayer.vue'
+import { messageAttachmentKind } from '@/features/messages/messageAttachments'
 import { normalizeMessageText } from '../messageText'
 import {
   discardVoiceNote,
@@ -26,6 +27,7 @@ const activeFormats = ref([])
 const activeList = ref('')
 const codeMode = ref(false)
 const important = ref(false)
+const attachmentPreviewUrl = ref('')
 const scheduleOpen = ref(false)
 const customScheduleOpen = ref(false)
 const scheduleError = ref('')
@@ -133,6 +135,7 @@ onBeforeUnmount(() => {
   composerUnmounted = true
   clearTimeout(scheduleErrorTimer)
   stopRecordingTimer()
+  clearAttachment()
   if (mediaRecorder.value?.state === 'recording') {
     mediaRecorder.value.onstop = null
     mediaRecorder.value.stop()
@@ -745,7 +748,7 @@ function sendMessage() {
   codeMode.value = false
   important.value = false
   savedSelectionRange = null
-  attachment.value = null
+  clearAttachment()
   pollDraft.value = null
 }
 
@@ -802,6 +805,7 @@ async function saveRecording(blob, duration) {
       error instanceof Error ? error.message : 'Could not upload the voice recording.'
   } finally {
     voiceNoteUploading.value = false
+    void nextTick(() => editor.value?.focus())
   }
 }
 
@@ -951,7 +955,7 @@ function scheduleMessage() {
   codeMode.value = false
   important.value = false
   savedSelectionRange = null
-  attachment.value = null
+  clearAttachment()
   scheduleOpen.value = false
   customScheduleOpen.value = false
   scheduledAt.value = ''
@@ -1134,7 +1138,7 @@ async function createPollDraft() {
     codeMode.value = false
     important.value = false
     savedSelectionRange = null
-    attachment.value = null
+    clearAttachment()
     return
   }
   pollDraft.value = draft
@@ -1144,12 +1148,23 @@ async function createPollDraft() {
 
 function handleFileSelected(file) {
   if (!file) return
+  clearAttachment()
   attachment.value = file
+  if (messageAttachmentKind(file) === 'image' && typeof URL.createObjectURL === 'function') {
+    attachmentPreviewUrl.value = URL.createObjectURL(file)
+  }
   emit('attachment', file)
+  void nextTick(() => editor.value?.focus())
+}
+
+function clearAttachment() {
+  if (attachmentPreviewUrl.value) URL.revokeObjectURL(attachmentPreviewUrl.value)
+  attachmentPreviewUrl.value = ''
+  attachment.value = null
 }
 
 function removeAttachment() {
-  attachment.value = null
+  clearAttachment()
 }
 
 function handleMediaAction(action, payload) {
@@ -1175,10 +1190,36 @@ function handleKeydown(event) {
   event.preventDefault()
   sendMessage()
 }
+
+function handleFormKeydown(event) {
+  if (event.key !== 'Enter' || event.shiftKey || event.target === editor.value) return
+  if (
+    !messageIsReady.value ||
+    recording.value ||
+    voiceNoteUploading.value ||
+    voiceNoteSending.value
+  )
+    return
+  if (
+    event.target instanceof HTMLElement &&
+    event.target.matches('input:not([type="file"]), textarea, select')
+  ) {
+    return
+  }
+
+  event.preventDefault()
+  event.stopPropagation()
+  sendMessage()
+}
 </script>
 
 <template>
-  <form class="message-composer" aria-label="Message composer" @submit.prevent="sendMessage">
+  <form
+    class="message-composer"
+    aria-label="Message composer"
+    @submit.prevent="sendMessage"
+    @keydown="handleFormKeydown"
+  >
     <div class="message-composer__input-row">
       <div class="message-composer__editor-area">
         <span v-if="important" class="message-composer__important">IMPORTANT!</span>
@@ -1380,12 +1421,32 @@ function handleKeydown(event) {
     </Teleport>
 
     <div v-if="attachment" class="message-composer__attachments" aria-label="Attachment">
-      <span>
-        {{ attachment.name }}
-        <button type="button" :aria-label="`Remove ${attachment.name}`" @click="removeAttachment">
+      <div class="message-composer__attachment-preview">
+        <img
+          v-if="attachmentPreviewUrl"
+          class="message-composer__attachment-thumbnail"
+          :src="attachmentPreviewUrl"
+          :alt="attachment.name"
+        />
+        <span v-else class="message-composer__attachment-file-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24">
+            <path d="M6 2.75h8l5 5v13.5H6z" />
+            <path d="M14 2.75v5h5M9 15l3-3 3 3m-6 2 2-2 2 2" />
+          </svg>
+        </span>
+        <span class="message-composer__attachment-name" :title="attachment.name">
+          {{ attachment.name }}
+        </span>
+        <button
+          type="button"
+          class="message-composer__attachment-remove"
+          :aria-label="`Remove ${attachment.name}`"
+          title="Remove attachment"
+          @click="removeAttachment"
+        >
           &times;
         </button>
-      </span>
+      </div>
     </div>
 
     <div class="message-composer__toolbar-row">
@@ -2651,28 +2712,70 @@ function handleKeydown(event) {
 .message-composer__attachments {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
-  padding: 8px 10px;
+  gap: 8px;
+  padding: 6px 8px 8px;
   border-top: 1px solid #e0e1e8;
 }
 
-.message-composer__attachments span {
-  display: inline-flex;
+.message-composer__attachment-preview {
+  position: relative;
+  display: flex;
+  width: fit-content;
+  max-width: min(320px, 100%);
+  min-height: 52px;
   align-items: center;
-  gap: 5px;
-  padding: 3px 7px;
-  border-radius: 3px;
-  background: #f0f0f6;
-  color: #34364b;
-  font-size: 12px;
+  gap: 8px;
+  padding: 5px 25px 7px 5px;
+  border-bottom: 3px solid #5962ff;
+  background: #fff;
+  box-shadow: 0 1px 3px rgb(22 24 40 / 12%);
 }
 
-.message-composer__attachments button {
+.message-composer__attachment-thumbnail,
+.message-composer__attachment-file-icon {
+  display: grid;
+  width: 44px;
+  height: 44px;
+  flex: 0 0 44px;
+  place-items: center;
+  object-fit: cover;
+}
+
+.message-composer__attachment-file-icon {
+  color: #45445f;
+}
+
+.message-composer__attachment-file-icon svg {
+  width: 32px;
+  height: 38px;
+  fill: #f7f7fb;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.2;
+}
+
+.message-composer__attachment-name {
+  overflow: hidden;
+  color: #25263a;
+  font-size: 14px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.message-composer__attachment-remove {
+  position: absolute;
+  top: 2px;
+  right: 3px;
+  display: grid;
+  width: 19px;
+  height: 19px;
+  place-items: center;
   padding: 0;
   border: 0;
-  background: none;
-  color: inherit;
-  font-size: 17px;
+  background: transparent;
+  color: #727487;
+  font-size: 18px;
   line-height: 1;
   cursor: pointer;
 }
