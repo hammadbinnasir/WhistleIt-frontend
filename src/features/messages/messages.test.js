@@ -436,6 +436,34 @@ describe('channel messages store', () => {
     )
   })
 
+  it('finishes sending when the POST is acknowledged without waiting for the list refresh', async () => {
+    useTeamsStore().activeWorkspaceId = 'company-1'
+    useTeamsStore().activeTeamId = 'team-1'
+    sendChannelMessage.mockResolvedValue({
+      success: true,
+      data: { message: { id: 'message-1', body: 'Hello', sender_id: 'user-1' } },
+    })
+    let finishRefresh
+    getChannelMessages.mockReturnValue(
+      new Promise((resolve) => {
+        finishRefresh = resolve
+      }),
+    )
+    const messages = useMessagesStore()
+
+    await expect(
+      messages.postChannelMessage('channel-2', { content: 'Hello' }),
+    ).resolves.toMatchObject({ success: true })
+
+    expect(messages.messagesFor('channel-2')).toContainEqual(
+      expect.objectContaining({ id: 'message-1', content: 'Hello' }),
+    )
+    expect(getChannelMessages).toHaveBeenCalled()
+
+    finishRefresh({ success: true, data: { messages: [] } })
+    await vi.waitFor(() => expect(messages.loadingByChannel['channel-2']).toBe(false))
+  })
+
   it('keeps the selected attachment visible when the successful response has no attachments', async () => {
     useTeamsStore().activeWorkspaceId = 'company-1'
     useTeamsStore().activeTeamId = 'team-1'

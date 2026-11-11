@@ -5,9 +5,15 @@ import App from './App.vue'
 import router from './router'
 import './assets/main.css'
 
-const app = createApp(App)
+import { useUiStore } from '@/stores/ui'
+import { persistPinnedMessages } from '@/stores/pinnedMessagesPersistence'
 
-app.use(createPinia())
+const app = createApp(App)
+const pinia = createPinia()
+
+app.use(pinia)
 app.use(router)
+
+persistPinnedMessages(useUiStore(pinia))
 
 app.mount('#app')

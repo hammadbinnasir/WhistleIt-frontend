@@ -184,7 +184,7 @@ export function updateChannelMessage(companyId, teamId, channelId, messageId, pa
 }
 
 /**
- * DELETE /v1/{company}/teams/{team}/channels/{channel}/messages/{message}
+ * PATCH /v1/{company}/teams/{team}/channels/{channel}/messages/{message}
  * Deletes the message while retaining its deleted placeholder for channel members.
  * @param {string|number} companyId
  * @param {string|number} teamId
@@ -193,14 +193,14 @@ export function updateChannelMessage(companyId, teamId, channelId, messageId, pa
  * @param {string} content
  * @returns {Promise<ServiceResult>}
  */
-export function deleteChannelMessage(companyId, teamId, channelId, messageId, content) {
+export function deleteChannelMessage(companyId, teamId, channelId, messageId, content = '') {
   return request(
     () => {
       const path = messagePath(companyId, teamId, channelId, messageId)
       if (typeof content !== 'string' || !content.trim()) {
         throw new Error('Message body is required to delete a channel message.')
       }
-      return [path, { method: 'DELETE', body: { body: content.trim() } }]
+      return [path, { method: 'PATCH', body: { body: content.trim(), is_deleted: true } }]
     },
     { rejectUnsuccessful: true },
   )

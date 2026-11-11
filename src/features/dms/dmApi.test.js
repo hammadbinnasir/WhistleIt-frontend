@@ -252,6 +252,7 @@ describe('DM API', () => {
           name: '',
           unreadCount: 0,
           isFavorite: false,
+          lastActivityAt: '',
           messages: [
             {
               id: 'message-1',
@@ -642,7 +643,7 @@ describe('DM API', () => {
         body: 'Forwarded text',
         is_forwarded: true,
       }),
-    ).toMatchObject({ forwardedFrom: true })
+    ).toMatchObject({ forwardedFrom: 'forwarded' })
   })
 
   it('removes API paragraph wrappers from direct-message bodies', () => {
@@ -666,10 +667,11 @@ describe('DM API', () => {
   it('deletes a message of a direct channel', async () => {
     apiRequest.mockResolvedValue({ success: true, data: null })
 
-    await dmApi.deleteMessage('company-1', 'channel-1', 'm9')
+    await dmApi.deleteMessage('company-1', 'channel-1', 'm9', 'Original text')
 
     expect(apiRequest).toHaveBeenCalledWith('/v1/company-1/direct-channels/channel-1/messages/m9', {
-      method: 'DELETE',
+      method: 'PATCH',
+      body: JSON.stringify({ body: 'Original text', is_deleted: true }),
     })
   })
 

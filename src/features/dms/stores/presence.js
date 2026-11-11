@@ -1,98 +1,9 @@
-// import { defineStore } from 'pinia'
-// import { ref } from 'vue'
-// import { dmApi } from '@/features/dms/dmApi'
-
-// export const STATES = {
-//   online: 'Online',
-//   away: 'Away',
-//   offline: 'Offline',
-// }
-
-// function errorMessage(error) {
-//   return error instanceof Error ? error.message : String(error)
-// }
-
-// export const usePresenceStore = defineStore('presence', () => {
-//   const presenceById = ref({})
-//   const loading = ref(false)
-//   const error = ref('')
-//   let initialization
-
-//   async function init() {
-//     if (initialization) return initialization
-
-//     loading.value = true
-//     error.value = ''
-//     initialization = dmApi
-//       .presence()
-//       .then((presence) => {
-//         presenceById.value = presence
-//       })
-//       .catch((cause) => {
-//         error.value = errorMessage(cause)
-//       })
-//       .finally(() => {
-//         loading.value = false
-//         initialization = null
-//       })
-
-//     return initialization
-//   }
-
-//   function stateOf(userId) {
-//     return presenceById.value[userId]?.state ?? 'offline'
-//   }
-
-//   function customOf(userId) {
-//     return presenceById.value[userId]?.status ?? { emoji: '', text: '' }
-//   }
-
-//   function labelOf(userId) {
-//     const state = STATES[stateOf(userId)]
-//     const { emoji, text } = customOf(userId)
-//     return [state, [emoji, text].filter(Boolean).join(' ')].filter(Boolean).join(' · ')
-//   }
-
-//   function setMyState(state) {
-//     if (!Object.hasOwn(STATES, state)) return
-//     const current = presenceById.value[dmApi.meId()] ?? { status: { emoji: '', text: '' } }
-//     presenceById.value[dmApi.meId()] = { ...current, state }
-//   }
-
-//   function setMyStatus(emoji, text) {
-//     const id = dmApi.meId()
-//     const current = presenceById.value[id] ?? { state: 'online' }
-//     presenceById.value[id] = {
-//       ...current,
-//       status: { emoji: emoji.trim(), text: text.trim() },
-//     }
-//   }
-
-//   function clearMyStatus() {
-//     setMyStatus('', '')
-//   }
-
-//   return {
-//     presenceById,
-//     loading,
-//     error,
-//     init,
-//     stateOf,
-//     customOf,
-//     labelOf,
-//     setMyState,
-//     setMyStatus,
-//     clearMyStatus,
-//   }
-// })
-
-
-
-
-
 import { defineStore } from 'pinia'
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import { dmApi } from '@/features/dms/dmApi'
+import { useDmStore } from '@/features/dms/stores/dms'
+import { useTeamsStore } from '@/stores/teams'
+import { useMembersStore } from '@/stores/members'
 
 export const STATES = {
   online: 'Online',
@@ -100,30 +11,164 @@ export const STATES = {
   offline: 'Offline',
 }
 
+// Har itne ms baad sab users ka online/offline dobara (live)
+const POLL_INTERVAL = 15_000
+// Itne ms baad apna status server ko dobara (backend ko pata rahe ke main abhi bhi online hoon)
+const HEARTBEAT_INTERVAL = 60_000
+// Itni der mouse/keyboard na chale to khud "Away"
+const IDLE_AFTER = 5 * 60_000
+const ACTIVITY_EVENTS = ['mousemove', 'mousedown', 'keydown', 'touchstart', 'scroll']
+// Itni der se status update nahi hua aur "online" likha hai: tab band ho gaya tha (offline na pahuncha)
+const STALE_ONLINE_MS = 3 * 60_000
+
 function errorMessage(error) {
   return error instanceof Error ? error.message : String(error?.message ?? error)
 }
 
+// "online" / "active" / true -> 'online' ... (samajh na aaye to null)
+function stateFrom(value) {
+  if (value === true || value === 1) return 'online'
+  if (value === false || value === 0) return 'offline'
+  const word = String(value ?? '').trim().toLowerCase()
+  if (['online', 'active', 'available'].includes(word)) return 'online'
+  if (['away', 'idle', 'busy', 'dnd'].includes(word)) return 'away'
+  if (['offline', 'inactive', 'invisible'].includes(word)) return 'offline'
+  return null
+}
+
+const httpStatusOf = (error) =>
+  Number(error?.status ?? error?.response?.status ?? error?.details?.status ?? 0)
+
 export const usePresenceStore = defineStore('presence', () => {
+  const teamsStore = useTeamsStore()
+  const dms = useDmStore()
+
   const presenceById = ref({})
   const loading = ref(false)
+  // HomeView header `presence.error` ho to status chhupa kar "Direct message" dikhata hai.
+  // Members list fail hone par bhi status (GET status / default Offline) dikh sakta hai,
+  // isliye wo error alag `membersError` mein rehta hai aur `error` header ko nahi rokta.
   const error = ref('')
-  let initialization
+  const membersError = ref('') // /company/{company}/members (status ke liye) ka error
+  const statusError = ref('') // apna status (PUT) ka last error
 
-  async function init() {
+  let initialization
+  let pollTimer = null
+  let heartbeatTimer = null
+  let idleTimer = null
+  let live = false
+  let manualState = null // user ne khud "Away"/"Offline" chuna: activity se online na karo
+  let autoAway = false
+  let lastActivity = Date.now()
+  let statusGetDisabled = false // GET /users/{user}/status backend par nahi mila
+  let statusGetFailures = 0
+  // Backend har heartbeat (PUT) par status_changed_at badalta hai? (apne PUT jawab se pata chalta hai)
+  let heartbeatMovesChangedAt = false
+  let lastOwn = null // { state, changedAt }
+
+  const companyId = computed(() => teamsStore.activeWorkspaceId)
+  const myId = () => dms.meId || dmApi.meId()
+
+  // ---------- dusre users ka status ----------
+  // DM wale saathiyon ka status GET /v1/users/{user}/status se (agar backend par ho)
+  async function fetchPartnerStatuses() {
+    if (statusGetDisabled || typeof dmApi.getUserStatus !== 'function') return {}
+    const me = myId()
+    const ids = [
+      ...new Set(dms.conversations.flatMap((c) => c.members).filter((id) => id && id !== me)),
+    ].slice(0, 50)
+    if (!ids.length) return {}
+
+    const results = await Promise.allSettled(ids.map((id) => dmApi.getUserStatus(id)))
+    const found = {}
+    results.forEach((result, i) => {
+      if (result.status === 'fulfilled' && result.value?.state) found[ids[i]] = result.value
+    })
+
+    const failures = results.filter((r) => r.status === 'rejected')
+    if (failures.length === results.length) {
+      statusGetFailures += 1
+      const missingRoute = failures.some((r) => [404, 405].includes(httpStatusOf(r.reason)))
+      if (missingRoute || statusGetFailures >= 3) statusGetDisabled = true
+    } else {
+      statusGetFailures = 0
+    }
+    return found
+  }
+
+  // Team members (members store) ka status: purana DM store online users yahin se dikhata tha.
+  // Har poll par dobara mangwate hain taake online/offline live rahe.
+  async function fromMembersStore() {
+    try {
+      const membersStore = useMembersStore()
+      const teamId = teamsStore.activeTeamId
+      if (teamId && typeof membersStore.fetchMembers === 'function') {
+        await membersStore.fetchMembers(teamId)
+      }
+      const found = {}
+      for (const member of membersStore.members ?? []) {
+        if (!member || typeof member !== 'object') continue
+        const user = member.user && typeof member.user === 'object' ? member.user : {}
+        const id = String(user.id ?? member.user_id ?? member.id ?? '')
+        const state = stateFrom(
+          member.status_mode ?? user.status_mode ??
+            member.status ?? member.presence ?? member.state ?? member.is_online ?? member.online ??
+            user.status ?? user.presence ?? user.is_online,
+        )
+        if (id && state) found[id] = { state, lastSeenAt: member.last_seen_at ?? user.last_seen_at }
+      }
+      return found
+    } catch {
+      return {}
+    }
+  }
+
+  // DM list (GET direct-channels, har ~16 sec) ke users ka status_mode
+  function fromDmUsers() {
+    const found = {}
+    for (const [id, user] of Object.entries(dms.usersById ?? {})) {
+      const state = stateFrom(user?.presence)
+      if (state) found[id] = { state, changedAt: user.statusChangedAt }
+    }
+    return found
+  }
+
+  // silent: polling ke liye (loading/error nahi badalta)
+  async function load({ silent = false } = {}) {
     if (initialization) return initialization
 
-    loading.value = true
-    error.value = ''
-    initialization = dmApi
-      .presence()
-      .then((presence) => {
+    if (!silent) {
+      loading.value = true
+      error.value = ''
+    }
+    initialization = Promise.all([
+      dmApi
+        .presence(companyId.value)
+        .then((result) => {
+          membersError.value = ''
+          return result
+        })
+        .catch((cause) => {
+          membersError.value = errorMessage(cause)
+          return null
+        }),
+      fromMembersStore(),
+      fetchPartnerStatuses().catch(() => ({})),
+    ])
+      .then(([fromMembers, fromTeam, fromStatus]) => {
+        if (
+          !fromMembers &&
+          !Object.keys(fromTeam).length &&
+          !Object.keys(fromStatus).length &&
+          !Object.keys(fromDmUsers()).length
+        )
+          return
         // API ka data lo, lekin user ne jo apna status/state set kiya wo na mite
-        const mine = presenceById.value[dmApi.meId()]
-        presenceById.value = mine ? { ...presence, [dmApi.meId()]: mine } : presence
-      })
-      .catch((cause) => {
-        error.value = errorMessage(cause)
+        // (zyada pakka source baad mein: company members < DM list < team members < GET status)
+        const me = myId()
+        const mine = presenceById.value[me]
+        const next = { ...(fromMembers ?? presenceById.value), ...fromDmUsers(), ...fromTeam, ...fromStatus }
+        presenceById.value = mine ? { ...next, [me]: mine } : next
       })
       .finally(() => {
         loading.value = false
@@ -133,10 +178,144 @@ export const usePresenceStore = defineStore('presence', () => {
     return initialization
   }
 
+  // ---------- apna status server par ----------
+  // PUT /v1/users/{user}/status   (fail ho to local status rehta hai, agla heartbeat dobara bhejta hai)
+  async function pushMyStatus({ state, keepalive = false } = {}) {
+    const id = myId()
+    if (!id || typeof dmApi.updateUserStatus !== 'function') return
+    const mine = presenceById.value[id] ?? {}
+    // Backend: { mode: 'online' | 'away' | 'offline', custom_status?: { emoji, text } }
+    // ("Send a mode, a custom status, or both.")
+    const payload = { mode: state ?? mine.state ?? 'online' }
+    if (mine.status?.emoji || mine.status?.text) {
+      payload.custom_status = { emoji: mine.status.emoji, text: mine.status.text }
+    }
+    try {
+      const result = await dmApi.updateUserStatus(id, payload, { keepalive })
+      statusError.value = ''
+      if (result?.changedAt) {
+        if (lastOwn && lastOwn.state === result.state && lastOwn.changedAt !== result.changedAt) {
+          heartbeatMovesChangedAt = true // wahi mode dobara bheja aur waqt badla: heartbeat ka waqt hai
+        }
+        lastOwn = { state: result.state, changedAt: result.changedAt }
+      }
+    } catch (cause) {
+      statusError.value = errorMessage(cause)
+    }
+  }
+
+  function applyMyState(state) {
+    const id = myId()
+    const current = presenceById.value[id] ?? { status: { emoji: '', text: '' } }
+    presenceById.value[id] = { ...current, state }
+    void pushMyStatus()
+  }
+
+  // ---------- live: online / away (idle) / offline (page band) ----------
+  function onActivity() {
+    lastActivity = Date.now()
+    if (autoAway && !manualState) {
+      autoAway = false
+      applyMyState('online') // wapas aa gaye
+    }
+  }
+
+  function checkIdle() {
+    if (manualState || autoAway) return
+    if (stateOf(myId()) === 'online' && Date.now() - lastActivity >= IDLE_AFTER) {
+      autoAway = true
+      applyMyState('away')
+    }
+  }
+
+  function onVisible() {
+    if (document.hidden) return
+    onActivity()
+    if (live) void pushMyStatus()
+    if (pollTimer) void load({ silent: true })
+  }
+
+  // Tab/page band: server ko "offline" (keepalive se request band hone ke baad bhi poori hoti hai)
+  function goOffline() {
+    void pushMyStatus({ state: 'offline', keepalive: true })
+  }
+
+  // Internet toot kar wapas aaya: foran apna status dobara (online) bhejo.
+  // (Internet tootne par browser kuch bhej nahi sakta: backend heartbeat band hone se offline kare)
+  function onReconnect() {
+    lastActivity = Date.now()
+    void pushMyStatus()
+    void load({ silent: true })
+  }
+
+  function startLive() {
+    if (live || typeof window === 'undefined') return
+    live = true
+    lastActivity = Date.now()
+    applyMyState(manualState ?? 'online') // page khulte hi online
+    heartbeatTimer = setInterval(() => {
+      if (!document.hidden) void pushMyStatus()
+    }, HEARTBEAT_INTERVAL)
+    idleTimer = setInterval(checkIdle, 30_000)
+    for (const name of ACTIVITY_EVENTS) window.addEventListener(name, onActivity, { passive: true })
+    window.addEventListener('pagehide', goOffline)
+    window.addEventListener('online', onReconnect)
+  }
+
+  function stopLive() {
+    if (!live) return
+    live = false
+    clearInterval(heartbeatTimer)
+    clearInterval(idleTimer)
+    heartbeatTimer = null
+    idleTimer = null
+    for (const name of ACTIVITY_EVENTS) window.removeEventListener(name, onActivity)
+    window.removeEventListener('pagehide', goOffline)
+    window.removeEventListener('online', onReconnect)
+  }
+
+  async function init() {
+    const request = load()
+    startPolling() // dusron ka online/offline live
+    startLive() // apna online/away/offline server par
+    return request
+  }
+
+  function startPolling(interval = POLL_INTERVAL) {
+    if (pollTimer || typeof window === 'undefined') return
+    pollTimer = setInterval(() => {
+      if (typeof document !== 'undefined' && document.hidden) return
+      void load({ silent: true })
+    }, interval)
+  }
+
+  // Sab timers band (logout / page band par)
+  function stopPolling() {
+    clearInterval(pollTimer)
+    pollTimer = null
+    stopLive()
+  }
+
+  if (typeof window !== 'undefined') {
+    document.addEventListener('visibilitychange', onVisible)
+  }
+
+  // ---------- getters ----------
   function stateOf(userId) {
-    const known = presenceById.value[userId]?.state
+    const entry = presenceById.value[userId]
+    const known = entry?.state
+    if (known && userId === myId()) return known
+    if (known === 'online' && heartbeatMovesChangedAt && entry.changedAt) {
+      // kaafi der se heartbeat nahi aayi: tab band ho chuka, asal mein offline
+      const age = Date.now() - Date.parse(entry.changedAt)
+      if (Number.isFinite(age) && age > STALE_ONLINE_MS) return 'offline'
+    }
     if (known) return known
-    return userId && userId === dmApi.meId() ? 'online' : 'offline'
+    return userId && userId === myId() ? 'online' : 'offline'
+  }
+
+  function lastSeenOf(userId) {
+    return presenceById.value[userId]?.lastSeenAt ?? null
   }
 
   function customOf(userId) {
@@ -149,19 +328,25 @@ export const usePresenceStore = defineStore('presence', () => {
     return [state, [emoji, text].filter(Boolean).join(' ')].filter(Boolean).join(' · ')
   }
 
+  // ---------- user ke buttons ----------
+  // Online / Away / Offline (UserMenu se) -> PUT /v1/users/{user}/status
   function setMyState(state) {
     if (!Object.hasOwn(STATES, state)) return
-    const current = presenceById.value[dmApi.meId()] ?? { status: { emoji: '', text: '' } }
-    presenceById.value[dmApi.meId()] = { ...current, state }
+    manualState = state === 'online' ? null : state
+    autoAway = false
+    lastActivity = Date.now()
+    applyMyState(state)
   }
 
+  // Custom status (emoji + text) -> PUT /v1/users/{user}/status
   function setMyStatus(emoji, text) {
-    const id = dmApi.meId()
+    const id = myId()
     const current = presenceById.value[id] ?? { state: 'online' }
     presenceById.value[id] = {
       ...current,
-      status: { emoji: emoji.trim(), text: text.trim() },
+      status: { emoji: String(emoji ?? '').trim(), text: String(text ?? '').trim() },
     }
+    void pushMyStatus()
   }
 
   function clearMyStatus() {
@@ -172,8 +357,15 @@ export const usePresenceStore = defineStore('presence', () => {
     presenceById,
     loading,
     error,
+    membersError,
+    statusError,
     init,
+    load,
+    startPolling,
+    stopPolling,
+    goOffline,
     stateOf,
+    lastSeenOf,
     customOf,
     labelOf,
     setMyState,

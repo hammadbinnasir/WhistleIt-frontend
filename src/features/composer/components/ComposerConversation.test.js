@@ -5,7 +5,7 @@ import { createPinia, setActivePinia } from 'pinia'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { useChannelsStore } from '@/features/channels'
 import { dmApi } from '@/features/dms/dmApi'
-import { repliesApi } from '@/features/dms/Repliesapi'
+import { repliesApi } from '@/features/replies/repliesApi'
 import { useDmStore } from '@/features/dms/stores/dms'
 import { useMessagesStore } from '@/features/messages/messages'
 import { useRemindersStore } from '@/features/search/reminders'
@@ -60,7 +60,7 @@ vi.mock('@/features/messages/channelMessageService', () => ({
   deleteChannelMessage: vi.fn(),
 }))
 
-vi.mock('@/features/dms/Repliesapi', () => ({
+vi.mock('@/features/replies/repliesApi', () => ({
   repliesApi: {
     listReplies: vi.fn(),
     sendReply: vi.fn(),

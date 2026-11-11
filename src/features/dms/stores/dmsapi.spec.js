@@ -311,7 +311,7 @@ describe('dms store', () => {
     expect(dms.toggleReaction('c1', sent.id, '🎉')).toBe(true)
     expect(sent.reactions).toEqual([{ emoji: '🎉', users: [dms.meId] }])
     expect(dms.deleteMessage('c1', sent.id)).toBe(true)
-    expect(dms.conversations[0].messages).not.toContain(sent)
+    expect(dms.conversations[0].messages[0]).toMatchObject({ id: sent.id, deleted: true })
   })
 
   it('does not allow editing or deleting another user message', async () => {
@@ -469,7 +469,7 @@ describe('dms store', () => {
     expect(dms.actionError).toBe('Forbidden')
   })
 
-  it('sends DELETE and puts the message back when it fails', async () => {
+  it('sends PATCH and puts the message back when it fails', async () => {
     dmApi.listDirectChannels.mockResolvedValue([
       makeConversation('c1', 'u2', [{ id: 'm1', from: 'u1', text: 'Mine', createdAt: '' }]),
     ])
@@ -478,7 +478,7 @@ describe('dms store', () => {
     await dms.init()
 
     expect(dms.deleteMessage('c1', 'm1')).toBe(true)
-    expect(dmApi.deleteMessage).toHaveBeenCalledWith('company-1', 'c1', 'm1')
+    expect(dmApi.deleteMessage).toHaveBeenCalledWith('company-1', 'c1', 'm1', 'Mine')
     expect(dms.conversations[0].messages).toHaveLength(0)
 
     await vi.waitFor(() => expect(dms.conversations[0].messages[0]?.text).toBe('Mine'))

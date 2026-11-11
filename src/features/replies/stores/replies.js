@@ -1,12 +1,14 @@
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
-import { repliesApi } from '@/features/dms/Repliesapi'
+import { repliesApi } from '@/features/replies/repliesApi'
 import { useDmStore } from '@/features/dms/stores/dms'
 import { useTeamsStore } from '@/stores/teams'
 
 // localStorage: har thread ke replies -> { [company]: { [threadKey]: replies[] } }
 export const REPLIES_STORAGE_KEY = 'whistleit:message-replies'
 const MAX_CACHED_REPLIES = 200
+// Khule hue thread mein dusre user ke naye replies har itne ms baad check hote hain
+const POLL_INTERVAL = 4000
 
 function errorMessage(error) {
   return error instanceof Error ? error.message : String(error?.message ?? error)
@@ -62,6 +64,8 @@ export const useRepliesStore = defineStore('replies', () => {
   // list request chalte waqt jo replies server par save hue (purani list mein nahi honge)
   const sentDuringLoad = new Map()
   let localSeq = 0
+  const openThreads = new Set() // jo threads screen par khule hain (inhi ki polling)
+  let pollTimer = null
 
   const companyId = computed(() => teamsStore.activeWorkspaceId)
 
@@ -88,9 +92,19 @@ export const useRepliesStore = defineStore('replies', () => {
   function repliesOf(target) {
     return threads.value[threadKey(target)] ?? []
   }
+  // fallback = server ka replies_count (message ke saath aata hai, polling se live)
   function countOf(target, fallback = 0) {
     const list = threads.value[threadKey(target)]
-    return list ? list.length : fallback
+    return Math.max(list?.length ?? 0, Number(fallback) || 0)
+  }
+  // "Last reply: …" — load hue replies ya server ka last_reply_at, jo naya ho
+  function lastReplyAtOf(target, fallback = null) {
+    const last = threads.value[threadKey(target)]?.at(-1)?.createdAt
+    const a = Date.parse(last ?? '')
+    const b = Date.parse(fallback ?? '')
+    if (!Number.isFinite(a)) return fallback || null
+    if (!Number.isFinite(b)) return last
+    return a >= b ? last : fallback
   }
   function isLoading(target) {
     return Boolean(loadingByKey.value[threadKey(target)])
@@ -105,15 +119,18 @@ export const useRepliesStore = defineStore('replies', () => {
 
   // ---------- load ----------
   // GET .../messages/{message}/replies
-  function loadReplies(target, { force = false } = {}) {
+  // silent: polling ke liye (loading/error UI nahi badalta)
+  function loadReplies(target, { force = false, silent = false } = {}) {
     const key = threadKey(target)
     hydrate(key) // 1) pehle localStorage
     if (!force && loaded.has(key)) return Promise.resolve(true)
     if (requests.has(key)) return requests.get(key)
 
     const company = companyId.value
-    loadingByKey.value[key] = true
-    errorByKey.value[key] = ''
+    if (!silent) {
+      loadingByKey.value[key] = true
+      errorByKey.value[key] = ''
+    }
     const sentMeanwhile = new Set()
     sentDuringLoad.set(key, sentMeanwhile)
 
@@ -131,14 +148,15 @@ export const useRepliesStore = defineStore('replies', () => {
         )
         threads.value[key] = [...list, ...pending]
         loaded.add(key)
+        errorByKey.value[key] = ''
         persist(key)
         return true
       } catch (cause) {
         // cached replies screen par rehte hain, sirf error dikhta hai
-        errorByKey.value[key] = errorMessage(cause)
+        if (!silent) errorByKey.value[key] = errorMessage(cause)
         return false
       } finally {
-        loadingByKey.value[key] = false
+        if (!silent) loadingByKey.value[key] = false
         requests.delete(key)
         sentDuringLoad.delete(key)
       }
@@ -245,8 +263,42 @@ export const useRepliesStore = defineStore('replies', () => {
     }
   }
 
+  // ---------- polling: khule thread mein dusre user ke naye replies ----------
+  // ThreadPanel khulte hi watchThread, band hote hi unwatchThread
+  function watchThread(target) {
+    openThreads.add(threadKey(target))
+    startPolling()
+  }
+
+  function unwatchThread(target) {
+    openThreads.delete(threadKey(target))
+    if (!openThreads.size) stopPolling()
+  }
+
+  async function pollOnce() {
+    if (typeof document !== 'undefined' && document.hidden) return // tab chhupi hai
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) return
+    await Promise.all(
+      [...openThreads].map((key) =>
+        loadReplies(targetFromKey(key), { force: true, silent: true }),
+      ),
+    )
+  }
+
+  function startPolling(interval = POLL_INTERVAL) {
+    if (pollTimer || typeof window === 'undefined') return
+    pollTimer = setInterval(() => void pollOnce(), interval)
+  }
+
+  function stopPolling() {
+    clearInterval(pollTimer)
+    pollTimer = null
+  }
+
   // Logout par call karein taake dusre user ko pichla data na dikhe
   function clearCache() {
+    stopPolling()
+    openThreads.clear()
     threads.value = {}
     errorByKey.value = {}
     loaded.clear()
@@ -259,6 +311,10 @@ export const useRepliesStore = defineStore('replies', () => {
 
   // ---------- network wapas aaye ----------
   if (typeof window !== 'undefined') {
+    // Dusre tab se wapas aate hi khule threads foran check
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden && pollTimer) void pollOnce()
+    })
     window.addEventListener('online', () => {
       flushFailed()
       for (const key of Object.keys(threads.value)) {
@@ -274,6 +330,7 @@ export const useRepliesStore = defineStore('replies', () => {
     actionError,
     repliesOf,
     countOf,
+    lastReplyAtOf,
     isLoading,
     errorOf,
     isOffline,
@@ -282,6 +339,11 @@ export const useRepliesStore = defineStore('replies', () => {
     retryReply,
     discardReply,
     flushFailed,
+    watchThread,
+    unwatchThread,
+    pollOnce,
+    startPolling,
+    stopPolling,
     clearCache,
   }
 })
