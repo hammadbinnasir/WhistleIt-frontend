@@ -51,7 +51,18 @@ describe('composer polls API', () => {
     )
     expect(apiRequest).toHaveBeenNthCalledWith(
       2,
-      '/v1/poll/get-question?result=backend-defined',
+      '/v1/poll/get-result?result=backend-defined',
+    )
+  })
+
+  it('gets poll results by channel and poll ID', async () => {
+    apiRequest.mockResolvedValue({ success: true, data: { results: [] } })
+
+    await expect(
+      getPollResult({ channel_id: 'channel 1', poll_id: 'poll 1' }),
+    ).resolves.toEqual({ results: [] })
+    expect(apiRequest).toHaveBeenCalledWith(
+      '/v1/poll/get-result?channel_id=channel+1&poll_id=poll+1',
     )
   })
 
