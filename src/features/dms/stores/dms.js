@@ -1435,6 +1435,8 @@ export const useDmStore = defineStore('dms', () => {
     const localId = message.id
     try {
       const voiceNoteId = voiceNoteIdOf(message)
+      const messageText = String(message.text ?? '')
+      const body = message.isCode ? messageText : messageText.trim()
       const body = bodyOf(message).trim()
       const attachment = pendingAttachmentByMessage.get(localId)
       if (message.attachments?.length && !attachment) {
@@ -1512,6 +1514,7 @@ export const useDmStore = defineStore('dms', () => {
           ...saved,
           from: saved.from || existing.from || meId.value,
           text: saved.text || existing.text || message.text,
+          isCode: saved.isCode ?? message.isCode ?? existing.isCode ?? false,
           createdAt: saved.createdAt || existing.createdAt || message.createdAt,
           ...(message.replyTo ? { replyTo: message.replyTo } : {}),
           ...(message.forwardedFrom ? { forwardedFrom: message.forwardedFrom } : {}),
@@ -1529,6 +1532,7 @@ export const useDmStore = defineStore('dms', () => {
           ...saved,
           from: saved.from || meId.value,
           text: saved.text || message.text,
+          isCode: saved.isCode ?? message.isCode ?? false,
           createdAt: saved.createdAt || message.createdAt,
           ...(message.replyTo ? { replyTo: message.replyTo } : {}),
           ...(message.forwardedFrom ? { forwardedFrom: message.forwardedFrom } : {}),
@@ -1555,6 +1559,11 @@ export const useDmStore = defineStore('dms', () => {
     const replyId = message.replyTo?.id
     return {
       body: bodyOf(message),
+      text: bodyOf(message),
+      is_code: Boolean(message.isCode),
+      senderId: message.senderId ?? message.from,
+      ...(message.receiverId != null ? { receiverId: message.receiverId } : {}),
+      timestamp: message.timestamp ?? message.createdAt,
       // forward kiya hua: receiver ko bhi "(forwarded)" dikhe
       // Backend ke fields: is_forwarded, forwarded_from_message_id, forward_tag
       ...(message.forwardedFrom
@@ -1591,7 +1600,9 @@ export const useDmStore = defineStore('dms', () => {
 
   function sendMessage(conversationId, payload = {}) {
     const conversation = findConversation(conversationId)
-    const text = String(payload.content ?? '').trim()
+    const messageContent = String(payload.content ?? '')
+    const isCode = Boolean(payload.is_code ?? payload.isCode)
+    const text = isCode ? messageContent : messageContent.trim()
     // File objects JSON mein save nahi hote, isliye sirf unki details
     const attachment = payload.attachment
     const attachments = attachment
@@ -1606,9 +1617,13 @@ export const useDmStore = defineStore('dms', () => {
           },
         ]
       : []
+    const timestamp = payload.timestamp ?? new Date().toISOString()
+    const receiverIds = conversation?.members
+      .filter((memberId) => String(memberId) !== String(meId.value))
+      .map(String)
     if (
       !conversation ||
-      (!text && !payload.gif && !payload.poll && !attachments.length && !payload.voiceNoteId)
+      (!text.trim() && !payload.gif && !payload.poll && !attachments.length && !payload.voiceNoteId)
     ) {
       return null
     }
@@ -1617,7 +1632,15 @@ export const useDmStore = defineStore('dms', () => {
       id: `local-${Date.now().toString(36)}-${++localSeq}`,
       from: meId.value,
       text,
-      createdAt: new Date().toISOString(),
+      senderId: payload.senderId ?? meId.value,
+      ...(payload.receiverId != null
+        ? { receiverId: payload.receiverId }
+        : {
+            receiverId: receiverIds.length === 1 ? receiverIds[0] : receiverIds,
+          }),
+      timestamp,
+      createdAt: timestamp,
+      isCode,
       ...(payload.replyTo ? { replyTo: payload.replyTo } : {}),
       ...(payload.threadId ? { threadId: payload.threadId } : {}),
       ...(payload.forwardedFrom ? { forwardedFrom: payload.forwardedFrom } : {}),

@@ -42,6 +42,21 @@ describe('message link and date helpers', () => {
     )
   })
 
+  it('renders fenced code as a full code block', () => {
+    expect(formattedMessageHtml('```\nconst value = 1\nconsole.log(value)\n```')).toBe(
+      '<pre><code>const value = 1\nconsole.log(value)</code></pre>',
+    )
+  })
+
+  it('renders API code messages as escaped code blocks', () => {
+    expect(formattedMessageHtml('const x = 1\n  return x', true)).toBe(
+      '<pre><code>const x = 1\n  return x</code></pre>',
+    )
+    expect(formattedMessageHtml('<script>alert(1)</script>', true)).toBe(
+      '<pre><code>&lt;script&gt;alert(1)&lt;/script&gt;</code></pre>',
+    )
+  })
+
   it('removes API paragraph wrappers while retaining message text and paragraph breaks', () => {
     expect(normalizeMessageContent('<p>byeee</p>')).toBe('byeee')
     expect(normalizeMessageContent('<p>first</p><p>second<br>line</p>')).toBe(

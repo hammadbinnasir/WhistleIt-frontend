@@ -547,6 +547,26 @@ describe('DM API', () => {
     })
   })
 
+  it('sends code-mode metadata using the backend is_code field', async () => {
+    apiRequest.mockResolvedValue({
+      success: true,
+      data: { message: { id: 'm-code', body: 'const answer = 42', is_code: true } },
+    })
+
+    await dmApi.sendMessage('company-1', 'channel-1', {
+      body: 'const answer = 42',
+      isCode: true,
+    })
+
+    expect(apiRequest).toHaveBeenCalledWith(
+      '/v1/company-1/direct-channels/channel-1/messages',
+      {
+        method: 'POST',
+        body: JSON.stringify({ body: 'const answer = 42', is_code: true }),
+      },
+    )
+  })
+
   it('sends a direct message and attachments as multipart form data', async () => {
     apiRequest.mockResolvedValue({
       success: true,
@@ -765,6 +785,28 @@ describe('DM API', () => {
     expect(normalizeMessage({ id: 'm12', body: '<p>byeee</p>' })).toMatchObject({
       text: 'byeee',
     })
+  })
+
+  it('normalizes code-mode metadata from direct messages', () => {
+    expect(
+      normalizeMessage({
+        id: 'code-message',
+        body: 'const answer = 42',
+        is_code: true,
+        sender_id: 'user-1',
+      }),
+    ).toMatchObject({
+      text: 'const answer = 42',
+      isCode: true,
+      from: 'user-1',
+    })
+  })
+
+  it('normalizes string code flags without treating false-like values as enabled', () => {
+    expect(normalizeMessage({ id: 'code-enabled', body: 'x', is_code: '1' }).isCode).toBe(true)
+    expect(normalizeMessage({ id: 'code-disabled', body: 'x', is_code: 'false' }).isCode).toBe(false)
+    expect(normalizeMessage({ id: 'code-disabled-zero', body: 'x', is_code: '0' }).isCode).toBe(false)
+    expect(normalizeMessage({ id: 'code-unspecified', body: 'x', is_code: null }).isCode).toBeUndefined()
   })
 
   it('updates a message of a direct channel', async () => {

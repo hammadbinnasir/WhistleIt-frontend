@@ -62,6 +62,18 @@ describe('channel message service', () => {
     })
   })
 
+  it('sends code-mode metadata using the backend is_code field', async () => {
+    await sendChannelMessage('company-1', 'team-2', 'channel-3', {
+      content: 'const answer = 42',
+      isCode: true,
+    })
+
+    expect(http).toHaveBeenCalledWith(collectionPath, {
+      method: 'POST',
+      body: { is_code: true, body: 'const answer = 42' },
+    })
+  })
+
   it('sends message text and attached files together as multipart data', async () => {
     const attachment = new File(['report'], 'report.txt', { type: 'text/plain' })
 

@@ -5,6 +5,7 @@ const props = defineProps({
   poll: { type: Object, required: true },
   backendAvailable: { type: Boolean, default: true },
   canPublish: { type: Boolean, default: false },
+  isCreator: { type: Boolean, default: false },
   closed: { type: Boolean, default: false },
   scheduled: { type: Boolean, default: false },
   alreadyVoted: { type: Boolean, default: false },
@@ -46,13 +47,23 @@ const status = computed(() => (props.closed ? 'Closed' : props.scheduled ? 'Sche
         You're Done
       </button>
       <button
-        v-if="backendAvailable && !scheduled && !closed && !alreadyVoted"
+        v-if="backendAvailable && !scheduled && !closed && !alreadyVoted && !isCreator"
         type="button"
         :disabled="loading"
         @click="emit('participate')"
       >
         Participate
       </button>
+      <span
+        v-else-if="backendAvailable && !scheduled && !closed && !alreadyVoted && isCreator"
+        class="composer-conversation__poll-tooltip"
+        data-tooltip="You are the creator and cannot participate in this poll."
+        title="You are the creator and cannot participate in this poll."
+        tabindex="0"
+        aria-label="You are the creator and cannot participate in this poll."
+      >
+        <button type="button" disabled aria-disabled="true">Participate</button>
+      </span>
       <button
         v-if="backendAvailable && !scheduled"
         type="button"
@@ -92,7 +103,7 @@ const status = computed(() => (props.closed ? 'Closed' : props.scheduled ? 'Sche
 
 <style scoped>
 .composer-conversation__poll-card {
-  overflow: hidden;
+  overflow: visible;
   border-left: 4px solid #1717ff;
   background: #edeef6;
 }
@@ -197,6 +208,44 @@ const status = computed(() => (props.closed ? 'Closed' : props.scheduled ? 'Sche
 .composer-conversation__poll-actions button:disabled {
   cursor: wait;
   opacity: 0.6;
+}
+
+.composer-conversation__poll-tooltip {
+  position: relative;
+  display: inline-flex;
+}
+
+.composer-conversation__poll-tooltip button:disabled {
+  cursor: not-allowed;
+}
+
+.composer-conversation__poll-tooltip::after {
+  position: absolute;
+  z-index: 1;
+  bottom: calc(100% + 8px);
+  left: 0;
+  width: max-content;
+  max-width: min(280px, 80vw);
+  padding: 8px 10px;
+  transform: translateY(4px);
+  border-radius: 4px;
+  background: #25263a;
+  color: #fff;
+  content: attr(data-tooltip);
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.4;
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    opacity 120ms ease,
+    transform 120ms ease;
+}
+
+.composer-conversation__poll-tooltip:hover::after,
+.composer-conversation__poll-tooltip:focus-visible::after {
+  transform: translateY(0);
+  opacity: 1;
 }
 
 .composer-conversation__poll-message-state {

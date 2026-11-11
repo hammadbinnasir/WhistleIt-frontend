@@ -468,6 +468,8 @@ function forwardedText(text, marked, raw) {
   }
 }
 
+function booleanValue(value) {
+  return value === true || value === 1 || ['1', 'true'].includes(String(value).toLowerCase())
 function deletionFlag(...values) {
   return values.some((value) => {
     if (value === true || value === 1) return true
@@ -561,9 +563,13 @@ export function normalizeMessage(raw) {
       markedForward,
       message,
     ),
-    ...(forwardedFrom ? { forwardedFrom } : {}),
-    ...(attachments.length ? { attachments } : {}),
+    text: normalizeMessageContent(message.content ?? message.text ?? message.body ?? ''),
+    ...((message.isCode ?? message.is_code) != null
+      ? { isCode: booleanValue(message.isCode ?? message.is_code) }
+      : {}),
     createdAt: message.created_at ?? message.createdAt ?? '',
+    ...(attachments.length ? { attachments } : {}),
+    ...(forwardedFrom ? { forwardedFrom } : {}),
     ...(voiceNoteId != null ? { voiceNoteId: String(voiceNoteId) } : {}),
     ...(parentId ? { parentId } : {}),
   }
@@ -958,9 +964,12 @@ export const dmApi = {
     if (attachment != null && (typeof Blob === 'undefined' || !(attachment instanceof Blob))) {
       throw new Error('Message attachment must be a file.')
     }
+    const { isCode, is_code, ...payloadFields } = payload
+    const codeFlag = is_code ?? isCode
     const requestPayload = {
-      ...payload,
+      ...payloadFields,
       body: voiceNoteId && !String(body ?? '').trim() ? 'Voice message' : body,
+      ...(codeFlag !== undefined ? { is_code: booleanValue(codeFlag) } : {}),
       ...(voiceNoteId ? { voice_note_id: String(voiceNoteId) } : {}),
     }
     if (attachment) {

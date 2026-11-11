@@ -149,7 +149,9 @@ export function sendChannelMessage(companyId, teamId, channelId, payload) {
   return request(() => {
     const path = collectionPath(companyId, teamId, channelId)
     assertPayload(payload, { requireContent: true })
-    const { content, attachment, attachmentSource, ...metadata } = payload
+    const { content, attachment, attachmentSource, isCode, is_code, ...metadata } = payload
+    const codeFlag = is_code ?? isCode
+    if (codeFlag !== undefined) metadata.is_code = Boolean(codeFlag)
     if (attachment) {
       const body = new FormData()
       if (content?.trim()) body.append('body', content.trim())

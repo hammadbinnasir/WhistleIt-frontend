@@ -910,7 +910,7 @@ describe('message composer', () => {
     wrapper.unmount()
   })
 
-  it('applies code formatting to selected text and typed text', async () => {
+  it('inserts newlines in code formatting and sends only on button submit', async () => {
     const wrapper = mount(MessageComposer, { attachTo: document.body })
     const input = setEditorText(wrapper, 'const value = 1')
     selectEditorText(input)
@@ -926,6 +926,17 @@ describe('message composer', () => {
     const selection = document.getSelection()
     selection.removeAllRanges()
     selection.addRange(range)
+
+    const enter = new KeyboardEvent('keydown', {
+      key: 'Enter',
+      bubbles: true,
+      cancelable: true,
+    })
+    input.element.dispatchEvent(enter)
+    expect(enter.defaultPrevented).toBe(true)
+    expect(wrapper.emitted('send')).toBeUndefined()
+    expect(input.element.textContent).toBe('const value = 1\n')
+
     input.element.dispatchEvent(
       new InputEvent('beforeinput', {
         inputType: 'insertText',
@@ -935,7 +946,10 @@ describe('message composer', () => {
       }),
     )
 
-    expect(input.element.innerHTML).toBe('<code>const value = 1!</code>')
+    expect(input.element.textContent).toBe('const value = 1\n!')
+    expect(wrapper.emitted('send')).toBeUndefined()
+    await wrapper.get('form').trigger('submit')
+    expect(wrapper.emitted('send')).toEqual([[{ content: 'const value = 1\n!', isCode: true }]])
     wrapper.unmount()
   })
 
@@ -1079,6 +1093,38 @@ describe('message composer', () => {
     wrapper.unmount()
   })
 
+  it.each([
+    ['bulleted', 'ul'],
+    ['numbered', 'ol'],
+  ])('pressing Enter in a %s list starts a new list item', async (_label, tag) => {
+    const wrapper = mount(MessageComposer, { attachTo: document.body })
+    const input = wrapper.get('[contenteditable="true"]')
+    input.element.innerHTML = `<${tag}><li>first</li></${tag}>`
+    input.element.dispatchEvent(new Event('input', { bubbles: true }))
+
+    const text = input.element.querySelector('li').firstChild
+    const range = document.createRange()
+    range.setStart(text, text.textContent.length)
+    range.collapse(true)
+    document.getSelection().removeAllRanges()
+    document.getSelection().addRange(range)
+
+    const enter = new KeyboardEvent('keydown', {
+      key: 'Enter',
+      bubbles: true,
+      cancelable: true,
+    })
+    input.element.dispatchEvent(enter)
+    await wrapper.vm.$nextTick()
+
+    expect(enter.defaultPrevented).toBe(true)
+    expect(input.element.querySelectorAll(`${tag} > li`)).toHaveLength(2)
+    expect(input.element.querySelector(`${tag} > li:last-child br`)).not.toBeNull()
+    expect(wrapper.emitted('send')).toBeUndefined()
+    expect(wrapper.get(`button[aria-label="${tag === 'ul' ? 'Bulleted' : 'Numbered'} list"]`).attributes('aria-pressed')).toBe('true')
+    wrapper.unmount()
+  })
+
   it('clears other active formatting buttons when a list button is clicked', async () => {
     const wrapper = mount(MessageComposer, { attachTo: document.body })
     const input = wrapper.get('[contenteditable="true"]')
@@ -1170,6 +1216,7 @@ describe('message composer', () => {
     expect(input.element.textContent).toBe('const value = 1')
     expect(input.classes()).toContain('message-composer__input--code')
     expect(codeButton.attributes('aria-pressed')).toBe('true')
+    expect(wrapper.find('.message-composer__code-mode-indicator').text()).toBe('Code mode on')
     expect(wrapper.emitted('send')).toBeUndefined()
 
     await codeButton.trigger('mousedown')
@@ -1178,6 +1225,7 @@ describe('message composer', () => {
     expect(input.element.textContent).toBe('const value = 1')
     expect(input.classes()).not.toContain('message-composer__input--code')
     expect(codeButton.attributes('aria-pressed')).toBe('false')
+    expect(wrapper.find('.message-composer__code-mode-indicator').exists()).toBe(false)
     expect(wrapper.emitted('send')).toBeUndefined()
     wrapper.unmount()
   })

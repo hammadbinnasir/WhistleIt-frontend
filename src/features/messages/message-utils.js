@@ -27,7 +27,11 @@ function linkifyHtml(value) {
   })
 }
 
-export function formattedMessageHtml(content = '') {
+export function formattedMessageHtml(content = '', isCode = false) {
+  if (isCode) {
+    return `<pre><code>${escapeHtml(String(content))}</code></pre>`
+  }
+
   let html = escapeHtml(content)
   const codeBlocks = []
 

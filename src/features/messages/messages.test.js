@@ -391,10 +391,17 @@ describe('channel messages store', () => {
         serverBacked: true,
       }),
     )
-    expect(sendChannelMessage).toHaveBeenCalledWith('company-1', 'team-1', 'channel-1', {
-      content: 'Thread parent',
-      parentMessageId: 'original-message',
-    })
+    expect(sendChannelMessage).toHaveBeenCalledWith(
+      'company-1',
+      'team-1',
+      'channel-1',
+      {
+        content: 'Thread parent',
+        isCode: false,
+        parentMessageId: 'original-message',
+        text: 'Thread parent',
+      },
+    )
     expect(sent.id).toBe('saved-reply-parent')
   })
 
@@ -422,6 +429,8 @@ describe('channel messages store', () => {
 
     expect(sendChannelMessage).toHaveBeenCalledWith('company-1', 'team-1', 'channel-2', {
       content: 'Hello',
+      isCode: false,
+      text: 'Hello',
       forwardedFrom: 'Aiman in General',
     })
     expect(messages.messagesFor('channel-2')).toContainEqual(
@@ -457,6 +466,8 @@ describe('channel messages store', () => {
       content: 'Please see this',
       attachment,
       attachmentSource: 'recent',
+      isCode: false,
+      text: 'Please see this',
     })
   })
 
@@ -486,6 +497,51 @@ describe('channel messages store', () => {
 
     finishRefresh({ success: true, data: { messages: [] } })
     await vi.waitFor(() => expect(messages.loadingByChannel['channel-2']).toBe(false))
+  })
+
+  it('sends channel code messages with metadata and preserves code mode after fetch', async () => {
+    useTeamsStore().activeWorkspaceId = 'company-1'
+    useTeamsStore().activeTeamId = 'team-1'
+    const timestamp = '2026-11-11T09:00:00.000Z'
+    const code = '  const answer = 42\n    return answer'
+    sendChannelMessage.mockResolvedValue({
+      success: true,
+      data: { message: { id: 'channel-code-message', body: code, sender_id: 'user-1' } },
+    })
+    getChannelMessages.mockResolvedValue({
+      success: true,
+      data: {
+        messages: [{ id: 'channel-code-message', body: code, sender_id: 'user-1' }],
+      },
+    })
+    const messages = useMessagesStore()
+
+    await expect(
+      messages.postChannelMessage('channel-code', {
+        content: code,
+        isCode: true,
+        senderId: 'user-1',
+        receiverId: 'user-2',
+        timestamp,
+      }),
+    ).resolves.toMatchObject({ success: true })
+
+    expect(sendChannelMessage).toHaveBeenCalledWith(
+      'company-1',
+      'team-1',
+      'channel-code',
+      {
+        content: code,
+        text: code,
+        isCode: true,
+        senderId: 'user-1',
+        receiverId: 'user-2',
+        timestamp,
+      },
+    )
+    expect(messages.messagesFor('channel-code')).toContainEqual(
+      expect.objectContaining({ content: code, isCode: true }),
+    )
   })
 
   it('keeps the selected attachment visible when the successful response has no attachments', async () => {

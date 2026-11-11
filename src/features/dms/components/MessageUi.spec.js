@@ -147,6 +147,14 @@ describe('DmMessageItem', () => {
     wrapper.unmount()
   })
 
+  it('renders received code-mode messages in a dark, multiline code block', () => {
+    const code = 'const answer = 42\n  return answer'
+    const wrapper = setup({ id: 'code-message', from: 'u2', text: code, isCode: true, createdAt: '' })
+
+    const codeBlock = wrapper.get('[data-test="message-text"]')
+    expect(codeBlock.element.tagName).toBe('PRE')
+    expect(codeBlock.classes()).toContain('bg-slate-950')
+    expect(codeBlock.text()).toBe(code)
   it('renders deleted messages as deleted and never labels them edited', () => {
     const wrapper = setup({
       id: 'm-deleted',

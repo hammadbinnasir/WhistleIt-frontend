@@ -365,9 +365,16 @@ describe('dms store', () => {
 
     const sent = dms.sendMessage('c1', { content: 'Hello Muniba' })
     expect(sent).toMatchObject({ status: 'sending', text: 'Hello Muniba' })
-    await vi.waitFor(() =>
-      expect(dmApi.sendMessage).toHaveBeenCalledWith('company-1', 'c1', {
+    expect(dmApi.sendMessage).toHaveBeenCalledWith(
+      'company-1',
+      'c1',
+      expect.objectContaining({
         body: 'Hello Muniba',
+        text: 'Hello Muniba',
+        is_code: false,
+        senderId: 'u1',
+        receiverId: 'u2',
+        timestamp: expect.any(String),
         is_important: false,
       }),
     )
@@ -382,12 +389,47 @@ describe('dms store', () => {
 
     dms.sendMessage('c1', { content: 'Urgent update', important: true })
 
-    expect(dmApi.sendMessage).toHaveBeenCalledWith('company-1', 'c1', {
-      body: 'Urgent update',
-      is_important: true,
-    })
+    expect(dmApi.sendMessage).toHaveBeenCalledWith(
+      'company-1',
+      'c1',
+      expect.objectContaining({
+        body: 'Urgent update',
+        is_important: true,
+      }),
+    )
     await vi.waitFor(() => expect(dms.conversations[0].messages.at(-1).id).toBe('server-1'))
     expect(dms.conversations[0].messages.at(-1).important).toBe(true)
+  })
+
+  it('sends code messages with sender, receiver, mode, and timestamp metadata', async () => {
+    const dms = useDmStore()
+    await dms.init()
+    const timestamp = '2026-11-11T09:00:00.000Z'
+
+    dms.sendMessage('c1', {
+      content: 'const answer = 42',
+      is_code: true,
+      senderId: 'u1',
+      receiverId: 'u2',
+      timestamp,
+    })
+
+    expect(dmApi.sendMessage).toHaveBeenCalledWith(
+      'company-1',
+      'c1',
+      expect.objectContaining({
+        body: 'const answer = 42',
+        text: 'const answer = 42',
+        is_code: true,
+        senderId: 'u1',
+        receiverId: 'u2',
+        timestamp,
+      }),
+    )
+    expect(dms.conversations[0].messages.at(-1)).toMatchObject({
+      text: 'const answer = 42',
+      isCode: true,
+    })
   })
 
   it('marks a message failed when POST fails and retries it', async () => {

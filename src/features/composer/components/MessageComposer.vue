@@ -335,7 +335,10 @@ function nodeToMarkdown(node) {
   if (tag === 'em' || tag === 'i') return `*${children}*`
   if (tag === 's' || tag === 'del' || tag === 'strike') return `~~${children}~~`
   if (tag === 'u') return `<u>${children}</u>`
-  if (tag === 'code') return `\`${children}\``
+  if (tag === 'code') {
+    const code = element.textContent.replace(/^\n+|\n+$/g, '')
+    return `\`\`\`\n${code}\n\`\`\``
+  }
   if (tag === 'li') {
     const list = element.parentElement
     const siblings = [...(list?.children || [])]
@@ -345,6 +348,17 @@ function nodeToMarkdown(node) {
   if (tag === 'ul' || tag === 'ol') return [...element.children].map(nodeToMarkdown).join('\n')
   if (['div', 'p'].includes(tag)) return `${children}\n`
   return children
+}
+
+function nodeToPlainText(node) {
+  if (node.nodeType === Node.TEXT_NODE) return node.nodeValue
+  if (node.nodeType !== Node.ELEMENT_NODE) return ''
+
+  const element = node
+  const tag = element.tagName.toLowerCase()
+  if (tag === 'br') return '\n'
+  const children = [...element.childNodes].map(nodeToPlainText).join('')
+  return ['div', 'p', 'li'].includes(tag) ? `${children}\n` : children
 }
 
 function syncContent() {
@@ -468,6 +482,21 @@ function applyFormat(action) {
         : range.endContainer.parentElement
     const startFormat = startNode?.closest(tagSelector)
     const endFormat = endNode?.closest(tagSelector)
+
+    if (action.name === 'code' && isActive && startFormat && startFormat === endFormat) {
+      const children = [...startFormat.childNodes]
+      startFormat.replaceWith(...children)
+      if (children.length) {
+        range.setStartBefore(children[0])
+        range.setEndAfter(children[children.length - 1])
+      }
+      selection.removeAllRanges()
+      selection.addRange(range)
+      activeFormats.value = activeFormats.value.filter((format) => format !== action.name)
+      codeMode.value = false
+      syncContent()
+      return
+    }
 
     if (isActive && startFormat && startFormat === endFormat) {
       const formatRange = document.createRange()
@@ -735,7 +764,13 @@ function sendMessage() {
   }
 
   emit('send', {
-    content: content.value.trim(),
+    content: codeMode.value
+      ? [...(editor.value?.childNodes || [])]
+          .map(nodeToPlainText)
+          .join('')
+          .replace(/\n+$/, '')
+      : content.value.trim(),
+    ...(codeMode.value ? { isCode: true } : {}),
     ...(attachment.value ? { attachment: attachment.value } : {}),
     ...(pollDraft.value ? { poll: pollDraft.value } : {}),
     ...(important.value ? { important: true } : {}),
@@ -1195,12 +1230,78 @@ function handleMediaAction(action, payload) {
   }
 }
 
+function insertListItem(event) {
+  const selection = document.getSelection()
+  if (!selection?.rangeCount || !editor.value?.contains(selection.anchorNode)) return false
+
+  const range = selection.getRangeAt(0)
+  const anchor =
+    range.startContainer.nodeType === Node.ELEMENT_NODE
+      ? range.startContainer
+      : range.startContainer.parentElement
+  const item = anchor?.closest('li')
+  if (!item || !editor.value.contains(item)) return false
+
+  event.preventDefault()
+  range.deleteContents()
+  range.collapse(true)
+
+  const tail = document.createRange()
+  tail.setStart(range.startContainer, range.startOffset)
+  tail.setEnd(item, item.childNodes.length)
+  const trailingContent = tail.extractContents()
+  const nextItem = document.createElement('li')
+  const hasTrailingContent = [...trailingContent.childNodes].some(
+    (node) => node.nodeType === Node.ELEMENT_NODE || node.textContent.length > 0,
+  )
+  if (hasTrailingContent) nextItem.append(trailingContent)
+  else nextItem.append(document.createElement('br'))
+  item.after(nextItem)
+  activeList.value = item.parentElement.tagName === 'OL' ? 'numbered' : 'bulleted'
+
+  const caret = document.createRange()
+  caret.selectNodeContents(nextItem)
+  caret.collapse(true)
+  selection.removeAllRanges()
+  selection.addRange(caret)
+  savedSelectionRange = caret.cloneRange()
+  syncContent()
+  return true
+}
+
 // function handleKeydown(event) {
 //   if (event.key === 'Enter') return
 // }
 
 function handleKeydown(event) {
   if (event.key !== 'Enter') return
+
+  if (!event.shiftKey && insertListItem(event)) return
+
+  if (codeMode.value && !event.shiftKey) {
+    event.preventDefault()
+
+    const selection = document.getSelection()
+    if (!selection?.rangeCount || !editor.value?.contains(selection.anchorNode)) return
+
+    const range = selection.getRangeAt(0)
+    if (!range.startContainer.parentElement?.closest('code')) {
+      const codeBlock = editor.value.querySelector('code:last-of-type')
+      if (codeBlock) {
+        range.selectNodeContents(codeBlock)
+        range.collapse(false)
+      }
+    }
+    range.deleteContents()
+    const newline = document.createTextNode('\n')
+    range.insertNode(newline)
+    range.setStartAfter(newline)
+    range.collapse(true)
+    selection.removeAllRanges()
+    selection.addRange(range)
+    syncContent()
+    return
+  }
 
   if (event.shiftKey) return
 
@@ -1240,6 +1341,14 @@ function handleFormKeydown(event) {
     <div class="message-composer__input-row">
       <div class="message-composer__editor-area">
         <span v-if="important" class="message-composer__important">IMPORTANT!</span>
+        <span
+          v-if="codeMode"
+          class="message-composer__code-mode-indicator"
+          role="status"
+          aria-live="polite"
+        >
+          Code mode on
+        </span>
         <div v-if="voiceNote || voiceNoteUploading" class="message-composer__voice-draft">
           <VoiceNotePlayer
             v-if="voiceNotePreviewUrl"
@@ -2298,8 +2407,20 @@ function handleFormKeydown(event) {
 }
 
 .message-composer__input--code {
-  background: #222;
+  background: #242424;
   color: #fff;
+}
+
+.message-composer__code-mode-indicator {
+  display: inline-flex;
+  align-items: center;
+  margin: 0 0 6px;
+  padding: 3px 8px;
+  border-radius: 4px;
+  background: #242424;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
 }
 
 .message-composer__input--code:empty::before {
@@ -2314,6 +2435,7 @@ function handleFormKeydown(event) {
   background: #222;
   color: #fff;
   font-family: monospace;
+  white-space: pre-wrap;
 }
 
 .message-composer__input pre {
