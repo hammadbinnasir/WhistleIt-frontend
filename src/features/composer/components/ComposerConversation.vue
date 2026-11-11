@@ -75,7 +75,13 @@ const forwardTarget = ref(null)
 const forwardDestinationId = ref('')
 const threadMessage = ref(null)
 const dmVisibleCount = ref(20)
-const participatedPolls = ref(new Set())
+const pollParticipationStorageKey = `whistleit:participated-polls:${getAuthUserId() ?? dms.meId ?? 'anonymous'}`
+const storedParticipatedPolls = JSON.parse(
+  localStorage.getItem(pollParticipationStorageKey) || '[]',
+)
+const participatedPolls = ref(
+  new Set(Array.isArray(storedParticipatedPolls) ? storedParticipatedPolls.map(String) : []),
+)
 const activePoll = ref(null)
 const activePollMode = ref('respond')
 const pollResponses = ref({})
@@ -266,6 +272,19 @@ const renderedMessages = computed(() => {
         : voiceNoteId && normalizedContent.trim().toLowerCase() === 'voice message'
           ? ''
           : normalizedContent
+      const pollId = message.poll_id ?? message.pollId
+      const poll =
+        message.poll ??
+        (pollId != null
+          ? {
+              id: pollId,
+              title: message.poll_title ?? message.pollTitle ?? message.title ?? content,
+              description: message.poll_description ?? message.pollDescription ?? '',
+              questions: pollQuestionsFromResponse(
+                message.poll_questions ?? message.pollQuestions ?? message.questions ?? [],
+              ),
+            }
+          : null)
       const author =
         message.from === dms.meId
           ? currentUser
@@ -278,8 +297,20 @@ const renderedMessages = computed(() => {
         authorId === previous.authorId &&
         sameDay(previous.createdAt, message.createdAt) &&
         new Date(message.createdAt) - new Date(previous.createdAt) < 5 * 60_000
+      const replyTarget =
+        message.replyTo != null
+          ? allMessages.value.find(
+              (item) => String(item.id) === String(message.replyTo?.id ?? message.replyTo),
+            ) ||
+            (typeof message.replyTo === 'object' && message.replyTo && 'id' in message.replyTo
+              ? message.replyTo
+              : allMessages.value.find(
+                  (item) => String(item.id) === String(message.replyTo),
+                ))
+          : null
       const rendered = {
         ...message,
+        ...(poll ? { poll } : {}),
         content,
         important: isImportantMessage(message),
         formattedContent: formattedMessageHtml(content),
@@ -293,12 +324,7 @@ const renderedMessages = computed(() => {
         grouped: Boolean(grouped),
         segments: messageSegments(content),
         preview: createLinkPreview(content),
-        reply: message.replyTo
-          ? allMessages.value.find((item) => item.id === message.replyTo.id) ||
-            (typeof message.replyTo === 'object'
-              ? message.replyTo
-              : allMessages.value.find((item) => item.id === message.replyTo))
-          : null,
+        reply: replyTarget,
         reactions: message.reactions || [],
       }
       rendered.replySummary = replySummaryFor(rendered)
@@ -1394,6 +1420,14 @@ function pollQueryParams(poll, key) {
   return poll[key] || { poll_id: poll.id }
 }
 
+function pollResultQueryParams(poll) {
+  return {
+    ...(pollQueryParams(poll, 'resultsQueryParams') || {}),
+    channel_id: channelId.value,
+    poll_id: poll.id,
+  }
+}
+
 function hasServerPollId(poll) {
   return poll?.id != null && !String(poll.id).startsWith('poll-')
 }
@@ -1422,41 +1456,155 @@ function pollQuestionsFromResponse(response) {
 }
 
 function normalizePollResult(response, poll) {
-  const result = response?.result ?? response
-  if (
-    !result ||
-    typeof result !== 'object' ||
-    (!result.totalVotes &&
-      !result.total_votes &&
-      !result.total &&
-      !result.questions &&
-      !result.results &&
-      !result.responses)
-  ) {
-    return null
-  }
+  const payload = response?.data ?? response
+  const result = payload?.result ?? payload?.results ?? payload
   const sourceQuestions = Array.isArray(result)
     ? result
-    : (result?.questions ?? result?.results ?? [])
-  const questions = poll.questions.map((question, questionIndex) => {
-    const source = sourceQuestions[questionIndex] || {}
+    : Array.isArray(result?.questions)
+      ? result.questions
+      : Array.isArray(result?.poll_questions)
+        ? result.poll_questions
+        : Array.isArray(result?.results)
+          ? result.results
+          : result?.answers
+            ? [result]
+            : []
+  if (!sourceQuestions.length && !result?.totalVotes && !result?.total_votes && !result?.total) {
+    return null
+  }
+  const legacyResponses = result?.responses ?? payload?.responses
+  const responseQuestions = pollQuestionsFromResponse(sourceQuestions)
+  const pollQuestions =
+    Array.isArray(poll?.questions) && poll.questions.length
+      ? poll.questions
+      : responseQuestions
+  const questions = pollQuestions.map((question, questionIndex) => {
+    const questionId = question.id ?? question.question_id
+    const source =
+      sourceQuestions.find(
+        (item) =>
+          item &&
+          questionId != null &&
+          String(item.id ?? item.question_id) === String(questionId),
+      ) || sourceQuestions[questionIndex] || {}
     const sourceVotes = source.votes ?? source.answers ?? source.options ?? []
+    const sourceResponses =
+      source.responses ?? (question.type === 'openEnded' ? source.answers : null)
+    const responses = Array.isArray(sourceResponses)
+      ? sourceResponses
+          .map((item) =>
+            typeof item === 'string'
+              ? item
+              : (item?.answer ?? item?.response ?? item?.text ?? item?.value),
+          )
+          .filter((item) => typeof item === 'string' && item.trim())
+      : Array.isArray(legacyResponses?.[questionIndex])
+        ? legacyResponses[questionIndex]
+        : []
     return {
-      votes: question.options.map((_, optionIndex) => {
+      votes: (Array.isArray(question.options) ? question.options : []).map((_, optionIndex) => {
         const vote = sourceVotes[optionIndex]
         return typeof vote === 'number'
           ? vote
-          : Number(vote?.votes ?? vote?.count ?? vote?.total ?? vote ?? 0)
+          : Number(
+              vote?.votes ??
+                vote?.count ??
+                vote?.total ??
+                vote?.total_votes ??
+                (Array.isArray(vote?.users) ? vote.users.length : null) ??
+                vote ??
+                0,
+            )
       }),
+      responses,
     }
   })
   return {
     totalVotes: Number(
-      result?.totalVotes ?? result?.total_votes ?? result?.total ?? result?.pagination?.total ?? 0,
+      result?.totalVotes ??
+        result?.total_votes ??
+        result?.total ??
+        payload?.pagination?.total ??
+        sourceQuestions[0]?.total_votes ??
+        0,
     ),
     questions,
-    responses: result?.responses ?? questions.map(() => []),
+    pollQuestions,
+    responses: questions.map((question, index) =>
+      question.responses.length ? question.responses : (legacyResponses?.[index] ?? []),
+    ),
   }
+}
+
+function removePublishedDraft(targetChannelId, existingMessage, targetConversation) {
+  if (!existingMessage) return
+  const messages = targetConversation
+    ? targetConversation.messages
+    : messageStore.messagesByChannel[String(targetChannelId)] || []
+  const index = messages.findIndex(
+    (message) => String(message.id) === String(existingMessage.id),
+  )
+  if (index !== -1) messages.splice(index, 1)
+}
+
+async function sendPollMessage(targetChannelId, poll, existingMessage = null) {
+  const targetConversation = dms.conversations.find(
+    (item) => String(item.id) === String(targetChannelId),
+  )
+  if (targetConversation) {
+    const message = dms.sendMessage(targetConversation.id, {
+      content: poll.title,
+      poll_id: poll.id,
+      poll,
+    })
+    if (!message) throw new Error('The poll message could not be added to this conversation.')
+    message.poll = poll
+    message.poll_id = poll.id
+    removePublishedDraft(targetChannelId, existingMessage, targetConversation)
+    return message
+  }
+
+  const result = await messageStore.postChannelMessage(targetChannelId, {
+    content: poll.title,
+    poll_id: poll.id,
+  })
+  if (!result.success) {
+    throw new Error(result.error || 'The poll message could not be sent to the channel.')
+  }
+
+  const responseMessageId =
+    result.data?.id ?? result.data?.message_id ?? result.data?.messageId
+  const channelMessages = messageStore.messagesFor(targetChannelId)
+  let message = responseMessageId == null
+    ? channelMessages.find((item) => String(item.poll_id ?? '') === String(poll.id))
+    : channelMessages.find((item) => String(item.id) === String(responseMessageId))
+  if (!message && responseMessageId != null) {
+    message = {
+      ...result.data,
+      id: String(responseMessageId),
+      content: result.data.content ?? result.data.body ?? poll.title,
+      author: result.data.author || currentUserName.value,
+      authorId: result.data.authorId ?? dms.meId,
+      mine: true,
+      createdAt: result.data.createdAt || new Date().toISOString(),
+    }
+    channelMessages.push(message)
+  }
+  if (!message) throw new Error('The server did not return the poll message ID.')
+  message.content ||= poll.title
+  message.text ||= poll.title
+  message.poll_id = poll.id
+  message.poll = poll
+  message.mine = true
+  removePublishedDraft(targetChannelId, existingMessage, null)
+  ui.addPoll(message, conversationMeta.value)
+  addMockMessage({
+    id: message.id,
+    text: message.content,
+    sender: message.author,
+    conversation: conversationMeta.value,
+  })
+  return message
 }
 
 async function createPollInChannel(targetChannelId, pollDraft, existingMessage = null) {
@@ -1549,45 +1697,18 @@ async function createPollInChannel(targetChannelId, pollDraft, existingMessage =
         ? pollQuestionsFromResponse(responsePoll)
         : pollDraft.questions,
     }
-    const message = existingMessage || {
-      id: `poll-message-${poll.id}`,
-      content: `Poll: ${poll.title}`,
-      author: currentUserName.value,
-      authorId: dms.meId,
-      mine: true,
-      backendSynced: true,
-      createdAt: new Date().toISOString(),
-      poll,
-    }
     if (existingMessage) {
       existingMessage.poll = poll
-      existingMessage.backendSynced = true
-    } else {
-      const targetConversation =
-        conversation.value && String(conversation.value.id) === String(targetChannelId)
-          ? conversation.value
-          : null
-      if (targetConversation) {
-        targetConversation.messages.push(message)
-      } else {
-        const key = String(targetChannelId)
-        if (!messageStore.messagesByChannel[key]) messageStore.messagesByChannel[key] = []
-        messageStore.messagesByChannel[key].push(message)
-      }
-      ui.addPoll(message, conversationMeta.value)
-      if (!targetConversation) {
-        addMockMessage({
-          id: message.id,
-          text: message.content,
-          sender: message.author,
-          conversation: conversationMeta.value,
-        })
-      }
     }
+    await sendPollMessage(targetChannelId, poll, existingMessage)
     await scrollMessagesToLatest()
     return poll
   } catch (error) {
-    ui.toast('Poll not created', error.message || 'The poll could not be created.', 'error')
+    ui.toast(
+      'Poll not sent',
+      error.message || 'The poll was created but its message could not be sent.',
+      'error',
+    )
     return null
   }
 }
@@ -1614,10 +1735,17 @@ function canClosePoll(message) {
   )
 }
 
+function hasAlreadyVoted(poll) {
+  return (
+    participatedPolls.value.has(String(poll?.id)) ||
+    Boolean(poll?.alreadyVoted ?? poll?.already_voted ?? poll?.user_has_voted)
+  )
+}
+
 async function participateInPoll(pollId) {
   if (pollApi.loading.value || !hasServerPollId({ id: pollId })) return
   const message = renderedMessages.value.find((item) => item.poll?.id === pollId)
-  if (!message?.poll || !isPollActive(message.poll)) return
+  if (!message?.poll || hasAlreadyVoted(message.poll) || !isPollActive(message.poll)) return
   activePoll.value = message.poll
   activePollMode.value = 'respond'
   pollResponses.value = {}
@@ -1717,10 +1845,16 @@ async function viewPollResults(pollId) {
   pollResponses.value = {}
   try {
     const response = await pollApi.getPollResult(
-      pollQueryParams(message.poll, 'resultsQueryParams'),
+      pollResultQueryParams(message.poll),
     )
     const result = normalizePollResult(response, message.poll)
-    if (result) pollResults.value = { ...pollResults.value, [pollId]: result }
+    if (result) {
+      if (result.pollQuestions.length) {
+        message.poll.questions = result.pollQuestions
+        activePoll.value = { ...message.poll, questions: result.pollQuestions }
+      }
+      pollResults.value = { ...pollResults.value, [pollId]: result }
+    }
   } catch (error) {
     ui.toast(
       'Unable to load poll results',
@@ -1840,10 +1974,11 @@ async function submitPollResponse() {
     }
   })
   pollResults.value = { ...pollResults.value, [poll.id]: existingResult }
-  participatedPolls.value = new Set([...participatedPolls.value, activePoll.value.id])
+  participatedPolls.value = new Set([...participatedPolls.value, String(poll.id)])
+  localStorage.setItem(pollParticipationStorageKey, JSON.stringify([...participatedPolls.value]))
   closePollResponse()
   try {
-    const response = await pollApi.getPollResult(pollQueryParams(poll, 'resultsQueryParams'))
+    const response = await pollApi.getPollResult(pollResultQueryParams(poll))
     const result = normalizePollResult(response, poll)
     if (result) pollResults.value = { ...pollResults.value, [poll.id]: result }
   } catch (error) {
@@ -2015,17 +2150,9 @@ onBeforeUnmount(() => {
                   :poll="message.poll"
                   :backend-available="hasServerPollId(message.poll)"
                   :can-publish="message.mine"
-                  :result="pollResults[message.poll.id]"
                   :closed="isPollClosed(message.poll)"
                   :scheduled="isPollScheduled(message.poll)"
-                  :already-voted="
-                    participatedPolls.has(message.poll.id) ||
-                    Boolean(
-                      message.poll.alreadyVoted ??
-                      message.poll.already_voted ??
-                      message.poll.user_has_voted,
-                    )
-                  "
+                  :already-voted="hasAlreadyVoted(message.poll)"
                   :can-close="canClosePoll(message)"
                   :loading="pollApi.loading.value"
                   @participate="participateInPoll(message.poll.id)"

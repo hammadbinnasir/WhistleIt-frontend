@@ -1,6 +1,7 @@
 import { ApiRequestError, apiRequest } from '@/lib/api/client'
 
 const POLL_QUESTIONS_PATH = '/v1/poll/get-question'
+const POLL_RESULTS_PATH = '/v1/poll/get-result'
 
 function requireId(value, label) {
   if (value == null || value === '') {
@@ -45,7 +46,7 @@ export async function getPollQuestions(queryParams = {}) {
 }
 
 export async function getPollResult(queryParams = {}) {
-  return parsedData(await apiRequest(withQuery(POLL_QUESTIONS_PATH, queryParams)))
+  return parsedData(await apiRequest(withQuery(POLL_RESULTS_PATH, queryParams)))
 }
 
 export async function closePoll(pollId, payload) {

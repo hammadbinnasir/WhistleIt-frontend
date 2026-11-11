@@ -169,30 +169,47 @@ function normalizeParticipant(raw) {
 }
 
 export function normalizeMessage(raw) {
-  const sender = raw.sender ?? raw.user ?? raw.author
+  const message =
+    raw.message && typeof raw.message === 'object'
+      ? { ...raw.message, voice_note: raw.voice_note ?? raw.message.voice_note }
+      : raw
+  const sender = message.sender ?? message.user ?? message.author
   const forwardedFrom =
-    raw.forwarded_from ??
-    raw.forwardedFrom ??
-    raw.forwarded?.from ??
-    raw.metadata?.forwardedFrom ??
-    (raw.is_forwarded || raw.isForwarded || raw.forwarded === true ? true : undefined)
+    message.forwarded_from ??
+    message.forwardedFrom ??
+    message.forwarded?.from ??
+    message.metadata?.forwardedFrom ??
+    (message.is_forwarded || message.isForwarded || message.forwarded === true ? true : undefined)
   const editedAt =
-    raw.edited_at ??
-    raw.editedAt ??
-    (raw.updated_at && raw.updated_at !== raw.created_at ? raw.updated_at : undefined)
+    message.edited_at ??
+    message.editedAt ??
+    (message.updated_at && message.updated_at !== message.created_at
+      ? message.updated_at
+      : undefined)
+  const attachment = message.attachments ?? message.attachment
+  const attachments = Array.isArray(attachment) ? attachment : attachment ? [attachment] : []
+  const voiceNoteId =
+    message.voice_note_id ??
+    message.voiceNoteId ??
+    message.voice_note?.voice_note_id ??
+    message.voice_note?.id ??
+    sender?.voice_note?.voice_note_id ??
+    sender?.voice_note?.id
   return {
-    ...raw,
-    id: String(raw.id ?? raw.message_id ?? raw.messageId),
+    ...message,
+    id: String(message.id ?? message.message_id ?? message.messageId),
     backendSynced: true,
     from: String(
-      raw.sender_id ??
-        raw.user_id ??
-        raw.from ??
+      message.sender_id ??
+        message.user_id ??
+        message.from ??
         (sender && typeof sender === 'object' ? sender.id : '') ??
         '',
     ),
-    text: normalizeMessageContent(raw.content ?? raw.text ?? raw.body ?? ''),
-    createdAt: raw.created_at ?? raw.createdAt ?? '',
+    text: normalizeMessageContent(message.content ?? message.text ?? message.body ?? ''),
+    createdAt: message.created_at ?? message.createdAt ?? '',
+    ...(attachments.length ? { attachments } : {}),
+    ...(voiceNoteId ? { voiceNoteId: String(voiceNoteId) } : {}),
     ...(forwardedFrom ? { forwardedFrom } : {}),
     // Edit hua ho to "edited" dikhane ke liye (dusre user ko bhi)
     ...(editedAt ? { editedAt } : {}),
@@ -363,6 +380,7 @@ export const dmApi = {
   sendMessage(companyId, channelId, payload) {
     requireCompany(companyId, 'send a message')
     requireChannel(channelId)
+    //console.log('sendMessage payload:', payload);
     if ('attachments' in payload) {
       throw new Error('Only one message attachment is supported.')
     }
@@ -383,7 +401,15 @@ export const dmApi = {
       formData.append('attachment', attachment)
       Object.entries(requestPayload).forEach(([key, value]) => {
         if (key === 'body' || key === 'attachment' || value == null) return
-        formData.append(key, typeof value === 'string' ? value : JSON.stringify(value))
+        const formValue =
+          typeof value === 'boolean'
+            ? value
+              ? '1'
+              : '0'
+            : typeof value === 'string'
+              ? value
+              : JSON.stringify(value)
+        formData.append(key, formValue)
       })
       return apiRequest(messagesPath(companyId, channelId), {
         method: 'POST',
