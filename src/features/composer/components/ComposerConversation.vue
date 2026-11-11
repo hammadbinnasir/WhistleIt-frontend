@@ -2925,7 +2925,14 @@ onBeforeUnmount(() => {
                     :key="file.id || `${file.name}-${file.size}-${fileIndex}`"
                     class="composer-conversation__attachment"
                   >
-                    <MessageAttachment :attachment="file" />
+                    <MessageAttachment
+                      :attachment="file"
+                      :conversation-type="conversationType"
+                      :company-id="teamsStore.activeWorkspaceId"
+                      :team-id="conversation ? null : teamsStore.activeTeamId"
+                      :channel-id="channelId"
+                      :message-id="message.id"
+                    />
                   </li>
                 </ul>
 

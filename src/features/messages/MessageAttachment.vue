@@ -1,15 +1,21 @@
 <script setup>
 import { onBeforeUnmount, ref, watch } from 'vue'
-import { messageAttachmentKind, messageAttachmentUrl } from './messageAttachments'
+import { fetchMessageAttachment, messageAttachmentKind } from './messageAttachments'
 
 const props = defineProps({
   attachment: { type: Object, required: true },
+  conversationType: { type: String, required: true },
+  companyId: { type: [String, Number], required: true },
+  teamId: { type: [String, Number], default: null },
+  channelId: { type: [String, Number], required: true },
+  messageId: { type: [String, Number], required: true },
 })
 
 const fileUrl = ref('')
 const error = ref('')
 const loading = ref(false)
 let ownsFileUrl = false
+let loadId = 0
 
 function revokeFileUrl() {
   if (!ownsFileUrl || !fileUrl.value.startsWith('blob:')) {
@@ -22,22 +28,54 @@ function revokeFileUrl() {
   ownsFileUrl = false
 }
 
-function loadFile() {
+async function loadFile() {
+  const currentLoadId = ++loadId
   revokeFileUrl()
   error.value = ''
-  const sourceUrl = messageAttachmentUrl(props.attachment)
-  if (!sourceUrl) {
+  if (
+    typeof props.attachment.localPreviewUrl === 'string' &&
+    props.attachment.localPreviewUrl.startsWith('blob:')
+  ) {
+    fileUrl.value = props.attachment.localPreviewUrl
     loading.value = false
-    error.value = 'The server did not provide a file URL.'
     return
   }
 
-  fileUrl.value = sourceUrl
-  loading.value = false
+  loading.value = true
+  try {
+    const blob = await fetchMessageAttachment(props.attachment, {
+      conversationType: props.conversationType,
+      companyId: props.companyId,
+      teamId: props.teamId,
+      channelId: props.channelId,
+      messageId: props.messageId,
+    })
+    if (currentLoadId !== loadId) return
+    fileUrl.value = URL.createObjectURL(blob)
+    ownsFileUrl = true
+  } catch (cause) {
+    if (currentLoadId === loadId) {
+      error.value = cause instanceof Error ? cause.message : 'Unable to load attachment.'
+    }
+  } finally {
+    if (currentLoadId === loadId) loading.value = false
+  }
 }
 
-watch(() => props.attachment, loadFile, { immediate: true })
+watch(
+  () => [
+    props.attachment,
+    props.conversationType,
+    props.companyId,
+    props.teamId,
+    props.channelId,
+    props.messageId,
+  ],
+  loadFile,
+  { immediate: true },
+)
 onBeforeUnmount(() => {
+  loadId += 1
   revokeFileUrl()
 })
 </script>
