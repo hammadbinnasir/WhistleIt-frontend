@@ -137,6 +137,11 @@ const selectedChannel = computed(() => {
     }
   }
   const creatorId = ch.createdById || ch.createdBy
+  const isCreator =
+    Boolean(ch.isOwner) ||
+    (creatorId != null &&
+      authenticatedUser?.id != null &&
+      String(creatorId) === String(authenticatedUser.id))
   const createdBy =
     creatorId && String(creatorId) === String(authenticatedUser?.id)
       ? (authenticatedUser.fullName || ch.createdBy)
@@ -149,6 +154,9 @@ const selectedChannel = computed(() => {
     muted: ch.isMuted || false,
     favourite: ch.isFavorite || false,
     canManage: Boolean(ch.canManage),
+    isCreator,
+    createdById: ch.createdById,
+    isOwner: Boolean(ch.isOwner),
     messagePermission: ch.messagePermission || 'everyone',
     allowedSenderIds: ch.allowedSenderIds || [],
   }

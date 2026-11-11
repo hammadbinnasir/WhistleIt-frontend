@@ -10,18 +10,21 @@ vi.mock('../api', () => ({
     joinChannel: vi.fn(),
     listMembers: vi.fn(),
     createChannel: vi.fn(),
+    updateChannel: vi.fn(),
     leaveChannel: vi.fn(),
   },
 }))
 
 describe('channels store membership visibility', () => {
   beforeEach(() => {
+    localStorage.clear()
     setActivePinia(createPinia())
     api.listChannels.mockReset()
     api.browseChannels.mockReset()
     api.joinChannel.mockReset()
     api.listMembers.mockReset()
     api.createChannel.mockReset()
+    api.updateChannel.mockReset()
     api.leaveChannel.mockReset().mockResolvedValue(undefined)
   })
 
@@ -40,9 +43,7 @@ describe('channels store membership visibility', () => {
   })
 
   it('uses browse membership status instead of inferring it from the main list', async () => {
-    api.listChannels.mockResolvedValue([
-      { id: 'joined', isMember: true, isArchived: false },
-    ])
+    api.listChannels.mockResolvedValue([{ id: 'joined', isMember: true, isArchived: false }])
     api.browseChannels.mockResolvedValue([
       { id: 'joined', isMember: false },
       { id: 'available', isMember: false },
@@ -104,6 +105,41 @@ describe('channels store membership visibility', () => {
     expect(localStorage.getItem('whistleit-managed-channel-ids')).toContain('new-channel')
   })
 
+  it('keeps saved message permissions after refresh when the channel list omits them', async () => {
+    api.listChannels.mockResolvedValue([
+      { id: 'restricted-channel', name: 'Restricted', isMember: true },
+    ])
+    api.updateChannel.mockResolvedValue({
+      id: 'restricted-channel',
+      name: 'Restricted',
+      isMember: true,
+    })
+
+    const store = useChannelsStore()
+    await store.fetchChannels()
+    await store.updateChannel('restricted-channel', {
+      messagePermission: 'creator_only',
+      allowedSenderIds: [],
+    })
+
+    expect(store.getById('restricted-channel')).toMatchObject({
+      messagePermission: 'creator_only',
+      allowedSenderIds: [],
+    })
+
+    setActivePinia(createPinia())
+    api.listChannels.mockResolvedValue([
+      { id: 'restricted-channel', name: 'Restricted', isMember: true },
+    ])
+    const refreshedStore = useChannelsStore()
+    await refreshedStore.fetchChannels()
+
+    expect(refreshedStore.getById('restricted-channel')).toMatchObject({
+      messagePermission: 'creator_only',
+      allowedSenderIds: [],
+    })
+  })
+
   it('transfers management on leave and clears the previous admin local permission', async () => {
     api.createChannel.mockResolvedValue({
       id: 'transfer-channel',
@@ -117,9 +153,7 @@ describe('channels store membership visibility', () => {
 
     expect(api.leaveChannel).toHaveBeenCalledWith('transfer-channel', 'new-admin')
     expect(store.getById('transfer-channel')).toBeNull()
-    expect(localStorage.getItem('whistleit-managed-channel-ids')).not.toContain(
-      'transfer-channel',
-    )
+    expect(localStorage.getItem('whistleit-managed-channel-ids')).not.toContain('transfer-channel')
     store.upsertChannel({
       id: 'transfer-channel',
       name: 'Transfer Channel',

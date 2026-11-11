@@ -206,7 +206,8 @@ describe('composer conversation', () => {
     wrapper.unmount()
   })
 
-  it('shows the restriction notice to members and the composer to channel admins in creator-only mode', async () => {
+  it('shows the restriction notice to members and only the creator can post in creator-only mode', async () => {
+    localStorage.setItem('authToken', 'test-token')
     localStorage.setItem('authUserId', 'member-1')
     localStorage.setItem('authUser', JSON.stringify({ id: 'member-1' }))
     const channels = useChannelsStore()
@@ -233,12 +234,22 @@ describe('composer conversation', () => {
       canManage: true,
     })
     await nextTick()
+    expect(wrapper.findComponent(MessageComposer).exists()).toBe(false)
+    expect(wrapper.text()).toContain('Only certain people can post in this channel.')
+
+    channels.upsertChannel({
+      ...channels.getById('restricted-channel'),
+      createdById: 'member-1',
+      isMember: true,
+    })
+    await nextTick()
     expect(wrapper.findComponent(MessageComposer).exists()).toBe(true)
     expect(wrapper.text()).not.toContain('Only certain people can post in this channel.')
     wrapper.unmount()
   })
 
-  it('shows the composer to selected members and admins, with a restriction notice to others', async () => {
+  it('shows the composer only to selected members, with a restriction notice to others', async () => {
+    localStorage.setItem('authToken', 'test-token')
     localStorage.setItem('authUserId', 'member-1')
     localStorage.setItem('authUser', JSON.stringify({ id: 'member-1' }))
     const channels = useChannelsStore()
@@ -247,7 +258,7 @@ describe('composer conversation', () => {
       name: 'Selected',
       isMember: true,
       createdById: 'creator-1',
-      canManage: false,
+      canManage: true,
       isOwner: false,
       messagePermission: 'specific',
       allowedSenderIds: ['member-2'],
@@ -277,7 +288,9 @@ describe('composer conversation', () => {
   })
 
   it('shows the composer to an explicitly allowed sender when membership data is stale', () => {
-    sessionStorage.setItem('authUser', JSON.stringify({ id: 'member-1' }))
+    localStorage.setItem('authToken', 'test-token')
+    localStorage.setItem('authUserId', 'member-1')
+    localStorage.setItem('authUser', JSON.stringify({ id: 'member-1' }))
     const channels = useChannelsStore()
     channels.channels.push({
       id: 'selected-channel',
@@ -317,7 +330,8 @@ describe('composer conversation', () => {
     wrapper.unmount()
   })
 
-  it('shows the composer to channel admins in all message permission modes', async () => {
+  it('does not let channel admins bypass creator-only or selected-member permissions', async () => {
+    localStorage.setItem('authToken', 'test-token')
     localStorage.setItem('authUserId', 'admin-1')
     localStorage.setItem('authUser', JSON.stringify({ id: 'admin-1' }))
     const channels = useChannelsStore()
@@ -343,8 +357,44 @@ describe('composer conversation', () => {
         allowedSenderIds: [],
       })
       await nextTick()
-      expect(wrapper.findComponent(MessageComposer).exists()).toBe(true)
+      expect(wrapper.findComponent(MessageComposer).exists()).toBe(messagePermission === 'everyone')
     }
+    wrapper.unmount()
+  })
+
+  it('keeps admins-only mode separate from creator-only permissions', async () => {
+    localStorage.setItem('authToken', 'test-token')
+    localStorage.setItem('authUserId', 'admin-1')
+    localStorage.setItem('authUser', JSON.stringify({ id: 'admin-1' }))
+    const channels = useChannelsStore()
+    channels.upsertChannel({
+      id: 'admin-channel',
+      name: 'Admin channel',
+      isMember: true,
+      createdById: 'creator-1',
+      canManage: false,
+      isOwner: false,
+      isAdmin: false,
+      adminIds: ['admin-1'],
+      messagePermission: 'creator_only',
+      allowedSenderIds: [],
+    })
+
+    const wrapper = mount(ComposerConversation, {
+      props: { conversationId: 'admin-channel', conversationType: 'channel' },
+    })
+
+    expect(wrapper.findComponent(MessageComposer).exists()).toBe(false)
+    expect(wrapper.text()).toContain('Only certain people can post in this channel.')
+
+    channels.upsertChannel({
+      ...channels.getById('admin-channel'),
+      isAdmin: true,
+      messagePermission: 'admins',
+      adminIds: [],
+    })
+    await nextTick()
+    expect(wrapper.findComponent(MessageComposer).exists()).toBe(true)
     wrapper.unmount()
   })
 
