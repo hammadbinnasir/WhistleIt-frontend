@@ -214,6 +214,11 @@ async function saveChannelMessagePermission({ messagePermission, allowedSenderId
       messagePermission,
       allowedSenderIds,
     })
+    ui.toast(
+      'Message permissions updated',
+      'Channel members can send messages according to the updated permissions.',
+      'success',
+    )
   } catch (error) {
     ui.toast('Unable to save permissions', error?.message || 'Please try again.', 'error')
   }

@@ -10,6 +10,7 @@ vi.mock('../api', () => ({
     joinChannel: vi.fn(),
     listMembers: vi.fn(),
     createChannel: vi.fn(),
+    leaveChannel: vi.fn(),
   },
 }))
 
@@ -21,6 +22,7 @@ describe('channels store membership visibility', () => {
     api.joinChannel.mockReset()
     api.listMembers.mockReset()
     api.createChannel.mockReset()
+    api.leaveChannel.mockReset().mockResolvedValue(undefined)
   })
 
   it('keeps only joined channels in the main channel list', async () => {
@@ -100,6 +102,31 @@ describe('channels store membership visibility', () => {
       allowedSenderIds: [],
     })
     expect(localStorage.getItem('whistleit-managed-channel-ids')).toContain('new-channel')
+  })
+
+  it('transfers management on leave and clears the previous admin local permission', async () => {
+    api.createChannel.mockResolvedValue({
+      id: 'transfer-channel',
+      name: 'Transfer Channel',
+      isMember: true,
+    })
+    const store = useChannelsStore()
+    await store.createChannel({ name: 'Transfer Channel', isPrivate: false })
+
+    await store.leaveChannel('transfer-channel', 'new-admin')
+
+    expect(api.leaveChannel).toHaveBeenCalledWith('transfer-channel', 'new-admin')
+    expect(store.getById('transfer-channel')).toBeNull()
+    expect(localStorage.getItem('whistleit-managed-channel-ids')).not.toContain(
+      'transfer-channel',
+    )
+    store.upsertChannel({
+      id: 'transfer-channel',
+      name: 'Transfer Channel',
+      isMember: true,
+      canManage: false,
+    })
+    expect(store.getById('transfer-channel').canManage).toBe(false)
   })
 
   it('reuses loaded members on repeated fetches', async () => {

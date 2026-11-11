@@ -3,6 +3,7 @@ import { ref } from 'vue'
 import { getAuthUserId } from '@/features/auth/session'
 import { useTeamsStore } from '@/stores/teams'
 import { useActivityStore } from '@/stores/activity'
+import { normalizeMessageContent } from './message-utils'
 import {
   deleteChannelMessage as removeChannelMessage,
   getChannelMessages,
@@ -159,11 +160,11 @@ export const useMessagesStore = defineStore('messages', () => {
     const senderId =
       message.sender_id ?? message.user_id ?? message.from ?? sender.id ?? sender.user_id
     const userId = getAuthUserId()
-    const deleted = isDeletedMessage(message)
+    const deleted = isDeletedMessage(record)
+    const attachments = deleted ? [] : normalizeMessageAttachments(record)
     const content = deleted
       ? ''
-      : (message.content ?? message.body ?? message.text ?? message.message ?? '')
-    const attachments = normalizeMessageAttachments(message)
+      : normalizeMessageContent(record.content ?? record.body ?? record.text ?? record.message ?? '')
 
     return {
       ...record,
@@ -173,6 +174,7 @@ export const useMessagesStore = defineStore('messages', () => {
       text: String(content),
       ...(voiceNoteId != null ? { voiceNoteId: String(voiceNoteId) } : {}),
       serverBacked: true,
+      backendSynced: true,
       deleted,
       ...(deleted
         ? {
@@ -244,8 +246,16 @@ export const useMessagesStore = defineStore('messages', () => {
 
     try {
       const { messages: records, pagination } = unwrapMessages(result.data)
-      const fetched = records.map(normalizeMessage)
       const currentMessages = messagesFor(key)
+      const currentById = new Map(currentMessages.map((message) => [String(message.id), message]))
+      const fetched = records.map((record) => {
+        const message = normalizeMessage(record)
+        const previous = currentById.get(message.id)
+        if (!message.forwardedFrom && previous?.forwardedFrom) {
+          message.forwardedFrom = previous.forwardedFrom
+        }
+        return message
+      })
       const deletedMessages = currentMessages.filter((message) => message.deleted)
       const deletedIds = new Set(deletedMessages.map((message) => String(message.id)))
       const fetchedIds = new Set(fetched.map((message) => message.id))
@@ -605,14 +615,30 @@ export const useMessagesStore = defineStore('messages', () => {
 
   async function syncMessage(channelId, message, payload) {
     try {
-      const saved = await sendChannelMessage(channelId, {
-        body: payload.content ?? payload.body ?? '',
-      })
-      if (!saved.id) throw new Error('The server did not return a message ID.')
+      const teams = useTeamsStore()
+      const { replyTo, ...metadata } = payload
+      const apiPayload = {
+        ...metadata,
+        content: payload.content ?? payload.body ?? '',
+        ...(replyTo?.id != null ? { parentMessageId: String(replyTo.id) } : {}),
+      }
+      const result = await sendChannelMessage(
+        teams.activeWorkspaceId,
+        teams.activeTeamId,
+        channelId,
+        apiPayload,
+      )
+      if (!result?.success) {
+        throw new Error(result?.error || 'Unable to sync channel message.')
+      }
+      const saved = findCreatedMessage(result.data)
+      const savedId = saved?.id ?? saved?.message_id ?? saved?.messageId
+      if (savedId == null) throw new Error('The server did not return a message ID.')
 
       const current = messagesFor(channelId).find((item) => item.id === message.id)
       if (!current) return
-      current.id = saved.id
+      current.id = String(savedId)
+      current.serverBacked = true
       current.backendSynced = true
       current.createdAt = saved.created_at ?? saved.createdAt ?? current.createdAt
       persist()
@@ -772,7 +798,10 @@ export const useMessagesStore = defineStore('messages', () => {
       persist()
     }
 
-    const request = removeChannelMessage(companyId, teamId, key, message.id)
+    const messageBody = [previousMessage.content, previousMessage.text, previousMessage.body].find(
+      (value) => typeof value === 'string' && value.trim(),
+    )
+    const request = removeChannelMessage(companyId, teamId, key, message.id, messageBody)
       .then((result) => {
         if (!result.success) restoreMessage()
         return result.success

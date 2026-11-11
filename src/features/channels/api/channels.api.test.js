@@ -109,6 +109,22 @@ describe('channel API routes', () => {
     ])
   })
 
+  it('grants channel management to a user included in the server admin list', async () => {
+    getAuthUserId.mockReturnValue('user-2')
+    http.mockResolvedValue({
+      items: [
+        {
+          id: 'channel-3',
+          name: 'Engineering',
+          is_member: true,
+          admin_ids: ['user-1', 'user-2'],
+        },
+      ],
+    })
+
+    await expect(listChannels()).resolves.toMatchObject([{ canManage: true }])
+  })
+
   it('does not fetch members per channel just to resolve creator names while listing', async () => {
     http.mockResolvedValue({
       items: [

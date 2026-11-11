@@ -32,6 +32,13 @@ async function resolveChannelMembership(records, { includeMemberCount = false } 
       const channel = normalizeChannel(record)
       const source = record?.channel ?? record
       const hasMemberCount = source.memberCount != null || source.member_count != null
+      if (
+        userId &&
+        (channel.adminIds.includes(String(userId)) ||
+          channel.isAdmin)
+      ) {
+        channel.canManage = true
+      }
       if (userId && (channel.createdById != null || channel.createdBy != null)) {
         channel.isOwner =
           channel.isOwner || String(channel.createdById ?? channel.createdBy) === String(userId)
@@ -82,6 +89,13 @@ export async function getChannel(id) {
   const res = await http(channelsPath(id))
   const channel = normalizeChannel(asObject(res))
   const userId = getAuthUserId()
+  if (
+    userId &&
+    (channel.adminIds.includes(String(userId)) ||
+      channel.isAdmin === true)
+  ) {
+    channel.canManage = true
+  }
   if (userId && (channel.createdById != null || channel.createdBy != null)) {
     channel.isOwner =
       channel.isOwner || String(channel.createdById ?? channel.createdBy) === String(userId)

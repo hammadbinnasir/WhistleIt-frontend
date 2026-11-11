@@ -36,6 +36,30 @@ describe('Replies API', () => {
     )
   })
 
+  it('lists replies from nested API response envelopes', async () => {
+    apiRequest.mockResolvedValue({
+      success: true,
+      data: {
+        success: true,
+        data: {
+          replies: [{ reply_id: 'r3', sender_id: 'u4', body: 'Nested reply' }],
+        },
+      },
+    })
+
+    await expect(repliesApi.listReplies(team)).resolves.toMatchObject([
+      { id: 'r3', from: 'u4', text: 'Nested reply' },
+    ])
+  })
+
+  it('reports malformed reply list responses instead of showing an empty thread', async () => {
+    apiRequest.mockResolvedValue({ success: true, data: { unexpected: [] } })
+
+    await expect(repliesApi.listReplies(team)).rejects.toThrow(
+      'The server returned an invalid replies response.',
+    )
+  })
+
   it('URL-encodes every ID in the replies path', async () => {
     apiRequest.mockResolvedValue({ success: true, data: { replies: [] } })
 

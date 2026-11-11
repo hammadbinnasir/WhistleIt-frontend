@@ -652,6 +652,7 @@ export const useDmStore = defineStore('dms', () => {
         ...(attachment ? { attachment } : {}),
         ...(voiceNoteId ? { voice_note_id: String(voiceNoteId) } : {}),
         is_important: Boolean(message.important),
+        ...(message.forwardedFrom ? { forwardedFrom: message.forwardedFrom } : {}),
       })
 
       // Server batata hai ke ye message kisne bheja: wahi mera asli user id hai
@@ -787,9 +788,7 @@ export const useDmStore = defineStore('dms', () => {
         conversationType: 'dm',
       })
     }
-    if (!payload.scheduledAt && isApiSendable(message)) {
-      void deliver(conversation.id, message)
-    }
+    if (isApiSendable(message)) void deliver(conversation.id, message)
     return conversation.messages.at(-1)
   }
 

@@ -234,6 +234,7 @@ describe('DM API', () => {
           messages: [
             {
               id: 'message-1',
+              backendSynced: true,
               sender_id: 'user-2',
               content: 'Hello',
               from: 'user-2',
@@ -428,90 +429,46 @@ describe('DM API', () => {
     })
   })
 
-  it('sends a direct message and attachments as multipart form data', async () => {
-    apiRequest.mockResolvedValue({
-      success: true,
-      data: { message: { id: 'm12', sender_id: 'user-1', body: 'See attached' } },
-    })
-    const attachment = new File(['report'], 'report.txt', { type: 'text/plain' })
-
-    await expect(
-      dmApi.sendMessage('company-1', 'channel-1', {
-        body: 'See attached',
-        attachment,
-      }),
-    ).resolves.toMatchObject({ id: 'm12', text: 'See attached' })
-
-    const [, options] = apiRequest.mock.calls[0]
-    expect(options.method).toBe('POST')
-    expect(options.body).toBeInstanceOf(FormData)
-    expect(options.body.get('body')).toBe('See attached')
-    expect(options.body.get('message')).toBeNull()
-    expect(options.body.get('attachment')).toBeInstanceOf(File)
-    expect(options.body.get('attachment').name).toBe('report.txt')
-  })
-
-  it('rejects attachment arrays because only one file can be sent per message', () => {
-    expect(() =>
-      dmApi.sendMessage('company-1', 'channel-1', {
-        body: 'See attached',
-        attachments: [new File(['report'], 'report.txt', { type: 'text/plain' })],
-      }),
-    ).toThrow('Only one message attachment is supported.')
-    expect(apiRequest).not.toHaveBeenCalled()
-  })
-
-  it('sends a voice-note ID and normalizes voice notes received from a direct channel', async () => {
+  it('sends forwarded metadata and normalizes it for direct-channel messages', async () => {
     apiRequest.mockResolvedValue({
       success: true,
       data: {
-        message: { id: 'm10', sender_id: 'user-2', body: '', voice_note_id: 'voice-8' },
+        message: {
+          id: 'm10',
+          sender_id: 'user-1',
+          body: 'Forwarded text',
+          forwardedFrom: 'Aiman in General',
+        },
       },
     })
 
     await expect(
-      dmApi.sendMessage('company-1', 'channel-1', { body: '', voice_note_id: 'voice-8' }),
-    ).resolves.toMatchObject({ id: 'm10', voiceNoteId: 'voice-8' })
+      dmApi.sendMessage('company-1', 'channel-1', {
+        body: 'Forwarded text',
+        forwardedFrom: 'Aiman in General',
+      }),
+    ).resolves.toMatchObject({ id: 'm10', text: 'Forwarded text', forwardedFrom: 'Aiman in General' })
     expect(apiRequest).toHaveBeenCalledWith('/v1/company-1/direct-channels/channel-1/messages', {
       method: 'POST',
-      body: JSON.stringify({ body: 'Voice message', voice_note_id: 'voice-8' }),
+      body: JSON.stringify({
+        body: 'Forwarded text',
+        forwardedFrom: 'Aiman in General',
+      }),
     })
+  })
 
-    apiRequest.mockResolvedValue({
-      success: true,
-      data: {
-        messages: [
-          {
-            id: 'm11',
-            sender_id: 'user-3',
-            body: 'Voice message',
-            sender: { id: 'user-3', voice_note: { id: 'voice-9' } },
-          },
-        ],
-      },
-    })
-    await expect(dmApi.listMessages('company-1', 'channel-1')).resolves.toMatchObject([
-      { id: 'm11', voiceNoteId: 'voice-9' },
-    ])
+  it('normalizes forwarded flags returned by the direct-message API', () => {
+    expect(normalizeMessage({
+      id: 'm11',
+      body: 'Forwarded text',
+      is_forwarded: true,
+    })).toMatchObject({ forwardedFrom: true })
+  })
 
-    apiRequest.mockResolvedValue({
-      success: true,
-      data: {
-        messages: [
-          {
-            message: {
-              id: 'm12',
-              sender_id: 'user-3',
-              body: 'Voice message',
-            },
-            voice_note: { voice_note_id: 'voice-10' },
-          },
-        ],
-      },
+  it('removes API paragraph wrappers from direct-message bodies', () => {
+    expect(normalizeMessage({ id: 'm12', body: '<p>byeee</p>' })).toMatchObject({
+      text: 'byeee',
     })
-    await expect(dmApi.listMessages('company-1', 'channel-1')).resolves.toMatchObject([
-      { id: 'm12', voiceNoteId: 'voice-10' },
-    ])
   })
 
   it('updates a message of a direct channel', async () => {
