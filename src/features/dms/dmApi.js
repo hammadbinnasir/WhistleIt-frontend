@@ -1,7 +1,7 @@
 import { apiRequest } from '@/lib/api/client'
 import { normalizeMessageContent } from '@/features/messages/message-utils'
 import { normalizeMessageAttachments } from '@/features/messages/messageAttachments'
-import { getAuthUser } from '@/features/auth/session'
+import { getAuthUser, getAuthUserId } from '@/features/auth/session'
 
 const encode = encodeURIComponent
 
@@ -58,16 +58,10 @@ function requireMessage(messageId) {
 function requireUser(userId) {
   if (!userId) throw new Error('A user ID is required for the user status.')
 }
-// ---- current user (login ke baad sessionStorage mein hota hai) ----
-// Login user: app ka getAuthUser() (wahi jo baaki app use karti hai),
-// na mile to purani tarah sessionStorage 'authUser'
+
 function currentUser() {
-  try {
-    const user = getAuthUser?.()
-    if (user && typeof user === 'object') return user
-  } catch {
-    /* session module se na mila */
-  }
+  const user = getAuthUser()
+  if (user && typeof user === 'object') return user
   try {
     return JSON.parse(sessionStorage.getItem('authUser') ?? 'null')
   } catch {
@@ -75,6 +69,9 @@ function currentUser() {
   }
 }
 function meId() {
+  const storedId = getAuthUserId()
+  if (storedId) return storedId
+
   const user = currentUser()
   const id = [
     user?.id,

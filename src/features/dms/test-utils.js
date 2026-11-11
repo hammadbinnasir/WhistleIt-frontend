@@ -24,11 +24,9 @@ function makeConversation(id, memberIds, messages = []) {
 
 export function setupDmsTestState() {
   localStorage.removeItem('whistleit:dm-messages')
-  sessionStorage.setItem('authToken', 'test-token')
-  sessionStorage.setItem(
-    'authUser',
-    JSON.stringify({ id: ME_ID }),
-  )
+  localStorage.setItem('authToken', 'test-token')
+  localStorage.setItem('authUserId', ME_ID)
+  localStorage.setItem('authUser', JSON.stringify({ id: ME_ID }))
 
   const teams = useTeamsStore()
   teams.activeWorkspaceId = 'company-1'

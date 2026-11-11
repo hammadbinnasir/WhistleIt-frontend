@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { getAuthUserId } from '@/features/auth/session'
 import { http } from './http'
 
 describe('http', () => {
@@ -9,7 +10,7 @@ describe('http', () => {
   })
 
   it('omits cookies by default for wildcard-CORS APIs', async () => {
-    sessionStorage.setItem('authToken', 'session-token')
+    localStorage.setItem('authToken', 'session-token')
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
       status: 200,
@@ -23,7 +24,7 @@ describe('http', () => {
   })
 
   it('allows cookie credentials when explicitly requested', async () => {
-    sessionStorage.setItem('authToken', 'session-token')
+    localStorage.setItem('authToken', 'session-token')
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
       status: 200,
@@ -37,7 +38,7 @@ describe('http', () => {
   })
 
   it('sends an authenticated POST to the logout API URL', async () => {
-    sessionStorage.setItem('authToken', 'session-token')
+    localStorage.setItem('authToken', 'session-token')
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
       status: 200,
@@ -53,8 +54,59 @@ describe('http', () => {
     expect(options.headers.Authorization).toBe('Bearer session-token')
   })
 
+  it('sends the remember token header on API requests', async () => {
+    sessionStorage.setItem('rememberToken', 'remember-me-token')
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: vi.fn().mockResolvedValue({ ok: true }),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    await http('/login', {
+      method: 'POST',
+      body: { email: 'sam@example.com', password: 'secure-password' },
+      auth: false,
+    })
+
+    expect(fetchMock.mock.calls[0][1].headers['X-Remember-Token']).toBe('remember-me-token')
+  })
+
+  it('allows authenticated API calls with only a remember token', async () => {
+    sessionStorage.setItem('rememberToken', 'remember-me-token')
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: vi.fn().mockResolvedValue({ ok: true }),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    await http('/profile')
+
+    expect(fetchMock.mock.calls[0][1].headers['X-Remember-Token']).toBe('remember-me-token')
+    expect(fetchMock.mock.calls[0][1].headers.Authorization).toBeUndefined()
+  })
+
+  it('uses locally stored remembered credentials after session storage is cleared', async () => {
+    localStorage.setItem('authToken', 'remembered-token')
+    localStorage.setItem('authUserId', 'user-42')
+    sessionStorage.clear()
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: vi.fn().mockResolvedValue({ ok: true }),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    await http(`/v1/users/${getAuthUserId()}`)
+
+    const [url, options] = fetchMock.mock.calls[0]
+    expect(url).toBe('http://10.0.105.90:8000/api/v1/users/user-42')
+    expect(options.headers.Authorization).toBe('Bearer remembered-token')
+  })
+
   it('sends multipart data without setting a JSON content type', async () => {
-    sessionStorage.setItem('authToken', 'session-token')
+    localStorage.setItem('authToken', 'session-token')
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
       status: 200,
@@ -72,7 +124,7 @@ describe('http', () => {
   })
 
   it('returns file responses as blobs when requested', async () => {
-    sessionStorage.setItem('authToken', 'session-token')
+    localStorage.setItem('authToken', 'session-token')
     const audio = new Blob(['recording'], { type: 'audio/webm' })
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
@@ -93,7 +145,7 @@ describe('http', () => {
       blob: vi.fn().mockResolvedValue(audio),
     })
     vi.stubGlobal('fetch', fetchMock)
-    sessionStorage.setItem('authToken', 'session-token')
+    sessionStorage.setItem('rememberToken', 'remember-me-token')
 
     await expect(
       http('https://files.example.test/note?signature=valid', {
@@ -105,6 +157,7 @@ describe('http', () => {
     const [url, options] = fetchMock.mock.calls[0]
     expect(url).toBe('https://files.example.test/note?signature=valid')
     expect(options.headers.Authorization).toBeUndefined()
+    expect(options.headers['X-Remember-Token']).toBeUndefined()
     expect(options.credentials).toBe('omit')
   })
 
@@ -119,9 +172,7 @@ describe('http', () => {
     const signedPath =
       '/api/v1/voice-notes/note-1/file?download=1&expires=1793943417&signature=abc123'
 
-    await expect(
-      http(signedPath, { auth: false, responseType: 'blob' }),
-    ).resolves.toBe(audio)
+    await expect(http(signedPath, { auth: false, responseType: 'blob' })).resolves.toBe(audio)
 
     expect(fetchMock.mock.calls[0][0]).toBe(
       'http://10.0.105.90:8000/api/v1/voice-notes/note-1/file?download=1&expires=1793943417&signature=abc123',
@@ -139,9 +190,7 @@ describe('http', () => {
     const signedPath =
       '/api/api/v1/voice-notes/note-1/file?download=1&expires=1793943417&signature=abc123'
 
-    await expect(
-      http(signedPath, { auth: false, responseType: 'blob' }),
-    ).resolves.toBe(audio)
+    await expect(http(signedPath, { auth: false, responseType: 'blob' })).resolves.toBe(audio)
 
     expect(fetchMock.mock.calls[0][0]).toBe(
       'http://10.0.105.90:8000/api/v1/voice-notes/note-1/file?download=1&expires=1793943417&signature=abc123',
@@ -149,7 +198,9 @@ describe('http', () => {
   })
 
   it('clears an expired token when the API responds with 401', async () => {
-    sessionStorage.setItem('authToken', 'expired-token')
+    localStorage.setItem('authToken', 'expired-token')
+    localStorage.setItem('authUserId', 'user-42')
+    localStorage.setItem('authUser', '{"id":"user-42"}')
     const fetchMock = vi.fn().mockResolvedValue({
       ok: false,
       status: 401,
@@ -161,7 +212,9 @@ describe('http', () => {
 
     await expect(http('/channels')).rejects.toThrow('Unauthenticated')
 
-    expect(sessionStorage.getItem('authToken')).toBeNull()
+    expect(localStorage.getItem('authToken')).toBeNull()
+    expect(localStorage.getItem('authUserId')).toBeNull()
+    expect(localStorage.getItem('authUser')).toBeNull()
     expect(expiredHandler).toHaveBeenCalledOnce()
     window.removeEventListener('auth:expired', expiredHandler)
   })
@@ -183,7 +236,7 @@ describe('http', () => {
   })
 
   it('expires the session when the API reports a missing authentication token', async () => {
-    sessionStorage.setItem('authToken', 'session-token')
+    localStorage.setItem('authToken', 'session-token')
     const fetchMock = vi.fn().mockResolvedValue({
       ok: false,
       status: 403,
@@ -202,7 +255,7 @@ describe('http', () => {
       message: 'Missing authentication token.',
     })
 
-    expect(sessionStorage.getItem('authToken')).toBeNull()
+    expect(localStorage.getItem('authToken')).toBeNull()
     expect(expiredHandler).toHaveBeenCalledOnce()
     window.removeEventListener('auth:expired', expiredHandler)
   })

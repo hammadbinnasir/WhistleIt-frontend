@@ -1,4 +1,5 @@
-import { expireAuthSession, getAuthToken } from '@/features/auth/session'
+import { expireAuthSession, getAuthToken, hasAuthSession } from '@/features/auth/session'
+import { getRememberTokenHeaders } from '@/lib/api/rememberToken'
 
 const BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://10.0.105.90:8000/api'
 
@@ -25,7 +26,7 @@ export async function http(
   } = {},
 ) {
   const token = auth ? getAuthToken() : null
-  if (auth && !token) {
+  if (auth && !hasAuthSession()) {
     expireAuthSession()
     throw new ApiError('Your login session is missing. Please sign in again.', { status: 401 })
   }
@@ -33,8 +34,7 @@ export async function http(
   const baseUrl = new URL(BASE_URL, window.location.origin)
   const basePath = baseUrl.pathname.replace(/\/$/, '')
   const isAbsoluteUrl = /^https?:\/\//i.test(path)
-  const alreadyIncludesBasePath =
-    basePath && (path === basePath || path.startsWith(`${basePath}/`))
+  const alreadyIncludesBasePath = basePath && (path === basePath || path.startsWith(`${basePath}/`))
   const url = isAbsoluteUrl
     ? new URL(path)
     : alreadyIncludesBasePath
@@ -62,6 +62,7 @@ export async function http(
         ...(body !== undefined && !isFormData ? { 'Content-Type': 'application/json' } : {}),
         ...(token ? { Authorization: 'Bearer ' + token } : {}),
         ...headers,
+        ...(url.origin === baseUrl.origin ? getRememberTokenHeaders() : {}),
       },
       ...(body !== undefined ? { body: isFormData ? body : JSON.stringify(body) } : {}),
     })

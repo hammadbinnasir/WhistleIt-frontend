@@ -90,9 +90,46 @@ describe('invitation auth view', () => {
     expect(loginViaInvitation).toHaveBeenCalledWith('invite-token', {
       email: 'sam@example.com',
       password: 'secure-password',
+      is_remember: false,
     })
     expect(saveAuthToken).toHaveBeenCalledWith({ access_token: 'invite-session-token' })
     expect(router.currentRoute.value.name).toBe('home')
+  })
+
+  it('accepts a remember-token-only response from invitation login', async () => {
+    loginViaInvitation.mockResolvedValueOnce({
+      data: { data: { user_id: 'user-123', remember_token: 'invite-remember-token' } },
+    })
+    saveAuthToken.mockReturnValue('invite-remember-token')
+    const { router, wrapper } = await mountInvitationView(
+      '/invitation/login/invite-token?email=sam%40example.com',
+    )
+
+    await wrapper.get('#invite-password').setValue('secure-password')
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+
+    expect(saveAuthToken).toHaveBeenCalledWith({
+      data: { data: { user_id: 'user-123', remember_token: 'invite-remember-token' } },
+    })
+    expect(router.currentRoute.value.name).toBe('home')
+  })
+
+  it('sends the remembered-login choice for invitation login', async () => {
+    const { wrapper } = await mountInvitationView(
+      '/invitation/login/invite-token?email=sam%40example.com',
+    )
+
+    await wrapper.get('[name="rememberMe"]').setValue(true)
+    await wrapper.get('#invite-password').setValue('secure-password')
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+
+    expect(loginViaInvitation).toHaveBeenCalledWith('invite-token', {
+      email: 'sam@example.com',
+      password: 'secure-password',
+      is_remember: true,
+    })
   })
 
   it('shows the login spinner while the invitation request is pending', async () => {

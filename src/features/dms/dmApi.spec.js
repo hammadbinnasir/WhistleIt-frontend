@@ -2,7 +2,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.unmock('@/features/dms/dmApi')
 vi.mock('@/lib/api/client', () => ({ apiRequest: vi.fn() }))
-vi.mock('@/features/auth/session', () => ({ getAuthUser: vi.fn(() => null) }))
+vi.mock('@/features/auth/session', () => ({
+  getAuthUser: vi.fn(() => null),
+  getAuthUserId: vi.fn(() => null),
+}))
 
 import { apiRequest } from '@/lib/api/client'
 import { getAuthUser } from '@/features/auth/session'

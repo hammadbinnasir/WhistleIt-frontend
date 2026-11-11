@@ -1,4 +1,5 @@
 import { getAuthToken } from '@/features/auth/session'
+import { getRememberTokenHeaders } from '@/lib/api/rememberToken'
 
 const SCHEDULED_MESSAGES_PATH = '/v1/scheduled-messages'
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://10.0.105.90:8000'
@@ -12,6 +13,7 @@ async function request(path, options = {}) {
       Accept: 'application/json',
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...options.headers,
+      ...getRememberTokenHeaders(),
     },
   })
   let data = null

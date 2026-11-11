@@ -13,6 +13,7 @@ const fullName = ref('')
 const email = ref('')
 const password = ref('')
 const confirmPassword = ref('')
+const rememberMe = ref(false)
 const showPassword = ref(false)
 const showConfirmPassword = ref(false)
 const acceptedTerms = ref(false)
@@ -51,6 +52,7 @@ watch(
     fullName.value = ''
     password.value = ''
     confirmPassword.value = ''
+    rememberMe.value = false
     showPassword.value = false
     showConfirmPassword.value = false
     acceptedTerms.value = false
@@ -92,6 +94,7 @@ async function submitForm() {
       const response = await loginViaInvitation(token.value, {
         email: email.value.trim(),
         password: password.value,
+        is_remember: rememberMe.value,
       })
       if (!saveAuthToken(response)) {
         throw new Error('Login response did not include an access token.')
@@ -305,6 +308,11 @@ async function submitForm() {
           <label v-if="!isLogin" class="terms-row">
             <input v-model="acceptedTerms" name="terms" type="checkbox" required />
             <span>I accept the Terms of use and Privacy Policy.</span>
+          </label>
+
+          <label v-if="isLogin" class="remember-row">
+            <input v-model="rememberMe" name="rememberMe" type="checkbox" />
+            <span>Remember Me</span>
           </label>
 
           <p
