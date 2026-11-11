@@ -677,6 +677,12 @@ describe('account settings modal', () => {
     expect(toggle.getAttribute('aria-checked')).toBe('true')
     await click(byText('SAVE'))
     expect(store.state.security.hideEmail).toBe(true)
+    const [url, options] = fetch.mock.calls.find(([requestUrl]) =>
+      String(requestUrl).endsWith('/email-visibility'),
+    )
+    expect(url).toContain('/v1/users/test-user/email-visibility')
+    expect(options.method).toBe('PATCH')
+    expect(JSON.parse(options.body)).toEqual({ email_visibility: false })
   })
 
   it('shows "Required." on the old password after leaving it empty', async () => {
