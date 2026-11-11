@@ -69,10 +69,24 @@ function getErrorMessage(error) {
  * with a standardized result and never throws.
  * `build` returns [path] or [path, options].
  */
-async function request(build) {
+async function request(build, { rejectUnsuccessful = false } = {}) {
   try {
     const [path, options] = build()
     const data = options === undefined ? await http(path) : await http(path, options)
+    if (rejectUnsuccessful) {
+      let response = data
+      for (let depth = 0; depth < 4 && response && typeof response === 'object'; depth += 1) {
+        if (response.success === false) {
+          const validationMessage = Object.values(response.errors ?? {})
+            .flat()
+            .find((message) => typeof message === 'string' && message.trim())
+          throw new Error(
+            response.message || response.error || validationMessage || 'The server rejected the delete request.',
+          )
+        }
+        response = response.data
+      }
+    }
     return { success: true, data }
   } catch (error) {
     return { success: false, error: getErrorMessage(error) }
@@ -168,17 +182,51 @@ export function updateChannelMessage(companyId, teamId, channelId, messageId, pa
 }
 
 /**
- * PATCH /v1/{company}/teams/{team}/channels/{channel}/messages/{message}
- * Soft-deletes the message so channel members can see its deleted placeholder.
+ * DELETE /v1/{company}/teams/{team}/channels/{channel}/messages/{message}
+ * Deletes the message while retaining its deleted placeholder for channel members.
  * @param {string|number} companyId
  * @param {string|number} teamId
  * @param {string|number} channelId
  * @param {string|number} messageId
+ * @param {string} content
  * @returns {Promise<ServiceResult>}
  */
-export function deleteChannelMessage(companyId, teamId, channelId, messageId) {
-  return request(() => [
-    messagePath(companyId, teamId, channelId, messageId),
-    { method: 'PATCH', body: { is_deleted: true } },
-  ])
+export function deleteChannelMessage(companyId, teamId, channelId, messageId, content) {
+  return request(
+    () => {
+      const path = messagePath(companyId, teamId, channelId, messageId)
+      if (typeof content !== 'string' || !content.trim()) {
+        throw new Error('Message body is required to delete a channel message.')
+      }
+      return [path, { method: 'DELETE', body: { body: content.trim() } }]
+    },
+    { rejectUnsuccessful: true },
+  )
+}
+
+/**
+ * POST /v1/{company}/teams/{team}/channels/{channel}/messages/{message}/forward
+ * @param {string|number} companyId
+ * @param {string|number} teamId
+ * @param {string|number} channelId
+ * @param {string|number} messageId
+ * @param {Record<string, unknown>} payload
+ * @returns {Promise<ServiceResult>}
+ */
+export function forwardChannelMessage(companyId, teamId, channelId, messageId, payload) {
+  return request(() => {
+    if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+      throw new Error('Forward destinations must be provided as an object.')
+    }
+    if (Object.keys(payload).length === 0) {
+      throw new Error('At least one forward destination is required.')
+    }
+    if (!Array.isArray(payload.user_ids) || payload.user_ids.length === 0) {
+      throw new Error('At least one forward recipient is required.')
+    }
+    return [
+      `${messagePath(companyId, teamId, channelId, messageId)}/forward`,
+      { method: 'POST', body: payload },
+    ]
+  })
 }

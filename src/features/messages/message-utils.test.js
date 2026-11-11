@@ -2,7 +2,10 @@ import { describe, expect, it } from 'vitest'
 import {
   createLinkPreview,
   formattedMessageHtml,
+  fullDateTimeLabel,
   messageSegments,
+  normalizeMessageContent,
+  relativeTimeLabel,
   sameDay,
 } from './message-utils'
 
@@ -39,6 +42,13 @@ describe('message link and date helpers', () => {
     )
   })
 
+  it('removes API paragraph wrappers while retaining message text and paragraph breaks', () => {
+    expect(normalizeMessageContent('<p>byeee</p>')).toBe('byeee')
+    expect(normalizeMessageContent('<p>first</p><p>second<br>line</p>')).toBe(
+      'first\nsecond\nline',
+    )
+  })
+
   it('creates a preview for paths containing invalid encoded characters', () => {
     expect(createLinkPreview('https://example.com/%E0')).toMatchObject({
       hostname: 'example.com',
@@ -49,5 +59,16 @@ describe('message link and date helpers', () => {
   it('compares message calendar dates', () => {
     expect(sameDay('2026-10-29T08:00:00+05:00', '2026-10-29T21:00:00+05:00')).toBe(true)
     expect(sameDay('2026-10-28T23:59:00+05:00', '2026-10-29T00:01:00+05:00')).toBe(false)
+  })
+
+  it('formats channel message times relatively and provides a complete hover timestamp', () => {
+    const now = Date.parse('2026-11-10T12:00:00Z')
+
+    expect(relativeTimeLabel('2026-11-10T11:59:45Z', now)).toBe('just now')
+    expect(relativeTimeLabel('2026-11-10T11:48:00Z', now)).toBe('12 minutes ago')
+    expect(relativeTimeLabel('2026-11-10T09:00:00Z', now)).toBe('3 hours ago')
+    expect(relativeTimeLabel('2026-11-07T12:00:00Z', now)).toBe('3 days ago')
+    expect(fullDateTimeLabel('2026-11-10T12:00:00Z')).toContain('2026')
+    expect(relativeTimeLabel('invalid', now)).toBe('')
   })
 })

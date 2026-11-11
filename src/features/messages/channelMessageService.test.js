@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { http } from '@/features/channels/api/http'
 import {
   deleteChannelMessage,
+  forwardChannelMessage,
   getChannelMessage,
   getChannelMessages,
   sendChannelMessage,
@@ -103,13 +104,90 @@ describe('channel message service', () => {
     })
   })
 
-  it('soft-deletes a message so it remains visible to channel members', async () => {
-    await deleteChannelMessage('company-1', 'team-2', 'channel-3', 'message-4')
+  it('deletes a message through the delete API so its placeholder remains visible', async () => {
+    await deleteChannelMessage('company-1', 'team-2', 'channel-3', 'message-4', 'Hello')
 
     expect(http).toHaveBeenCalledWith(messagePath, {
-      method: 'PATCH',
-      body: { is_deleted: true },
+      method: 'DELETE',
+      body: { body: 'Hello' },
     })
+  })
+
+  it('treats a backend rejection in an HTTP 200 response as a failed deletion', async () => {
+    http.mockResolvedValue({
+      success: true,
+      data: {
+        success: false,
+        message: 'Message cannot be deleted.',
+      },
+    })
+
+    await expect(
+      deleteChannelMessage('company-1', 'team-2', 'channel-3', 'message-4', 'Hello'),
+    ).resolves.toEqual({ success: false, error: 'Message cannot be deleted.' })
+
+    expect(http).toHaveBeenCalledWith(messagePath, {
+      method: 'DELETE',
+      body: { body: 'Hello' },
+    })
+  })
+
+  it('does not send a delete request without a non-empty message body', async () => {
+    await expect(
+      deleteChannelMessage('company-1', 'team-2', 'channel-3', 'message-4', ' '),
+    ).resolves.toEqual({
+      success: false,
+      error: 'Message body is required to delete a channel message.',
+    })
+    expect(http).not.toHaveBeenCalled()
+  })
+
+  it('forwards a channel message using the specified destinations', async () => {
+    const destinations = { channel_ids: ['channel-8'], user_ids: ['user-2'] }
+
+    await expect(
+      forwardChannelMessage('company-1', 'team-2', 'channel-3', 'message-4', destinations),
+    ).resolves.toMatchObject({ success: true })
+
+    expect(http).toHaveBeenCalledWith(`${messagePath}/forward`, {
+      method: 'POST',
+      body: destinations,
+    })
+  })
+
+  it('encodes message IDs and rejects missing forward destinations', async () => {
+    await forwardChannelMessage('company/1', 'team 2', 'channel-3', 'message?4', {
+      channel_ids: ['channel-8'],
+      user_ids: ['user-2'],
+    })
+    expect(http).toHaveBeenCalledWith(
+      '/v1/company%2F1/teams/team%202/channels/channel-3/messages/message%3F4/forward',
+      {
+        method: 'POST',
+        body: { channel_ids: ['channel-8'], user_ids: ['user-2'] },
+      },
+    )
+
+    http.mockClear()
+    await expect(
+      forwardChannelMessage('company-1', 'team-2', 'channel-3', 'message-4', {}),
+    ).resolves.toEqual({
+      success: false,
+      error: 'At least one forward destination is required.',
+    })
+    expect(http).not.toHaveBeenCalled()
+  })
+
+  it('rejects forwards without recipient user IDs', async () => {
+    await expect(
+      forwardChannelMessage('company-1', 'team-2', 'channel-3', 'message-4', {
+        channel_ids: ['channel-8'],
+      }),
+    ).resolves.toEqual({
+      success: false,
+      error: 'At least one forward recipient is required.',
+    })
+    expect(http).not.toHaveBeenCalled()
   })
 
   it('returns a consistent error response when the API request fails', async () => {

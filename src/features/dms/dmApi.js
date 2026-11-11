@@ -1,5 +1,5 @@
 import { apiRequest } from '@/lib/api/client'
-import { normalizeMessageAttachments } from '@/features/messages/messageAttachments'
+import { normalizeMessageContent } from '@/features/messages/message-utils'
 
 const encode = encodeURIComponent
 
@@ -169,49 +169,33 @@ function normalizeParticipant(raw) {
 }
 
 export function normalizeMessage(raw) {
-  const message = raw?.message ?? raw?.direct_message ?? raw ?? {}
-  const sender = message.sender ?? message.user ?? message.author
-  const voiceNote =
-    message.voice_note ??
-    message.voiceNote ??
-    sender?.voice_note ??
-    sender?.voiceNote ??
-    raw?.voice_note ??
-    raw?.voiceNote ??
-    raw?.sender?.voice_note ??
-    raw?.sender?.voiceNote
-  const voiceNoteId =
-    message.voice_note_id ??
-    message.voiceNoteId ??
-    (typeof voiceNote === 'string' || typeof voiceNote === 'number'
-      ? voiceNote
-      : (voiceNote?.id ?? voiceNote?.voice_note_id ?? voiceNote?.voiceNoteId)) ??
-    raw?.voice_note_id ??
-    raw?.voiceNoteId
-  const attachments = normalizeMessageAttachments(message)
+  const sender = raw.sender ?? raw.user ?? raw.author
+  const forwardedFrom =
+    raw.forwarded_from ??
+    raw.forwardedFrom ??
+    raw.forwarded?.from ??
+    raw.metadata?.forwardedFrom ??
+    (raw.is_forwarded || raw.isForwarded || raw.forwarded === true ? true : undefined)
+  const editedAt =
+    raw.edited_at ??
+    raw.editedAt ??
+    (raw.updated_at && raw.updated_at !== raw.created_at ? raw.updated_at : undefined)
   return {
     ...raw,
-    ...message,
-    id: String(message.id ?? message.message_id ?? message.messageId),
+    id: String(raw.id ?? raw.message_id ?? raw.messageId),
     backendSynced: true,
     from: String(
-      message.sender_id ??
-        message.user_id ??
-        message.from ??
+      raw.sender_id ??
+        raw.user_id ??
+        raw.from ??
         (sender && typeof sender === 'object' ? sender.id : '') ??
         '',
     ),
-    text: message.content ?? message.text ?? message.body ?? '',
-    ...(attachments.length ? { attachments } : {}),
-    createdAt: message.created_at ?? message.createdAt ?? '',
-    ...(voiceNoteId != null ? { voiceNoteId: String(voiceNoteId) } : {}),
+    text: normalizeMessageContent(raw.content ?? raw.text ?? raw.body ?? ''),
+    createdAt: raw.created_at ?? raw.createdAt ?? '',
+    ...(forwardedFrom ? { forwardedFrom } : {}),
     // Edit hua ho to "edited" dikhane ke liye (dusre user ko bhi)
-    editedAt:
-      message.edited_at ??
-      message.editedAt ??
-      (message.updated_at && message.updated_at !== message.created_at
-        ? message.updated_at
-        : undefined),
+    ...(editedAt ? { editedAt } : {}),
   }
 }
 

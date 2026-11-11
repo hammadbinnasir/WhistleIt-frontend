@@ -2,9 +2,10 @@ import { mount } from '@vue/test-utils'
 import { nextTick } from 'vue'
 
 import { createPinia, setActivePinia } from 'pinia'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { useChannelsStore } from '@/features/channels'
 import { dmApi } from '@/features/dms/dmApi'
+import { repliesApi } from '@/features/dms/Repliesapi'
 import { useDmStore } from '@/features/dms/stores/dms'
 import { useMessagesStore } from '@/features/messages/messages'
 import { useRemindersStore } from '@/features/search/reminders'
@@ -14,6 +15,7 @@ import { setupDmsTestState } from '@/features/dms/test-utils'
 import { normalizeMessage } from '@/features/dms/dmApi'
 import {
   getChannelMessages,
+  forwardChannelMessage,
   sendChannelMessage,
   updateChannelMessage,
   deleteChannelMessage,
@@ -21,6 +23,7 @@ import {
 
 const emojiPickerProps = vi.hoisted(() => vi.fn())
 const sendChannelVoiceMessageMock = vi.hoisted(() => vi.fn())
+const listMembersMock = vi.hoisted(() => vi.fn())
 const reminderApi = vi.hoisted(() => ({
   createReminder: vi.fn(),
   deleteReminder: vi.fn(),
@@ -51,9 +54,17 @@ const pinApi = vi.hoisted(() => ({
 
 vi.mock('@/features/messages/channelMessageService', () => ({
   getChannelMessages: vi.fn(),
+  forwardChannelMessage: vi.fn(),
   sendChannelMessage: vi.fn(),
   updateChannelMessage: vi.fn(),
   deleteChannelMessage: vi.fn(),
+}))
+
+vi.mock('@/features/dms/Repliesapi', () => ({
+  repliesApi: {
+    listReplies: vi.fn(),
+    sendReply: vi.fn(),
+  },
 }))
 
 vi.mock('vue3-emoji-picker', async () => {
@@ -77,6 +88,7 @@ vi.mock('vue3-emoji-picker', async () => {
 
 vi.mock('@/features/channels/api/channels.api', async (importOriginal) => ({
   ...(await importOriginal()),
+  listMembers: listMembersMock,
   pinMessage: pinApi.pinMessage,
   sendChannelVoiceMessage: sendChannelVoiceMessageMock,
   unpinMessage: pinApi.unpinMessage,
@@ -120,10 +132,22 @@ describe('composer conversation', () => {
     scheduledMessagesApi.getScheduledMessages.mockReset().mockResolvedValue([])
     pinApi.pinMessage.mockReset().mockResolvedValue({})
     pinApi.unpinMessage.mockReset().mockResolvedValue(undefined)
+    listMembersMock.mockReset().mockResolvedValue({ items: [], total: 0 })
     getChannelMessages.mockReset()
     getChannelMessages.mockResolvedValue({
       success: true,
       data: { success: true, data: { messages: [] } },
+    })
+    forwardChannelMessage.mockReset()
+    forwardChannelMessage.mockResolvedValue({ success: true, data: {} })
+    repliesApi.listReplies.mockReset()
+    repliesApi.listReplies.mockResolvedValue([])
+    repliesApi.sendReply.mockReset()
+    repliesApi.sendReply.mockResolvedValue({
+      id: 'server-reply-1',
+      from: 'u1',
+      text: 'Reply from thread',
+      createdAt: '2026-11-05T10:01:00Z',
     })
     sendChannelMessage.mockReset()
     updateChannelMessage.mockReset()
@@ -147,6 +171,10 @@ describe('composer conversation', () => {
         },
       },
     }))
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
   })
 
   async function sendMessage(wrapper, content) {
@@ -313,6 +341,18 @@ describe('composer conversation', () => {
       await nextTick()
       expect(wrapper.findComponent(MessageComposer).exists()).toBe(true)
     }
+    wrapper.unmount()
+  })
+
+  it('shows the full message time on hover without requiring a click', async () => {
+    const wrapper = mount(ComposerConversation)
+    await sendMessage(wrapper, 'Hover over the timestamp')
+    const time = wrapper.get('.composer-conversation__message-heading time')
+
+    expect(time.attributes('data-time-tooltip')).toBeTruthy()
+    expect(time.attributes('aria-label')).toBe(time.attributes('data-time-tooltip'))
+    expect(time.attributes('title')).toBeUndefined()
+    expect(time.attributes('tabindex')).toBe('0')
     wrapper.unmount()
   })
 
@@ -1477,6 +1517,64 @@ describe('composer conversation', () => {
     expect(buttonWithText(ownMenu, 'Delete').attributes('disabled')).toBeUndefined()
   })
 
+  it('keeps the message actions card within the viewport at top, center, and bottom', async () => {
+    const wrapper = mount(ComposerConversation)
+    await sendMessage(wrapper, 'Keep the actions card visible')
+    const article = wrapper.get('article')
+    const trigger = article.get('button[aria-label="More message actions"]')
+    const viewportWidth = document.documentElement.clientWidth || window.innerWidth
+    const viewportHeight = document.documentElement.clientHeight || window.innerHeight
+    const anchorRects = [
+      { top: 2, bottom: 22, left: 10, right: 40 },
+      {
+        top: viewportHeight / 2,
+        bottom: viewportHeight / 2 + 20,
+        left: viewportWidth / 2,
+        right: viewportWidth / 2 + 30,
+      },
+      {
+        top: viewportHeight - 22,
+        bottom: viewportHeight - 2,
+        left: viewportWidth - 40,
+        right: viewportWidth - 10,
+      },
+    ]
+    let activeRect = anchorRects[0]
+    vi.spyOn(trigger.element, 'getBoundingClientRect').mockImplementation(() => ({
+      ...activeRect,
+      width: 30,
+      height: 20,
+      x: activeRect.left,
+      y: activeRect.top,
+      toJSON: () => ({}),
+    }))
+
+    for (const [index, rect] of anchorRects.entries()) {
+      activeRect = rect
+      await trigger.trigger('click')
+      await nextTick()
+      await nextTick()
+
+      const menu = article.get('.composer-conversation__menu')
+      const top = Number.parseFloat(menu.element.style.top)
+      const left = Number.parseFloat(menu.element.style.left)
+      const width = Number.parseFloat(menu.element.style.width)
+      const maxHeight = Number.parseFloat(menu.element.style.maxHeight)
+      expect(menu.element.style.position).toBe('fixed')
+      expect(left).toBeGreaterThanOrEqual(8)
+      expect(left + width).toBeLessThanOrEqual(viewportWidth - 8)
+      expect(top).toBeGreaterThanOrEqual(8)
+      expect(top + maxHeight).toBeLessThanOrEqual(viewportHeight - 8)
+      expect(menu.element.style.width).toBe('224px')
+
+      if (index < anchorRects.length - 1) {
+        await trigger.trigger('click')
+      }
+    }
+
+    wrapper.unmount()
+  })
+
   it('supports message reactions, pinning, and editing', async () => {
     const wrapper = mount(ComposerConversation)
     const ui = useUiStore()
@@ -1544,6 +1642,7 @@ describe('composer conversation', () => {
       'team-1',
       'general',
       'server-message-1',
+      'A message to delete',
     )
     expect(article.text()).toContain('(message deleted)')
     expect(document.querySelector('.composer-conversation__delete-dialog')).toBeNull()
@@ -1741,6 +1840,9 @@ describe('composer conversation', () => {
   it('forwards a message to another channel', async () => {
     const channels = useChannelsStore()
     channels.upsertChannel({ id: 'random', name: 'random', isArchived: false, isFavorite: false })
+    listMembersMock
+      .mockResolvedValueOnce({ items: [{ id: 'u1' }, { id: 'u2' }], total: 3 })
+      .mockResolvedValueOnce({ items: [{ id: 'u1' }, { id: 'u2' }, { id: 'u3' }], total: 3 })
     const messages = useMessagesStore()
     const wrapper = mount(ComposerConversation)
     await sendMessage(wrapper, 'Forward this update')
@@ -1753,24 +1855,142 @@ describe('composer conversation', () => {
     await wrapper.get('form.composer-conversation__forward-dialog').trigger('submit')
 
     await vi.waitFor(() => {
-      expect(sendChannelMessage).toHaveBeenLastCalledWith('company-1', 'team-1', 'random', {
-        content: 'Forward this update',
-        forwardedFrom: 'You in general',
-      })
+      expect(forwardChannelMessage).toHaveBeenLastCalledWith(
+        'company-1',
+        'team-1',
+        'general',
+        'server-message-1',
+        { channel_ids: ['random'], user_ids: ['u2', 'u3'] },
+      )
     })
-    expect(messages.messagesFor('random')).toContainEqual(
-      expect.objectContaining({
-        serverBacked: true,
-        forwardedFrom: 'You in general',
-        id: expect.any(String),
-      }),
-    )
+    expect(listMembersMock).toHaveBeenNthCalledWith(1, 'random', { limit: 100 })
+    expect(listMembersMock).toHaveBeenNthCalledWith(2, 'random', { limit: 3 })
 
     await wrapper.setProps({ conversationId: 'random' })
-    await vi.waitFor(() => {
-      expect(wrapper.text()).toContain('(forwarded)')
-      expect(wrapper.text()).not.toContain('Forwarded from')
+    expect(messages.messagesFor('random')).toHaveLength(0)
+    wrapper.unmount()
+  })
+
+  it('loads and sends replies for a channel message in the thread panel', async () => {
+    repliesApi.listReplies.mockResolvedValue([
+      {
+        id: 'reply-1',
+        from: 'u2',
+        text: 'Existing reply',
+        createdAt: '2026-11-05T10:01:00Z',
+      },
+    ])
+    const wrapper = mount(ComposerConversation)
+    await sendMessage(wrapper, 'Thread parent')
+    const article = wrapper.get('article')
+    await article.get('button[aria-label="More message actions"]').trigger('click')
+    await buttonWithText(article.get('.composer-conversation__menu'), 'View replies').trigger('click')
+
+    await vi.waitFor(() => expect(wrapper.text()).toContain('Existing reply'))
+    expect(wrapper.get('.composer-conversation__thread-summary').text()).toContain('1 reply')
+    expect(wrapper.get('.composer-conversation__thread-summary').text()).toContain('Last reply:')
+    expect(repliesApi.listReplies).toHaveBeenCalledWith({
+      companyId: 'company-1',
+      teamId: 'team-1',
+      channelId: 'general',
+      messageId: 'server-message-1',
     })
+
+    await wrapper.get('textarea[aria-label="Reply"]').setValue('Reply from thread')
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text() === 'Send')
+      .trigger('click')
+    await vi.waitFor(() =>
+      expect(repliesApi.sendReply).toHaveBeenCalledWith(
+        {
+          companyId: 'company-1',
+          teamId: 'team-1',
+          channelId: 'general',
+          messageId: 'server-message-1',
+        },
+        { body: 'Reply from thread' },
+      ),
+    )
+    expect(wrapper.text()).toContain('Reply from thread')
+    expect(wrapper.get('.composer-conversation__thread-summary').text()).toContain('2 replies')
+    wrapper.unmount()
+  })
+
+  it('restores a channel message and shows an error when the delete API fails', async () => {
+    deleteChannelMessage.mockResolvedValue({
+      success: false,
+      error: 'The server rejected the delete request.',
+    })
+    const wrapper = mount(ComposerConversation)
+    await sendMessage(wrapper, 'Keep this message')
+
+    const article = wrapper.get('article')
+    await article.get('button[aria-label="More message actions"]').trigger('click')
+    await article.get('.composer-conversation__delete-action').trigger('click')
+    document.body.querySelector('.composer-conversation__delete-dialog .is-delete').click()
+    await nextTick()
+
+    await vi.waitFor(() => {
+      expect(useUiStore().toasts).toContainEqual(
+        expect.objectContaining({
+          title: 'Message not deleted',
+          body: 'The server rejected the delete request.',
+          type: 'error',
+        }),
+      )
+    })
+    expect(wrapper.text()).toContain('Keep this message')
+    expect(document.body.querySelector('.composer-conversation__delete-dialog')).not.toBeNull()
+    expect(deleteChannelMessage).toHaveBeenCalledWith(
+      'company-1',
+      'team-1',
+      'general',
+      'server-message-1',
+      'Keep this message',
+    )
+    wrapper.unmount()
+  })
+
+  it('uses the channel forward API for a direct-message recipient', async () => {
+    const dms = useDmStore()
+    await dms.init()
+    vi.spyOn(dmApi, 'listMessages').mockResolvedValue([
+      {
+        id: 'forwarded-dm-message',
+        from: 'u1',
+        text: 'Forward this direct message',
+        forwardedFrom: 'Aiman Iqbal in general',
+        createdAt: '2026-11-05T10:00:00Z',
+      },
+    ])
+
+    const wrapper = mount(ComposerConversation)
+    await sendMessage(wrapper, 'Forward this direct message')
+    const article = wrapper.get('article')
+    await article.get('button[aria-label="More message actions"]').trigger('click')
+    await buttonWithText(article.get('.composer-conversation__menu'), 'Forward').trigger('click')
+    await wrapper.get('#forward-destination').setValue('c1')
+    await wrapper.get('form.composer-conversation__forward-dialog').trigger('submit')
+    await vi.waitFor(() => {
+      expect(forwardChannelMessage).toHaveBeenCalledWith(
+        'company-1',
+        'team-1',
+        'general',
+        'server-message-1',
+        { user_ids: ['u2'] },
+      )
+      expect(dms.conversations.find((conversation) => conversation.id === 'c1').messages).toContainEqual(
+        expect.objectContaining({
+          id: 'forwarded-dm-message',
+          forwardedFrom: 'Aiman Iqbal in general',
+        }),
+      )
+    })
+
+    await wrapper.setProps({ conversationType: 'dm', conversationId: 'c1' })
+    await nextTick()
+    expect(wrapper.text()).toContain('(forwarded)')
     wrapper.unmount()
   })
 
