@@ -193,6 +193,29 @@ describe('ComposerConversation (DM)', () => {
     wrapper.unmount()
   })
 
+  it('loads a receiver-side reply summary and opens the received reply', async () => {
+    const received = channel()
+    delete received.conversation.messages[0].replyCount
+    delete received.conversation.messages[0].lastReplyAt
+    dmApi.listDirectChannels.mockResolvedValue([received])
+    dmApi.listMessages.mockResolvedValue(received.conversation.messages)
+    repliesApi.listReplies.mockResolvedValue([
+      { id: 'r2', from: 'u2', text: 'Reply from the other participant', createdAt: LAST_REPLY_AT },
+    ])
+
+    const { wrapper } = await mountDm()
+    await vi.waitFor(() =>
+      expect(wrapper.get('[data-test="reply-summary"]').text()).toContain('1 reply'),
+    )
+    await wrapper.get('[data-test="reply-summary"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.get('.composer-conversation__thread').text()).toContain(
+      'Reply from the other participant',
+    )
+    wrapper.unmount()
+  })
+
   it('does not add a reply button to the message toolbar', async () => {
     const { wrapper } = await mountDm()
 
@@ -203,7 +226,13 @@ describe('ComposerConversation (DM)', () => {
   it('shows "(message deleted)" instead of removing my deleted message', async () => {
     const withMine = () => {
       const c = channel()
-      c.conversation.messages.push({ id: 'm2', from: 'u1', text: 'Mera message', createdAt: LAST_REPLY_AT })
+      c.conversation.messages.push({
+        id: 'm2',
+        from: 'u1',
+        text: 'Mera message',
+        createdAt: LAST_REPLY_AT,
+        editedAt: LAST_REPLY_AT,
+      })
       return c
     }
     dmApi.listDirectChannels.mockImplementation(async () => [withMine()])
@@ -217,6 +246,9 @@ describe('ComposerConversation (DM)', () => {
     const mine = wrapper.get('[data-message-id="m2"]')
     expect(mine.text()).toContain('(message deleted)')
     expect(mine.text()).not.toContain('Mera message')
+    expect(mine.text()).not.toContain('(edited)')
+    expect(mine.find('.composer-conversation__actions').exists()).toBe(false)
+    expect(mine.find('textarea[aria-label="Edit message"]').exists()).toBe(false)
     expect(dmApi.deleteMessage).toHaveBeenCalledWith('company-1', 'c1', 'm2', 'Mera message')
     wrapper.unmount()
   })
@@ -224,7 +256,9 @@ describe('ComposerConversation (DM)', () => {
   it('shows a sender-deleted message as deleted for the other participant', async () => {
     const { dms, wrapper } = await mountDm()
     const message = channel().conversation.messages[0]
-    dmApi.listMessages.mockResolvedValue([{ ...message, deleted: true }])
+    dmApi.listMessages.mockResolvedValue([
+      { ...message, deleted: true, editedAt: LAST_REPLY_AT },
+    ])
 
     await dms.loadMessages('c1', { force: true })
     await flushPromises()
@@ -232,6 +266,8 @@ describe('ComposerConversation (DM)', () => {
     const received = wrapper.get('[data-message-id="m1"]')
     expect(received.text()).toContain('(message deleted)')
     expect(received.text()).not.toContain(message.text)
+    expect(received.text()).not.toContain('(edited)')
+    expect(received.find('.composer-conversation__actions').exists()).toBe(false)
     wrapper.unmount()
   })
 

@@ -2,6 +2,7 @@ import { shallowMount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { useDmStore } from '@/features/dms/stores/dms'
+import { usePresenceStore } from '@/features/dms/stores/presence'
 import { useUiStore } from '@/stores/ui'
 import { setupDmsTestState } from '@/features/dms/test-utils'
 import DmList from './DmList.vue'
@@ -36,6 +37,21 @@ describe('DmList', () => {
     expect(dms.activeId).toBe('c1')
     expect(ui.selectedChannelId).toBeNull()
     expect(ui.activePanel).toBeNull()
+    wrapper.unmount()
+  })
+
+  it('shows the request error alongside saved messages when the API is unreachable', async () => {
+    const dms = useDmStore()
+    dms.error = 'Failed to fetch'
+    dms.offline = true
+    vi.spyOn(dms, 'init').mockResolvedValue()
+    vi.spyOn(dms, 'loadCustomStatuses').mockResolvedValue()
+    vi.spyOn(usePresenceStore(), 'init').mockResolvedValue()
+
+    const wrapper = shallowMount(DmList)
+
+    expect(wrapper.text()).toContain('Offline: showing saved messages.')
+    expect(wrapper.text()).toContain('Failed to fetch')
     wrapper.unmount()
   })
 })

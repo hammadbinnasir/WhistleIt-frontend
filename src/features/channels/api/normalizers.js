@@ -108,7 +108,7 @@ export function normalizeChannel(raw = {}) {
     memberCount: Number(record.memberCount ?? record.member_count) || 0,
     createdBy: createdBy == null ? undefined : String(createdBy),
     createdById: createdById == null ? undefined : String(createdById),
-    isOwner: Boolean(record.isOwner ?? record.is_owner ?? record.owner ?? false),
+    isOwner: Boolean(record.isOwner ?? record.is_owner ?? false),
     canManage: Boolean(
       record.canManage ?? record.can_manage ?? record.isOwner ?? record.is_owner ?? isAdmin,
     ),

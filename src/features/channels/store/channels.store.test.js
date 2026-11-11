@@ -78,6 +78,8 @@ describe('channels store membership visibility', () => {
   })
 
   it('lets every channel creator manage message permissions from channel settings', async () => {
+    localStorage.setItem('authToken', 'test-token')
+    localStorage.setItem('authUserId', 'creator-1')
     api.createChannel.mockResolvedValue({
       id: 'new-channel',
       name: 'New Channel',
@@ -94,15 +96,52 @@ describe('channels store membership visibility', () => {
     expect(channel).toMatchObject({
       id: 'new-channel',
       canManage: true,
+      isCreator: true,
+      isOwner: true,
+      createdById: 'creator-1',
       messagePermission: 'everyone',
       allowedSenderIds: [],
     })
     expect(store.getById('new-channel')).toMatchObject({
       canManage: true,
+      isCreator: true,
+      isOwner: true,
       messagePermission: 'everyone',
       allowedSenderIds: [],
     })
     expect(localStorage.getItem('whistleit-managed-channel-ids')).toContain('new-channel')
+
+    setActivePinia(createPinia())
+    api.listChannels.mockResolvedValue([{ id: 'new-channel', name: 'New Channel', isMember: true }])
+    const refreshedStore = useChannelsStore()
+    await refreshedStore.fetchChannels()
+    expect(refreshedStore.getById('new-channel')).toMatchObject({
+      isCreator: true,
+      isOwner: true,
+      createdById: 'creator-1',
+    })
+  })
+
+  it('identifies creators of pre-existing channels from the API on every load', async () => {
+    localStorage.setItem('authToken', 'test-token')
+    localStorage.setItem('authUserId', 'creator-2')
+    api.listChannels.mockResolvedValue([
+      {
+        id: 'existing-channel',
+        name: 'Existing Channel',
+        isMember: true,
+        createdById: 'creator-2',
+      },
+    ])
+
+    const store = useChannelsStore()
+    await store.fetchChannels()
+
+    expect(store.getById('existing-channel')).toMatchObject({
+      isCreator: true,
+      isOwner: true,
+      createdById: 'creator-2',
+    })
   })
 
   it('keeps saved message permissions after refresh when the channel list omits them', async () => {

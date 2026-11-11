@@ -1629,6 +1629,7 @@ async function loadOlder() {
 }
 
 function startEdit(message) {
+  if (message.deleted) return
   editingId.value = message.id
   editDraft.value = message.content
   openMenuId.value = null
@@ -2899,7 +2900,11 @@ onBeforeUnmount(() => {
               >
                 {{ message.time }}
               </time>
-              <span v-if="message.editedAt" class="composer-conversation__edited">(edited)</span>
+              <span
+                v-if="message.editedAt && !message.deleted"
+                class="composer-conversation__edited"
+                >(edited)</span
+              >
               <span v-if="isPinned(message)" class="composer-conversation__pinned">PINNED</span>
             </header>
 
@@ -3240,7 +3245,12 @@ onBeforeUnmount(() => {
                   <span class="composer-conversation__shortcuts"><kbd>Ctrl</kbd><kbd>G</kbd></span>
                 </button>
                 <button
-                  v-if="message.mine && !message.scheduled && !message.deleteScheduledAt"
+                  v-if="
+                    message.mine &&
+                    !message.deleted &&
+                    !message.scheduled &&
+                    !message.deleteScheduledAt
+                  "
                   type="button"
                   title="Edit message"
                   @click="startEdit(message)"
@@ -3260,7 +3270,12 @@ onBeforeUnmount(() => {
                   <span class="composer-conversation__shortcuts"><kbd>Ctrl</kbd><kbd>E</kbd></span>
                 </button>
                 <button
-                  v-if="message.mine && !message.scheduled && !message.deleteScheduledAt"
+                  v-if="
+                    message.mine &&
+                    !message.deleted &&
+                    !message.scheduled &&
+                    !message.deleteScheduledAt
+                  "
                   type="button"
                   class="composer-conversation__delete-action"
                   title="Delete message"
