@@ -1,12 +1,35 @@
 import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
+import { getAuthUserId } from '@/features/auth/session'
 import api from '../api'
 
 const MANAGED_CHANNELS_STORAGE_KEY = 'whistleit-managed-channel-ids'
+const CHANNEL_CREATORS_STORAGE_KEY = 'whistleit:channel-creators'
 const MUTED_CHANNELS_STORAGE_KEY = 'whistleit-muted-channel-ids'
 const FAVORITE_CHANNELS_STORAGE_KEY = 'whistleit-favorite-channel-ids'
 const MESSAGE_PERMISSIONS_STORAGE_KEY = 'whistleit:channel-message-permissions'
 const managedChannelIds = new Set()
+
+function getChannelCreators() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(CHANNEL_CREATORS_STORAGE_KEY) || '{}')
+    return saved && typeof saved === 'object' && !Array.isArray(saved) ? saved : {}
+  } catch (error) {
+    console.error('Unable to load cached channel creators:', error)
+    return {}
+  }
+}
+
+function saveChannelCreator(channelId, creatorId) {
+  if (creatorId == null) return
+  const creators = getChannelCreators()
+  creators[String(channelId)] = String(creatorId)
+  try {
+    localStorage.setItem(CHANNEL_CREATORS_STORAGE_KEY, JSON.stringify(creators))
+  } catch (error) {
+    console.error('Unable to save channel creator:', error)
+  }
+}
 
 function readMessagePermissionCache() {
   try {
@@ -100,8 +123,17 @@ function forgetManagedChannel(id) {
 }
 
 function withPersistedManagement(channel) {
+  const cachedCreatorId = getChannelCreators()[String(channel.id)]
+  const currentUserId = getAuthUserId()
+  const createdById = channel.createdById ?? cachedCreatorId
+  const isOwner =
+    Boolean(channel.isOwner) ||
+    (currentUserId != null && createdById != null && String(currentUserId) === String(createdById))
   return {
     ...channel,
+    ...(createdById != null ? { createdById } : {}),
+    isOwner,
+    isCreator: isOwner,
     canManage: Boolean(channel.canManage || getManagedChannelIds().has(String(channel.id))),
   }
 }
@@ -292,12 +324,18 @@ export const useChannelsStore = defineStore('channels', () => {
   // ---------- actions: management ----------
   async function createChannel(payload) {
     const createdChannel = await api.createChannel(payload)
+    const currentUserId = getAuthUserId()
+    const creatorId = createdChannel.createdById ?? currentUserId
     const channel = {
       ...createdChannel,
+      ...(creatorId != null ? { createdById: String(creatorId) } : {}),
+      isOwner: true,
+      isCreator: true,
       canManage: true,
       messagePermission: createdChannel.messagePermission ?? 'everyone',
       allowedSenderIds: createdChannel.allowedSenderIds ?? [],
     }
+    saveChannelCreator(channel.id, creatorId)
     rememberManagedChannel(channel.id)
     upsertChannel(channel)
     return channel
