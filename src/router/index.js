@@ -7,7 +7,7 @@ import HomeView from '@/views/HomeView.vue'
 import { channelRoutes } from '@/features/channels/routes'
 import { useTeamsStore } from '@/stores/teams'
 import { useUiStore } from '@/stores/ui'
-import { saveAuthRedirect } from '@/features/auth/session'
+import { hasAuthSession, saveAuthRedirect } from '@/features/auth/session'
 
 // Each feature owner adds their own routes here (or in features/<area>/routes.js
 // and imports them). Keep route names unique.
@@ -15,8 +15,8 @@ const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
   routes: [
     { path: '/', redirect: '/login' },
-    { path: '/login', name: 'login', component: AuthView },
-    { path: '/signup', name: 'signup', component: AuthView },
+    { path: '/login', name: 'login', component: AuthView, meta: { guestOnly: true } },
+    { path: '/signup', name: 'signup', component: AuthView, meta: { guestOnly: true } },
     ...invitationRoutes,
     { path: '/forgot-password', name: 'forgot-password', component: AuthView },
     { path: '/reset-password', name: 'reset-password', component: AuthView },
@@ -61,6 +61,10 @@ router.beforeEach(async (to) => {
   const teamsStore = useTeamsStore()
   const uiStore = useUiStore()
   if (!teamsStore.workspaces.length) await teamsStore.fetchWorkspaces()
+  if (!hasAuthSession()) {
+    saveAuthRedirect(to.fullPath)
+    return { name: 'login' }
+  }
   if (teamsStore.workspacesError) return true
 
   const workspaces = teamsStore.workspaces
@@ -79,6 +83,10 @@ router.beforeEach(async (to) => {
     !teamsStore.teamsByWorkspaceId[workspace.id]
   ) {
     await teamsStore.selectWorkspace(workspace.id)
+  }
+  if (!hasAuthSession()) {
+    saveAuthRedirect(to.fullPath)
+    return { name: 'login' }
   }
   if (teamsStore.teamsError) return true
 

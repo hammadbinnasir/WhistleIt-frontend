@@ -1,5 +1,7 @@
 const TOKEN_KEY = 'authToken'
 const USER_KEY = 'authUser'
+const USER_ID_KEY = 'authUserId'
+const REMEMBER_TOKEN_KEY = 'rememberToken'
 const REDIRECT_KEY = 'authRedirect'
 
 function isInternalRedirect(path) {
@@ -50,7 +52,9 @@ function getUserFromResponse(response) {
     response?.data?.user,
     response?.data?.profile,
     response?.data?.data?.user,
+    response?.data?.data,
     response?.data,
+    response,
   ]
   for (const candidate of candidates) {
     const user = normalizeUser(candidate)
@@ -64,15 +68,59 @@ function getUserFromToken(token) {
   if (!payload) return null
 
   try {
-    const decoded = JSON.parse(atob(payload.replace(/-/g, '+').replace(/_/g, '/')))
+    const base64 = payload.replace(/-/g, '+').replace(/_/g, '/')
+    const decoded = JSON.parse(atob(base64.padEnd(Math.ceil(base64.length / 4) * 4, '=')))
     return normalizeUser(decoded)
   } catch {
     return null
   }
 }
 
-export function saveAuthToken(response, remember = false) {
-  clearAuthSession()
+function isExpiredToken(token) {
+  const payload = token.split('.')[1]
+  if (!payload) return false
+
+  try {
+    const base64 = payload.replace(/-/g, '+').replace(/_/g, '/')
+    const decoded = JSON.parse(atob(base64.padEnd(Math.ceil(base64.length / 4) * 4, '=')))
+    return typeof decoded.exp === 'number' && decoded.exp <= Date.now() / 1000
+  } catch {
+    return false
+  }
+}
+
+function clearStoredCredentials() {
+  for (const storage of [localStorage, sessionStorage]) {
+    storage.removeItem(TOKEN_KEY)
+    storage.removeItem(USER_KEY)
+    storage.removeItem(USER_ID_KEY)
+  }
+}
+
+function clearAuthCredentials() {
+  clearStoredCredentials()
+  for (const storage of [localStorage, sessionStorage]) {
+    storage.removeItem(REMEMBER_TOKEN_KEY)
+  }
+}
+
+export function saveAuthToken(response) {
+  clearAuthCredentials()
+
+  const responseData = response?.data
+  const nestedResponseData = responseData?.data
+  const rawRememberToken =
+    response?.rememberToken ??
+    response?.remember_token ??
+    responseData?.rememberToken ??
+    responseData?.remember_token ??
+    nestedResponseData?.rememberToken ??
+    nestedResponseData?.remember_token
+  const rememberToken =
+    typeof rawRememberToken === 'string' ? rawRememberToken.trim() : rawRememberToken
+  if (typeof rememberToken === 'string' && rememberToken.length > 0) {
+    sessionStorage.setItem(REMEMBER_TOKEN_KEY, rememberToken)
+  }
 
   const rawToken =
     response?.token ??
@@ -86,17 +134,22 @@ export function saveAuthToken(response, remember = false) {
     response?.data?.data?.accessToken
   const token = typeof rawToken === 'string' ? rawToken.replace(/^Bearer\s+/i, '').trim() : rawToken
 
-  if (typeof token !== 'string' || token.trim().length === 0) return null
-
-  const storage = remember ? localStorage : sessionStorage
-  storage.setItem(TOKEN_KEY, token)
-  const user = getUserFromResponse(response) || getUserFromToken(token)
-  if (user) storage.setItem(USER_KEY, JSON.stringify(user))
-  return token
+  const authToken = typeof token === 'string' && token.trim().length > 0 ? token.trim() : null
+  if (authToken) localStorage.setItem(TOKEN_KEY, authToken)
+  const user =
+    getUserFromResponse(response) || (typeof token === 'string' ? getUserFromToken(token) : null)
+  if (user) {
+    localStorage.setItem(USER_KEY, JSON.stringify(user))
+    if (user.id) localStorage.setItem(USER_ID_KEY, user.id)
+  }
+  return (
+    authToken ||
+    (typeof rememberToken === 'string' && rememberToken.length > 0 ? rememberToken : null)
+  )
 }
 
 export function getAuthUser() {
-  const storedUser = localStorage.getItem(USER_KEY) || sessionStorage.getItem(USER_KEY)
+  const storedUser = localStorage.getItem(USER_KEY)
   if (!storedUser) return null
 
   try {
@@ -108,22 +161,52 @@ export function getAuthUser() {
 }
 
 export function getAuthUserId() {
-  return getAuthUser()?.id ?? null
+  if (!getAuthToken() && !getRememberToken()) return null
+  return localStorage.getItem(USER_ID_KEY) || getAuthUser()?.id || null
+}
+
+export function getRememberToken() {
+  return sessionStorage.getItem(REMEMBER_TOKEN_KEY)
 }
 
 export function getAuthToken() {
-  return localStorage.getItem(TOKEN_KEY) || sessionStorage.getItem(TOKEN_KEY)
+  if (
+    sessionStorage.getItem(TOKEN_KEY) ||
+    sessionStorage.getItem(USER_KEY) ||
+    sessionStorage.getItem(USER_ID_KEY)
+  ) {
+    clearStoredCredentials()
+  }
+
+  const token = localStorage.getItem(TOKEN_KEY)
+  if (!token) {
+    if (
+      !getRememberToken() &&
+      (localStorage.getItem(USER_KEY) || localStorage.getItem(USER_ID_KEY))
+    ) {
+      clearStoredCredentials()
+    }
+    return null
+  }
+
+  if (token && isExpiredToken(token)) {
+    clearAuthSession()
+    return null
+  }
+  return token
 }
 
 export function hasAuthSession() {
-  return Boolean(getAuthToken())
+  return Boolean(getAuthToken() || getRememberToken())
 }
 
 export function clearAuthSession() {
-  localStorage.removeItem(TOKEN_KEY)
-  sessionStorage.removeItem(TOKEN_KEY)
-  localStorage.removeItem(USER_KEY)
-  sessionStorage.removeItem(USER_KEY)
+  clearAuthCredentials()
+  localStorage.removeItem(REDIRECT_KEY)
+  sessionStorage.removeItem(REDIRECT_KEY)
+  for (const key of Object.keys(sessionStorage)) {
+    if (key.startsWith('verified_token_')) sessionStorage.removeItem(key)
+  }
 }
 
 export function expireAuthSession() {

@@ -290,9 +290,45 @@ describe('auth view', () => {
     expect(login).toHaveBeenCalledWith({
       email: 'sam@example.com',
       password: 'correct-password',
+      is_remember: false,
     })
     expect(getAuthToken()).toBe('test-token')
-    expect(localStorage.getItem('authToken')).toBeNull()
+    expect(localStorage.getItem('authToken')).toBe('test-token')
+    expect(sessionStorage.getItem('authToken')).toBeNull()
+    expect(router.currentRoute.value.name).toBe('home')
+  })
+
+  it('accepts a login response with a remember token and no access token', async () => {
+    login.mockResolvedValueOnce({
+      success: true,
+      data: { userId: 'user-123', rememberToken: 'remember-only-token' },
+    })
+    const { router, wrapper } = await mountAuthView()
+
+    await wrapper.get('#email').setValue('sam@example.com')
+    await wrapper.get('#password').setValue('correct-password')
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+
+    expect(sessionStorage.getItem('rememberToken')).toBe('remember-only-token')
+    expect(localStorage.getItem('authUserId')).toBe('user-123')
+    expect(wrapper.find('[role="status"]').exists()).toBe(false)
+    expect(router.currentRoute.value.name).toBe('home')
+  })
+
+  it('accepts a nested backend remember_token login response', async () => {
+    login.mockResolvedValueOnce({
+      data: { data: { user_id: 'user-123', remember_token: 'remember-only-token' } },
+    })
+    const { router, wrapper } = await mountAuthView()
+
+    await wrapper.get('#email').setValue('sam@example.com')
+    await wrapper.get('#password').setValue('correct-password')
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+
+    expect(sessionStorage.getItem('rememberToken')).toBe('remember-only-token')
+    expect(localStorage.getItem('authUserId')).toBe('user-123')
     expect(router.currentRoute.value.name).toBe('home')
   })
 
@@ -318,6 +354,11 @@ describe('auth view', () => {
     await wrapper.get('form').trigger('submit')
     await flushPromises()
 
+    expect(login).toHaveBeenCalledWith({
+      email: 'sam@example.com',
+      password: 'correct-password',
+      is_remember: true,
+    })
     expect(localStorage.getItem('authToken')).toBe('test-token')
     expect(sessionStorage.getItem('authToken')).toBeNull()
   })

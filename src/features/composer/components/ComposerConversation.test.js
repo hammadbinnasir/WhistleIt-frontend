@@ -207,7 +207,8 @@ describe('composer conversation', () => {
   })
 
   it('shows the restriction notice to members and the composer to channel admins in creator-only mode', async () => {
-    sessionStorage.setItem('authUser', JSON.stringify({ id: 'member-1' }))
+    localStorage.setItem('authUserId', 'member-1')
+    localStorage.setItem('authUser', JSON.stringify({ id: 'member-1' }))
     const channels = useChannelsStore()
     channels.upsertChannel({
       id: 'restricted-channel',
@@ -238,7 +239,8 @@ describe('composer conversation', () => {
   })
 
   it('shows the composer to selected members and admins, with a restriction notice to others', async () => {
-    sessionStorage.setItem('authUser', JSON.stringify({ id: 'member-1' }))
+    localStorage.setItem('authUserId', 'member-1')
+    localStorage.setItem('authUser', JSON.stringify({ id: 'member-1' }))
     const channels = useChannelsStore()
     channels.upsertChannel({
       id: 'selected-channel',
@@ -295,7 +297,8 @@ describe('composer conversation', () => {
   })
 
   it('shows the restriction notice to users who are not channel members', () => {
-    sessionStorage.setItem('authUser', JSON.stringify({ id: 'outsider' }))
+    localStorage.setItem('authUserId', 'outsider')
+    localStorage.setItem('authUser', JSON.stringify({ id: 'outsider' }))
     const channels = useChannelsStore()
     channels.channels.push({
       id: 'private-channel',
@@ -315,7 +318,8 @@ describe('composer conversation', () => {
   })
 
   it('shows the composer to channel admins in all message permission modes', async () => {
-    sessionStorage.setItem('authUser', JSON.stringify({ id: 'admin-1' }))
+    localStorage.setItem('authUserId', 'admin-1')
+    localStorage.setItem('authUser', JSON.stringify({ id: 'admin-1' }))
     const channels = useChannelsStore()
     channels.upsertChannel({
       id: 'admin-channel',
@@ -1679,7 +1683,8 @@ describe('composer conversation', () => {
   })
 
   it('shows the signed-in user name instead of You for DM messages', async () => {
-    sessionStorage.setItem('authUser', JSON.stringify({ id: 'u1', fullName: 'Aiman Iqbal' }))
+    localStorage.setItem('authUserId', 'u1')
+    localStorage.setItem('authUser', JSON.stringify({ id: 'u1', fullName: 'Aiman Iqbal' }))
     const dms = useDmStore()
     await dms.init()
     dms.users = dms.users.filter((user) => user.id !== dms.meId)

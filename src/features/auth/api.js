@@ -1,11 +1,16 @@
 import { http } from '@/features/channels/api/http'
+import { clearAuthSession } from './session'
 
 export function login(credentials) {
   return http('/login', { method: 'POST', body: credentials, auth: false })
 }
 
-export function logout() {
-  return http('/logout', { method: 'POST' })
+export async function logout() {
+  try {
+    return await http('/logout', { method: 'POST', body: { is_remember: false } })
+  } finally {
+    clearAuthSession()
+  }
 }
 
 export function register(account) {

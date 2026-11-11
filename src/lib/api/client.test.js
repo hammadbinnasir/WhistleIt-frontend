@@ -1,13 +1,25 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { apiRequest } from './client'
-import { expireAuthSession, getAuthToken } from '@/features/auth/session'
+import {
+  expireAuthSession,
+  getAuthToken,
+  getRememberToken,
+  hasAuthSession,
+} from '@/features/auth/session'
 
 vi.mock('@/features/auth/session', () => ({
   getAuthToken: vi.fn(),
+  getRememberToken: vi.fn(),
+  hasAuthSession: vi.fn(),
   expireAuthSession: vi.fn(),
 }))
 
 describe('shared API client', () => {
+  beforeEach(() => {
+    getRememberToken.mockReturnValue(null)
+    hasAuthSession.mockImplementation(() => Boolean(getAuthToken() || getRememberToken()))
+  })
+
   afterEach(() => {
     vi.restoreAllMocks()
     vi.unstubAllGlobals()
@@ -40,6 +52,23 @@ describe('shared API client', () => {
       Authorization: `Bearer ${token}`,
       'X-Request-Id': 'request-1',
     })
+  })
+
+  it('sends the remember-token header and authenticates without a bearer token', async () => {
+    getAuthToken.mockReturnValue(null)
+    getRememberToken.mockReturnValue('remember-me-token')
+    hasAuthSession.mockReturnValue(true)
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ success: true }),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    await apiRequest('/profile')
+
+    const [, options] = fetchMock.mock.calls[0]
+    expect(options.headers.Authorization).toBeUndefined()
+    expect(options.headers['X-Remember-Token']).toBe('remember-me-token')
   })
 
   it('sends FormData without overriding its multipart content type', async () => {

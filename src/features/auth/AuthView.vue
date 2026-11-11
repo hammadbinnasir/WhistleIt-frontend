@@ -114,12 +114,16 @@ async function submitForm() {
           password_confirmation: confirmPassword.value,
           frontend_url: typeof window !== 'undefined' ? window.location.origin : '',
         })
-      : await login({ email: email.value, password: password.value })
+      : await login({
+          email: email.value,
+          password: password.value,
+          is_remember: rememberMe.value,
+        })
 
     if (isSignup.value) {
       await router.push({ name: 'login', query: { registered: 'true' } })
     } else {
-      if (!saveAuthToken(response, rememberMe.value)) {
+      if (!saveAuthToken(response)) {
         throw new Error('Login response did not include an access token.')
       }
       const destination = consumeAuthRedirect() ?? { name: 'home' }

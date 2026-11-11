@@ -33,7 +33,7 @@ export function installAuthGuard(router) {
       return { name: 'login' }
     }
 
-    if (to.meta.guestOnly && hasAuthSession()) {
+    if ((to.meta.guestOnly || to.name === 'login') && hasAuthSession()) {
       return { name: 'home' }
     }
   })

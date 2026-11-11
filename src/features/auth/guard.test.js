@@ -9,6 +9,7 @@ function createTestRouter() {
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [
+      { path: '/', redirect: '/login' },
       { path: '/login', name: 'login', component: EmptyPage, meta: { guestOnly: true } },
       { path: '/signup', name: 'signup', component: EmptyPage, meta: { guestOnly: true } },
       { path: '/app', name: 'home', component: EmptyPage, meta: { requiresAuth: true } },
@@ -66,6 +67,35 @@ describe('auth route guard', () => {
     await router.push('/login')
 
     expect(router.currentRoute.value.name).toBe('home')
+  })
+
+  it('recognizes a remember-token-only login session', async () => {
+    saveAuthToken({ userId: 'user-123', rememberToken: 'remember-only-token' })
+    const router = createTestRouter()
+
+    await router.push('/login')
+
+    expect(router.currentRoute.value.name).toBe('home')
+  })
+
+  it('opens the app when a remembered user visits the root route', async () => {
+    saveAuthToken({ token: 'valid-token' })
+    const router = createTestRouter()
+
+    await router.push('/')
+
+    expect(router.currentRoute.value.name).toBe('home')
+  })
+
+  it('sends expired remembered credentials through the unauthenticated flow', async () => {
+    const payload = btoa(JSON.stringify({ exp: Math.floor(Date.now() / 1000) - 1 }))
+    localStorage.setItem('authToken', `header.${payload}.signature`)
+    const router = createTestRouter()
+
+    await router.push('/app')
+
+    expect(router.currentRoute.value.name).toBe('login')
+    expect(localStorage.getItem('authToken')).toBeNull()
   })
 
   it('keeps authenticated users on the protected page when browser back reaches the same route', async () => {

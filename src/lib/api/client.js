@@ -1,5 +1,6 @@
 // Central API client. NO component should call fetch() directly.
-import { expireAuthSession, getAuthToken } from '@/features/auth/session'
+import { expireAuthSession, getAuthToken, hasAuthSession } from '@/features/auth/session'
+import { getRememberTokenHeaders } from './rememberToken'
 
 const BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://10.0.105.90:8000/api'
 
@@ -15,7 +16,7 @@ export class ApiRequestError extends Error {
 export async function apiRequest(path, options = {}) {
   const { headers: optionHeaders = {}, auth = true, ...requestOptions } = options
   const token = auth ? getAuthToken() : null
-  if (auth && !token) {
+  if (auth && !hasAuthSession()) {
     expireAuthSession()
     throw new ApiRequestError('Your login session is missing. Please sign in again.', {
       status: 401,
@@ -32,6 +33,7 @@ export async function apiRequest(path, options = {}) {
         Accept: 'application/json',
         ...(token ? { Authorization: 'Bearer ' + token } : {}),
         ...optionHeaders,
+        ...getRememberTokenHeaders(),
       },
     })
   } catch (error) {
@@ -49,7 +51,8 @@ export async function apiRequest(path, options = {}) {
     }
   }
 
-  const missingToken = res.status === 403 && /missing authentication token/i.test(data?.message || '')
+  const missingToken =
+    res.status === 403 && /missing authentication token/i.test(data?.message || '')
   if (auth && (res.status === 401 || missingToken)) expireAuthSession()
   if (!res.ok || data?.success === false) {
     throw new ApiRequestError(data?.message || res.statusText || 'Request failed.', {

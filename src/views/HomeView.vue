@@ -15,7 +15,7 @@ import { useActivityStore } from '@/stores/activity'
 import { useRemindersStore } from '@/features/search/reminders'
 import { useUserStore, UserModule } from '@/features/account'
 import { getAccountErrorToast } from '@/features/account/errorMessages'
-import { clearAuthSession, getAuthUser } from '@/features/auth/session'
+import { getAuthUser } from '@/features/auth/session'
 import { logout as logoutRequest } from '@/features/auth/api'
 
 // Shell
@@ -253,7 +253,6 @@ async function logout() {
       'error',
     )
   } finally {
-    clearAuthSession()
     await router.push({ name: 'login' })
   }
 }

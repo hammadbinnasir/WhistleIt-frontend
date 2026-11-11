@@ -9,7 +9,13 @@ import { dmApi, normalizeMessage, normalizePublicCustomStatus } from './dmApi'
 describe('DM API', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    sessionStorage.setItem('authUser', JSON.stringify({ id: 'user-1' }))
+    localStorage.setItem('authToken', 'test-token')
+    localStorage.setItem('authUserId', 'user-1')
+    localStorage.setItem('authUser', JSON.stringify({ id: 'user-1' }))
+  })
+
+  it('reads the current user ID from local storage', () => {
+    expect(dmApi.meId()).toBe('user-1')
   })
 
   it('loads normalized company members', async () => {
