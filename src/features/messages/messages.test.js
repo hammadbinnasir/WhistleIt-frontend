@@ -391,12 +391,10 @@ describe('channel messages store', () => {
         serverBacked: true,
       }),
     )
-    expect(sendChannelMessage).toHaveBeenCalledWith(
-      'company-1',
-      'team-1',
-      'channel-1',
-      { content: 'Thread parent', parentMessageId: 'original-message' },
-    )
+    expect(sendChannelMessage).toHaveBeenCalledWith('company-1', 'team-1', 'channel-1', {
+      content: 'Thread parent',
+      parentMessageId: 'original-message',
+    })
     expect(sent.id).toBe('saved-reply-parent')
   })
 
@@ -434,6 +432,32 @@ describe('channel messages store', () => {
         serverBacked: true,
       }),
     )
+  })
+
+  it('sends a selected recent file as a binary attachment through the channel API', async () => {
+    useTeamsStore().activeWorkspaceId = 'company-1'
+    useTeamsStore().activeTeamId = 'team-1'
+    sendChannelMessage.mockResolvedValue({
+      success: true,
+      data: { message: { id: 'recent-file-message', body: 'See this file' } },
+    })
+    getChannelMessages.mockResolvedValue({ success: true, data: { messages: [] } })
+    const messages = useMessagesStore()
+    const attachment = new File(['report'], 'report.pdf', { type: 'application/pdf' })
+
+    await expect(
+      messages.postChannelMessage('channel-2', {
+        content: 'Please see this',
+        attachment,
+        attachmentSource: 'recent',
+      }),
+    ).resolves.toMatchObject({ success: true })
+
+    expect(sendChannelMessage).toHaveBeenCalledWith('company-1', 'team-1', 'channel-2', {
+      content: 'Please see this',
+      attachment,
+      attachmentSource: 'recent',
+    })
   })
 
   it('finishes sending when the POST is acknowledged without waiting for the list refresh', async () => {

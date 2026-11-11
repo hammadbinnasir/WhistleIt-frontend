@@ -95,6 +95,33 @@ describe('channel message service', () => {
     expect(options.body.get('attachment').name).toBe('report.txt')
   })
 
+  it('sends a prepared recent file as multipart binary data without a file ID', async () => {
+    const file = new File(['report'], 'report.pdf', { type: 'application/pdf' })
+    await sendChannelMessage('company-1', 'team-2', 'channel-3', {
+      content: 'Please see this',
+      attachment: file,
+      attachmentSource: 'recent',
+      is_important: false,
+    })
+
+    expect(http).toHaveBeenCalledWith(collectionPath, {
+      method: 'POST',
+      body: expect.any(FormData),
+    })
+    const body = http.mock.calls[0][1].body
+    expect(body.get('file')).toBeInstanceOf(File)
+    expect(body.get('file').name).toBe('report.pdf')
+    expect(body.get('companyId')).toBe('company-1')
+    expect(body.get('chatId')).toBe('channel-3')
+    expect(body.get('fileName')).toBe('report.pdf')
+    expect(body.get('body')).toBe('Please see this')
+    expect(body.get('is_important')).toBe('0')
+    expect(body.get('attachmentSource')).toBeNull()
+    expect(body.get('fileId')).toBeNull()
+    expect(body.get('file_id')).toBeNull()
+    expect(body.get('attachment')).toBeNull()
+  })
+
   it('updates a message with the provided patch body', async () => {
     const payload = { content: 'Updated' }
 

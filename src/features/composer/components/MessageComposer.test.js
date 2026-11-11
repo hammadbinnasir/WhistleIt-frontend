@@ -56,6 +56,7 @@ vi.mock('vue3-emoji-picker', async () => {
 })
 
 import MessageComposer from './MessageComposer.vue'
+import MediaToolbar from '../../media/MediaToolbar.vue'
 import { resetUserStore, useUserStore } from '@/features/account/composables/useUserStore'
 
 beforeEach(() => {
@@ -637,6 +638,20 @@ describe('message composer', () => {
     await wrapper.get('form').trigger('submit')
 
     expect(wrapper.emitted('send')).toEqual([[{ content: '', attachment }]])
+  })
+
+  it('sends a selected recent file with any drafted message text', async () => {
+    const wrapper = mount(MessageComposer)
+    const recentFile = new File(['report'], 'report.pdf', { type: 'application/pdf' })
+    setEditorText(wrapper, 'Please see this')
+
+    wrapper.getComponent(MediaToolbar).vm.$emit('recent-file-selected', recentFile)
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.emitted('send')).toEqual([
+      [{ content: 'Please see this', attachment: recentFile, attachmentSource: 'recent' }],
+    ])
+    expect(wrapper.get('[contenteditable="true"]').text()).toBe('')
   })
 
   it('previews selected images and documents in removable attachment cards', async () => {
@@ -1371,7 +1386,7 @@ describe('message composer', () => {
     expect(wrapper.emitted('microphone')).toHaveLength(1)
   })
 
-  it('opens and dismisses the emoji picker and opens the file picker', async () => {
+  it('opens and dismisses the emoji picker and opens the attachment picker', async () => {
     const wrapper = mount(MessageComposer, { attachTo: document.body })
 
     const editor = setEditorText(wrapper, 'Hello')
@@ -1392,11 +1407,9 @@ describe('message composer', () => {
 
     const clickFileInput = vi.spyOn(fileInput.element, 'click')
 
-    await wrapper.get('button[aria-label="Document"]').trigger('click')
-
     await wrapper.get('button[aria-label="Attachment"]').trigger('click')
 
-    expect(clickFileInput).toHaveBeenCalledTimes(2)
+    expect(clickFileInput).toHaveBeenCalledOnce()
 
     wrapper.unmount()
   })

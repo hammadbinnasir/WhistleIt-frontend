@@ -914,9 +914,25 @@ export const dmApi = {
     if (attachment) {
       const formData = new FormData()
       if (requestPayload.body?.trim()) formData.append('body', requestPayload.body.trim())
-      formData.append('attachment', attachment)
+      const recentFile = requestPayload.attachmentSource === 'recent'
+      formData.append(recentFile ? 'file' : 'attachment', attachment, attachment.name)
+      if (recentFile) {
+        formData.append('companyId', String(companyId))
+        formData.append('chatId', String(channelId))
+        formData.append('fileName', attachment.name)
+      }
       Object.entries(requestPayload).forEach(([key, value]) => {
-        if (key === 'body' || key === 'attachment' || value == null) return
+        if (
+          key === 'body' ||
+          key === 'attachment' ||
+          key === 'attachmentSource' ||
+          key === 'companyId' ||
+          key === 'chatId' ||
+          key === 'fileName' ||
+          value == null
+        ) {
+          return
+        }
         const formValue =
           typeof value === 'boolean'
             ? value

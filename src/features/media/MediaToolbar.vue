@@ -2,16 +2,30 @@
 import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import EmojiPicker from 'vue3-emoji-picker'
 import 'vue3-emoji-picker/css'
+import { messageAttachmentKind, messageAttachmentUrl } from '@/features/messages/messageAttachments'
+import {
+  downloadRecentFile,
+  listRecentFiles,
+  recentFileDate,
+  recentFileId,
+  recentFileName,
+} from './recentFilesApi'
 
-const emit = defineEmits(['action', 'file-selected'])
+const emit = defineEmits(['action', 'file-selected', 'recent-file-selected'])
 const props = defineProps({
   recording: { type: Boolean, default: false },
   microphoneDisabled: { type: Boolean, default: false },
+  companyId: { type: [String, Number], default: null },
 })
 
 const toolbar = ref(null)
 const fileInput = ref(null)
 const emojiPickerOpen = ref(false)
+const recentFilesOpen = ref(false)
+const recentFilesLoading = ref(false)
+const recentFilesError = ref('')
+const recentFiles = ref([])
+const preparingFileKey = ref('')
 const activeCategory = ref('animals_nature')
 const emojiQuery = ref('')
 const categoryKeys = [
@@ -75,22 +89,96 @@ function selectCategory(event) {
 }
 
 function closeEmojiPicker(event) {
-  if (event.key === 'Escape') emojiPickerOpen.value = false
+  if (event.key === 'Escape') {
+    emojiPickerOpen.value = false
+    recentFilesOpen.value = false
+  }
 }
 
 function closePickerOutside(event) {
-  if (emojiPickerOpen.value && !toolbar.value?.contains(event.target)) {
+  if (!toolbar.value?.contains(event.target)) {
     emojiPickerOpen.value = false
+    recentFilesOpen.value = false
   }
+}
+
+async function openRecentFiles() {
+  emojiPickerOpen.value = false
+  if (recentFilesOpen.value) {
+    recentFilesOpen.value = false
+    return
+  }
+
+  recentFilesOpen.value = true
+  recentFilesLoading.value = true
+  recentFilesError.value = ''
+  try {
+    recentFiles.value = await listRecentFiles(props.companyId)
+  } catch (error) {
+    recentFilesError.value = error instanceof Error ? error.message : 'Could not load recent files.'
+  } finally {
+    recentFilesLoading.value = false
+  }
+}
+
+async function selectRecentFile(file, index) {
+  const fileKey = recentFileKey(file, index)
+  if (preparingFileKey.value) return
+  preparingFileKey.value = fileKey
+  recentFilesError.value = ''
+  try {
+    const binaryFile = await downloadRecentFile(file)
+    emit('recent-file-selected', binaryFile)
+    recentFilesOpen.value = false
+  } catch (error) {
+    recentFilesError.value =
+      error instanceof Error ? error.message : 'Could not prepare the selected file.'
+  } finally {
+    preparingFileKey.value = ''
+  }
+}
+
+function recentFileKey(file, index) {
+  return recentFileId(file) || `${recentFileName(file)}-${index}`
+}
+
+function recentFileDateLabel(file) {
+  const value = recentFileDate(file)
+  if (!value) return ''
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return String(value)
+  const today = new Date()
+  if (date.toDateString() === today.toDateString()) return 'Today'
+  return new Intl.DateTimeFormat(undefined, {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  }).format(date)
+}
+
+function recentFileTypeLabel(file) {
+  const name = recentFileName(file)
+  const extension = name.match(/\.([^.]+)$/)?.[1]
+  if (extension) return extension.toUpperCase()
+  const mimeType = String(file?.mime_type ?? file?.mimeType ?? file?.type ?? '')
+  const subtype = mimeType.split('/').pop()?.toUpperCase()
+  if (subtype === 'JPEG') return 'JPG'
+  return subtype || messageAttachmentKind(file).toUpperCase()
 }
 
 function handleAction(action) {
   if (action === 'emoji') {
+    recentFilesOpen.value = false
     toggleEmojiPicker()
     return
   }
 
-  if (action === 'document' || action === 'attachment') {
+  if (action === 'document') {
+    void openRecentFiles()
+    return
+  }
+
+  if (action === 'attachment') {
     fileInput.value?.click()
     return
   }
@@ -129,8 +217,10 @@ onBeforeUnmount(() => {
     <button
       class="media-toolbar__button"
       type="button"
-      aria-label="Document"
-      title="Attach document"
+      aria-label="Recent files"
+      title="Recent files"
+      :aria-expanded="recentFilesOpen"
+      aria-haspopup="dialog"
       @click="handleAction('document')"
     >
       <svg viewBox="0 0 20 20" aria-hidden="true">
@@ -170,6 +260,81 @@ onBeforeUnmount(() => {
       aria-label="Choose a file to attach"
       @change="handleFileSelected"
     />
+    <section
+      v-if="recentFilesOpen"
+      class="recent-files"
+      role="dialog"
+      aria-label="Recent Files"
+      @keydown="closeEmojiPicker"
+    >
+      <header class="recent-files__header">Recent Files</header>
+      <p v-if="recentFilesLoading" class="recent-files__status" role="status">
+        Loading recent files…
+      </p>
+      <p
+        v-else-if="recentFilesError"
+        class="recent-files__status recent-files__status--error"
+        role="alert"
+      >
+        {{ recentFilesError }}
+      </p>
+      <p v-else-if="!recentFiles.length" class="recent-files__status">No recent files found.</p>
+      <ul v-else class="recent-files__list">
+        <li
+          v-for="(file, index) in recentFiles"
+          :key="recentFileId(file) || `${recentFileName(file)}-${index}`"
+        >
+          <button
+            class="recent-files__select"
+            type="button"
+            :aria-label="
+              preparingFileKey === recentFileKey(file, index)
+                ? `Preparing ${recentFileName(file)}`
+                : `Share ${recentFileName(file)}`
+            "
+            :aria-busy="preparingFileKey === recentFileKey(file, index)"
+            :disabled="Boolean(preparingFileKey)"
+            @click="selectRecentFile(file, index)"
+          >
+            <span
+              class="recent-files__icon"
+              :class="`recent-files__icon--${messageAttachmentKind(file)}`"
+              aria-hidden="true"
+            >
+              <svg viewBox="0 0 24 24">
+                <path d="M6 2.75h8l4 4v14.5H6z" />
+                <path d="M14 2.75v4h4M9 12h6M9 16h6" />
+              </svg>
+            </span>
+            <span class="recent-files__details">
+              <strong :title="recentFileName(file)">{{ recentFileName(file) }}</strong>
+              <small
+                >{{
+                  preparingFileKey === recentFileKey(file, index)
+                    ? 'Preparing file…'
+                    : recentFileTypeLabel(file)
+                }}<template v-if="recentFileDateLabel(file)">
+                  · {{ recentFileDateLabel(file) }}</template
+                ></small
+              >
+            </span>
+          </button>
+          <a
+            v-if="messageAttachmentUrl(file)"
+            class="recent-files__download"
+            :href="messageAttachmentUrl(file)"
+            :download="recentFileName(file)"
+            :aria-label="`Download ${recentFileName(file)}`"
+            title="Download"
+            @click.stop
+          >
+            <svg viewBox="0 0 20 20" aria-hidden="true">
+              <path d="M10 2.5v10M6.5 9.5 10 13l3.5-3.5M3.5 14v3h13v-3" />
+            </svg>
+          </a>
+        </li>
+      </ul>
+    </section>
     <section
       v-if="emojiPickerOpen"
       class="emoji-picker picker"
@@ -211,6 +376,159 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   gap: 4px;
+}
+
+.recent-files {
+  position: absolute;
+  z-index: 20;
+  right: 0;
+  bottom: calc(100% + 8px);
+  display: flex;
+  width: min(320px, calc(100vw - 32px));
+  max-height: min(360px, 60vh);
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid #dedee7;
+  border-radius: 6px;
+  background: #fff;
+  box-shadow: 0 4px 12px rgb(23 24 35 / 18%);
+  color: #252633;
+}
+
+.recent-files__header {
+  flex: 0 0 auto;
+  padding: 12px 16px;
+  border-bottom: 1px solid #dedee7;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.recent-files__list {
+  overflow-y: auto;
+  margin: 0;
+  padding: 4px 0;
+  list-style: none;
+}
+
+.recent-files__list li {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  padding-right: 8px;
+}
+
+.recent-files__list li:hover,
+.recent-files__list li:focus-within {
+  background: #f2f2f7;
+  box-shadow: 0 2px 6px rgb(23 24 35 / 12%);
+}
+
+.recent-files__select {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 10px 7px 12px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+
+.recent-files__select:disabled {
+  cursor: wait;
+}
+
+.recent-files__icon {
+  display: grid;
+  width: 36px;
+  height: 36px;
+  flex: 0 0 36px;
+  place-items: center;
+  border-radius: 4px;
+  background: #37365f;
+  color: #fff;
+}
+
+.recent-files__icon--image {
+  background: #e7e2f4;
+  color: #625e9a;
+}
+
+.recent-files__icon svg {
+  width: 24px;
+  height: 24px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.8;
+}
+
+.recent-files__details {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.recent-files__details strong {
+  overflow: hidden;
+  color: #252633;
+  font-size: 13px;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.recent-files__details small {
+  color: #888995;
+  font-size: 11px;
+  text-align: left;
+}
+
+.recent-files__download {
+  display: grid;
+  width: 30px;
+  height: 30px;
+  flex: 0 0 30px;
+  place-items: center;
+  border-radius: 4px;
+  color: #55566a;
+  opacity: 0;
+}
+
+.recent-files__list li:hover .recent-files__download,
+.recent-files__list li:focus-within .recent-files__download {
+  opacity: 1;
+}
+
+.recent-files__download:hover,
+.recent-files__download:focus-visible {
+  background: #e1e2ec;
+  opacity: 1;
+}
+
+.recent-files__download svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.6;
+}
+
+.recent-files__status {
+  margin: 0;
+  padding: 16px;
+  color: #777987;
+  font-size: 13px;
+}
+
+.recent-files__status--error {
+  color: #a33232;
 }
 
 .media-toolbar__button {

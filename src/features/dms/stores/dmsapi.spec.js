@@ -416,6 +416,32 @@ describe('dms store', () => {
     }
   })
 
+  it('sends a selected recent file as a binary attachment', async () => {
+    const dms = useDmStore()
+    await dms.init()
+    const attachment = new File(['report'], 'report.pdf', { type: 'application/pdf' })
+
+    const sent = dms.sendMessage('c1', {
+      content: 'Please see this',
+      attachment,
+      attachmentSource: 'recent',
+    })
+
+    await vi.waitFor(() =>
+      expect(dmApi.sendMessage).toHaveBeenCalledWith('company-1', 'c1', {
+        body: 'Please see this',
+        attachment,
+        attachmentSource: 'recent',
+        is_important: false,
+      }),
+    )
+    await vi.waitFor(() => expect(dms.conversations[0].messages.at(-1).id).toBe('server-1'))
+    expect(sent.status).toBe('sending')
+    expect(dms.conversations[0].messages.at(-1).attachments).toMatchObject([
+      { name: 'report.pdf', type: 'application/pdf' },
+    ])
+  })
+
   it('marks a message failed when POST fails and retries it', async () => {
     dmApi.sendMessage.mockRejectedValueOnce(new Error('Failed to fetch'))
     const dms = useDmStore()

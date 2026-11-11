@@ -294,10 +294,10 @@ const isLocal = (message) => String(message.id).startsWith('local-')
 const voiceNoteIdOf = (message) =>
   message?.voiceNoteId ?? message?.voice_note_id ?? message?.voice_note?.id
 
-// GIF, attachments aur scheduled messages are not supported by the message API.
+// GIF and scheduled messages use separate flows; attachments are uploaded from memory.
 const isApiSendable = (message) =>
   !message.gif &&
-  !message.attachments &&
+  (!message.attachments?.length || pendingAttachmentByMessage.has(message.id)) &&
   !message.scheduledAt &&
   (!message.poll || message.poll_id != null)
 
@@ -1429,6 +1429,7 @@ export const useDmStore = defineStore('dms', () => {
             ...sendPayload(message),
             body: voiceNoteId ? body || 'Voice message' : body,
             ...(attachment ? { attachment } : {}),
+            ...(message.attachmentSource ? { attachmentSource: message.attachmentSource } : {}),
             ...(voiceNoteId ? { voice_note_id: String(voiceNoteId) } : {}),
             is_important: Boolean(message.important),
             ...(message.poll_id != null ? { poll_id: message.poll_id } : {}),
@@ -1599,6 +1600,7 @@ export const useDmStore = defineStore('dms', () => {
       ...(payload.threadId ? { threadId: payload.threadId } : {}),
       ...(payload.forwardedFrom ? { forwardedFrom: payload.forwardedFrom } : {}),
       ...(payload.voiceNoteId ? { voiceNoteId: String(payload.voiceNoteId) } : {}),
+      ...(payload.attachmentSource ? { attachmentSource: payload.attachmentSource } : {}),
       ...(attachments.length ? { attachments } : {}),
       ...(payload.important ? { important: true } : {}),
       ...(payload.gif ? { gif: payload.gif } : {}),
@@ -1612,13 +1614,13 @@ export const useDmStore = defineStore('dms', () => {
           }
         : {}),
     }
+    if (payload.attachment) {
+      pendingAttachmentByMessage.set(message.id, payload.attachment)
+    }
     const sendable = isApiSendable(message)
     if (sendable) {
       message.status = 'sending'
       message.error = ''
-    }
-    if (payload.attachment) {
-      pendingAttachmentByMessage.set(message.id, payload.attachment)
     }
 
     conversation.messages.push(message)
@@ -1632,7 +1634,7 @@ export const useDmStore = defineStore('dms', () => {
         conversationType: 'dm',
       })
     }
-    if (isApiSendable(message)) void deliver(conversation.id, message)
+    if (sendable) void deliver(conversation.id, message)
     return conversation.messages.at(-1)
   }
 

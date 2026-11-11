@@ -541,6 +541,35 @@ describe('DM API', () => {
     expect(options.body.get('is_important')).toBe('0')
   })
 
+  it('sends a prepared recent file as multipart binary data without a file ID', async () => {
+    apiRequest.mockResolvedValue({
+      success: true,
+      data: { message: { id: 'm13', sender_id: 'user-1', body: 'See attached' } },
+    })
+    const file = new File(['report'], 'report.pdf', { type: 'application/pdf' })
+
+    await dmApi.sendMessage('company-1', 'channel-1', {
+      body: 'See attached',
+      attachment: file,
+      attachmentSource: 'recent',
+    })
+
+    const [url, options] = apiRequest.mock.calls[0]
+    expect(url).toBe('/v1/company-1/direct-channels/channel-1/messages')
+    expect(options.method).toBe('POST')
+    expect(options.body).toBeInstanceOf(FormData)
+    expect(options.body.get('file')).toBeInstanceOf(File)
+    expect(options.body.get('file').name).toBe('report.pdf')
+    expect(options.body.get('companyId')).toBe('company-1')
+    expect(options.body.get('chatId')).toBe('channel-1')
+    expect(options.body.get('fileName')).toBe('report.pdf')
+    expect(options.body.get('body')).toBe('See attached')
+    expect(options.body.get('attachmentSource')).toBeNull()
+    expect(options.body.get('fileId')).toBeNull()
+    expect(options.body.get('file_id')).toBeNull()
+    expect(options.body.get('attachment')).toBeNull()
+  })
+
   it('rejects attachment arrays because only one file can be sent per message', () => {
     expect(() =>
       dmApi.sendMessage('company-1', 'channel-1', {
