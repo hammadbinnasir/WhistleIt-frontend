@@ -100,22 +100,29 @@ describe('replies store', () => {
     expect(reloaded.isOffline(dmThread)).toBe(true)
   })
 
-  it('shows a reply instantly, then swaps it for the server reply', async () => {
-    const replies = freshStore()
-    await replies.loadReplies(dmThread)
+  it('shows an optimistic reply, waits 30 seconds, then swaps it for the server reply', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    try {
+      const replies = freshStore()
+      await replies.loadReplies(dmThread)
 
-    const sent = replies.sendReply(dmThread, '  Got it  ')
-    expect(sent).toMatchObject({ text: 'Got it', from: 'u1', status: 'sending', parentId: 'm1' })
-    expect(sent.id).toMatch(/^local-/)
-    expect(savedReplies().at(-1).id).toBe(sent.id) // network se pehle hi save
+      const sent = replies.sendReply(dmThread, '  Got it  ')
+      expect(sent).toMatchObject({ text: 'Got it', from: 'u1', status: 'sending', parentId: 'm1' })
+      expect(sent.id).toMatch(/^local-/)
+      expect(savedReplies().at(-1).id).toBe(sent.id) // network se pehle hi save
+      expect(repliesApi.sendReply).not.toHaveBeenCalled()
+      await vi.advanceTimersByTimeAsync(30_000)
 
-    expect(repliesApi.sendReply).toHaveBeenCalledWith(
-      { companyId: 'company-1', channelId: 'c1', messageId: 'm1' },
-      { body: 'Got it' },
-    )
-    await vi.waitFor(() => expect(replies.repliesOf(dmThread).at(-1).id).toBe('server-r1'))
-    expect(replies.repliesOf(dmThread).map((r) => r.text)).toEqual(['First reply', 'Got it'])
-    expect(savedReplies().at(-1)).toMatchObject({ id: 'server-r1', text: 'Got it' })
+      expect(repliesApi.sendReply).toHaveBeenCalledWith(
+        { companyId: 'company-1', channelId: 'c1', messageId: 'm1' },
+        { body: 'Got it' },
+      )
+      await vi.waitFor(() => expect(replies.repliesOf(dmThread).at(-1).id).toBe('server-r1'))
+      expect(replies.repliesOf(dmThread).map((r) => r.text)).toEqual(['First reply', 'Got it'])
+      expect(savedReplies().at(-1)).toMatchObject({ id: 'server-r1', text: 'Got it' })
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('ignores empty replies', () => {
@@ -236,12 +243,16 @@ describe('replies store', () => {
         { id: 'r2', from: 'u2', text: 'New from u2', createdAt: '' },
       ])
 
-      await vi.advanceTimersByTimeAsync(4000)
+      repliesApi.listReplies.mockClear()
+      await vi.advanceTimersByTimeAsync(29_999)
+      expect(repliesApi.listReplies).not.toHaveBeenCalled()
+      await vi.advanceTimersByTimeAsync(1)
       expect(replies.repliesOf(dmThread).map((r) => r.text)).toEqual(['First reply', 'New from u2'])
+      expect(repliesApi.listReplies).toHaveBeenCalledTimes(1)
 
       replies.unwatchThread(dmThread) // thread band: polling band
       repliesApi.listReplies.mockClear()
-      await vi.advanceTimersByTimeAsync(8000)
+      await vi.advanceTimersByTimeAsync(60_000)
       expect(repliesApi.listReplies).not.toHaveBeenCalled()
     } finally {
       vi.useRealTimers()

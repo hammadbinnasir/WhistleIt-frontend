@@ -8,7 +8,9 @@ import { useTeamsStore } from '@/stores/teams'
 export const REPLIES_STORAGE_KEY = 'whistleit:message-replies'
 const MAX_CACHED_REPLIES = 200
 // Khule hue thread mein dusre user ke naye replies har itne ms baad check hote hain
-const POLL_INTERVAL = 4000
+const POLL_INTERVAL = 30_000
+const SEND_DELAY_MS = 30_000
+const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 
 function errorMessage(error) {
   return error instanceof Error ? error.message : String(error?.message ?? error)
@@ -172,6 +174,7 @@ export const useRepliesStore = defineStore('replies', () => {
     reply.error = ''
     const localId = reply.id
     try {
+      await wait(SEND_DELAY_MS)
       // Backend ko text "body" field mein chahiye (messages ki tarah)
       const saved = await repliesApi.sendReply(
         { companyId: companyId.value, ...targetFromKey(key) },

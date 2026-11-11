@@ -7,6 +7,7 @@ import { useUiStore } from '@/stores/ui'
 import { useChannelsStore } from '@/features/channels'
 import { useDmStore } from '@/features/dms/stores/dms'
 import { useMessagesStore } from '@/features/messages/messages'
+import MessageAttachment from '@/features/messages/MessageAttachment.vue'
 import { searchMessages, searchFiles, searchLinks, searchUsers } from './search'
 import { useMembersStore } from '@/stores/members'
 import { useTeamsStore } from '@/stores/teams'
@@ -211,8 +212,36 @@ function dmSearchMessages() {
       },
       createdAt: message.createdAt || '',
       webhook: false,
+      attachments: message.attachments || [],
     })),
   )
+}
+
+async function loadDmMessagesForFileSearch() {
+  await dmsStore.ensureLoaded()
+  const conversations =
+    scope.value === 'channel'
+      ? dmsStore.conversations.filter(
+          (conversation) => String(conversation.id) === String(props.dmConversationId),
+        )
+      : dmsStore.conversations
+
+  for (const conversation of conversations) {
+    const loaded = await dmsStore.loadMessages(conversation.id, { force: true })
+    if (!loaded) throw new Error('Unable to load direct-message history for file search.')
+
+    while (dmsStore.hasMoreOlder(conversation.id)) {
+      const previousCount = conversation.messages.length
+      const added = await dmsStore.loadOlderMessages(conversation.id)
+      if (!added && dmsStore.hasMoreOlder(conversation.id)) {
+        throw new Error('Unable to load the next page of direct-message history.')
+      }
+      if (conversation.messages.length <= previousCount && dmsStore.hasMoreOlder(conversation.id)) {
+        throw new Error('Direct-message history did not advance to the next page.')
+      }
+    }
+  }
+  return dmSearchMessages()
 }
 
 async function loadChannelMessagesForSearch(channelId) {
@@ -249,12 +278,25 @@ async function loadChannelMessagesForSearch(channelId) {
       userId: String(message.authorId ?? message.from ?? ''),
       createdAt: message.createdAt || '',
       webhook: false,
+      attachments: message.attachments || [],
       conversation: {
         id: key,
         name: channel?.name || key,
         kind: channel?.isPrivate ? 'private' : 'public',
       },
     }))
+}
+
+async function loadChannelMessagesForFileSearch() {
+  if (scope.value === 'channel') {
+    return props.dmConversationId ? [] : loadChannelMessagesForSearch(props.channelId)
+  }
+
+  const loaded = []
+  for (const channel of channelsStore.channels) {
+    loaded.push(...(await loadChannelMessagesForSearch(channel.id)))
+  }
+  return loaded
 }
 
 async function run() {
@@ -302,22 +344,28 @@ async function run() {
   }
   loading.value = true
   try {
+    const isFileSearch = tab.value === 'file'
+    const dmMessages = isFileSearch ? await loadDmMessagesForFileSearch() : dmSearchMessages()
+    const channelMessages = isFileSearch
+      ? await loadChannelMessagesForFileSearch()
+      : scope.value === 'channel' && !props.dmConversationId
+        ? await loadChannelMessagesForSearch(props.channelId)
+        : []
     const params = {
       q: q.value.trim(),
       page: page.value,
       pageSize: 6,
-      channelId: scope.value === 'channel' ? props.channelId : '',
+      channelId: scope.value === 'channel' && !props.dmConversationId ? props.channelId : '',
       dmConversationId: scope.value === 'channel' ? props.dmConversationId : '',
       userIds: applied.userIds,
       date: applied.date,
       dateEnd: applied.dateEnd,
       dateMode: applied.dateMode,
       webhooks: applied.webhooks,
-      dmMessages: dmSearchMessages(),
-      channelMessages:
-        scope.value === 'channel' && !props.dmConversationId
-          ? await loadChannelMessagesForSearch(props.channelId)
-          : [],
+      dmMessages,
+      channelMessages,
+      companyId: teamsStore.activeWorkspaceId,
+      teamId: teamsStore.activeTeamId,
     }
     if (requestId !== searchRequestId) return
     const fn = { text: searchMessages, file: searchFiles, link: searchLinks }[tab.value]
@@ -588,6 +636,16 @@ const senderInitials = (name = '') =>
     .map((part) => part[0])
     .join('')
     .toUpperCase()
+const canLoadAttachment = (file) =>
+  file.companyId != null &&
+  file.messageId != null &&
+  file.conversation?.id != null &&
+  (file.conversation.kind === 'dm' || file.teamId != null) &&
+  (file.attachment?.id ??
+    file.attachment?.attachment_id ??
+    file.attachment?.attachmentId ??
+    file.attachment?.file_id ??
+    file.attachment?.fileId) != null
 </script>
 
 <template>
@@ -1125,19 +1183,51 @@ const senderInitials = (name = '') =>
           :key="f.id"
           class="overflow-hidden rounded border border-slate-200"
         >
-          <div class="flex h-40 items-center justify-center bg-white text-6xl">
-            {{ fileIcon[f.type] || '📄' }}
+          <div class="flex h-40 items-center justify-center overflow-hidden bg-slate-50">
+            <MessageAttachment
+              v-if="canLoadAttachment(f)"
+              :attachment="f.attachment"
+              :conversation-type="f.conversation.kind === 'dm' ? 'dm' : 'channel'"
+              :company-id="f.companyId"
+              :team-id="f.teamId"
+              :channel-id="f.conversation.id"
+              :message-id="f.messageId"
+            />
+            <img
+              v-else-if="f.type === 'image' && f.url"
+              :src="f.url"
+              :alt="f.name"
+              class="h-full w-full object-contain"
+              loading="lazy"
+            />
+            <span v-else class="text-6xl">{{ fileIcon[f.type] || '📄' }}</span>
           </div>
-          <audio v-if="f.type === 'audio'" controls :src="f.url" class="w-full"></audio>
           <div class="p-3 text-sm">
-            <div v-if="f.type !== 'audio'" class="mb-1 flex items-center justify-between">
+            <div class="mb-1 flex items-center justify-between gap-2">
               <h4 class="truncate font-bold text-slate-900">{{ f.name }}</h4>
-              <a :href="f.url" download class="text-indigo-500" aria-label="Download">⬇</a>
+              <a
+                v-if="f.url && !canLoadAttachment(f)"
+                :href="f.url"
+                :download="f.name"
+                class="shrink-0 text-indigo-500"
+                aria-label="Download"
+                >⬇</a
+              >
             </div>
             <p class="text-slate-700">Shared by {{ f.sharedBy }}</p>
             <p class="text-slate-600">
               {{ kindIcon[f.conversation.kind] }} {{ f.conversation.name }}
             </p>
+            <p v-if="f.createdAt" class="mt-1 text-xs text-slate-500">
+              {{ fmtDate(f.createdAt) }}
+            </p>
+            <button
+              type="button"
+              class="mt-2 text-xs font-semibold text-indigo-600 hover:underline"
+              @click="jumpToMessage({ id: f.messageId, conversation: f.conversation })"
+            >
+              Open message
+            </button>
           </div>
         </article>
       </div>

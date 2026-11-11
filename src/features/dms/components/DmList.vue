@@ -133,7 +133,10 @@ onBeforeUnmount(() => {
       </p>
 
       <p v-else-if="dms.error" class="px-4 py-1.5 text-sm text-slate-400">
-        <template v-if="dms.offline">Offline: showing saved messages.</template>
+        <template v-if="dms.offline">
+          Offline: showing saved messages.
+          <span class="block text-xs">{{ dms.error }}</span>
+        </template>
         <template v-else>{{ dms.error }}</template>
         <button class="underline" @click="dms.init()">Retry</button>
       </p>

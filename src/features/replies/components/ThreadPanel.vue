@@ -157,7 +157,25 @@ function onKeydown(e) {
             </span>
             <TimeAgo :value="message.createdAt" />
           </div>
-          <p class="whitespace-pre-wrap break-words text-[15px] leading-relaxed text-slate-700">{{ plain(message.text) }}</p>
+          <p
+            v-if="message.deleted"
+            class="whitespace-pre-wrap break-words text-[15px] italic leading-relaxed text-slate-500"
+            data-test="deleted-message"
+          >
+            (message deleted)
+          </p>
+          <template v-else>
+            <p
+              v-if="message.forwardedFrom"
+              class="text-xs italic text-slate-500"
+              data-test="forwarded-label"
+            >
+              (forwarded)
+            </p>
+            <p class="whitespace-pre-wrap break-words text-[15px] leading-relaxed text-slate-700">
+              {{ plain(message.text ?? message.content ?? message.body) }}
+            </p>
+          </template>
         </div>
       </div>
 
@@ -195,11 +213,27 @@ function onKeydown(e) {
               <TimeAgo :value="reply.createdAt" />
             </div>
             <p
-              class="whitespace-pre-wrap break-words text-[15px] leading-relaxed"
-              :class="reply.status === 'sending' ? 'text-slate-400' : 'text-slate-700'"
+              v-if="reply.deleted"
+              class="whitespace-pre-wrap break-words text-[15px] italic leading-relaxed text-slate-500"
+              data-test="deleted-message"
             >
-              {{ plain(reply.text) }}
+              (message deleted)
             </p>
+            <template v-else>
+              <p
+                v-if="reply.forwardedFrom"
+                class="text-xs italic text-slate-500"
+                data-test="forwarded-label"
+              >
+                (forwarded)
+              </p>
+              <p
+                class="whitespace-pre-wrap break-words text-[15px] leading-relaxed"
+                :class="reply.status === 'sending' ? 'text-slate-400' : 'text-slate-700'"
+              >
+                {{ plain(reply.text ?? reply.content ?? reply.body) }}
+              </p>
+            </template>
             <p v-if="reply.status === 'sending'" class="text-xs text-slate-400">Sending…</p>
             <p v-else-if="reply.status === 'failed'" class="text-xs text-red-600">
               Not sent{{ reply.error && reply.error !== 'Not sent' ? `: ${reply.error}` : '' }}

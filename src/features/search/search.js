@@ -1,4 +1,9 @@
 import { messageSegments } from '@/features/messages/message-utils'
+import {
+  messageAttachmentKind,
+  messageAttachmentUrl,
+  normalizeMessageAttachments,
+} from '@/features/messages/messageAttachments'
 
 // Mock search API. Replace each function body with the real call, e.g.
 // return api.get('/search/files', { params })  (central client in lib/api).
@@ -26,6 +31,7 @@ function readStoredChannelMessages() {
           sender: message.author || 'Unknown user',
           userId: String(message.authorId || ''),
           text: message.content ?? message.text ?? '',
+          attachments: normalizeMessageAttachments(message),
           conversation: {
             id: String(channelId),
             name: String(channelId),
@@ -148,12 +154,50 @@ export async function searchLinks(p) {
 }
 export async function searchFiles(p) {
   await wait()
-  const all = applyFilters(FILES, p, 'name')
+  const messageFiles = getSearchableMessages(p).flatMap((message) =>
+    normalizeMessageAttachments(message).map((attachment, index) => {
+      const name =
+        attachment.name ??
+        attachment.file_name ??
+        attachment.fileName ??
+        attachment.filename ??
+        attachment.original_name ??
+        attachment.originalName ??
+        'Attachment'
+      const kind = messageAttachmentKind(attachment)
+      const mimeType = String(
+        attachment.mime_type ?? attachment.mimeType ?? attachment.type ?? '',
+      ).toLowerCase()
+
+      return {
+        id: `${message.id}-${attachment.id ?? attachment.attachment_id ?? index}`,
+        messageId: message.id,
+        attachment,
+        name: String(name),
+        type:
+          kind === 'file' && mimeType.startsWith('audio/')
+            ? 'audio'
+            : kind === 'word'
+              ? 'doc'
+              : kind,
+        url: messageAttachmentUrl(attachment),
+        sharedBy: message.sender || 'Unknown user',
+        userId: message.userId || '',
+        createdAt: message.createdAt || '',
+        webhook: Boolean(message.webhook),
+        conversation: message.conversation,
+        companyId: p.companyId,
+        teamId: p.teamId,
+      }
+    }),
+  )
+  const all = applyFilters([...FILES, ...messageFiles], p, 'name')
   const size = p.pageSize || 6
   const page = p.page || 1
   return {
     items: all.slice((page - 1) * size, page * size),
     totalPages: Math.max(1, Math.ceil(all.length / size)),
+    total: all.length,
   }
 }
 export async function searchUsers() {

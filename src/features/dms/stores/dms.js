@@ -175,9 +175,9 @@ export function clearDmStorage() {
 // ===================== localStorage layer khatam =====================
 
 // Naye messages (dusre user ke) lane ke liye active conversation har itne ms baad check hoti hai
-const POLL_INTERVAL = 4000
+const POLL_INTERVAL = 30_000
 // Har itne polls baad conversations ki list bhi (naye DM / unread ke liye)
-const LIST_REFRESH_EVERY = 4 // ~16 sec: naye DM, band DMs ke naye messages, unread
+const LIST_REFRESH_EVERY = 4 // ~2 min: naye DM, band DMs ke naye messages, unread
 const NOTIFICATION_MS = 6000 // notification itni der baad khud band
 // localStorage: naya message aaya? "true" / "false" (DevTools > Application mein dikhta hai)
 export const NEW_MESSAGE_KEY = 'whistleit:dm-new-message'
@@ -186,6 +186,7 @@ const BACKGROUND_REFRESH_MS = 60_000 // band DMs ko kam se kam itni der mein ek 
 // Bhejne ki queue: network/429/5xx par itni dafa dobara koshish ("Sending…" hi dikhta hai)
 const MAX_SEND_RETRIES = 7
 const SEND_CONCURRENCY = 3 // ek waqt mein itne messages server ko (tarteeb se shuru)
+const SEND_DELAY_MS = 30_000
 const OLDER_LOADING_MAX_MS = 1500 // purane messages ka "Loading…" zyada se zyada 1.5 sec
 const MEMBERS_TIMEOUT_MS = 6000 // members ki koi request itni der se zyada na roke
 const LIKELY_PAGE_SIZE = 15 // itne (ya zyada) messages hon to shayad server par aur purane bhi hain
@@ -304,7 +305,22 @@ const isApiSendable = (message) =>
 function carryExtras(message, old) {
   if (!old) return message
   for (const key of EXTRA_KEYS) {
+    if (message.deleted && key === 'editedAt') continue
+    if (
+      key === 'reactions' &&
+      Array.isArray(message.reactions) &&
+      message.reactions.length === 0 &&
+      Array.isArray(old.reactions) &&
+      old.reactions.length > 0
+    ) {
+      message.reactions = old.reactions
+      continue
+    }
     if (message[key] == null && old[key] != null) message[key] = old[key]
+  }
+  if (message.deleted) {
+    delete message.editedAt
+    delete message.edited_at
   }
   return message
 }
@@ -822,7 +838,7 @@ export const useDmStore = defineStore('dms', () => {
         void flushOutbox()
       } catch (cause) {
         error.value = errorMessage(cause)
-        offline.value = conversations.value.length > 0 // cached data dikh raha hai
+        offline.value = conversations.value.length > 0 && isNetworkFailure(cause)
       } finally {
         loading.value = false
         initialization = null
@@ -938,6 +954,10 @@ export const useDmStore = defineStore('dms', () => {
       }
       if (item.type === 'reaction') m.reactions = previous?.reactions ?? m.reactions
       m.syncPending = true
+    }
+    if (m.deleted) {
+      delete m.editedAt
+      delete m.edited_at
     }
     return m
   }
@@ -1416,13 +1436,15 @@ export const useDmStore = defineStore('dms', () => {
     try {
       const voiceNoteId = voiceNoteIdOf(message)
       const messageText = String(message.text ?? '')
-      const body = message.isCode ? messageText : messageText.trim()
+      const body = bodyOf(message, message.isCode ? messageText : messageText.trim())
       const attachment = pendingAttachmentByMessage.get(localId)
       if (message.attachments?.length && !attachment) {
         throw new Error('The original attachment is no longer available. Please attach it again.')
       }
       // Backend ko message ka text "body" field mein chahiye
       let saved
+      if (isOffline()) throw new Error(NO_INTERNET)
+      await wait(SEND_DELAY_MS)
       for (let attempt = 0; ; attempt += 1) {
         try {
           if (isOffline()) throw new Error(NO_INTERNET)
@@ -1463,7 +1485,7 @@ export const useDmStore = defineStore('dms', () => {
       sentDuringFetch.get(conversationId)?.add(saved.id)
       pendingAttachmentByMessage.delete(localId)
       if (deletedWhileSending.delete(localId)) {
-        await dmApi.deleteMessage(companyId.value, conversationId, saved.id, bodyOf(saved))
+        await dmApi.deleteMessage(companyId.value, conversationId, saved.id)
         rememberDeleted(saved.id)
         return
       }
@@ -1785,13 +1807,23 @@ export const useDmStore = defineStore('dms', () => {
 
   async function syncDelete(conversationId, messageId) {
     pendingDeletes.add(messageId)
-    const body = findMessage(conversationId, messageId)?.message?.text ?? ''
     try {
-      await dmApi.deleteMessage(companyId.value, conversationId, messageId, body)
+      const response = await dmApi.deleteMessage(companyId.value, conversationId, messageId)
+      const found = findMessage(conversationId, messageId)
+      if (found) {
+        const senderId = found.message.from
+        if (response) Object.assign(found.message, response)
+        found.message.from = response?.from || senderId
+        found.message.deleted = true
+        found.message.is_deleted = true
+        delete found.message.editedAt
+        delete found.message.edited_at
+        persist(found.conversation)
+      }
       rememberDeleted(messageId)
     } catch (cause) {
       if (isRetryableAction(cause)) {
-        enqueue({ type: 'delete', conversationId, messageId, body })
+        enqueue({ type: 'delete', conversationId, messageId })
       } else {
         logRejected('DELETE direct-channel message', cause)
         revertDelete(conversationId, messageId)
@@ -2114,12 +2146,7 @@ export const useDmStore = defineStore('dms', () => {
       })
     }
     if (item.type === 'delete') {
-      const result = await dmApi.deleteMessage(
-        companyId.value,
-        item.conversationId,
-        item.messageId,
-        item.body ?? '',
-      )
+      const result = await dmApi.deleteMessage(companyId.value, item.conversationId, item.messageId)
       rememberDeleted(item.messageId)
       return result
     }
@@ -2466,7 +2493,7 @@ export const useDmStore = defineStore('dms', () => {
 
   // ---------- polling: dusre user ke naye / edit / delete messages ----------
   // Backend par abhi realtime (socket) nahi hai, isliye active conversation ko
-  // har POLL_INTERVAL ms baad GET .../messages se check karte hain
+  // har 30 sec baad GET .../messages se check karte hain
   let polling = null
   function pollOnce() {
     if (polling) return polling // pichla poll abhi chal raha: dhair na lage
@@ -2479,7 +2506,7 @@ export const useDmStore = defineStore('dms', () => {
         await init() // naye DM
         await checkOtherConversations() // band DMs ke naye messages -> unread + notification
       }
-      // tab chhupi ho to khuli chat har 4 sec nahi (sirf upar wala ~16 sec check)
+      // tab chhupi ho to khuli chat har 30 sec nahi (sirf upar wala ~2 min check)
       // bhejne ki queue chal rahi ho to GET ruk jaye (backend ki request limit na bhare)
       if (!hidden && activeId.value && !queuedCount.get(activeId.value)) {
         await fetchMessages(activeId.value, { silent: true })

@@ -138,6 +138,25 @@ function messagesFrom(data) {
   return listFrom(data) ?? listFrom(data?.messages) ?? listFrom(data?.direct_messages) ?? []
 }
 
+function directChannelsFrom(value, depth = 0) {
+  if (Array.isArray(value)) return value
+  if (!value || typeof value !== 'object' || depth >= 6) return null
+
+  for (const key of ['direct_channels', 'directChannels', 'channels', 'items']) {
+    if (value[key] !== undefined) {
+      const channels = directChannelsFrom(value[key], depth + 1)
+      if (channels) return channels
+    }
+  }
+  for (const key of ['data', 'result', 'payload']) {
+    if (value[key] !== undefined) {
+      const channels = directChannelsFrom(value[key], depth + 1)
+      if (channels) return channels
+    }
+  }
+  return null
+}
+
 // Paginated jawab se: aur purane messages hain? (Laravel paginate / meta / links / has_more)
 function paginationOf(data, page) {
   const d = data && typeof data === 'object' && !Array.isArray(data) ? data : {}
@@ -453,6 +472,47 @@ function booleanValue(value) {
   return value === true || value === 1 || ['1', 'true'].includes(String(value).toLowerCase())
 }
 
+function deletionFlag(...values) {
+  return values.some((value) => {
+    if (value === true || value === 1) return true
+    if (typeof value !== 'string') return false
+    return ['1', 'true', 'yes', 'deleted'].includes(value.trim().toLowerCase())
+  })
+}
+
+function isDeletedMessage(...records) {
+  return records.some((record) => {
+    if (!record || typeof record !== 'object') return false
+    const status = String(record.status ?? record.message_status ?? '').trim().toLowerCase()
+    const text = String(record.content ?? record.text ?? record.body ?? '')
+    const deletionTimestamp = [
+      record.deleted_at,
+      record.deletedAt,
+      record.deleted_on,
+      record.deletedOn,
+      record.deleted_at_utc,
+    ].some((value) => value != null && value !== '')
+    const deletedBy = [record.deleted_by, record.deletedBy].some(
+      (value) => value != null && value !== '' && value !== false && value !== 0 && value !== '0',
+    )
+    return (
+      deletionTimestamp ||
+      deletedBy ||
+      deletionFlag(
+        record.is_deleted,
+        record.isDeleted,
+        record.deleted,
+        record.is_delete,
+        record.isDelete,
+        record.message_deleted,
+        record.messageDeleted,
+      ) ||
+      ['deleted', 'soft_deleted', 'soft-deleted'].includes(status) ||
+      /^\s*(this message (was|has been) deleted|message deleted)\.?\s*$/i.test(text)
+    )
+  })
+}
+
 export function normalizeMessage(raw) {
   if (!raw || typeof raw !== 'object') raw = { id: raw }
   const message = raw.message ?? raw.direct_message ?? raw
@@ -505,7 +565,6 @@ export function normalizeMessage(raw) {
       markedForward,
       message,
     ),
-    text: normalizeMessageContent(message.content ?? message.text ?? message.body ?? ''),
     ...((message.isCode ?? message.is_code) != null
       ? { isCode: booleanValue(message.isCode ?? message.is_code) }
       : {}),
@@ -521,8 +580,15 @@ export function normalizeMessage(raw) {
   if (message.content != null && message.content !== '') normalized.content = message.content
   if (message.body != null && message.body !== '' && message.content == null) normalized.body = message.body
 
-  const editedAt = editedAtOf(message)
-  if (editedAt !== undefined) normalized.editedAt = editedAt
+  const deleted = isDeletedMessage(message, raw)
+  if (deleted) {
+    normalized.deleted = true
+    delete normalized.editedAt
+    delete normalized.edited_at
+  } else {
+    const editedAt = editedAtOf(message)
+    if (editedAt !== undefined) normalized.editedAt = editedAt
+  }
 
   const reactions = reactionsField(message)
   if (reactions && Object.keys(reactions).length) Object.assign(normalized, reactions)
@@ -546,18 +612,6 @@ export function normalizeMessage(raw) {
       message.forwardedFrom ||
       normalized.forwardedFrom ||
       'forwarded'
-  }
-
-  if (
-    message.deleted_at ||
-    message.deleted_by ||
-    [message.is_deleted, message.deleted].some(
-      (flag) => flag === true || flag === 1 || flag === '1' || flag === 'true',
-    ) ||
-    /^\s*(this message (was|has been) deleted|message deleted)\.?\s*$/i.test(rawText) ||
-    String(message.status ?? '').toLowerCase() === 'deleted'
-  ) {
-    normalized.deleted = true
   }
 
   const replyCount = replyCountOf(message)
@@ -832,11 +886,11 @@ export const dmApi = {
     requireCompany(companyId)
     return apiRequest(`/v1/${encode(companyId)}/direct-channels`).then((response) => {
       const data = unwrap(response)
-      const list = Array.isArray(data) ? data : (data?.direct_channels ?? data?.channels)
+      const list = directChannelsFrom(data)
       if (!Array.isArray(list)) {
         throw new Error('The direct channels response does not contain a conversation list.')
       }
-      return list.map((channel) => normalizeChannel(channel))
+      return list.map((channel) => normalizeChannel(channelFrom(channel)))
     })
   },
 
@@ -984,16 +1038,23 @@ export const dmApi = {
     }).then((response) => recentAtOf(unwrap(response)))
   },
 
-  // PATCH /v1/{company}/direct-channels/{channel}/messages/{message}
+  // DELETE /v1/{company}/direct-channels/{channel}/messages/{message}
   // Soft-delete so the other participant receives the deleted-message placeholder.
-  deleteMessage(companyId, channelId, messageId, body = '') {
+  deleteMessage(companyId, channelId, messageId) {
     requireCompany(companyId, 'delete a message')
     requireChannel(channelId)
     requireMessage(messageId)
     return dmRequest(`${messagesPath(companyId, channelId)}/${encode(messageId)}`, {
-      method: 'PATCH',
-      body: JSON.stringify({ body: String(body), is_deleted: true }),
-    }).then((response) => messageOrNull(unwrap(response)))
+      method: 'DELETE',
+    }).then((response) => {
+      const message = messageOrNull(unwrap(response))
+      if (!message) return null
+      message.deleted = true
+      message.is_deleted = true
+      delete message.editedAt
+      delete message.edited_at
+      return message
+    })
   },
 
   listPinnedMessages(companyId, channelId, messageId) {

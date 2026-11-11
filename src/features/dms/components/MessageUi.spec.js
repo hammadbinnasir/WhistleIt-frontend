@@ -158,6 +158,23 @@ describe('DmMessageItem', () => {
     wrapper.unmount()
   })
 
+  it('renders deleted messages as deleted and never labels them edited', () => {
+    const wrapper = setup({
+      id: 'm-deleted',
+      from: 'u2',
+      text: 'Old message text',
+      deleted: true,
+      editedAt: '2026-11-11T09:05:00Z',
+      createdAt: '',
+    })
+
+    expect(wrapper.get('[data-test="message-deleted"]').text()).toBe('(message deleted)')
+    expect(wrapper.text()).not.toContain('(edited)')
+    expect(wrapper.text()).not.toContain('Old message text')
+    expect(wrapper.find('[aria-label="More actions"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
   it('opens the thread from the replies line and the toolbar', async () => {
     const wrapper = setup({ id: 'm1', from: 'u2', text: 'Hi', createdAt: '', replyCount: 2 })
     await wrapper.get('[data-test="reply-summary"]').trigger('click')

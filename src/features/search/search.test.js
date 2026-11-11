@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   addMockMessage,
+  searchFiles,
   searchLinks,
   searchMessages,
   updateMockMessage,
@@ -34,6 +35,81 @@ describe('search date filters', () => {
 })
 
 describe('persisted channel messages', () => {
+  it('finds channel attachments by file name and returns image metadata', async () => {
+    const result = await searchFiles({
+      q: 'team-photo',
+      channelId: 'live-channel',
+      channelMessages: [
+        {
+          id: 'channel-file-message',
+          text: 'Here is the team photo',
+          sender: 'Channel User',
+          userId: 'user-5',
+          createdAt: '2026-11-05T10:00:00.000Z',
+          attachments: [
+            {
+              id: 'photo-1',
+              name: 'team-photo.jpg',
+              mime_type: 'image/jpeg',
+              file_url: 'https://files.example.com/team-photo.jpg',
+            },
+          ],
+          conversation: { id: 'live-channel', name: 'Live Channel', kind: 'public' },
+        },
+        {
+          id: 'other-channel-file-message',
+          attachments: [{ id: 'photo-2', name: 'team-photo.png', type: 'image/png' }],
+          conversation: { id: 'another-channel', name: 'Another Channel', kind: 'public' },
+        },
+      ],
+    })
+
+    expect(result.items).toMatchObject([
+      {
+        id: 'channel-file-message-photo-1',
+        messageId: 'channel-file-message',
+        name: 'team-photo.jpg',
+        type: 'image',
+        url: 'https://files.example.com/team-photo.jpg',
+        sharedBy: 'Channel User',
+        conversation: { id: 'live-channel', name: 'Live Channel' },
+      },
+    ])
+    expect(result.total).toBe(1)
+  })
+
+  it('finds file and image attachments in direct messages', async () => {
+    const result = await searchFiles({
+      q: 'invoice',
+      dmConversationId: 'dm-1',
+      dmMessages: [
+        {
+          id: 'dm-file-message',
+          sender: 'DM User',
+          userId: 'user-8',
+          attachments: [{ attachment_id: 'doc-1', file_name: 'invoice.pdf' }],
+          conversation: { id: 'dm-1', name: 'DM User', kind: 'dm' },
+        },
+        {
+          id: 'other-dm-file-message',
+          attachments: [{ id: 'doc-2', name: 'invoice.pdf' }],
+          conversation: { id: 'dm-2', name: 'Other User', kind: 'dm' },
+        },
+      ],
+    })
+
+    expect(result.items).toMatchObject([
+      {
+        messageId: 'dm-file-message',
+        name: 'invoice.pdf',
+        type: 'pdf',
+        sharedBy: 'DM User',
+        conversation: { id: 'dm-1', kind: 'dm' },
+      },
+    ])
+    expect(result.total).toBe(1)
+  })
+
   it('searches server-loaded messages supplied for the current channel', async () => {
     const result = await searchMessages({
       q: 'server loaded search',
