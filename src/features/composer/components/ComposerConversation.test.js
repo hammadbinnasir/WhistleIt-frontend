@@ -928,7 +928,9 @@ describe('composer conversation', () => {
     await vi.waitFor(() =>
       expect(wrapper.find('.composer-conversation__poll-card').exists()).toBe(true),
     )
-    await vi.waitFor(() => expect(wrapper.find('.composer-conversation__poll-card').exists()).toBe(true))
+    await vi.waitFor(() =>
+      expect(wrapper.find('.composer-conversation__poll-card').exists()).toBe(true),
+    )
     await vi.waitFor(() => expect(sendChannelMessage).toHaveBeenCalledOnce())
 
     expect(wrapper.get('.composer-conversation__poll-card').text()).toContain('Lunch vote')
@@ -969,16 +971,16 @@ describe('composer conversation', () => {
 
   it('sends and stores a created poll in the active DM conversation', async () => {
     const dms = useDmStore()
-    const sendDmMessage = vi.spyOn(dmApi, 'sendMessage').mockImplementation(
-      async (_companyId, channelId, payload) => ({
+    const sendDmMessage = vi
+      .spyOn(dmApi, 'sendMessage')
+      .mockImplementation(async (_companyId, channelId, payload) => ({
         id: 'dm-poll-message-server-id',
         from: dms.meId,
         text: payload.body,
         createdAt: new Date().toISOString(),
         poll_id: payload.poll_id,
         channelId,
-      }),
-    )
+      }))
     dms.conversations.push({
       id: 'dm-poll-channel',
       title: 'Poll test DM',
@@ -1169,9 +1171,7 @@ describe('composer conversation', () => {
       .find((button) => button.text().includes('View All Results'))
       .trigger('click')
 
-    await vi.waitFor(() =>
-      expect(document.body.textContent).toContain('i am good'),
-    )
+    await vi.waitFor(() => expect(document.body.textContent).toContain('i am good'))
     expect(document.body.textContent).toContain('Q1. age')
     expect(document.body.textContent).toContain('Total Responses: 1')
     expect(document.body.textContent).not.toContain('Unable to load poll results')
@@ -1420,6 +1420,47 @@ describe('composer conversation', () => {
     expect(wrapper.text()).not.toContain('Ends')
     expect(wrapper.text()).not.toContain('Participate')
     expect(wrapper.text()).not.toContain('View All Results')
+    wrapper.unmount()
+  })
+
+  it('allows closing a scheduled poll and persists its closed status to history', async () => {
+    const messages = useMessagesStore()
+    messages.messagesByChannel.general = [
+      {
+        id: 'scheduled-poll-message',
+        content: 'Future poll',
+        author: 'You',
+        mine: true,
+        createdAt: new Date().toISOString(),
+        poll: {
+          id: 'server-scheduled-poll',
+          title: 'Future poll',
+          status: 'Scheduled',
+          scheduleStart: '2099-11-11T12:00:00.000Z',
+          questions: [],
+        },
+      },
+    ]
+    const wrapper = mount(ComposerConversation, {
+      props: { conversationId: 'general', conversationType: 'channel' },
+    })
+
+    expect(wrapper.get('.composer-conversation__poll-card').text()).toContain('Scheduled')
+    const closeButton = wrapper
+      .findAll('.composer-conversation__poll-actions button')
+      .find((button) => button.text() === 'Close Poll')
+    expect(closeButton).toBeDefined()
+
+    await closeButton.trigger('click')
+    await vi.waitFor(() =>
+      expect(pollsApi.closePoll).toHaveBeenCalledWith('server-scheduled-poll', undefined),
+    )
+
+    expect(wrapper.get('.composer-conversation__poll-card').text()).toContain('Closed')
+    expect(useUiStore().polls).toContainEqual(
+      expect.objectContaining({ id: 'server-scheduled-poll', status: 'Closed' }),
+    )
+    expect(localStorage.getItem('whistleit:channel-poll-history')).toContain('"status":"Closed"')
     wrapper.unmount()
   })
 
@@ -2118,7 +2159,9 @@ describe('composer conversation', () => {
     await sendMessage(wrapper, 'Thread parent')
     const article = wrapper.get('article')
     await article.get('button[aria-label="More message actions"]').trigger('click')
-    await buttonWithText(article.get('.composer-conversation__menu'), 'View replies').trigger('click')
+    await buttonWithText(article.get('.composer-conversation__menu'), 'View replies').trigger(
+      'click',
+    )
 
     await vi.waitFor(() => expect(wrapper.text()).toContain('Existing reply'))
     expect(wrapper.get('.composer-conversation__thread-summary').text()).toContain('1 reply')
@@ -2214,7 +2257,9 @@ describe('composer conversation', () => {
         'server-message-1',
         { user_ids: ['u2'] },
       )
-      expect(dms.conversations.find((conversation) => conversation.id === 'c1').messages).toContainEqual(
+      expect(
+        dms.conversations.find((conversation) => conversation.id === 'c1').messages,
+      ).toContainEqual(
         expect.objectContaining({
           id: 'forwarded-dm-message',
           forwardedFrom: 'Aiman Iqbal in general',

@@ -98,7 +98,18 @@ export const useUiStore = defineStore('ui', () => {
     const titleMatch = content.match(/^Poll:\s*(.+)$/m)
     if (!titleMatch && !message.poll && message.poll_id == null && message.pollId == null) return
     const pollId = pollData.id ?? message.poll_id ?? message.pollId ?? message.id ?? Date.now()
+    const scheduleStart =
+      pollData.scheduleStart ?? pollData.schedule_start ?? pollData.start_at ?? ''
+    const scheduleClose =
+      pollData.scheduleClose ?? pollData.schedule_close ?? pollData.close_at ?? ''
+    const status = String(pollData.status ?? '').toLowerCase()
+    const closed =
+      pollData.closed === true ||
+      pollData.is_closed === true ||
+      ['closed', 'complete', 'completed'].includes(status)
+    const startsAt = Date.parse(scheduleStart)
     const poll = {
+      ...pollData,
       id: String(pollId),
       title:
         pollData.title ??
@@ -110,7 +121,13 @@ export const useUiStore = defineStore('ui', () => {
       content,
       conversation,
       createdAt: message.createdAt || new Date().toISOString(),
-      status: pollData.status ?? (pollData.closed || pollData.is_closed ? 'Closed' : 'Open'),
+      scheduleStart,
+      scheduleClose,
+      status: closed
+        ? 'Closed'
+        : status === 'scheduled' || (Number.isFinite(startsAt) && startsAt > Date.now())
+          ? 'Scheduled'
+          : 'Open',
       audience: pollData.audience ?? pollData.audience_responses ?? 'public',
     }
     const existingIndex = polls.value.findIndex(

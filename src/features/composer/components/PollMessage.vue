@@ -13,9 +13,7 @@ const props = defineProps({
   error: { type: String, default: '' },
 })
 const emit = defineEmits(['participate', 'results', 'close', 'export', 'publish'])
-const status = computed(() =>
-  props.closed ? 'Closed' : props.scheduled ? 'Scheduled' : 'Open',
-)
+const status = computed(() => (props.closed ? 'Closed' : props.scheduled ? 'Scheduled' : 'Open'))
 </script>
 
 <template>
@@ -44,12 +42,7 @@ const status = computed(() =>
       {{ error }}
     </p>
     <div class="composer-conversation__poll-actions">
-      <button
-        v-if="backendAvailable && alreadyVoted"
-        type="button"
-        class="is-done"
-        disabled
-      >
+      <button v-if="backendAvailable && alreadyVoted" type="button" class="is-done" disabled>
         You're Done
       </button>
       <button
@@ -69,7 +62,7 @@ const status = computed(() =>
         View All Results
       </button>
       <button
-        v-if="backendAvailable && canClose && !closed && !scheduled"
+        v-if="backendAvailable && canClose && !closed"
         type="button"
         :disabled="loading"
         @click="emit('close')"
