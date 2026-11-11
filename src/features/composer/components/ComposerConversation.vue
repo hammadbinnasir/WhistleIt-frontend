@@ -4,6 +4,7 @@ import EmojiPicker from 'vue3-emoji-picker'
 import 'vue3-emoji-picker/css'
 import { useChannelsStore } from '@/features/channels'
 import {
+  listMembers,
   pinMessage,
   sendChannelVoiceMessage,
   unpinMessage,
@@ -13,7 +14,7 @@ import VoiceNotePlayer from '@/features/media/VoiceNotePlayer.vue'
 import MessageAttachment from '@/features/messages/MessageAttachment.vue'
 import { getAuthUser, getAuthUserId } from '@/features/auth/session'
 import { useMessagesStore } from '@/features/messages/messages'
-import { useRepliesStore } from '@/features/messages/replies'
+import { useRepliesStore } from '@/features/dms/stores/Replies'
 import { useTeamsStore } from '@/stores/teams'
 import { forwardChannelMessage } from '@/features/messages/channelMessageService'
 import {
@@ -1231,19 +1232,41 @@ async function forwardMessage() {
       return
     }
 
-    const destinationPayload =
-      destination.type === 'channel'
-        ? { channel_ids: [destination.id] }
-        : {
-            user_ids: (
-              dms.conversations.find((item) => String(item.id) === String(destination.id))
-                ?.members ?? []
-            ).filter((memberId) => String(memberId) !== String(dms.meId)),
-          }
-    if (
-      destination.type === 'dm' &&
-      (!destinationPayload.user_ids || destinationPayload.user_ids.length === 0)
-    ) {
+    let destinationPayload
+    if (destination.type === 'channel') {
+      try {
+        let { items, total } = await listMembers(destination.id, { limit: 100 })
+        if (items.length < total) {
+          const completeList = await listMembers(destination.id, { limit: total })
+          items = completeList.items
+          total = completeList.total
+        }
+        const memberIds = [...new Set(items.map((member) => String(member.id)).filter(Boolean))]
+        if (memberIds.length < total) {
+          throw new Error('The destination channel member list is incomplete.')
+        }
+        const senderId = getAuthUserId() ?? dms.meId
+        destinationPayload = {
+          channel_ids: [destination.id],
+          user_ids: memberIds.filter((memberId) => String(memberId) !== String(senderId)),
+        }
+      } catch (error) {
+        ui.toast(
+          'Unable to forward message',
+          error?.message || 'Could not load the destination channel members.',
+          'error',
+        )
+        return
+      }
+    } else {
+      destinationPayload = {
+        user_ids: (
+          dms.conversations.find((item) => String(item.id) === String(destination.id))?.members ??
+          []
+        ).filter((memberId) => String(memberId) !== String(dms.meId)),
+      }
+    }
+    if (!destinationPayload.user_ids?.length) {
       ui.toast('Unable to forward message', 'The destination has no available recipients.', 'error')
       return
     }

@@ -158,10 +158,14 @@ describe('channel message service', () => {
   it('encodes message IDs and rejects missing forward destinations', async () => {
     await forwardChannelMessage('company/1', 'team 2', 'channel-3', 'message?4', {
       channel_ids: ['channel-8'],
+      user_ids: ['user-2'],
     })
     expect(http).toHaveBeenCalledWith(
       '/v1/company%2F1/teams/team%202/channels/channel-3/messages/message%3F4/forward',
-      { method: 'POST', body: { channel_ids: ['channel-8'] } },
+      {
+        method: 'POST',
+        body: { channel_ids: ['channel-8'], user_ids: ['user-2'] },
+      },
     )
 
     http.mockClear()
@@ -170,6 +174,18 @@ describe('channel message service', () => {
     ).resolves.toEqual({
       success: false,
       error: 'At least one forward destination is required.',
+    })
+    expect(http).not.toHaveBeenCalled()
+  })
+
+  it('rejects forwards without recipient user IDs', async () => {
+    await expect(
+      forwardChannelMessage('company-1', 'team-2', 'channel-3', 'message-4', {
+        channel_ids: ['channel-8'],
+      }),
+    ).resolves.toEqual({
+      success: false,
+      error: 'At least one forward recipient is required.',
     })
     expect(http).not.toHaveBeenCalled()
   })

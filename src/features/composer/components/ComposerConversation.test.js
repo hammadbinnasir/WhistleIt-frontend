@@ -23,6 +23,7 @@ import {
 
 const emojiPickerProps = vi.hoisted(() => vi.fn())
 const sendChannelVoiceMessageMock = vi.hoisted(() => vi.fn())
+const listMembersMock = vi.hoisted(() => vi.fn())
 const reminderApi = vi.hoisted(() => ({
   createReminder: vi.fn(),
   deleteReminder: vi.fn(),
@@ -87,6 +88,7 @@ vi.mock('vue3-emoji-picker', async () => {
 
 vi.mock('@/features/channels/api/channels.api', async (importOriginal) => ({
   ...(await importOriginal()),
+  listMembers: listMembersMock,
   pinMessage: pinApi.pinMessage,
   sendChannelVoiceMessage: sendChannelVoiceMessageMock,
   unpinMessage: pinApi.unpinMessage,
@@ -130,6 +132,7 @@ describe('composer conversation', () => {
     scheduledMessagesApi.getScheduledMessages.mockReset().mockResolvedValue([])
     pinApi.pinMessage.mockReset().mockResolvedValue({})
     pinApi.unpinMessage.mockReset().mockResolvedValue(undefined)
+    listMembersMock.mockReset().mockResolvedValue({ items: [], total: 0 })
     getChannelMessages.mockReset()
     getChannelMessages.mockResolvedValue({
       success: true,
@@ -1837,6 +1840,9 @@ describe('composer conversation', () => {
   it('forwards a message to another channel', async () => {
     const channels = useChannelsStore()
     channels.upsertChannel({ id: 'random', name: 'random', isArchived: false, isFavorite: false })
+    listMembersMock
+      .mockResolvedValueOnce({ items: [{ id: 'u1' }, { id: 'u2' }], total: 3 })
+      .mockResolvedValueOnce({ items: [{ id: 'u1' }, { id: 'u2' }, { id: 'u3' }], total: 3 })
     const messages = useMessagesStore()
     const wrapper = mount(ComposerConversation)
     await sendMessage(wrapper, 'Forward this update')
@@ -1854,9 +1860,11 @@ describe('composer conversation', () => {
         'team-1',
         'general',
         'server-message-1',
-        { channel_ids: ['random'] },
+        { channel_ids: ['random'], user_ids: ['u2', 'u3'] },
       )
     })
+    expect(listMembersMock).toHaveBeenNthCalledWith(1, 'random', { limit: 100 })
+    expect(listMembersMock).toHaveBeenNthCalledWith(2, 'random', { limit: 3 })
 
     await wrapper.setProps({ conversationId: 'random' })
     expect(messages.messagesFor('random')).toHaveLength(0)
@@ -1944,16 +1952,18 @@ describe('composer conversation', () => {
     wrapper.unmount()
   })
 
-  it('sends a forwarded message to a direct channel and displays its forwarded marker', async () => {
+  it('uses the channel forward API for a direct-message recipient', async () => {
     const dms = useDmStore()
     await dms.init()
-    vi.spyOn(dmApi, 'sendMessage').mockImplementation(async (_companyId, _channelId, payload) => ({
-      id: 'forwarded-dm-message',
-      from: 'u1',
-      text: payload.body,
-      forwardedFrom: payload.forwarded_from,
-      createdAt: '2026-11-05T10:00:00Z',
-    }))
+    vi.spyOn(dmApi, 'listMessages').mockResolvedValue([
+      {
+        id: 'forwarded-dm-message',
+        from: 'u1',
+        text: 'Forward this direct message',
+        forwardedFrom: 'Aiman Iqbal in general',
+        createdAt: '2026-11-05T10:00:00Z',
+      },
+    ])
 
     const wrapper = mount(ComposerConversation)
     await sendMessage(wrapper, 'Forward this direct message')
@@ -1962,15 +1972,13 @@ describe('composer conversation', () => {
     await buttonWithText(article.get('.composer-conversation__menu'), 'Forward').trigger('click')
     await wrapper.get('#forward-destination').setValue('c1')
     await wrapper.get('form.composer-conversation__forward-dialog').trigger('submit')
-
     await vi.waitFor(() => {
-      expect(dmApi.sendMessage).toHaveBeenCalledWith(
+      expect(forwardChannelMessage).toHaveBeenCalledWith(
         'company-1',
-        'c1',
-        {
-          body: 'Forward this direct message',
-          forwardedFrom: 'Aiman Iqbal in general',
-        },
+        'team-1',
+        'general',
+        'server-message-1',
+        { user_ids: ['u2'] },
       )
       expect(dms.conversations.find((conversation) => conversation.id === 'c1').messages).toContainEqual(
         expect.objectContaining({
@@ -1983,7 +1991,6 @@ describe('composer conversation', () => {
     await wrapper.setProps({ conversationType: 'dm', conversationId: 'c1' })
     await nextTick()
     expect(wrapper.text()).toContain('(forwarded)')
-    wrapper.unmount()
     wrapper.unmount()
   })
 

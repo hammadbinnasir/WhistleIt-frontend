@@ -221,6 +221,9 @@ export function forwardChannelMessage(companyId, teamId, channelId, messageId, p
     if (Object.keys(payload).length === 0) {
       throw new Error('At least one forward destination is required.')
     }
+    if (!Array.isArray(payload.user_ids) || payload.user_ids.length === 0) {
+      throw new Error('At least one forward recipient is required.')
+    }
     return [
       `${messagePath(companyId, teamId, channelId, messageId)}/forward`,
       { method: 'POST', body: payload },
