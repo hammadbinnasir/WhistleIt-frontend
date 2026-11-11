@@ -155,6 +155,19 @@ const deletedReminders = computed(() =>
     )
     .sort((a, b) => new Date(a.deletedAt || a.remindAt) - new Date(b.deletedAt || b.remindAt)),
 )
+const activeReminders = computed(() =>
+  reminderStore.sorted.filter(
+    (reminder) =>
+      String(reminder.conversationId ?? 'general') === channelId.value &&
+      (reminder.conversationType === 'dm' ? 'dm' : 'channel') ===
+        currentReminderConversationType.value,
+  ),
+)
+
+function remindersForMessage(message) {
+  const messageId = String(message.messageId ?? message.id)
+  return activeReminders.value.filter((reminder) => String(reminder.messageId) === messageId)
+}
 
 function retryConversationMessages() {
   if (conversation.value) void dms.loadMessages(conversation.value.id, { force: true })
@@ -1066,6 +1079,23 @@ function setReminder(message) {
   openMenuId.value = null
 }
 
+async function setOneHourReminder(message) {
+  try {
+    await reminderStore.add({
+      conversationId: channelId.value,
+      conversationName: conversationLabel.value,
+      conversationType: 'channel',
+      messageId: String(message.messageId ?? message.id),
+      text: message.text ?? message.content ?? '',
+      title: '',
+      remindAt: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
+    })
+    ui.toast('Reminder set', 'You will be reminded about this message in one hour.', 'success')
+  } catch (error) {
+    ui.toast('Unable to set reminder', error?.message || 'Please try again.', 'error')
+  }
+}
+
 function handleMessageClick(event, message) {
   if (
     userStore.state.preferences.leftClick !== 'menu' ||
@@ -1091,7 +1121,11 @@ function handleMessageDoubleClick(event, message) {
     !event.target.closest('button, a, input')
   ) {
     event.preventDefault()
-    setReminder(message)
+    if (props.conversationType === 'channel') {
+      void setOneHourReminder(message)
+    } else {
+      setReminder(message)
+    }
   }
 }
 
@@ -1728,6 +1762,25 @@ onBeforeUnmount(() => {
           <span v-else class="composer-conversation__avatar-spacer" aria-hidden="true"></span>
 
           <div class="composer-conversation__message-content">
+            <p
+              v-for="reminder in remindersForMessage(message)"
+              :key="`message-reminder-${reminder.id}`"
+              class="composer-conversation__message-reminder"
+            >
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.8"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+              >
+                <circle cx="12" cy="12" r="9" />
+                <path d="M12 7v5l3 2" />
+              </svg>
+              Remind you at {{ formatReminderDate(reminder.remindAt) }}
+            </p>
             <header
               v-if="!message.grouped || isPinned(message)"
               class="composer-conversation__message-heading"
@@ -2691,6 +2744,23 @@ onBeforeUnmount(() => {
 .composer-conversation__reminder-details {
   min-width: 0;
   flex: 1;
+}
+
+.composer-conversation__message-reminder {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 8px;
+  color: #252525;
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+.composer-conversation__message-reminder svg {
+  width: 20px;
+  height: 20px;
+  flex: 0 0 20px;
+  color: #ff334b;
 }
 
 .composer-conversation__reminder-heading {

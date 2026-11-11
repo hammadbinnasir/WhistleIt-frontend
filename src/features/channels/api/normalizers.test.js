@@ -75,6 +75,21 @@ describe('channel API normalizers', () => {
     })
   })
 
+  it('normalizes transferred channel admin IDs and admin flags', () => {
+    expect(
+      normalizeChannel({
+        id: 'channel-admin',
+        name: 'Admin channel',
+        admin_ids: ['user-1', { user_id: 'user-2' }],
+        is_admin: true,
+      }),
+    ).toMatchObject({
+      adminIds: ['user-1', 'user-2'],
+      isAdmin: true,
+      canManage: true,
+    })
+  })
+
   it('does not assume a channel without membership data is joined', () => {
     expect(normalizeChannel({ id: 'channel-4', name: 'Design Reviews' }).isMember).toBe(false)
     expect(normalizeChannel({ id: 'channel-5', name: 'Random', is_member: 'false' }).isMember).toBe(
