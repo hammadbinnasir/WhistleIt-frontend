@@ -6,6 +6,7 @@ import { useRouter } from 'vue-router'
 import { useUiStore } from '@/stores/ui'
 import { useChannelsStore } from '@/features/channels'
 import { useDmStore } from '@/features/dms/stores/dms'
+import { useMessagesStore } from '@/features/messages/messages'
 import { searchMessages, searchFiles, searchLinks, searchUsers } from './search'
 import { useMembersStore } from '@/stores/members'
 import { useTeamsStore } from '@/stores/teams'
@@ -14,6 +15,7 @@ import { useActiveChannel } from '@/features/channels/composables/useActiveChann
 const ui = useUiStore()
 const channelsStore = useChannelsStore()
 const dmsStore = useDmStore()
+const messagesStore = useMessagesStore()
 const membersStore = useMembersStore()
 const teamsStore = useTeamsStore()
 const router = useRouter()
@@ -59,7 +61,11 @@ const userQuery = ref('')
 const userOptions = ref([])
 const selectedUserOptions = computed(() =>
   draft.userIds
-    .map((id) => [...userOptions.value, ...workspaceUsers.value].find((user) => String(user.id) === String(id)))
+    .map((id) =>
+      [...userOptions.value, ...workspaceUsers.value].find(
+        (user) => String(user.id) === String(id),
+      ),
+    )
     .filter(Boolean),
 )
 const workspaceUsers = computed(() =>
@@ -120,13 +126,16 @@ let searchRequestId = 0
 
 function workspaceTeams(workspaceId) {
   return teamsStore.workspaces.length
-    ? teamsStore.teams.filter((team) => String(team.workspaceId ?? teamsStore.activeWorkspaceId) === String(workspaceId))
+    ? teamsStore.teams.filter(
+        (team) => String(team.workspaceId ?? teamsStore.activeWorkspaceId) === String(workspaceId),
+      )
     : []
 }
 
 function workspaceChannelCount(workspaceId) {
   return channelsStore.channels.filter(
-    (channel) => String(channel.workspaceId ?? teamsStore.activeWorkspaceId) === String(workspaceId),
+    (channel) =>
+      String(channel.workspaceId ?? teamsStore.activeWorkspaceId) === String(workspaceId),
   ).length
 }
 
@@ -134,12 +143,13 @@ function workspaceMemberCount(item) {
   if (Number(item.memberCount) > 0) return Number(item.memberCount)
   return String(item.id) === String(teamsStore.activeWorkspaceId)
     ? membersStore.members.length
-    : (Number(item.memberCount) || 0)
+    : Number(item.memberCount) || 0
 }
 
 function teamChannelCount(item) {
   return channelsStore.channels.filter(
-    (channel) => String(channel.teamId ?? channel.team?.id ?? teamsStore.activeTeamId) === String(item.id),
+    (channel) =>
+      String(channel.teamId ?? channel.team?.id ?? teamsStore.activeTeamId) === String(item.id),
   ).length
 }
 
@@ -159,16 +169,23 @@ function channelMatchesQuery(channel, needle) {
   if (channelName.includes(needle)) return true
   if (channel.kind === 'dm') {
     return (channel.messages || []).some((message) =>
-      String(message.text ?? message.content ?? '').toLowerCase().includes(needle),
+      String(message.text ?? message.content ?? '')
+        .toLowerCase()
+        .includes(needle),
     )
   }
 
   const messages = storedChannelMessagesForSearch()[String(channel.id)]
-  return Array.isArray(messages) &&
-    messages.some((message) =>
-      !message.deleted &&
-      String(message.content ?? message.text ?? '').toLowerCase().includes(needle),
+  return (
+    Array.isArray(messages) &&
+    messages.some(
+      (message) =>
+        !message.deleted &&
+        String(message.content ?? message.text ?? '')
+          .toLowerCase()
+          .includes(needle),
     )
+  )
 }
 
 function dmSearchMessages() {
@@ -198,21 +215,65 @@ function dmSearchMessages() {
   )
 }
 
+async function loadChannelMessagesForSearch(channelId) {
+  const key = String(channelId || '')
+  if (!key) return []
+
+  const firstPage = await messagesStore.fetchChannelMessages(key)
+  if (!firstPage.success) throw new Error(firstPage.error || 'Unable to load channel messages.')
+
+  let page = Number(messagesStore.currentPageByChannel[key]) || 1
+  while (messagesStore.hasMorePagesByChannel[key]) {
+    const nextPage = page + 1
+    const result = await messagesStore.fetchChannelMessages(key, {
+      page: nextPage,
+      olderPage: true,
+    })
+    if (!result.success) throw new Error(result.error || 'Unable to load channel messages.')
+
+    const currentPage = Number(messagesStore.currentPageByChannel[key]) || page
+    if (currentPage <= page) {
+      throw new Error('Unable to load the next page of channel messages.')
+    }
+    page = currentPage
+  }
+
+  const channel = channelsStore.getById(key)
+  return messagesStore
+    .messagesFor(key)
+    .filter((message) => !message.deleted && !message.scheduled)
+    .map((message) => ({
+      id: message.id,
+      text: message.content ?? message.text ?? '',
+      sender: message.author || 'Unknown user',
+      userId: String(message.authorId ?? message.from ?? ''),
+      createdAt: message.createdAt || '',
+      webhook: false,
+      conversation: {
+        id: key,
+        name: channel?.name || key,
+        kind: channel?.isPrivate ? 'private' : 'public',
+      },
+    }))
+}
+
 async function run() {
   const requestId = ++searchRequestId
   error.value = ''
   const needle = q.value.trim().toLowerCase()
   categoryCounts.Messages = 0
-  categoryCounts.Companies = directoryItems.value.filter((item) =>
-    item.category === 'Companies' &&
-    (!needle || `${item.name} ${item.detail}`.toLowerCase().includes(needle))
+  categoryCounts.Companies = directoryItems.value.filter(
+    (item) =>
+      item.category === 'Companies' &&
+      (!needle || `${item.name} ${item.detail}`.toLowerCase().includes(needle)),
   ).length
-  categoryCounts.Teams = directoryItems.value.filter((item) =>
-    item.category === 'Teams' &&
-    (!needle || `${item.name} ${item.detail}`.toLowerCase().includes(needle))
+  categoryCounts.Teams = directoryItems.value.filter(
+    (item) =>
+      item.category === 'Teams' &&
+      (!needle || `${item.name} ${item.detail}`.toLowerCase().includes(needle)),
   ).length
-  categoryCounts.Channels = directoryItems.value.filter((item) =>
-    item.category === 'Channels' && channelMatchesQuery(item, needle)
+  categoryCounts.Channels = directoryItems.value.filter(
+    (item) => item.category === 'Channels' && channelMatchesQuery(item, needle),
   ).length
   if (tab.value === 'text' && searchCategory.value !== 'Messages') {
     const matches = directoryItems.value.filter((item) => {
@@ -253,7 +314,12 @@ async function run() {
       dateMode: applied.dateMode,
       webhooks: applied.webhooks,
       dmMessages: dmSearchMessages(),
+      channelMessages:
+        scope.value === 'channel' && !props.dmConversationId
+          ? await loadChannelMessagesForSearch(props.channelId)
+          : [],
     }
+    if (requestId !== searchRequestId) return
     const fn = { text: searchMessages, file: searchFiles, link: searchLinks }[tab.value]
     const res = await fn(params)
     if (requestId !== searchRequestId) return
@@ -294,10 +360,7 @@ onMounted(async () => {
     await teamsStore.fetchTeams(teamsStore.activeWorkspaceId)
   }
   if (teamsStore.activeWorkspaceId && teamsStore.activeTeamId) {
-    await membersStore.fetchMembers(
-      teamsStore.activeWorkspaceId,
-      teamsStore.activeTeamId,
-    )
+    await membersStore.fetchMembers(teamsStore.activeWorkspaceId, teamsStore.activeTeamId)
     await refreshUserOptions()
   }
 })
@@ -332,10 +395,11 @@ async function refreshUserOptions(query = userQuery.value) {
       if (id && !users.some((item) => item.id === id)) users.push({ ...user, id })
       return users
     }, [])
-    userOptions.value = merged.filter((user) =>
-      !needle ||
-      `${user.name || ''}`.toLowerCase().includes(needle) ||
-      `${user.email || ''}`.toLowerCase().includes(needle)
+    userOptions.value = merged.filter(
+      (user) =>
+        !needle ||
+        `${user.name || ''}`.toLowerCase().includes(needle) ||
+        `${user.email || ''}`.toLowerCase().includes(needle),
     )
   } catch {
     userOptions.value = localUsers
@@ -346,6 +410,10 @@ async function refreshUserOptions(query = userQuery.value) {
 function toggleUser(id) {
   const i = draft.userIds.indexOf(id)
   i === -1 ? draft.userIds.push(id) : draft.userIds.splice(i, 1)
+}
+function toggleUserAndKeepListOpen(id) {
+  toggleUser(id)
+  userListOpen.value = true
 }
 function removeUser(id) {
   draft.userIds = draft.userIds.filter((userId) => String(userId) !== String(id))
@@ -658,7 +726,7 @@ const senderInitials = (name = '') =>
                     type="button"
                     class="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-slate-50"
                     @mousedown.prevent
-                    @click="toggleUser(u.id); userListOpen = true"
+                    @click="toggleUserAndKeepListOpen(u.id)"
                   >
                     <span
                       class="flex h-8 w-8 items-center justify-center rounded-full bg-indigo-100 text-xs font-bold text-indigo-700"
@@ -670,7 +738,8 @@ const senderInitials = (name = '') =>
                       v-if="draft.userIds.includes(u.id)"
                       class="ml-auto text-indigo-600"
                       aria-hidden="true"
-                    >✓</span>
+                      >✓</span
+                    >
                   </button>
                 </li>
               </ul>
@@ -980,17 +1049,26 @@ const senderInitials = (name = '') =>
         class="divide-y divide-slate-100"
       >
         <li v-for="item in items" :key="item.id" class="py-4">
-          <button type="button" class="w-full rounded-sm border border-slate-200 text-left hover:bg-slate-50" @click="openDirectoryItem(item)">
+          <button
+            type="button"
+            class="w-full rounded-sm border border-slate-200 text-left hover:bg-slate-50"
+            @click="openDirectoryItem(item)"
+          >
             <div class="flex items-start gap-3 p-4">
               <span
                 class="flex h-10 w-10 shrink-0 items-center justify-center rounded bg-orange-500 text-sm font-bold text-white"
-                :class="item.kind === 'dm' ? 'bg-indigo-100 text-indigo-700' : 'bg-orange-500 text-white'"
+                :class="
+                  item.kind === 'dm' ? 'bg-indigo-100 text-indigo-700' : 'bg-orange-500 text-white'
+                "
               >
                 {{ senderInitials(item.name).slice(0, 2) }}
               </span>
               <div class="min-w-0 flex-1">
                 <p class="font-bold text-slate-900">{{ item.name }}</p>
-                <p v-if="item.detail && item.detail !== 'Company' && item.detail !== 'Team'" class="mt-1 text-sm text-slate-500">
+                <p
+                  v-if="item.detail && item.detail !== 'Company' && item.detail !== 'Team'"
+                  class="mt-1 text-sm text-slate-500"
+                >
                   {{ item.detail }}
                 </p>
                 <div class="mt-3 flex flex-wrap gap-2 text-xs text-slate-600">
@@ -1006,7 +1084,10 @@ const senderInitials = (name = '') =>
                     </span>
                   </template>
                   <template v-else-if="item.category === 'Teams'">
-                    <span v-if="Number(item.memberCount) > 0" class="rounded border border-slate-300 px-2 py-1">
+                    <span
+                      v-if="Number(item.memberCount) > 0"
+                      class="rounded border border-slate-300 px-2 py-1"
+                    >
                       {{ item.memberCount }} Members
                     </span>
                     <span class="rounded border border-slate-300 px-2 py-1">
@@ -1014,11 +1095,19 @@ const senderInitials = (name = '') =>
                     </span>
                   </template>
                   <template v-else-if="item.category === 'Channels'">
-                    <span class="text-slate-500">{{ item.kind === 'dm' ? '👤' : '🌐' }} {{ item.detail }}</span>
-                    <span v-if="Number(item.memberCount) > 0" class="rounded border border-slate-300 px-2 py-1">
+                    <span class="text-slate-500"
+                      >{{ item.kind === 'dm' ? '👤' : '🌐' }} {{ item.detail }}</span
+                    >
+                    <span
+                      v-if="Number(item.memberCount) > 0"
+                      class="rounded border border-slate-300 px-2 py-1"
+                    >
                       {{ item.memberCount }} Members
                     </span>
-                    <span v-if="Number(item.unreadCount) > 0" class="rounded border border-slate-300 px-2 py-1">
+                    <span
+                      v-if="Number(item.unreadCount) > 0"
+                      class="rounded border border-slate-300 px-2 py-1"
+                    >
                       {{ item.unreadCount }} unread messages
                     </span>
                   </template>
