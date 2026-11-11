@@ -34,6 +34,76 @@ describe('search date filters', () => {
 })
 
 describe('persisted channel messages', () => {
+  it('searches server-loaded messages supplied for the current channel', async () => {
+    const result = await searchMessages({
+      q: 'server loaded search',
+      channelId: 'live-channel',
+      channelMessages: [
+        {
+          id: 'live-message',
+          text: 'Server loaded search result',
+          sender: 'Channel User',
+          userId: 'user-3',
+          createdAt: '2026-11-05T10:00:00.000Z',
+          conversation: {
+            id: 'live-channel',
+            name: 'Live Channel',
+            kind: 'public',
+          },
+        },
+        {
+          id: 'other-live-message',
+          text: 'Server loaded search result',
+          conversation: { id: 'another-channel', name: 'Another Channel', kind: 'public' },
+        },
+      ],
+    })
+
+    expect(result.items).toMatchObject([
+      {
+        id: 'live-message',
+        text: 'Server loaded search result',
+        conversation: { id: 'live-channel', name: 'Live Channel' },
+      },
+    ])
+  })
+
+  it('finds links in server-loaded messages for the current channel', async () => {
+    const result = await searchLinks({
+      q: 'release-notes',
+      channelId: 'live-channel',
+      channelMessages: [
+        {
+          id: 'live-channel-link',
+          text: 'Read https://example.com/release-notes',
+          sender: 'Channel User',
+          userId: 'user-4',
+          createdAt: '2026-11-05T10:00:00.000Z',
+          conversation: {
+            id: 'live-channel',
+            name: 'Live Channel',
+            kind: 'public',
+          },
+        },
+        {
+          id: 'other-channel-link',
+          text: 'https://example.com/release-notes',
+          conversation: { id: 'another-channel', name: 'Another Channel', kind: 'public' },
+        },
+      ],
+    })
+
+    expect(result.items).toMatchObject([
+      {
+        id: 'live-channel-link',
+        url: 'https://example.com/release-notes',
+        sender: 'Channel User',
+        conversation: { id: 'live-channel', name: 'Live Channel' },
+      },
+    ])
+    expect(result.total).toBe(1)
+  })
+
   it('finds channel messages after browser storage is restored', async () => {
     localStorage.setItem(
       'whistleit:channel-messages',
