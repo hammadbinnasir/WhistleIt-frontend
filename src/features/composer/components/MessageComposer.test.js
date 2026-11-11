@@ -639,6 +639,49 @@ describe('message composer', () => {
     expect(wrapper.emitted('send')).toEqual([[{ content: '', attachment }]])
   })
 
+  it('previews selected images and documents in removable attachment cards', async () => {
+    const originalCreateObjectURL = URL.createObjectURL
+    const originalRevokeObjectURL = URL.revokeObjectURL
+    URL.createObjectURL = vi.fn(() => 'blob:selected-image')
+    URL.revokeObjectURL = vi.fn()
+
+    try {
+      const imageWrapper = mount(MessageComposer)
+      const image = new File(['image'], 'men.jpg', { type: 'image/jpeg' })
+      const imageInput = imageWrapper.get('input[type="file"]').element
+      Object.defineProperty(imageInput, 'files', { configurable: true, value: [image] })
+      imageInput.dispatchEvent(new Event('change', { bubbles: true }))
+      await imageWrapper.vm.$nextTick()
+
+      expect(imageWrapper.get('.message-composer__attachment-thumbnail').attributes('src')).toBe(
+        'blob:selected-image',
+      )
+      expect(imageWrapper.get('.message-composer__attachment-name').text()).toBe('men.jpg')
+      await imageWrapper.get('button[aria-label="Remove men.jpg"]').trigger('click')
+      expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:selected-image')
+      expect(imageWrapper.find('.message-composer__attachment-preview').exists()).toBe(false)
+      imageWrapper.unmount()
+
+      const fileWrapper = mount(MessageComposer)
+      const documentFile = new File(['doc'], 'notes.docx', {
+        type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      })
+      const fileInput = fileWrapper.get('input[type="file"]').element
+      Object.defineProperty(fileInput, 'files', { configurable: true, value: [documentFile] })
+      fileInput.dispatchEvent(new Event('change', { bubbles: true }))
+      await fileWrapper.vm.$nextTick()
+
+      expect(fileWrapper.get('.message-composer__attachment-name').text()).toBe('notes.docx')
+      expect(fileWrapper.get('.message-composer__attachment-file-icon').exists()).toBe(true)
+      fileWrapper.unmount()
+    } finally {
+      if (originalCreateObjectURL) URL.createObjectURL = originalCreateObjectURL
+      else delete URL.createObjectURL
+      if (originalRevokeObjectURL) URL.revokeObjectURL = originalRevokeObjectURL
+      else delete URL.revokeObjectURL
+    }
+  })
+
   it('sends the message when Enter is pressed with the default preference', async () => {
     const wrapper = mount(MessageComposer)
     setEditorText(wrapper, 'Send with Enter')
@@ -697,6 +740,72 @@ describe('message composer', () => {
 
     expect(enter.defaultPrevented).toBe(true)
     expect(wrapper.emitted('send')).toEqual([[{ content: '', attachment }]])
+  })
+
+  it('returns focus to the editor after selecting a file so Enter sends it', async () => {
+    const wrapper = mount(MessageComposer, { attachTo: document.body })
+    const attachment = new File(['report'], 'report.pdf', { type: 'application/pdf' })
+    const fileInput = wrapper.get('input[type="file"]').element
+    Object.defineProperty(fileInput, 'files', { configurable: true, value: [attachment] })
+    fileInput.dispatchEvent(new Event('change', { bubbles: true }))
+    await wrapper.vm.$nextTick()
+
+    await vi.waitFor(() => {
+      expect(document.activeElement).toBe(wrapper.get('[contenteditable="true"]').element)
+    })
+    const enter = new KeyboardEvent('keydown', {
+      key: 'Enter',
+      bubbles: true,
+      cancelable: true,
+    })
+    wrapper.get('[contenteditable="true"]').element.dispatchEvent(enter)
+
+    expect(enter.defaultPrevented).toBe(true)
+    expect(wrapper.emitted('send')).toEqual([[{ content: '', attachment }]])
+    wrapper.unmount()
+  })
+
+  it('sends a voice note with Enter after recording upload completes', async () => {
+    stubVoiceRecorder()
+    const wrapper = mount(MessageComposer, { attachTo: document.body })
+
+    await wrapper.get('button[aria-label="Microphone"]').trigger('click')
+    await flushPromises()
+    document.querySelector('button.message-composer__recording-stop').click()
+    await flushPromises()
+
+    await vi.waitFor(() => {
+      expect(document.activeElement).toBe(wrapper.get('[contenteditable="true"]').element)
+    })
+    const enter = new KeyboardEvent('keydown', {
+      key: 'Enter',
+      bubbles: true,
+      cancelable: true,
+    })
+    wrapper.get('[contenteditable="true"]').element.dispatchEvent(enter)
+
+    expect(enter.defaultPrevented).toBe(true)
+    expect(wrapper.emitted('send')).toEqual([[{ content: '', voiceNoteId: 'voice-note-1' }]])
+    wrapper.unmount()
+  })
+
+  it('sends text and a selected attachment together with Enter', async () => {
+    const wrapper = mount(MessageComposer)
+    const attachment = new File(['report'], 'report.pdf', { type: 'application/pdf' })
+    const fileInput = wrapper.get('input[type="file"]').element
+    Object.defineProperty(fileInput, 'files', { configurable: true, value: [attachment] })
+    fileInput.dispatchEvent(new Event('change', { bubbles: true }))
+    setEditorText(wrapper, 'Please see attached')
+
+    const enter = new KeyboardEvent('keydown', {
+      key: 'Enter',
+      bubbles: true,
+      cancelable: true,
+    })
+    wrapper.get('[contenteditable="true"]').element.dispatchEvent(enter)
+
+    expect(enter.defaultPrevented).toBe(true)
+    expect(wrapper.emitted('send')).toEqual([[{ content: 'Please see attached', attachment }]])
   })
 
   it('keeps formatting options independently toggleable', async () => {

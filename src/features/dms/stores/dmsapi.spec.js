@@ -332,7 +332,10 @@ describe('dms store', () => {
 
     const sent = dms.sendMessage('c1', { content: 'Hello Muniba' })
     expect(sent).toMatchObject({ status: 'sending', text: 'Hello Muniba' })
-    expect(dmApi.sendMessage).toHaveBeenCalledWith('company-1', 'c1', { body: 'Hello Muniba' })
+    expect(dmApi.sendMessage).toHaveBeenCalledWith('company-1', 'c1', {
+      body: 'Hello Muniba',
+      is_important: false,
+    })
 
     await vi.waitFor(() => expect(dms.conversations[0].messages.at(-1).id).toBe('server-1'))
     expect(dms.conversations[0].messages.at(-1)).toMatchObject({ text: 'Hello Muniba', from: 'u1' })
@@ -351,6 +354,7 @@ describe('dms store', () => {
       expect(dmApi.sendMessage).toHaveBeenCalledWith('company-1', 'c1', {
         body: 'Forwarded text',
         forwardedFrom: 'Aiman in General',
+        is_important: false,
       }),
     )
     await vi.waitFor(() => expect(dms.conversations[0].messages.at(-1).id).toBe('server-1'))
@@ -360,6 +364,56 @@ describe('dms store', () => {
       forwardedFrom: 'Aiman in General',
     })
     expect(sent.status).toBe('sending')
+  })
+
+  it('sends direct-message attachments through the API with the text', async () => {
+    const dms = useDmStore()
+    await dms.init()
+    const attachment = new File(['report'], 'report.txt', { type: 'text/plain' })
+    const originalCreateObjectURL = URL.createObjectURL
+    URL.createObjectURL = vi.fn(() => 'blob:direct-message-preview')
+
+    try {
+      const sent = dms.sendMessage('c1', {
+        content: 'Please review this file',
+        attachment,
+      })
+
+      expect(sent).toMatchObject({
+        text: 'Please review this file',
+        attachments: [
+          {
+            name: 'report.txt',
+            size: 6,
+            type: 'text/plain',
+            localPreviewUrl: 'blob:direct-message-preview',
+          },
+        ],
+        status: 'sending',
+      })
+      await vi.waitFor(() => {
+        expect(dmApi.sendMessage).toHaveBeenCalledWith('company-1', 'c1', {
+          body: 'Please review this file',
+          attachment,
+          is_important: false,
+        })
+      })
+      await vi.waitFor(() => expect(dms.conversations[0].messages.at(-1).id).toBe('server-1'))
+      expect(dms.conversations[0].messages.at(-1).attachments).toEqual([
+        {
+          name: 'report.txt',
+          size: 6,
+          type: 'text/plain',
+          localPreviewUrl: 'blob:direct-message-preview',
+        },
+      ])
+      expect(localStorage.getItem('whistleit:dm-messages')).not.toContain(
+        'blob:direct-message-preview',
+      )
+    } finally {
+      if (originalCreateObjectURL) URL.createObjectURL = originalCreateObjectURL
+      else delete URL.createObjectURL
+    }
   })
 
   it('marks a message failed when POST fails and retries it', async () => {
@@ -431,7 +485,12 @@ describe('dms store', () => {
   })
 
   it('refreshes one message with GET single message', async () => {
-    dmApi.getMessage.mockResolvedValue({ id: 'm1', from: 'u2', text: 'Received (edited)', createdAt: '' })
+    dmApi.getMessage.mockResolvedValue({
+      id: 'm1',
+      from: 'u2',
+      text: 'Received (edited)',
+      createdAt: '',
+    })
     const dms = useDmStore()
     await dms.init()
 
@@ -455,7 +514,9 @@ describe('dms store', () => {
     ])
     await dms.pollOnce()
     expect(dms.conversations[0].messages.map((m) => m.text)).toEqual(['Received', 'New from u2'])
-    expect(JSON.parse(localStorage.getItem('whistleit:dm-messages'))['company-1'].c1).toHaveLength(2)
+    expect(JSON.parse(localStorage.getItem('whistleit:dm-messages'))['company-1'].c1).toHaveLength(
+      2,
+    )
 
     // usne edit kiya
     dmApi.listMessages.mockResolvedValue([
@@ -502,14 +563,19 @@ describe('dms store', () => {
     // purani list (naya message is mein nahi)
     answerPoll([{ id: 'm1', from: 'u2', text: 'Received', createdAt: '' }])
     await polling
-    expect(dms.conversations[0].messages.map((m) => m.text)).toEqual(['Received', 'Sent during poll'])
+    expect(dms.conversations[0].messages.map((m) => m.text)).toEqual([
+      'Received',
+      'Sent during poll',
+    ])
   })
 
   it('does not bring back a message that is being deleted during a poll', async () => {
     dmApi.listDirectChannels.mockResolvedValue([
       makeConversation('c1', 'u2', [{ id: 'm1', from: 'u1', text: 'Delete me', createdAt: '' }]),
     ])
-    dmApi.listMessages.mockResolvedValue([{ id: 'm1', from: 'u1', text: 'Delete me', createdAt: '' }])
+    dmApi.listMessages.mockResolvedValue([
+      { id: 'm1', from: 'u1', text: 'Delete me', createdAt: '' },
+    ])
     let finishDelete
     dmApi.deleteMessage.mockImplementation(() => new Promise((resolve) => (finishDelete = resolve)))
     const dms = useDmStore()

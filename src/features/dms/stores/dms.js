@@ -72,7 +72,18 @@ function readLocal() {
 function saveLocal(companyId, conversationId, messages) {
   const all = readLocal()
   all[companyId] = all[companyId] ?? {}
-  all[companyId][conversationId] = messages
+  all[companyId][conversationId] = messages.map((message) => ({
+    ...message,
+    ...(message.attachments?.length
+      ? {
+          attachments: message.attachments.map((attachment) => {
+            const persistedAttachment = { ...attachment }
+            delete persistedAttachment.localPreviewUrl
+            return persistedAttachment
+          }),
+        }
+      : {}),
+  }))
   writeJson(STORAGE_KEY, all)
 }
 function readConversationCache(companyId) {
@@ -678,6 +689,16 @@ export const useDmStore = defineStore('dms', () => {
 
       sentDuringFetch.get(conversationId)?.add(saved.id)
       pendingAttachmentByMessage.delete(localId)
+      const localAttachment = message.attachments?.[0]
+      const responseAttachments = saved.attachments ?? []
+      const attachments = responseAttachments.length
+        ? responseAttachments.map((item) => ({
+            ...item,
+            ...(localAttachment?.localPreviewUrl
+              ? { localPreviewUrl: localAttachment.localPreviewUrl }
+              : {}),
+          }))
+        : message.attachments
       const index = conversation.messages.findIndex((m) => m.id === localId)
       if (index === -1) return // user ne beech mein delete kar diya
       const existingIndex = conversation.messages.findIndex(
@@ -697,6 +718,7 @@ export const useDmStore = defineStore('dms', () => {
           ...(message.forwardedFrom ? { forwardedFrom: message.forwardedFrom } : {}),
           ...(message.important ? { important: true } : {}),
           ...(message.poll ? { poll: message.poll, poll_id: message.poll_id } : {}),
+          ...(attachments?.length ? { attachments } : {}),
           ...(voiceNoteId || saved.voiceNoteId || existing.voiceNoteId
             ? {
                 voiceNoteId: String(voiceNoteId || saved.voiceNoteId || existing.voiceNoteId),
@@ -712,7 +734,7 @@ export const useDmStore = defineStore('dms', () => {
           ...(message.replyTo ? { replyTo: message.replyTo } : {}),
           ...(message.forwardedFrom ? { forwardedFrom: message.forwardedFrom } : {}),
           ...(message.important ? { important: true } : {}),
-          ...(message.attachments?.length ? { attachments: message.attachments } : {}),
+          ...(attachments?.length ? { attachments } : {}),
           ...(voiceNoteId || saved.voiceNoteId
             ? { voiceNoteId: String(voiceNoteId || saved.voiceNoteId) }
             : {}),
@@ -755,6 +777,9 @@ export const useDmStore = defineStore('dms', () => {
             name: attachment.name,
             size: attachment.size,
             type: attachment.type,
+            ...(typeof URL.createObjectURL === 'function'
+              ? { localPreviewUrl: URL.createObjectURL(attachment) }
+              : {}),
           },
         ]
       : []

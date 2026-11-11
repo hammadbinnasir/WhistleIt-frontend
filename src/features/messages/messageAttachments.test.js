@@ -16,8 +16,11 @@ describe('message attachment helpers', () => {
     expect(normalizeMessageAttachments({})).toEqual([])
   })
 
-  it('resolves backend storage paths through the Laravel public storage URL', () => {
+  it('resolves a backend storage path to the server file URL', () => {
     expect(messageAttachmentUrl({ path: 'messages/channel-1/photo.jpg' })).toBe(
+      'http://10.0.105.90:8000/storage/messages/channel-1/photo.jpg',
+    )
+    expect(messageAttachmentUrl({ path: 'storage/messages/channel-1/photo.jpg' })).toBe(
       'http://10.0.105.90:8000/storage/messages/channel-1/photo.jpg',
     )
   })
@@ -25,6 +28,12 @@ describe('message attachment helpers', () => {
   it('prefers a backend-provided file URL', () => {
     expect(messageAttachmentUrl({ path: 'ignored.jpg', file_url: '/files/photo.jpg' })).toBe(
       'http://10.0.105.90:8000/files/photo.jpg',
+    )
+  })
+
+  it('accepts a backend-provided attachment URL', () => {
+    expect(messageAttachmentUrl({ attachment_url: 'https://cdn.example.com/photo.jpg' })).toBe(
+      'https://cdn.example.com/photo.jpg',
     )
   })
 

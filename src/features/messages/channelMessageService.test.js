@@ -68,6 +68,7 @@ describe('channel message service', () => {
     await sendChannelMessage('company-1', 'team-2', 'channel-3', {
       content: 'Please review this file',
       attachment,
+      is_important: false,
     })
 
     const [, options] = http.mock.calls[0]
@@ -77,6 +78,7 @@ describe('channel message service', () => {
     expect(options.body.get('message')).toBeNull()
     expect(options.body.get('attachment')).toBeInstanceOf(File)
     expect(options.body.get('attachment').name).toBe('report.txt')
+    expect(options.body.get('is_important')).toBe('0')
   })
 
   it('sends an attachment without adding an empty message field', async () => {
