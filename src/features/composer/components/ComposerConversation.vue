@@ -2343,6 +2343,8 @@ async function closePoll(pollId) {
     await pollApi.closePoll(pollId)
     closedPolls.value = new Set([...closedPolls.value, pollId])
     message.poll.closed = true
+    message.poll.status = 'Closed'
+    ui.addPoll(message, conversationMeta.value)
   } catch (error) {
     ui.toast('Unable to close poll', error.message || 'The poll could not be closed.', 'error')
   }

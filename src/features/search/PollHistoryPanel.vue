@@ -18,6 +18,28 @@ let requestVersion = 0
 
 const channelId = computed(() => String(props.channelId || ''))
 const channelName = computed(() => channels.getById(channelId.value)?.name || 'this channel')
+function pollStatus(poll, message = {}) {
+  const status = String(poll.status ?? message.poll_status ?? '').toLowerCase()
+  const closeAt = Date.parse(
+    poll.scheduleClose ?? poll.schedule_close ?? poll.close_at ?? message.close_at ?? '',
+  )
+  const startAt = Date.parse(
+    poll.scheduleStart ?? poll.schedule_start ?? poll.start_at ?? message.start_at ?? '',
+  )
+  const closed =
+    poll.closed === true ||
+    poll.is_closed === true ||
+    message.poll_closed === true ||
+    message.is_poll_closed === true ||
+    ['closed', 'complete', 'completed'].includes(status) ||
+    (Number.isFinite(closeAt) && closeAt <= Date.now())
+  if (closed) return 'Closed'
+  if (status === 'scheduled' || (Number.isFinite(startAt) && startAt > Date.now())) {
+    return 'Scheduled'
+  }
+  return 'Open'
+}
+
 const livePolls = computed(() => {
   const channelMessagePolls = messages
     .messagesFor(channelId.value)
@@ -42,11 +64,7 @@ const livePolls = computed(() => {
           message.pollTitle ??
           legacyTitle ??
           content,
-        status:
-          poll.status ??
-          (poll.closed || poll.is_closed || message.poll_closed || message.is_poll_closed
-            ? 'Closed'
-            : 'Open'),
+        status: pollStatus(poll, message),
         audience:
           poll.audience ?? poll.audience_responses ?? message.audience_responses ?? 'public',
         createdAt: message.createdAt ?? poll.createdAt ?? poll.created_at ?? '',
@@ -54,10 +72,12 @@ const livePolls = computed(() => {
       }
     })
     .reverse()
-  const channelUiPolls = ui.polls.filter(
-    (poll) =>
-      String(poll.conversation?.id ?? '') === channelId.value && poll.conversation?.kind !== 'dm',
-  )
+  const channelUiPolls = ui.polls
+    .filter(
+      (poll) =>
+        String(poll.conversation?.id ?? '') === channelId.value && poll.conversation?.kind !== 'dm',
+    )
+    .map((poll) => ({ ...poll, status: pollStatus(poll) }))
   const byId = new Map(channelMessagePolls.map((poll) => [poll.id, poll]))
   for (const poll of channelUiPolls) byId.set(String(poll.id), poll)
   return [...byId.values()]

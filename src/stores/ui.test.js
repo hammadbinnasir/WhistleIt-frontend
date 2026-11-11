@@ -89,6 +89,35 @@ describe('ui store', () => {
     )
   })
 
+  it('persists scheduled poll status and updates it to closed', () => {
+    const ui = useUiStore()
+    const conversation = { id: 'channel-1', name: 'Research', kind: 'public' }
+    const scheduledPoll = {
+      id: 'message-1',
+      content: 'Future poll',
+      poll: {
+        id: 'server-poll-1',
+        title: 'Future poll',
+        scheduleStart: '2099-11-11T12:00:00.000Z',
+      },
+    }
+
+    ui.addPoll(scheduledPoll, conversation)
+    expect(ui.polls[0].status).toBe('Scheduled')
+
+    ui.addPoll(
+      { ...scheduledPoll, poll: { ...scheduledPoll.poll, closed: true, status: 'Closed' } },
+      conversation,
+    )
+    expect(ui.polls[0].status).toBe('Closed')
+    expect(
+      JSON.parse(localStorage.getItem('whistleit:channel-poll-history'))['channel-1'][0].status,
+    ).toBe('Closed')
+
+    setActivePinia(createPinia())
+    expect(useUiStore().polls[0].status).toBe('Closed')
+  })
+
   it('opens and closes search panels and channel settings', () => {
     const ui = useUiStore()
 

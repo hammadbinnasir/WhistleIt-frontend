@@ -120,4 +120,28 @@ describe('poll history panel', () => {
     expect(refreshedPanel.text()).not.toContain('No polls created')
     refreshedPanel.unmount()
   })
+
+  it('shows scheduled poll status in channel history', async () => {
+    const channelId = 'scheduled-channel'
+    useChannelsStore().upsertChannel({ id: channelId, name: 'Scheduled Channel' })
+    messageStore.messagesFor.mockReturnValue([
+      {
+        id: 'scheduled-message',
+        poll_id: 'server-scheduled-poll',
+        content: 'Future poll',
+        poll: {
+          id: 'server-scheduled-poll',
+          title: 'Future poll',
+          scheduleStart: '2099-11-11T12:00:00.000Z',
+        },
+        createdAt: '2026-11-11T10:00:00.000Z',
+      },
+    ])
+
+    const wrapper = mount(PollHistoryPanel, { props: { channelId } })
+    await vi.waitFor(() => expect(wrapper.text()).toContain('Future poll'))
+
+    expect(wrapper.text()).toContain('Scheduled')
+    wrapper.unmount()
+  })
 })
