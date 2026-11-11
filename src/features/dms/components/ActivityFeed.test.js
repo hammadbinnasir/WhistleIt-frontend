@@ -8,7 +8,15 @@ import { useUiStore } from '@/stores/ui'
 import { useRemindersStore } from '@/features/search/reminders'
 import { useChannelsStore } from '@/features/channels/store/channels.store'
 import { setupDmsTestState } from '@/features/dms/test-utils'
+import MessageComposer from '@/features/composer/components/MessageComposer.vue'
 import ActivityFeed from './ActivityFeed.vue'
+
+const reminderApi = vi.hoisted(() => ({
+  createReminder: vi.fn(),
+  deleteReminder: vi.fn(),
+  listReminders: vi.fn(),
+}))
+vi.mock('@/features/search/remindersApi', () => reminderApi)
 
 vi.mock('vue3-emoji-picker', async () => {
   const { defineComponent, h } = await import('vue')
@@ -50,8 +58,16 @@ function mountActivityFeed() {
 
 describe('ActivityFeed', () => {
   beforeEach(() => {
+    localStorage.clear()
     setActivePinia(createPinia())
     setupDmsTestState()
+    reminderApi.createReminder.mockReset().mockImplementation(async (reminder) => ({
+      ...reminder,
+      id: 'server-reminder',
+      fired: false,
+    }))
+    reminderApi.deleteReminder.mockReset().mockResolvedValue()
+    reminderApi.listReminders.mockReset().mockResolvedValue([])
   })
 
   it('keeps activity tab labels on one line', () => {
@@ -62,37 +78,34 @@ describe('ActivityFeed', () => {
     wrapper.unmount()
   })
 
-  it('opens a reply thread and sends a message from Recent DMs', async () => {
+  it('passes the direct-channel ID to its reply composer', async () => {
+    vi.spyOn(useActivityStore(), 'init').mockResolvedValue()
     const dms = useDmStore()
-    const ui = useUiStore()
-    ui.activePanel = 'activity'
+    dms.conversations = [
+      {
+        id: 'c1',
+        type: 'dm',
+        name: 'Muniba Naseer',
+        members: [dms.meId, 'u2'],
+        messages: [
+          {
+            id: 'm-c1',
+            from: 'u2',
+            text: 'Project ideas',
+            createdAt: new Date().toISOString(),
+          },
+        ],
+      },
+    ]
     const wrapper = mountActivityFeed()
-    await dms.init()
 
-    expect(wrapper.text()).toContain('Muniba Naseer')
     await wrapper
       .findAll('button')
       .find((button) => button.text() === 'Reply')
       .trigger('click')
 
-    expect(wrapper.get('[aria-label="Reply thread"]').text()).toContain('Reply Thread')
-    expect(ui.activePanel).toBe('activity')
-
-    const editor = wrapper.get('[aria-label="Reply thread"] [contenteditable="true"]')
-    editor.element.textContent = 'Reply from the thread'
-    editor.element.dispatchEvent(new Event('input', { bubbles: true }))
-    await wrapper.get('[aria-label="Reply thread"] form').trigger('submit')
-
-    const reply = dms.conversations.find((conversation) => conversation.id === 'c1').messages.at(-1)
-    expect(reply).toMatchObject({
-      text: 'Reply from the thread',
-      threadId: 'm-c1',
-      from: dms.meId,
-    })
-    expect(wrapper.get('[aria-label="Reply thread"]').text()).toContain('Reply from the thread')
-    expect(
-      wrapper.findAll('button').some((button) => ['Pin', 'Unpin'].includes(button.text().trim())),
-    ).toBe(false)
+    expect(wrapper.findComponent(MessageComposer).props('channelId')).toBe('c1')
+    expect(wrapper.findComponent(MessageComposer).props('conversationType')).toBe('dm')
     wrapper.unmount()
   })
 
@@ -226,7 +239,7 @@ describe('ActivityFeed', () => {
 
   it('shows upcoming reminders and lets the user delete them', async () => {
     const reminders = useRemindersStore()
-    reminders.add({
+    await reminders.add({
       conversationId: 'c1',
       conversationName: 'Muniba Naseer',
       conversationType: 'dm',

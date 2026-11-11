@@ -3,9 +3,15 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import EmojiPicker from 'vue3-emoji-picker'
 import 'vue3-emoji-picker/css'
 import { useChannelsStore } from '@/features/channels'
-import { pinMessage, unpinMessage } from '@/features/channels/api/channels.api'
+import {
+  pinMessage,
+  sendChannelVoiceMessage,
+  unpinMessage,
+} from '@/features/channels/api/channels.api'
 import { useDmStore } from '@/features/dms/stores/dms'
-import { getAuthUser } from '@/features/auth/session'
+import VoiceNotePlayer from '@/features/media/VoiceNotePlayer.vue'
+import MessageAttachment from '@/features/messages/MessageAttachment.vue'
+import { getAuthUser, getAuthUserId } from '@/features/auth/session'
 import { useMessagesStore } from '@/features/messages/messages'
 import {
   createLinkPreview,
@@ -16,14 +22,17 @@ import {
   timeLabel,
 } from '@/features/messages/message-utils'
 import { useUiStore } from '@/stores/ui'
+import { useTeamsStore } from '@/stores/teams'
 import { useUserStore } from '@/features/account/composables/useUserStore'
+import { useRemindersStore } from '@/features/search/reminders'
 import { addMockMessage, removeMockMessage, updateMockMessage } from '@/features/search/search'
 import SetReminderModal from '@/features/search/SetReminderModal.vue'
-import {
-  createScheduledMessage,
-  getScheduledMessages,
-} from '../api/scheduledMessagesApi'
+import systemProfile from '@/assets/system-profile.webp'
+import { createScheduledMessage, getScheduledMessages } from '../api/scheduledMessagesApi'
+import { usePoll } from '../composables/usePoll'
 import MessageComposer from './MessageComposer.vue'
+import PollMessage from './PollMessage.vue'
+import { normalizeMessageText } from '../messageText'
 import pinChatIcon from '@/assets/pin-chat.svg'
 import unpinChatIcon from '@/assets/unpin-chat.svg'
 
@@ -33,11 +42,15 @@ const props = defineProps({
 })
 
 const dms = useDmStore()
+const pollApi = usePoll()
 const channelsStore = useChannelsStore()
+const teamsStore = useTeamsStore()
 const ui = useUiStore()
 const userStore = useUserStore()
 const messageStore = useMessagesStore()
+const reminderStore = useRemindersStore()
 const messagesContainer = ref(null)
+const messageComposer = ref(null)
 const editingId = ref(null)
 const editDraft = ref('')
 const replyTo = ref(null)
@@ -47,6 +60,7 @@ const scheduleDelete = ref(false)
 const scheduledDeleteAt = ref('')
 const openReactionId = ref(null)
 const reminderTarget = ref(null)
+const snoozeTarget = ref(null)
 const forwardTarget = ref(null)
 const forwardDestinationId = ref('')
 const dmVisibleCount = ref(20)
@@ -73,11 +87,74 @@ const conversation = computed(() => {
   return dms.conversations.find((item) => String(item.id) === String(props.conversationId)) || null
 })
 const conversationLabel = computed(() =>
-  conversation.value ? dms.titleOf(conversation.value) : channelId.value.replaceAll('-', ' '),
+  conversation.value
+    ? dms.titleOf(conversation.value)
+    : channelsStore.getById(channelId.value)?.name || channelId.value.replaceAll('-', ' '),
 )
+const canSendMessages = computed(() => {
+  if (props.conversationType === 'dm') return true
+
+  const channel = channelsStore.getById(channelId.value)
+  if (!channel) return !channelsStore.loaded
+
+  const userId = getAuthUserId() ?? dms.meId
+  const isChannelAdmin =
+    teamsStore.isAdmin ||
+    channel.canManage ||
+    channel.isOwner ||
+    (userId != null && String(channel.createdById ?? channel.createdBy) === String(userId))
+  const isAllowedSender =
+    userId != null &&
+    (channel.allowedSenderIds || []).some((sender) => {
+      const senderId =
+        sender && typeof sender === 'object'
+          ? (sender.id ?? sender.user_id ?? sender.userId ?? sender.member_id)
+          : sender
+      return senderId != null && String(senderId) === String(userId)
+    })
+  const usesSelectedMembersPermission = ['selected_members', 'specific'].includes(
+    channel.messagePermission,
+  )
+
+  if (usesSelectedMembersPermission && isAllowedSender) return true
+  if (channel.isMember === false) return false
+
+  if (channel.messagePermission === 'creator_only' || channel.messagePermission === 'admins') {
+    return isChannelAdmin
+  }
+  if (usesSelectedMembersPermission) {
+    return isChannelAdmin || isAllowedSender
+  }
+  return channel.isMember !== false
+})
 
 const messagesLoading = computed(() => Boolean(conversation.value) && dms.messagesLoading)
 const messagesError = computed(() => (conversation.value ? dms.messagesError : ''))
+const currentReminderConversationType = computed(() =>
+  props.conversationType === 'dm' ? 'dm' : 'channel',
+)
+const dueReminders = computed(() =>
+  reminderStore.dueItems
+    .filter(
+      (reminder) =>
+        String(reminder.conversationId ?? 'general') === channelId.value &&
+        (reminder.conversationType === 'dm' ? 'dm' : 'channel') ===
+          currentReminderConversationType.value,
+    )
+    .sort((a, b) => new Date(a.firedAt) - new Date(b.firedAt)),
+)
+const deletedReminders = computed(() =>
+  reminderStore.deletedItems
+    .filter(
+      (reminder) =>
+        String(reminder.conversationId ?? 'general') === channelId.value &&
+        (reminder.conversationType === 'dm' ? 'dm' : 'channel') ===
+          currentReminderConversationType.value &&
+        (reminder.dismissed || !reminder.fired) &&
+        !reminder.hideFromChat,
+    )
+    .sort((a, b) => new Date(a.deletedAt || a.remindAt) - new Date(b.deletedAt || b.remindAt)),
+)
 
 function retryConversationMessages() {
   if (conversation.value) void dms.loadMessages(conversation.value.id, { force: true })
@@ -157,14 +234,19 @@ const renderedMessages = computed(() => {
     })
     .sort((a, b) => new Date(a.createdAt || 0) - new Date(b.createdAt || 0))
     .map((message) => {
+      const voiceNoteId = message.voiceNoteId ?? message.voice_note_id ?? message.voice_note?.id
+      const messageContent = message.text ?? message.content ?? ''
+      const normalizedContent = normalizeMessageText(messageContent)
       const content = message.deleted
         ? '(message deleted)'
-        : (message.text ?? message.content ?? '')
+        : voiceNoteId && normalizedContent.trim().toLowerCase() === 'voice message'
+          ? ''
+          : normalizedContent
       const author =
         message.from === dms.meId
           ? currentUser
           : message.from
-            ? dms.usersById[message.from]?.name || conversationLabel.value
+            ? dms.usersById[message.from]?.name || message.author || conversationLabel.value
             : message.author || currentUser
       const authorId = message.from ?? message.authorId ?? author
       const grouped =
@@ -175,6 +257,7 @@ const renderedMessages = computed(() => {
       const rendered = {
         ...message,
         content,
+        important: isImportantMessage(message),
         formattedContent: formattedMessageHtml(content),
         author,
         authorId,
@@ -197,16 +280,56 @@ const renderedMessages = computed(() => {
       return rendered
     })
 })
+
+function isImportantMessage(message) {
+  const value = message.important ?? message.is_important
+  return value === true || value === 1 || value === '1' || value === 'true'
+}
+
 const reminderMessage = computed(() => {
-  if (!reminderTarget.value) return null
+  const target = reminderTarget.value || snoozeTarget.value
+  if (!target) return null
   return {
     conversationId: channelId.value,
     conversationName: conversationLabel.value,
     conversationType: props.conversationType,
-    messageId: String(reminderTarget.value.id),
-    text: reminderTarget.value.text ?? reminderTarget.value.content ?? '',
+    messageId: String(target.messageId ?? target.id),
+    text: target.text ?? target.content ?? '',
   }
 })
+
+function formatReminderDate(value) {
+  return new Date(value).toLocaleString('en-US', {
+    month: 'short',
+    day: '2-digit',
+    year: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  })
+}
+
+function dismissDueReminder(reminder) {
+  reminderStore.dismissDue(reminder.id)
+}
+
+function snoozeDueReminder(reminder) {
+  snoozeTarget.value = reminder
+}
+
+function reminderModalClosed() {
+  reminderTarget.value = null
+  snoozeTarget.value = null
+}
+
+function reminderSaved() {
+  ui.toast(
+    snoozeTarget.value ? 'Reminder snoozed' : 'Reminder set',
+    snoozeTarget.value
+      ? 'The reminder has been scheduled again.'
+      : 'You will be reminded about this message.',
+    'success',
+  )
+}
 
 watch(
   () => `${props.conversationType}:${props.conversationId}`,
@@ -227,6 +350,7 @@ watch(
         if (!document.hidden) void messageStore.fetchChannelMessages(props.conversationId)
       }, 10_000)
     }
+    loadScheduledMessages()
     nextTick(scrollMessagesToLatest)
   },
   { immediate: true },
@@ -236,6 +360,13 @@ watch(
   () => allMessages.value.at(-1)?.id,
   (id, previousId) => {
     if (id != null && id !== previousId) scrollMessagesToLatest()
+  },
+)
+
+watch(
+  () => dueReminders.value.length,
+  (count, previousCount) => {
+    if (count > previousCount) scrollMessagesToLatest()
   },
 )
 
@@ -266,11 +397,19 @@ function openMessageAuthor(message) {
 async function togglePin(message) {
   if (props.conversationType === 'dm') {
     if (!message.backendSynced) {
-      ui.toast('Unable to pin message', 'This direct message is not available on the server yet.', 'error')
+      ui.toast(
+        'Unable to pin message',
+        'This direct message is not available on the server yet.',
+        'error',
+      )
       return
     }
-  } else if (message.backendSynced !== true) {
-    ui.toast('Unable to pin message', 'This channel message is not available on the server yet.', 'error')
+  } else if (!message.serverBacked && message.backendSynced !== true) {
+    ui.toast(
+      'Unable to pin message',
+      'This channel message is not available on the server yet.',
+      'error',
+    )
     return
   }
 
@@ -291,27 +430,47 @@ async function togglePin(message) {
 }
 
 async function addMessage(payload) {
-  const messagePayload = replyTo.value ? { ...payload, replyTo: { ...replyTo.value } } : payload
+  const messagePayload = {
+    ...payload,
+    is_important: Boolean(payload.important),
+    ...(replyTo.value ? { replyTo: { ...replyTo.value } } : {}),
+  }
+  const hasContent = typeof payload.content === 'string' && payload.content.trim()
+  const hasAttachment = Boolean(payload.attachment)
   const canSendToChannelApi =
     !conversation.value &&
-    typeof payload.content === 'string' &&
-    payload.content.trim() &&
-    !payload.attachments?.length &&
+    (hasContent || hasAttachment) &&
     !payload.poll &&
     !payload.gif &&
     !payload.scheduledAt &&
-    !payload.important &&
+    !payload.voiceNoteId &&
     !replyTo.value
 
   if (canSendToChannelApi) {
     const result = await messageStore.postChannelMessage(channelId.value, messagePayload)
     if (!result.success) {
-      ui.toast('Message not sent', result.error || 'The channel message could not be sent.', 'error')
+      ui.toast(
+        'Message not sent',
+        result.error || 'The channel message could not be sent.',
+        'error',
+      )
       return
     }
+    if (result.attachmentPersisted === false) {
+      ui.toast(
+        'Attachment not confirmed',
+        'The message was sent, but the server did not confirm that the attachment was saved.',
+        'warning',
+      )
+    }
 
-    const sentMessage = messageStore.messagesFor(channelId.value).at(-1)
+    const channelMessages = messageStore.messagesFor(channelId.value)
+    const responseMessageId = result.data?.id ?? result.data?.message_id ?? result.data?.messageId
+    const sentMessage = responseMessageId
+      ? channelMessages.find((message) => String(message.id) === String(responseMessageId))
+      : [...channelMessages].reverse().find((message) => message.content === payload.content)
     if (sentMessage) {
+      sentMessage.important = messagePayload.is_important
       addMockMessage({
         id: sentMessage.id,
         text: sentMessage.content,
@@ -324,14 +483,50 @@ async function addMessage(payload) {
     return
   }
 
-  const sentMessage = conversation.value
-    ? dms.sendMessage(conversation.value.id, messagePayload)
-    : messageStore.sendMessage(
+  let sentMessage
+  if (conversation.value) {
+    sentMessage = dms.sendMessage(conversation.value.id, messagePayload)
+    if (sentMessage && payload.voiceNoteId) {
+      messageComposer.value?.clearVoiceNote(payload.voiceNoteId)
+    }
+  } else if (payload.voiceNoteId) {
+    try {
+      const saved = await sendChannelVoiceMessage(
         channelId.value,
-        messagePayload,
+        payload.voiceNoteId,
+        payload.content,
+      )
+      sentMessage = messageStore.sendMessage(
+        channelId.value,
+        {
+          ...messagePayload,
+          id: saved?.id,
+          createdAt: saved?.created_at ?? saved?.createdAt,
+          voiceNoteId: String(payload.voiceNoteId),
+          backendSynced: true,
+        },
         currentUserName.value,
         conversationMeta.value.name,
       )
+      messageComposer.value?.clearVoiceNote(payload.voiceNoteId)
+    } catch (error) {
+      console.error('Unable to send channel voice message:', error)
+      messageComposer.value?.setVoiceNoteSending(false)
+      ui.toast(
+        'Voice message not sent',
+        error.message || 'The voice message could not be sent.',
+        'error',
+      )
+      return
+    }
+  } else {
+    sentMessage = messageStore.sendMessage(
+      channelId.value,
+      messagePayload,
+      currentUserName.value,
+      conversationMeta.value.name,
+    )
+  }
   if (!sentMessage) {
     ui.toast('Message not sent', 'The conversation could not be found.', 'error')
     return
@@ -371,7 +566,7 @@ function addScheduledMessage(message) {
     timezone: message.timeZone,
     conversation_type: props.conversationType,
     ...(message.important ? { important: true } : {}),
-    ...(message.attachments?.length ? { attachments: message.attachments } : {}),
+    ...(message.attachment ? { attachment: message.attachment } : {}),
   }
 
   createScheduledMessage(payload)
@@ -387,7 +582,11 @@ function addScheduledMessage(message) {
     .catch((error) => {
       removeScheduledMessage(optimisticId)
       console.error('Unable to schedule message:', error)
-      ui.toast('Message not scheduled', error.message || 'The scheduled message could not be created.', 'error')
+      ui.toast(
+        'Message not scheduled',
+        error.message || 'The scheduled message could not be created.',
+        'error',
+      )
     })
 }
 
@@ -411,12 +610,9 @@ function normalizeScheduledMessage(response, fallback = {}) {
     'processed',
     'success',
   ].includes(status)
-  const sentAt =
-    source.sentAt ??
-    source.sent_at ??
-    (isPending ? '' : scheduledAt)
+  const sentAt = source.sentAt ?? source.sent_at ?? (isPending ? '' : scheduledAt)
   const createdAt = isPending
-    ? source.createdAt ?? source.created_at ?? new Date().toISOString()
+    ? (source.createdAt ?? source.created_at ?? new Date().toISOString())
     : sentAt || scheduledAt || source.createdAt || source.created_at || new Date().toISOString()
   return {
     ...source,
@@ -527,16 +723,10 @@ function isScheduledMessageDelivered(message) {
 function mergeScheduledMessages(existing, incoming) {
   if (!existing) return incoming
   if (!incoming) return existing
-  if (
-    isCompletedScheduledMessage(existing) &&
-    !isCompletedScheduledMessage(incoming)
-  ) {
+  if (isCompletedScheduledMessage(existing) && !isCompletedScheduledMessage(incoming)) {
     return { ...incoming, ...existing }
   }
-  if (
-    !isOptimisticScheduledMessage(existing) &&
-    isOptimisticScheduledMessage(incoming)
-  ) {
+  if (!isOptimisticScheduledMessage(existing) && isOptimisticScheduledMessage(incoming)) {
     return { ...incoming, ...existing }
   }
   return { ...existing, ...incoming }
@@ -556,15 +746,10 @@ function appendScheduledMessage(message) {
   const fingerprint = scheduledMessageFingerprint(message)
   const existingIndex = messages.findIndex(
     (item) =>
-      String(item.id) === String(message.id) ||
-      scheduledMessageFingerprint(item) === fingerprint,
+      String(item.id) === String(message.id) || scheduledMessageFingerprint(item) === fingerprint,
   )
   if (existingIndex >= 0) {
-    messages.splice(
-      existingIndex,
-      1,
-      mergeScheduledMessages(messages[existingIndex], message),
-    )
+    messages.splice(existingIndex, 1, mergeScheduledMessages(messages[existingIndex], message))
     persistLocalScheduledMessage(message)
     return
   }
@@ -641,8 +826,7 @@ function persistLocalScheduledMessage(message) {
     )
     if (index >= 0) {
       messages.splice(index, 1, mergeScheduledMessages(messages[index], message))
-    }
-    else messages.push(message)
+    } else messages.push(message)
     saved[key] = messages
     localStorage.setItem(LOCAL_SCHEDULED_MESSAGES_KEY, JSON.stringify(saved))
   } catch (error) {
@@ -665,13 +849,15 @@ function removeLocalScheduledMessage(messageId) {
 function loadLocalScheduledMessages() {
   const saved = readLocalScheduledMessages()
   const direct = saved[String(channelId.value)]
-  const values = Array.isArray(direct)
-    ? direct
-    : Object.values(saved).flatMap((items) => (Array.isArray(items) ? items : []))
-  values.map((item) => normalizeScheduledMessage(item)).filter(Boolean).forEach(appendScheduledMessage)
+  const values = Array.isArray(direct) ? direct : []
+  values
+    .map((item) => normalizeScheduledMessage(item))
+    .filter(Boolean)
+    .forEach(appendScheduledMessage)
 }
 
 function loadScheduledMessages() {
+  const requestedConversationId = channelId.value
   loadLocalScheduledMessages()
   getScheduledMessages()
     .then((response) => {
@@ -687,31 +873,14 @@ function loadScheduledMessages() {
               item.channel_id ??
                 item.conversation_id ??
                 item.conversationId ??
-                channelId.value,
-            ) === channelId.value,
+                requestedConversationId,
+            ) === requestedConversationId,
         )
         .forEach(appendScheduledMessage)
     })
     .catch((error) => {
       console.error('Unable to load scheduled messages:', error)
     })
-}
-
-function addGif(gif) {
-  const message = { content: '', gif }
-  const sentMessage = conversation.value
-    ? dms.sendMessage(conversation.value.id, message)
-    : messageStore.sendMessage(
-        channelId.value,
-        message,
-        currentUserName.value,
-        conversationMeta.value.name,
-      )
-  if (!sentMessage) {
-    ui.toast('GIF not sent', 'The conversation could not be found.', 'error')
-    return
-  }
-  scrollMessagesToLatest()
 }
 
 async function loadOlder() {
@@ -755,7 +924,11 @@ async function saveEdit(message) {
       editDraft.value,
     )
     if (!result.success) {
-      ui.toast('Message not updated', result.error || 'The channel message could not be updated.', 'error')
+      ui.toast(
+        'Message not updated',
+        result.error || 'The channel message could not be updated.',
+        'error',
+      )
       return
     }
     updateMockMessage(message.id, editDraft.value.trim())
@@ -955,14 +1128,21 @@ async function forwardMessage() {
   } else {
     const result = await messageStore.postChannelMessage(destination.id, payload)
     if (!result.success) {
-      ui.toast('Unable to forward message', result.error || 'The channel message could not be sent.', 'error')
+      ui.toast(
+        'Unable to forward message',
+        result.error || 'The channel message could not be sent.',
+        'error',
+      )
       return
     }
     const forwarded =
       result.data ??
       messageStore
         .messagesFor(destination.id)
-        .find((message) => message.forwardedFrom === payload.forwardedFrom && message.content === payload.content)
+        .find(
+          (message) =>
+            message.forwardedFrom === payload.forwardedFrom && message.content === payload.content,
+        )
     if (forwarded) {
       addMockMessage({
         id: forwarded.id,
@@ -986,25 +1166,267 @@ function closeMessageActions() {
   openReactionId.value = null
 }
 
-function reminderSaved() {
-  ui.toast('Reminder set', 'You will be reminded about this message.', 'success')
-}
-
 function closeActionsOnOutsideClick(event) {
   const target = event.target instanceof Element ? event.target : event.target?.parentElement
   if (!target?.closest('.composer-conversation__actions')) closeMessageActions()
 }
 
-function participateInPoll(pollId) {
+function pollQueryParams(poll, key) {
+  return poll[key] || { poll_id: poll.id }
+}
+
+function hasServerPollId(poll) {
+  return poll?.id != null && !String(poll.id).startsWith('poll-')
+}
+
+function pollQuestionsFromResponse(response) {
+  const questions = Array.isArray(response)
+    ? response
+    : Array.isArray(response?.questions)
+      ? response.questions
+      : Array.isArray(response?.poll_questions)
+        ? response.poll_questions
+        : Array.isArray(response?.result)
+          ? response.result
+          : []
+  return questions.map((question) => ({
+    ...question,
+    id: question.id ?? question.question_id,
+    text: question.text ?? question.question ?? '',
+    type: ['open-ended', 'open_ended'].includes(question.type)
+      ? 'openEnded'
+      : (question.type ?? 'choice'),
+    required: question.required !== false,
+    multiple: question.multiple ?? question.multiple_select ?? false,
+    options: question.options ?? question.choices ?? [],
+  }))
+}
+
+function normalizePollResult(response, poll) {
+  const result = response?.result ?? response
+  if (
+    !result ||
+    typeof result !== 'object' ||
+    (!result.totalVotes &&
+      !result.total_votes &&
+      !result.total &&
+      !result.questions &&
+      !result.results &&
+      !result.responses)
+  ) {
+    return null
+  }
+  const sourceQuestions = Array.isArray(result)
+    ? result
+    : (result?.questions ?? result?.results ?? [])
+  const questions = poll.questions.map((question, questionIndex) => {
+    const source = sourceQuestions[questionIndex] || {}
+    const sourceVotes = source.votes ?? source.answers ?? source.options ?? []
+    return {
+      votes: question.options.map((_, optionIndex) => {
+        const vote = sourceVotes[optionIndex]
+        return typeof vote === 'number'
+          ? vote
+          : Number(vote?.votes ?? vote?.count ?? vote?.total ?? vote ?? 0)
+      }),
+    }
+  })
+  return {
+    totalVotes: Number(
+      result?.totalVotes ?? result?.total_votes ?? result?.total ?? result?.pagination?.total ?? 0,
+    ),
+    questions,
+    responses: result?.responses ?? questions.map(() => []),
+  }
+}
+
+async function createPollInChannel(targetChannelId, pollDraft, existingMessage = null) {
+  const {
+    title,
+    description,
+    questions,
+    audience,
+    resultsVisibility,
+    startNow: draftStartNow,
+    scheduleStartEnabled: draftScheduleStartEnabled,
+    scheduleCloseEnabled: draftScheduleCloseEnabled,
+    scheduleStart,
+    scheduleClose,
+  } = pollDraft
+  const scheduleStartEnabled = draftScheduleStartEnabled ?? Boolean(scheduleStart)
+  const scheduleCloseEnabled = draftScheduleCloseEnabled ?? Boolean(scheduleClose)
+  const startNow = draftStartNow ?? !scheduleStartEnabled
+  const apiQuestions = questions.map((question) => ({
+    text: question.text,
+    type: question.type === 'openEnded' ? 'open_ended' : question.type,
+    required: question.required,
+    // The backend currently validates two options for open-ended questions, then discards them.
+    options:
+      question.type === 'openEnded' ? ['__open_ended__', '__open_ended__'] : question.options,
+    ...(question.type === 'rating'
+      ? { rating_scale: Number(question.ratingType.split('-')[1]) }
+      : {}),
+    ...(question.type === 'choice' ? { multiple_select: Boolean(question.multiple) } : {}),
+  }))
+  const payload = {
+    title,
+    description,
+    questions: apiQuestions,
+    audience_responses: audience,
+    results_visibility:
+      {
+        private: 'owner_only',
+        'after-close': 'after_close',
+        realtime: 'real_time',
+      }[resultsVisibility] ?? resultsVisibility,
+    start_now: startNow,
+    schedule_start: scheduleStartEnabled,
+    schedule_close: scheduleCloseEnabled,
+    ...(scheduleStartEnabled ? { start_at: scheduleStart } : {}),
+    ...(scheduleCloseEnabled ? { close_at: scheduleClose } : {}),
+  }
+  try {
+    const response = await pollApi.createPoll(targetChannelId, payload)
+    const responsePoll =
+      response?.poll ??
+      response?.poll_data ??
+      response?.data?.poll ??
+      response?.data?.data?.poll ??
+      response?.data ??
+      response ??
+      {}
+    const serverPollId = responsePoll.id ?? responsePoll.poll_id
+    if (serverPollId == null || serverPollId === '') {
+      throw new Error('The server did not return a poll ID.')
+    }
+    const poll = {
+      ...pollDraft,
+      ...(typeof responsePoll === 'object' && !Array.isArray(responsePoll) ? responsePoll : {}),
+      id: serverPollId,
+      creatorId: responsePoll.creatorId ?? responsePoll.creator_id ?? dms.meId,
+      scheduleStart:
+        responsePoll.scheduleStart !== undefined
+          ? responsePoll.scheduleStart
+          : responsePoll.start_at !== undefined
+            ? responsePoll.start_at
+            : (pollDraft.scheduleStart ?? ''),
+      scheduleClose:
+        responsePoll.scheduleClose !== undefined
+          ? responsePoll.scheduleClose
+          : responsePoll.close_at !== undefined
+            ? responsePoll.close_at
+            : (pollDraft.scheduleClose ?? ''),
+      audience: responsePoll.audience ?? responsePoll.audience_responses ?? pollDraft.audience,
+      resultsVisibility:
+        responsePoll.resultsVisibility ??
+        responsePoll.results_visibility ??
+        pollDraft.resultsVisibility,
+      alreadyVoted:
+        responsePoll.alreadyVoted ??
+        responsePoll.already_voted ??
+        responsePoll.user_has_voted ??
+        false,
+      questions: pollQuestionsFromResponse(responsePoll).length
+        ? pollQuestionsFromResponse(responsePoll)
+        : pollDraft.questions,
+    }
+    const message = existingMessage || {
+      id: `poll-message-${poll.id}`,
+      content: `Poll: ${poll.title}`,
+      author: currentUserName.value,
+      authorId: dms.meId,
+      mine: true,
+      backendSynced: true,
+      createdAt: new Date().toISOString(),
+      poll,
+    }
+    if (existingMessage) {
+      existingMessage.poll = poll
+      existingMessage.backendSynced = true
+    } else {
+      const targetConversation =
+        conversation.value && String(conversation.value.id) === String(targetChannelId)
+          ? conversation.value
+          : null
+      if (targetConversation) {
+        targetConversation.messages.push(message)
+      } else {
+        const key = String(targetChannelId)
+        if (!messageStore.messagesByChannel[key]) messageStore.messagesByChannel[key] = []
+        messageStore.messagesByChannel[key].push(message)
+      }
+      ui.addPoll(message, conversationMeta.value)
+      if (!targetConversation) {
+        addMockMessage({
+          id: message.id,
+          text: message.content,
+          sender: message.author,
+          conversation: conversationMeta.value,
+        })
+      }
+    }
+    await scrollMessagesToLatest()
+    return poll
+  } catch (error) {
+    ui.toast('Poll not created', error.message || 'The poll could not be created.', 'error')
+    return null
+  }
+}
+
+function publishLegacyPoll(message) {
+  if (!message.mine || pollApi.loading.value || hasServerPollId(message.poll)) return
+  const storedMessage = allMessages.value.find((item) => String(item.id) === String(message.id))
+  if (!storedMessage) return
+  void createPollInChannel(channelId.value, storedMessage.poll, storedMessage)
+}
+
+function canClosePoll(message) {
+  const poll = message.poll
+  if (!hasServerPollId(poll)) return false
+  const creatorId = poll.creatorId ?? poll.creator_id ?? poll.createdBy ?? poll.created_by
+  const authUserId = getAuthUser()?.id ?? getAuthUser()?.userId
+  return Boolean(
+    message.mine ||
+    (creatorId != null &&
+      [dms.meId, authUserId].some((id) => id != null && String(id) === String(creatorId))) ||
+    poll.canClose === true ||
+    poll.can_close === true ||
+    poll.permissions?.close === true,
+  )
+}
+
+async function participateInPoll(pollId) {
+  if (pollApi.loading.value || !hasServerPollId({ id: pollId })) return
   const message = renderedMessages.value.find((item) => item.poll?.id === pollId)
   if (!message?.poll || !isPollActive(message.poll)) return
   activePoll.value = message.poll
   activePollMode.value = 'respond'
   pollResponses.value = {}
+  try {
+    const response = await pollApi.getPollQuestions(
+      pollQueryParams(message.poll, 'questionsQueryParams'),
+    )
+    const questions = pollQuestionsFromResponse(response)
+    if (questions.length) {
+      message.poll.questions = questions
+      activePoll.value = { ...message.poll, questions }
+    }
+  } catch (error) {
+    ui.toast('Unable to load poll', error.message || 'Poll questions could not be loaded.', 'error')
+  }
 }
 
-function closePoll(pollId) {
-  closedPolls.value = new Set([...closedPolls.value, pollId])
+async function closePoll(pollId) {
+  if (pollApi.loading.value || !hasServerPollId({ id: pollId })) return
+  const message = renderedMessages.value.find((item) => item.poll?.id === pollId)
+  if (!message?.poll || !canClosePoll(message)) return
+  try {
+    await pollApi.closePoll(pollId)
+    closedPolls.value = new Set([...closedPolls.value, pollId])
+    message.poll.closed = true
+  } catch (error) {
+    ui.toast('Unable to close poll', error.message || 'The poll could not be closed.', 'error')
+  }
 }
 
 function pollStartTime(poll) {
@@ -1020,34 +1442,28 @@ function isPollActive(poll) {
   const startsAt = pollStartTime(poll)
   const closesAt = pollCloseTime(poll)
   return (
-    !closedPolls.value.has(poll.id) &&
+    !isPollClosed(poll) &&
     (!Number.isFinite(startsAt) || startsAt <= now) &&
     (!Number.isFinite(closesAt) || closesAt > now)
   )
 }
 
 function isPollClosed(poll) {
-  return closedPolls.value.has(poll.id) || (
-    Number.isFinite(pollCloseTime(poll)) && pollCloseTime(poll) <= pollClock.value
+  return (
+    closedPolls.value.has(poll.id) ||
+    poll.closed === true ||
+    poll.is_closed === true ||
+    ['closed', 'complete', 'completed'].includes(String(poll.status || '').toLowerCase()) ||
+    (Number.isFinite(pollCloseTime(poll)) && pollCloseTime(poll) <= pollClock.value)
   )
 }
 
 function isPollScheduled(poll) {
   const startsAt = pollStartTime(poll)
-  return Number.isFinite(startsAt) && startsAt > pollClock.value
-}
-
-function pollScheduleLabel(value) {
-  const timestamp = Date.parse(value || '')
-  if (!Number.isFinite(timestamp)) return ''
-  return new Intl.DateTimeFormat('en-US', {
-    weekday: 'short',
-    month: 'short',
-    day: '2-digit',
-    year: 'numeric',
-    hour: 'numeric',
-    minute: '2-digit',
-  }).format(timestamp)
+  return (
+    (Number.isFinite(startsAt) && startsAt > pollClock.value) ||
+    (String(poll.status || '').toLowerCase() === 'scheduled' && !Number.isFinite(startsAt))
+  )
 }
 
 function exportPollResults(pollId) {
@@ -1073,12 +1489,26 @@ function exportPollResults(pollId) {
   URL.revokeObjectURL(url)
 }
 
-function viewPollResults(pollId) {
+async function viewPollResults(pollId) {
+  if (pollApi.loading.value || !hasServerPollId({ id: pollId })) return
   const message = renderedMessages.value.find((item) => item.poll?.id === pollId)
   if (!message?.poll) return
   activePoll.value = message.poll
   activePollMode.value = 'results'
   pollResponses.value = {}
+  try {
+    const response = await pollApi.getPollResult(
+      pollQueryParams(message.poll, 'resultsQueryParams'),
+    )
+    const result = normalizePollResult(response, message.poll)
+    if (result) pollResults.value = { ...pollResults.value, [pollId]: result }
+  } catch (error) {
+    ui.toast(
+      'Unable to load poll results',
+      error.message || 'Poll results could not be loaded.',
+      'error',
+    )
+  }
 }
 
 function closePollResponse() {
@@ -1113,8 +1543,8 @@ function togglePollResponse(question, questionIndex, optionIndex) {
   }
 }
 
-function submitPollResponse() {
-  if (!activePoll.value) return
+async function submitPollResponse() {
+  if (!activePoll.value || pollApi.loading.value || isPollClosed(activePoll.value)) return
   const poll = activePoll.value
   const missingRequiredResponse = poll.questions.some(
     (question, questionIndex) =>
@@ -1123,6 +1553,43 @@ function submitPollResponse() {
       !String(pollResponses.value[questionIndex] || '').trim(),
   )
   if (missingRequiredResponse) return
+  if (poll.questions.some((question) => question.id == null && question.question_id == null)) {
+    ui.toast(
+      'Vote not submitted',
+      'Poll questions could not be loaded. Reopen the poll and try again.',
+      'error',
+    )
+    return
+  }
+  const answers = Object.fromEntries(
+    poll.questions
+      .map((question, questionIndex) => {
+        let answer
+        if (question.type === 'openEnded') {
+          answer = String(pollResponses.value[questionIndex] || '').trim()
+        } else if (question.multiple) {
+          answer = question.options.filter(
+            (_, optionIndex) => pollResponses.value[pollResponseKey(questionIndex, optionIndex)],
+          )
+        } else {
+          const optionIndex = pollResponses.value[questionIndex]
+          answer = typeof optionIndex === 'number' ? question.options[optionIndex] : ''
+        }
+        return [question.id ?? question.question_id, answer]
+      })
+      .filter(([, answer]) => (Array.isArray(answer) ? answer.length > 0 : Boolean(answer))),
+  )
+  if (!Object.keys(answers).length) return
+  try {
+    await pollApi.submitPollAnswer({ channel_id: channelId.value, poll_id: poll.id, answers })
+  } catch (error) {
+    ui.toast(
+      'Vote not submitted',
+      error.message || 'Your response could not be submitted.',
+      'error',
+    )
+    return
+  }
   const existingResult = pollResults.value[poll.id] || {
     totalVotes: 0,
     questions: poll.questions.map((question) => ({
@@ -1156,6 +1623,17 @@ function submitPollResponse() {
   pollResults.value = { ...pollResults.value, [poll.id]: existingResult }
   participatedPolls.value = new Set([...participatedPolls.value, activePoll.value.id])
   closePollResponse()
+  try {
+    const response = await pollApi.getPollResult(pollQueryParams(poll, 'resultsQueryParams'))
+    const result = normalizePollResult(response, poll)
+    if (result) pollResults.value = { ...pollResults.value, [poll.id]: result }
+  } catch (error) {
+    ui.toast(
+      'Vote submitted',
+      error.message || 'Your vote was saved, but results are unavailable.',
+      'error',
+    )
+  }
 }
 
 async function scrollMessagesToLatest() {
@@ -1217,7 +1695,12 @@ onBeforeUnmount(() => {
         <button type="button" @click="retryConversationMessages">Retry</button>
       </p>
       <p
-        v-else-if="conversation && !renderedMessages.length"
+        v-else-if="
+          conversation &&
+          !renderedMessages.length &&
+          !dueReminders.length &&
+          !deletedReminders.length
+        "
         class="composer-conversation__status"
       >
         No messages yet.
@@ -1260,7 +1743,6 @@ onBeforeUnmount(() => {
               </button>
               <strong v-else>{{ message.author }}</strong>
               <time :datetime="message.createdAt">{{ message.time }}</time>
-              <span v-if="message.editedAt" class="composer-conversation__edited">(edited)</span>
               <span v-if="isPinned(message)" class="composer-conversation__pinned">PINNED</span>
             </header>
 
@@ -1278,106 +1760,30 @@ onBeforeUnmount(() => {
                 <span v-if="message.important" class="composer-conversation__important">
                   IMPORTANT!
                 </span>
-                <section v-if="message.poll" class="composer-conversation__poll-card">
-                  <h2>{{ message.poll.title }}</h2>
-                  <div
-                    v-if="message.poll.description"
-                    class="composer-conversation__poll-description"
-                  >
-                    {{ message.poll.description }}
-                  </div>
-                  <div class="composer-conversation__poll-meta">
-                    <span
-                      class="composer-conversation__poll-status"
-                      :class="{ 'is-closed': isPollClosed(message.poll) }"
-                    >
-                      <i
-                        class="composer-conversation__poll-status-icon"
-                        :class="
-                          isPollClosed(message.poll)
-                            ? 'is-closed'
-                            : isPollScheduled(message.poll)
-                              ? 'is-scheduled'
-                              : 'is-open'
-                        "
-                        aria-hidden="true"
-                      >
-                        {{ isPollClosed(message.poll) ? '×' : isPollScheduled(message.poll) ? '◷' : '✓' }}
-                      </i>
-                      {{ isPollClosed(message.poll) ? 'Closed' : isPollScheduled(message.poll) ? 'Scheduled' : 'Open' }}
-                    </span>
-                    <span
-                      class="composer-conversation__poll-meta-divider"
-                      aria-hidden="true"
-                    ></span>
-                    <span class="composer-conversation__poll-visibility">
-                      <i aria-hidden="true">◉</i>
-                      {{ message.poll.audience === 'anonymous' ? 'Anonymous' : 'Public' }}
-                    </span>
-                  </div>
-                  <div
-                    v-if="message.poll.scheduleStart || message.poll.scheduleClose"
-                    class="composer-conversation__poll-schedule-info"
-                  >
-                    <div v-if="message.poll.scheduleStart" class="composer-conversation__poll-schedule-item">
-                      <span class="composer-conversation__poll-schedule-icon">◷</span>
-                      <span>
-                        <small>Starts</small>
-                        <strong>{{ pollScheduleLabel(message.poll.scheduleStart) }}</strong>
-                      </span>
-                    </div>
-                    <div v-if="message.poll.scheduleClose" class="composer-conversation__poll-schedule-item">
-                      <span class="composer-conversation__poll-schedule-icon">×</span>
-                      <span>
-                        <small>Ends</small>
-                        <strong>{{ pollScheduleLabel(message.poll.scheduleClose) }}</strong>
-                      </span>
-                    </div>
-                  </div>
-                  <div class="composer-conversation__poll-actions">
-                    <button
-                      v-if="
-                        !isPollScheduled(message.poll) &&
-                        !isPollClosed(message.poll) &&
-                        !participatedPolls.has(message.poll.id)
-                      "
-                      type="button"
-                      @click="participateInPoll(message.poll.id)"
-                    >
-                      Participate
-                    </button>
-                    <button
-                      v-else-if="!isPollScheduled(message.poll) && !isPollClosed(message.poll)"
-                      type="button"
-                      class="is-done"
-                      disabled
-                      aria-label="You're done"
-                    >
-                      You're Done
-                    </button>
-                    <button
-                      v-if="!isPollScheduled(message.poll)"
-                      type="button"
-                      @click="viewPollResults(message.poll.id)"
-                    >
-                      View All Results
-                    </button>
-                    <button
-                      v-if="isPollClosed(message.poll)"
-                      type="button"
-                      @click="exportPollResults(message.poll.id)"
-                    >
-                      Export To Csv
-                    </button>
-                    <button
-                      v-else-if="!isPollScheduled(message.poll) && !isPollClosed(message.poll)"
-                      type="button"
-                      @click="closePoll(message.poll.id)"
-                    >
-                      Close Poll
-                    </button>
-                  </div>
-                </section>
+                <PollMessage
+                  v-if="message.poll"
+                  :poll="message.poll"
+                  :backend-available="hasServerPollId(message.poll)"
+                  :can-publish="message.mine"
+                  :result="pollResults[message.poll.id]"
+                  :closed="isPollClosed(message.poll)"
+                  :scheduled="isPollScheduled(message.poll)"
+                  :already-voted="
+                    participatedPolls.has(message.poll.id) ||
+                    Boolean(
+                      message.poll.alreadyVoted ??
+                      message.poll.already_voted ??
+                      message.poll.user_has_voted,
+                    )
+                  "
+                  :can-close="canClosePoll(message)"
+                  :loading="pollApi.loading.value"
+                  @participate="participateInPoll(message.poll.id)"
+                  @results="viewPollResults(message.poll.id)"
+                  @close="closePoll(message.poll.id)"
+                  @export="exportPollResults(message.poll.id)"
+                  @publish="publishLegacyPoll(message)"
+                />
 
                 <div v-if="message.reply" class="composer-conversation__reply-quote">
                   <strong>{{ message.reply.author || 'Message' }}</strong>
@@ -1432,12 +1838,20 @@ onBeforeUnmount(() => {
                   class="composer-conversation__scheduled"
                   :title="`Scheduled to send ${scheduledMessageLabel(message)} (${message.timeZone || 'local time'})`"
                 >
-                  Scheduled for {{ scheduledMessageLabel(message) }}
-                  ({{ message.timeZone || 'local time' }})
+                  Scheduled for {{ scheduledMessageLabel(message) }} ({{
+                    message.timeZone || 'local time'
+                  }})
                 </span>
                 <span v-if="message.deleteScheduledAt" class="composer-conversation__scheduled">
                   Scheduled to delete {{ new Date(message.deleteScheduledAt).toLocaleString() }}
                 </span>
+
+                <VoiceNotePlayer
+                  v-if="message.voiceNoteId || message.voice_note_id || message.voice_note?.id"
+                  :voice-note-id="
+                    message.voiceNoteId || message.voice_note_id || message.voice_note.id
+                  "
+                />
 
                 <ul
                   v-if="message.attachments?.length"
@@ -1446,8 +1860,9 @@ onBeforeUnmount(() => {
                   <li
                     v-for="(file, fileIndex) in message.attachments"
                     :key="file.id || `${file.name}-${file.size}-${fileIndex}`"
+                    class="composer-conversation__attachment"
                   >
-                    {{ file.name }}
+                    <MessageAttachment :attachment="file" />
                   </li>
                 </ul>
 
@@ -1573,7 +1988,7 @@ onBeforeUnmount(() => {
                     <path d="M16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h3" />
                   </svg>
                   <span>Copy</span>
-                  <span class="composer-conversation__shortcuts"><kbd>⌘</kbd><kbd>G</kbd></span>
+                  <span class="composer-conversation__shortcuts"><kbd>Ctrl</kbd><kbd>G</kbd></span>
                 </button>
                 <button
                   v-if="message.mine && !message.scheduled && !message.deleteScheduledAt"
@@ -1593,7 +2008,7 @@ onBeforeUnmount(() => {
                     <path d="m16 5 3 3M4 20l4.5-1 10-10a2.1 2.1 0 0 0-3-3l-10 10L4 20Z" />
                   </svg>
                   <span>Edit</span>
-                  <span class="composer-conversation__shortcuts"><kbd>⌘</kbd><kbd>E</kbd></span>
+                  <span class="composer-conversation__shortcuts"><kbd>Ctrl</kbd><kbd>E</kbd></span>
                 </button>
                 <button
                   v-if="message.mine && !message.scheduled && !message.deleteScheduledAt"
@@ -1614,7 +2029,7 @@ onBeforeUnmount(() => {
                     <path d="M4 7h16M10 11v6M14 11v6M5 7l1 14h12l1-14M9 7V4h6v3" />
                   </svg>
                   <span>Delete</span>
-                  <span class="composer-conversation__shortcuts"><kbd>⌘</kbd><kbd>D</kbd></span>
+                  <span class="composer-conversation__shortcuts"><kbd>Ctrl</kbd><kbd>D</kbd></span>
                 </button>
                 <button type="button" @click="openForwardDialog(message)">
                   <svg
@@ -1630,21 +2045,21 @@ onBeforeUnmount(() => {
                     <path d="M21 12H9a4 4 0 0 0-4 4v3" />
                   </svg>
                   <span>Forward</span>
-                  <span class="composer-conversation__shortcuts"><kbd>⌘</kbd><kbd>H</kbd></span>
+                  <span class="composer-conversation__shortcuts"><kbd>Ctrl</kbd><kbd>H</kbd></span>
                 </button>
                 <button type="button" @click="beginReply(message)">
                   <span aria-hidden="true">↩</span>
                   <span>Reply</span>
-                  <span class="composer-conversation__shortcuts"><kbd>⌘</kbd><kbd>J</kbd></span>
+                  <span class="composer-conversation__shortcuts"><kbd>Ctrl</kbd><kbd>J</kbd></span>
                 </button>
                 <button type="button" @click="setReminder(message)">
                   <span aria-hidden="true">◷</span>
                   <span>Set Reminder</span>
-                  <span class="composer-conversation__shortcuts"><kbd>⌘</kbd><kbd>A</kbd></span>
+                  <span class="composer-conversation__shortcuts"><kbd>Ctrl</kbd><kbd>A</kbd></span>
                 </button>
               </div>
             </div>
-            
+
             <span
               v-if="message.status === 'sending'"
               class="composer-conversation__sent-status composer-conversation__sent-status--sending"
@@ -1663,7 +2078,11 @@ onBeforeUnmount(() => {
             </button>
 
             <span
-              v-if="message.mine && !message.deleted && (!message.scheduled || isScheduledMessageDelivered(message))"
+              v-if="
+                message.mine &&
+                !message.deleted &&
+                (!message.scheduled || isScheduledMessageDelivered(message))
+              "
               class="composer-conversation__sent-status"
               aria-label="Sent"
             >
@@ -1672,6 +2091,132 @@ onBeforeUnmount(() => {
           </div>
         </article>
       </template>
+      <article
+        v-for="reminder in dueReminders"
+        :key="`due-reminder-${reminder.id}`"
+        class="composer-conversation__reminder-notice"
+      >
+        <div class="composer-conversation__reminder-time">
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.8"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+          >
+            <circle cx="12" cy="12" r="9" />
+            <path d="M12 7v5l3 2" />
+          </svg>
+          <span
+            >Reminded you at {{ formatReminderDate(reminder.firedAt || reminder.remindAt) }}</span
+          >
+        </div>
+        <div class="composer-conversation__reminder-content">
+          <img
+            class="composer-conversation__reminder-system-icon"
+            :src="systemProfile"
+            alt=""
+            aria-hidden="true"
+          />
+          <div class="composer-conversation__reminder-details">
+            <header class="composer-conversation__reminder-heading">
+              <strong>System</strong>
+              <time :datetime="reminder.firedAt || reminder.remindAt">
+                {{ timeLabel(reminder.firedAt || reminder.remindAt) }}
+              </time>
+            </header>
+            <strong class="composer-conversation__reminder-label">Message</strong>
+            <p class="composer-conversation__reminder-message">
+              <template
+                v-for="(segment, index) in messageSegments(reminder.text || '')"
+                :key="`${reminder.id}-${index}`"
+              >
+                <a
+                  v-if="segment.href"
+                  :href="segment.href"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  >{{ segment.text }}</a
+                >
+                <span v-else>{{ segment.text }}</span>
+              </template>
+            </p>
+            <footer class="composer-conversation__reminder-actions">
+              <button type="button" @click="dismissDueReminder(reminder)">Delete Reminder</button>
+              <span
+                class="composer-conversation__reminder-action-divider"
+                aria-hidden="true"
+              ></span>
+              <button
+                type="button"
+                title="Snooze for 5 minutes"
+                @click="snoozeDueReminder(reminder)"
+              >
+                Snooze
+              </button>
+            </footer>
+          </div>
+        </div>
+      </article>
+      <article
+        v-for="reminder in deletedReminders"
+        :key="`deleted-reminder-${reminder.id}`"
+        class="composer-conversation__reminder-notice"
+      >
+        <div class="composer-conversation__reminder-time">
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.8"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+          >
+            <circle cx="12" cy="12" r="9" />
+            <path d="M12 7v5l3 2" />
+          </svg>
+          <span
+            >Reminder deleted at
+            {{ formatReminderDate(reminder.deletedAt || reminder.remindAt) }}</span
+          >
+        </div>
+        <div class="composer-conversation__reminder-content">
+          <img
+            class="composer-conversation__reminder-system-icon"
+            :src="systemProfile"
+            alt=""
+            aria-hidden="true"
+          />
+          <div class="composer-conversation__reminder-details">
+            <header class="composer-conversation__reminder-heading">
+              <strong>System</strong>
+              <time :datetime="reminder.deletedAt || reminder.remindAt">
+                {{ timeLabel(reminder.deletedAt || reminder.remindAt) }}
+              </time>
+            </header>
+            <strong class="composer-conversation__reminder-label">Message</strong>
+            <p class="composer-conversation__reminder-message">
+              <template
+                v-for="(segment, index) in messageSegments(reminder.text || '')"
+                :key="`deleted-${reminder.id}-${index}`"
+              >
+                <a
+                  v-if="segment.href"
+                  :href="segment.href"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  >{{ segment.text }}</a
+                >
+                <span v-else>{{ segment.text }}</span>
+              </template>
+            </p>
+            <p class="composer-conversation__reminder-deleted-label">Reminder deleted</p>
+          </div>
+        </div>
+      </article>
     </div>
 
     <div v-if="replyTo" class="composer-conversation__replying">
@@ -1681,12 +2226,32 @@ onBeforeUnmount(() => {
       </div>
       <button type="button" aria-label="Cancel reply" @click="replyTo = null">×</button>
     </div>
-    <MessageComposer @send="addMessage" @schedule="addScheduledMessage" @gif="addGif" />
+    <MessageComposer
+      ref="messageComposer"
+      v-if="canSendMessages"
+      :channel-id="channelId"
+      :conversation-type="conversationType"
+      :create-poll="createPollInChannel"
+      :poll-loading="pollApi.loading.value"
+      :poll-error="pollApi.error.value"
+      @send="addMessage"
+      @schedule="addScheduledMessage"
+      @clear-poll-error="pollApi.clearError"
+    />
+    <div
+      v-else-if="conversationType !== 'dm'"
+      class="mx-4 mb-3 rounded-sm bg-[#f0f0f7] px-4 py-3 text-sm text-slate-500"
+      role="status"
+    >
+      Only certain people can post in this channel.
+    </div>
 
     <SetReminderModal
       v-if="reminderMessage"
       :message="reminderMessage"
-      @close="reminderTarget = null"
+      :mode="snoozeTarget ? 'snooze' : 'create'"
+      :reminder="snoozeTarget"
+      @close="reminderModalClosed"
       @saved="reminderSaved"
     />
 
@@ -1733,7 +2298,7 @@ onBeforeUnmount(() => {
       <div
         v-if="activePoll"
         class="composer-conversation__poll-backdrop"
-        @mousedown.self="closePollResponse"
+        @mousedown.self="!pollApi.loading.value && closePollResponse()"
       >
         <section
           class="composer-conversation__poll-response-modal"
@@ -1755,12 +2320,24 @@ onBeforeUnmount(() => {
             >
               <i
                 class="composer-conversation__poll-status-icon"
-                :class="isPollClosed(activePoll) ? 'is-closed' : isPollScheduled(activePoll) ? 'is-scheduled' : 'is-open'"
+                :class="
+                  isPollClosed(activePoll)
+                    ? 'is-closed'
+                    : isPollScheduled(activePoll)
+                      ? 'is-scheduled'
+                      : 'is-open'
+                "
                 aria-hidden="true"
               >
                 {{ isPollClosed(activePoll) ? '×' : isPollScheduled(activePoll) ? '◷' : '✓' }}
               </i>
-              {{ isPollClosed(activePoll) ? 'Closed' : isPollScheduled(activePoll) ? 'Scheduled' : 'Open' }}
+              {{
+                isPollClosed(activePoll)
+                  ? 'Closed'
+                  : isPollScheduled(activePoll)
+                    ? 'Scheduled'
+                    : 'Open'
+              }}
             </span>
             <span class="composer-conversation__poll-meta-divider" aria-hidden="true"></span>
             <span class="composer-conversation__poll-visibility">
@@ -1835,6 +2412,7 @@ onBeforeUnmount(() => {
                   <span>{{ option }}</span>
                   <input
                     type="radio"
+                    :disabled="pollApi.loading.value"
                     :name="`poll-${activePoll.id}-question-${questionIndex}`"
                     :checked="pollResponses[questionIndex] === optionIndex"
                     @change="togglePollResponse(question, questionIndex, optionIndex)"
@@ -1845,6 +2423,7 @@ onBeforeUnmount(() => {
             <textarea
               v-else-if="question.type === 'openEnded'"
               v-model="pollResponses[questionIndex]"
+              :disabled="pollApi.loading.value"
               class="composer-conversation__poll-open-ended-input"
               :aria-label="`Response to question ${questionIndex + 1}`"
               :placeholder="
@@ -1858,6 +2437,7 @@ onBeforeUnmount(() => {
               <label v-for="(option, optionIndex) in question.options" :key="option">
                 <input
                   :type="question.multiple ? 'checkbox' : 'radio'"
+                  :disabled="pollApi.loading.value"
                   :name="`poll-${activePoll.id}-question-${questionIndex}`"
                   :checked="
                     question.multiple
@@ -1871,10 +2451,23 @@ onBeforeUnmount(() => {
             </div>
           </div>
           <footer class="composer-conversation__poll-response-footer">
-            <button v-if="activePollMode !== 'results'" type="button" @click="submitPollResponse">
-              Submit Response
+            <p v-if="pollApi.error.value" role="alert">{{ pollApi.error.value }}</p>
+            <button
+              v-if="activePollMode !== 'results'"
+              type="button"
+              :disabled="pollApi.loading.value || isPollClosed(activePoll)"
+              @click="submitPollResponse"
+            >
+              {{ pollApi.loading.value ? 'Submitting...' : 'Submit Response' }}
             </button>
-            <button type="button" class="is-close" @click="closePollResponse">Close</button>
+            <button
+              type="button"
+              class="is-close"
+              :disabled="pollApi.loading.value"
+              @click="closePollResponse"
+            >
+              Close
+            </button>
           </footer>
         </section>
       </div>
@@ -1887,7 +2480,7 @@ onBeforeUnmount(() => {
     >
       <form class="composer-conversation__forward-dialog" @submit.prevent="forwardMessage">
         <h2>Forward message</h2>
-        <p>{{ forwardTarget.content || 'Attachment or GIF' }}</p>
+        <p>{{ forwardTarget.content || 'Attachment' }}</p>
         <label for="forward-destination">Send to</label>
         <select id="forward-destination" v-model="forwardDestinationId" required>
           <option value="" disabled>Select a conversation</option>
@@ -2054,6 +2647,118 @@ onBeforeUnmount(() => {
 .composer-conversation__message-bubble a {
   color: #514bc7;
   text-decoration: underline;
+}
+
+.composer-conversation__reminder-notice {
+  margin: 0 0 12px;
+  padding: 12px 12px 8px;
+  background: #f7f7fb;
+  color: #25263a;
+}
+
+.composer-conversation__reminder-time {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 0 0 4px;
+  color: #696d81;
+  font-size: 16px;
+  line-height: 1.5;
+}
+
+.composer-conversation__reminder-time svg {
+  width: 30px;
+  height: 30px;
+  flex: 0 0 30px;
+  color: #ff334b;
+}
+
+.composer-conversation__reminder-content {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  min-width: 0;
+}
+
+.composer-conversation__reminder-system-icon {
+  width: 32px;
+  height: 32px;
+  flex: 0 0 32px;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+.composer-conversation__reminder-details {
+  min-width: 0;
+  flex: 1;
+}
+
+.composer-conversation__reminder-heading {
+  display: flex;
+  align-items: baseline;
+  gap: 28px;
+  margin: 0 0 10px;
+  font-size: 18px;
+}
+
+.composer-conversation__reminder-heading time {
+  color: #696d81;
+  font-size: 16px;
+}
+
+.composer-conversation__reminder-label {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 18px;
+}
+
+.composer-conversation__reminder-message {
+  margin: 0;
+  overflow-wrap: anywhere;
+  font-size: 18px;
+  white-space: pre-wrap;
+}
+
+.composer-conversation__reminder-message a {
+  color: #514bc7;
+  text-decoration: underline;
+}
+
+.composer-conversation__reminder-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 44px;
+  font-size: 16px;
+}
+
+.composer-conversation__reminder-actions button {
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: #696d81;
+  font: inherit;
+  cursor: pointer;
+}
+
+.composer-conversation__reminder-actions button:first-child {
+  color: #ff334b;
+}
+
+.composer-conversation__reminder-action-divider {
+  width: 1px;
+  height: 20px;
+  background: #d3d5de;
+}
+
+.composer-conversation__reminder-actions button:hover {
+  text-decoration: underline;
+}
+
+.composer-conversation__reminder-deleted-label {
+  margin: 20px 0 0;
+  color: #ff334b;
+  font-size: 12px;
 }
 
 .composer-conversation__reply-quote {
@@ -2943,10 +3648,15 @@ onBeforeUnmount(() => {
 }
 
 .composer-conversation__attachment-list {
-  margin: 6px 0 0;
-  padding-left: 20px;
-  color: #696d81;
-  font-size: 13px;
+  display: grid;
+  gap: 8px;
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.composer-conversation__attachment {
+  min-width: 0;
 }
 
 .composer-conversation__replying {

@@ -53,13 +53,14 @@ watch(
 
     <div v-else-if="!channel" class="ch-view__state">
       <p>
-        {{
-          channelId
-            ? "This channel doesn't exist or you're not a member."
-            : "You haven't joined any channels yet."
-        }}
+        {{ channelId ? 'You do not have access to this channel.' : "You haven't joined any channels yet." }}
       </p>
-      <button class="ch-btn ch-btn--primary ch-btn--small" type="button" @click="ui.openBrowse()">
+      <button
+        v-if="!channelId"
+        class="ch-btn ch-btn--primary ch-btn--small"
+        type="button"
+        @click="ui.openBrowse()"
+      >
         Browse channels
       </button>
     </div>

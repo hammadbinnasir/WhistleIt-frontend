@@ -28,12 +28,22 @@ function assertPayload(payload, { requireContent }) {
     throw new Error('Message payload must be an object.')
   }
 
-  const { content, messageType, parentMessageId } = payload
+  const { content, attachment, messageType, parentMessageId } = payload
+  const hasAttachment = attachment != null
 
-  if (requireContent && content === undefined) {
+  if ('attachments' in payload) {
+    throw new Error('Only one message attachment is supported.')
+  }
+  if (hasAttachment && (typeof Blob === 'undefined' || !(attachment instanceof Blob))) {
+    throw new Error('Message attachment must be a file.')
+  }
+  if (requireContent && content === undefined && !hasAttachment) {
     throw new Error('Message content is required.')
   }
-  if (content !== undefined && (typeof content !== 'string' || !content.trim())) {
+  if (
+    content !== undefined &&
+    (typeof content !== 'string' || (!content.trim() && !hasAttachment))
+  ) {
     throw new Error('Message content must be a non-empty string.')
   }
   if (messageType !== undefined && typeof messageType !== 'string') {
@@ -91,12 +101,7 @@ async function request(build) {
  * @param {{page?: number, perPage?: number}} options
  * @returns {Promise<ServiceResult>}
  */
-export function getChannelMessages(
-  companyId,
-  teamId,
-  channelId,
-  { page = 1, perPage = 15 } = {},
-) {
+export function getChannelMessages(companyId, teamId, channelId, { page = 1, perPage = 15 } = {}) {
   return request(() => [
     collectionPath(companyId, teamId, channelId),
     { params: { include_deleted: true, page, per_page: perPage } },
@@ -127,7 +132,18 @@ export function sendChannelMessage(companyId, teamId, channelId, payload) {
   return request(() => {
     const path = collectionPath(companyId, teamId, channelId)
     assertPayload(payload, { requireContent: true })
-    const { content, ...metadata } = payload
+    const { content, attachment, ...metadata } = payload
+    if (attachment) {
+      const body = new FormData()
+      if (content?.trim()) body.append('body', content.trim())
+      body.append('attachment', attachment)
+      Object.entries(metadata).forEach(([key, value]) => {
+        if (value == null) return
+        body.append(key, typeof value === 'string' ? value : JSON.stringify(value))
+      })
+      return [path, { method: 'POST', body }]
+    }
+
     return [path, { method: 'POST', body: { ...metadata, body: content.trim() } }]
   })
 }

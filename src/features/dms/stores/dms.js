@@ -16,18 +16,19 @@ const POLL_INTERVAL = 4000
 const LIST_REFRESH_EVERY = 8
 
 // API in fields ko nahi bhejti/lauti, isliye ye local cache se wapas jodte hain
-const EXTRA_KEYS = ['reactions', 'replyTo', 'forwardedFrom', 'important', 'editedAt']
+const EXTRA_KEYS = ['reactions', 'replyTo', 'forwardedFrom', 'important', 'editedAt', 'voiceNoteId']
+const pendingAttachmentByMessage = new Map()
 
 function errorMessage(error) {
   return error instanceof Error ? error.message : String(error?.message ?? error)
 }
 
 const isLocal = (message) => String(message.id).startsWith('local-')
+const voiceNoteIdOf = (message) =>
+  message?.voiceNoteId ?? message?.voice_note_id ?? message?.voice_note?.id
 
-// API abhi sirf text messages support karti hai.
-// GIF, poll, attachments aur scheduled messages sirf local rehte hain.
-const isApiSendable = (message) =>
-  !message.gif && !message.poll && !message.attachments && !message.scheduledAt
+// The DM API supports text, file attachments, and voice-note messages.
+const isApiSendable = (message) => !message.gif && !message.poll && !message.scheduledAt
 
 function carryExtras(message, old) {
   if (!old) return message
@@ -303,11 +304,27 @@ export const useDmStore = defineStore('dms', () => {
     if (list.some((user) => user.id === meId.value)) return
     const me = dmApi.currentUser?.()
     if (!me) return
-    const email = String(me.email ?? '').trim().toLowerCase()
-    const name = String(me.fullName ?? me.full_name ?? me.name ?? '').trim().toLowerCase()
+    const email = String(me.email ?? '')
+      .trim()
+      .toLowerCase()
+    const name = String(me.fullName ?? me.full_name ?? me.name ?? '')
+      .trim()
+      .toLowerCase()
     const match =
-      (email && list.find((user) => String(user.email ?? '').trim().toLowerCase() === email)) ||
-      (name && list.find((user) => String(user.name ?? '').trim().toLowerCase() === name))
+      (email &&
+        list.find(
+          (user) =>
+            String(user.email ?? '')
+              .trim()
+              .toLowerCase() === email,
+        )) ||
+      (name &&
+        list.find(
+          (user) =>
+            String(user.name ?? '')
+              .trim()
+              .toLowerCase() === name,
+        ))
     if (match) meId.value = match.id
   }
 
@@ -395,9 +412,7 @@ export const useDmStore = defineStore('dms', () => {
           // API wale messages + wo local/pending jo abhi server par nahi gaye
           // + wo jo is request ke dauran send hue (purani list mein nahi honge)
           const pending = target.messages.filter(
-            (m) =>
-              !known.has(m.id) &&
-              (isLocal(m) || sentMeanwhile.has(m.id) || m.scheduledAt),
+            (m) => !known.has(m.id) && (isLocal(m) || sentMeanwhile.has(m.id) || m.scheduledAt),
           )
           target.messages = [...list, ...pending]
           for (const m of list) {
@@ -474,10 +489,7 @@ export const useDmStore = defineStore('dms', () => {
       }
 
       const seen = new Map()
-      for (const user of [
-        ...fulfilled(memberResults),
-        ...fulfilled(nonMemberResults),
-      ]) {
+      for (const user of [...fulfilled(memberResults), ...fulfilled(nonMemberResults)]) {
         if (user?.id && !seen.has(user.id)) seen.set(user.id, user)
       }
       companyMembers.value = [...seen.values()]
@@ -628,9 +640,18 @@ export const useDmStore = defineStore('dms', () => {
     message.error = ''
     const localId = message.id
     try {
+      const voiceNoteId = voiceNoteIdOf(message)
+      const body = String(message.text ?? '').trim()
+      const attachment = pendingAttachmentByMessage.get(localId)
+      if (message.attachments?.length && !attachment) {
+        throw new Error('The original attachment is no longer available. Please attach it again.')
+      }
       // Backend ko message ka text "body" field mein chahiye
       const saved = await dmApi.sendMessage(companyId.value, conversationId, {
-        body: message.text,
+        body: voiceNoteId ? body || 'Voice message' : body,
+        ...(attachment ? { attachment } : {}),
+        ...(voiceNoteId ? { voice_note_id: String(voiceNoteId) } : {}),
+        is_important: Boolean(message.important),
       })
 
       // Server batata hai ke ye message kisne bheja: wahi mera asli user id hai
@@ -641,10 +662,31 @@ export const useDmStore = defineStore('dms', () => {
       }
 
       sentDuringFetch.get(conversationId)?.add(saved.id)
+      pendingAttachmentByMessage.delete(localId)
       const index = conversation.messages.findIndex((m) => m.id === localId)
       if (index === -1) return // user ne beech mein delete kar diya
-      if (conversation.messages.some((m) => m.id === saved.id)) {
-        conversation.messages.splice(index, 1) // server list mein pehle se aa chuka
+      const existingIndex = conversation.messages.findIndex(
+        (candidate) => candidate.id === saved.id,
+      )
+      if (existingIndex !== -1 && existingIndex !== index) {
+        const existing = conversation.messages[existingIndex]
+        conversation.messages.splice(index, 1)
+        const mergedIndex = existingIndex > index ? existingIndex - 1 : existingIndex
+        conversation.messages.splice(mergedIndex, 1, {
+          ...existing,
+          ...saved,
+          from: saved.from || existing.from || meId.value,
+          text: saved.text || existing.text || message.text,
+          createdAt: saved.createdAt || existing.createdAt || message.createdAt,
+          ...(message.replyTo ? { replyTo: message.replyTo } : {}),
+          ...(message.forwardedFrom ? { forwardedFrom: message.forwardedFrom } : {}),
+          ...(message.important ? { important: true } : {}),
+          ...(voiceNoteId || saved.voiceNoteId || existing.voiceNoteId
+            ? {
+                voiceNoteId: String(voiceNoteId || saved.voiceNoteId || existing.voiceNoteId),
+              }
+            : {}),
+        })
       } else {
         conversation.messages.splice(index, 1, {
           ...saved,
@@ -654,6 +696,10 @@ export const useDmStore = defineStore('dms', () => {
           ...(message.replyTo ? { replyTo: message.replyTo } : {}),
           ...(message.forwardedFrom ? { forwardedFrom: message.forwardedFrom } : {}),
           ...(message.important ? { important: true } : {}),
+          ...(message.attachments?.length ? { attachments: message.attachments } : {}),
+          ...(voiceNoteId || saved.voiceNoteId
+            ? { voiceNoteId: String(voiceNoteId || saved.voiceNoteId) }
+            : {}),
         })
       }
       persist(conversation) // server wala message cache mein
@@ -685,12 +731,20 @@ export const useDmStore = defineStore('dms', () => {
     const conversation = findConversation(conversationId)
     const text = String(payload.content ?? '').trim()
     // File objects JSON mein save nahi hote, isliye sirf unki details
-    const attachments = (payload.attachments ?? []).map((file) => ({
-      name: file.name,
-      size: file.size,
-      type: file.type,
-    }))
-    if (!conversation || (!text && !payload.gif && !payload.poll && !attachments.length)) {
+    const attachment = payload.attachment
+    const attachments = attachment
+      ? [
+          {
+            name: attachment.name,
+            size: attachment.size,
+            type: attachment.type,
+          },
+        ]
+      : []
+    if (
+      !conversation ||
+      (!text && !payload.gif && !payload.poll && !attachments.length && !payload.voiceNoteId)
+    ) {
       return null
     }
 
@@ -702,6 +756,7 @@ export const useDmStore = defineStore('dms', () => {
       ...(payload.replyTo ? { replyTo: payload.replyTo } : {}),
       ...(payload.threadId ? { threadId: payload.threadId } : {}),
       ...(payload.forwardedFrom ? { forwardedFrom: payload.forwardedFrom } : {}),
+      ...(payload.voiceNoteId ? { voiceNoteId: String(payload.voiceNoteId) } : {}),
       ...(attachments.length ? { attachments } : {}),
       ...(payload.important ? { important: true } : {}),
       ...(payload.gif ? { gif: payload.gif } : {}),
@@ -718,6 +773,9 @@ export const useDmStore = defineStore('dms', () => {
       message.status = 'sending'
       message.error = ''
     }
+    if (payload.attachment) {
+      pendingAttachmentByMessage.set(message.id, payload.attachment)
+    }
 
     conversation.messages.push(message)
     persist(conversation)
@@ -728,6 +786,9 @@ export const useDmStore = defineStore('dms', () => {
         conversationName: titleOf(conversation),
         conversationType: 'dm',
       })
+    }
+    if (!payload.scheduledAt && isApiSendable(message)) {
+      void deliver(conversation.id, message)
     }
     return conversation.messages.at(-1)
   }

@@ -68,6 +68,28 @@ describe('channel messages store', () => {
     expect(messages.errorsByChannel['6aeb0aa8fbf9fd02ad07048f']).toBe('')
   })
 
+  it('normalizes the backend singular attachment field on fetched messages', async () => {
+    useTeamsStore().activeWorkspaceId = 'company-1'
+    useTeamsStore().activeTeamId = 'team-1'
+    const attachment = {
+      id: 'file-1',
+      name: 'men.jpg',
+      mime_type: 'image/jpeg',
+      path: 'messages/channel-1/men.jpg',
+    }
+    getChannelMessages.mockResolvedValue({
+      success: true,
+      data: {
+        messages: [{ id: 'message-1', body: 'Photo', attachment: [attachment] }],
+      },
+    })
+    const messages = useMessagesStore()
+
+    await messages.fetchChannelMessages('channel-1')
+
+    expect(messages.messagesFor('channel-1')[0].attachments).toEqual([attachment])
+  })
+
   it('renders server soft-deleted messages, including messages outside the latest page', async () => {
     useTeamsStore().activeWorkspaceId = 'company-1'
     useTeamsStore().activeTeamId = 'team-1'
@@ -157,13 +179,10 @@ describe('channel messages store', () => {
     await messages.fetchChannelMessages('channel-1')
     expect(messages.hasOlderMessages('channel-1')).toBe(true)
     await expect(messages.loadOlder('channel-1')).resolves.toBe(true)
-    expect(getChannelMessages).toHaveBeenNthCalledWith(
-      2,
-      'company-1',
-      'team-1',
-      'channel-1',
-      { page: 2, perPage: 15 },
-    )
+    expect(getChannelMessages).toHaveBeenNthCalledWith(2, 'company-1', 'team-1', 'channel-1', {
+      page: 2,
+      perPage: 15,
+    })
     expect(messages.messagesFor('channel-1')).toHaveLength(30)
     expect(messages.hasOlderMessages('channel-1')).toBe(false)
 
@@ -254,7 +273,9 @@ describe('channel messages store', () => {
       },
     ]
 
-    await expect(messages.deleteServerMessage('channel-1', 'server-message-1')).resolves.toMatchObject({
+    await expect(
+      messages.deleteServerMessage('channel-1', 'server-message-1'),
+    ).resolves.toMatchObject({
       success: true,
     })
 
@@ -312,9 +333,10 @@ describe('channel messages store', () => {
       { id: 'server-message-1', content: 'Keep this', mine: true, serverBacked: true },
     ]
 
-    await expect(
-      messages.deleteServerMessage('channel-1', 'server-message-1'),
-    ).resolves.toEqual({ success: false, error: 'Delete failed' })
+    await expect(messages.deleteServerMessage('channel-1', 'server-message-1')).resolves.toEqual({
+      success: false,
+      error: 'Delete failed',
+    })
     expect(messages.messagesFor('channel-1')[0].content).toBe('Keep this')
     expect(messages.messagesFor('channel-1')[0]).not.toHaveProperty('deleted')
   })
@@ -348,18 +370,70 @@ describe('channel messages store', () => {
       }),
     ).resolves.toMatchObject({ success: true })
 
-    expect(sendChannelMessage).toHaveBeenCalledWith(
-      'company-1',
-      'team-1',
-      'channel-2',
-      { content: 'Hello', forwardedFrom: 'Aiman in General' },
-    )
+    expect(sendChannelMessage).toHaveBeenCalledWith('company-1', 'team-1', 'channel-2', {
+      content: 'Hello',
+      forwardedFrom: 'Aiman in General',
+    })
     expect(messages.messagesFor('channel-2')).toContainEqual(
       expect.objectContaining({
         id: 'forwarded-1',
         content: 'Hello',
         forwardedFrom: 'Aiman in General',
         serverBacked: true,
+      }),
+    )
+  })
+
+  it('keeps the selected attachment visible when the successful response has no attachments', async () => {
+    useTeamsStore().activeWorkspaceId = 'company-1'
+    useTeamsStore().activeTeamId = 'team-1'
+    const attachment = new File(['report'], 'report.txt', { type: 'text/plain' })
+    sendChannelMessage.mockResolvedValue({
+      success: true,
+      data: {
+        message: {
+          id: 'message-with-unconfirmed-attachment',
+          body: 'Please review',
+          attachments: [],
+        },
+      },
+    })
+    getChannelMessages.mockResolvedValue({
+      success: true,
+      data: {
+        messages: [
+          {
+            id: 'message-with-unconfirmed-attachment',
+            body: 'Please review',
+            attachments: [],
+          },
+        ],
+      },
+    })
+    const messages = useMessagesStore()
+
+    await expect(
+      messages.postChannelMessage('channel-2', {
+        content: 'Please review',
+        attachment,
+      }),
+    ).resolves.toMatchObject({
+      success: true,
+      attachmentPersisted: false,
+    })
+
+    expect(messages.messagesFor('channel-2')).toContainEqual(
+      expect.objectContaining({
+        id: 'message-with-unconfirmed-attachment',
+        attachments: [
+          {
+            name: 'report.txt',
+            size: 6,
+            type: 'text/plain',
+            localOnly: true,
+            localPreviewUrl: expect.stringMatching(/^blob:/),
+          },
+        ],
       }),
     )
   })
@@ -381,6 +455,200 @@ describe('channel messages store', () => {
     expect(JSON.parse(localStorage.getItem('whistleit:channel-messages')).general[0].deleted).toBe(
       true,
     )
+  })
+
+  it('merges received channel messages while preserving locally sent voice notes', () => {
+    const messages = useMessagesStore()
+    messages.sendMessage(
+      'engineering',
+      { content: '', voiceNoteId: 'voice-note-local' },
+      'You',
+      'Engineering',
+    )
+    messages.mergeChannelMessages('engineering', [
+      {
+        id: 'server-message-1',
+        content: 'Incoming voice',
+        voiceNoteId: 'voice-note-remote',
+        createdAt: '2026-11-05T10:00:00Z',
+        mine: false,
+      },
+    ])
+
+    expect(messages.messagesFor('engineering')).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ voiceNoteId: 'voice-note-local', mine: true }),
+        expect.objectContaining({ id: 'server-message-1', voiceNoteId: 'voice-note-remote' }),
+      ]),
+    )
+    expect(JSON.parse(localStorage.getItem('whistleit:channel-messages')).engineering).toHaveLength(
+      2,
+    )
+  })
+
+  it('normalizes voice-note IDs from wrapped channel message records', async () => {
+    const teams = useTeamsStore()
+    teams.activeWorkspaceId = 'company-1'
+    teams.activeTeamId = 'team-1'
+    getChannelMessages.mockResolvedValue({
+      success: true,
+      data: {
+        messages: [
+          {
+            message: {
+              id: 'wrapped-voice',
+              sender_id: 'user-2',
+              body: 'Voice message',
+            },
+            voice_note: { voice_note_id: 'voice-note-wrapped' },
+          },
+        ],
+      },
+    })
+    const messages = useMessagesStore()
+
+    await messages.fetchChannelMessages('channel-1')
+
+    expect(messages.messagesFor('channel-1')).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: 'wrapped-voice',
+          voiceNoteId: 'voice-note-wrapped',
+          content: 'Voice message',
+        }),
+      ]),
+    )
+  })
+
+  it('finds a voice-note ID in nested channel message response metadata', async () => {
+    const teams = useTeamsStore()
+    teams.activeWorkspaceId = 'company-1'
+    teams.activeTeamId = 'team-1'
+    getChannelMessages.mockResolvedValue({
+      success: true,
+      data: {
+        messages: [
+          {
+            id: 'received-voice',
+            sender_id: 'other-user',
+            body: 'Voice message',
+            sender: { voice_note: { id: 'voice-note-from-api' } },
+          },
+        ],
+      },
+    })
+    const messages = useMessagesStore()
+
+    await messages.fetchChannelMessages('channel-1')
+
+    expect(messages.messagesFor('channel-1')).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: 'received-voice',
+          voiceNoteId: 'voice-note-from-api',
+          content: 'Voice message',
+          mine: false,
+        }),
+      ]),
+    )
+  })
+
+  it('preserves a sent voice-note ID when a channel refresh omits it', () => {
+    const messages = useMessagesStore()
+    messages.sendMessage(
+      'engineering',
+      { id: 'server-message-1', content: 'Voice message', voiceNoteId: 'voice-note-1' },
+      'You',
+      'Engineering',
+    )
+
+    messages.mergeChannelMessages('engineering', [
+      {
+        id: 'server-message-1',
+        content: 'Voice message',
+        voiceNoteId: undefined,
+        createdAt: new Date().toISOString(),
+        mine: true,
+      },
+    ])
+
+    expect(messages.messagesFor('engineering')).toHaveLength(1)
+    expect(messages.messagesFor('engineering')[0]).toMatchObject({
+      id: 'server-message-1',
+      voiceNoteId: 'voice-note-1',
+      content: 'Voice message',
+    })
+  })
+
+  it('preserves the voice player when a fetched channel message omits the voice-note ID', async () => {
+    const teams = useTeamsStore()
+    teams.activeWorkspaceId = 'company-1'
+    teams.activeTeamId = 'team-1'
+    const messages = useMessagesStore()
+    messages.sendMessage(
+      'engineering',
+      {
+        id: 'server-voice-message',
+        content: 'Voice message',
+        voiceNoteId: 'voice-note-1',
+        backendSynced: true,
+        createdAt: '2026-11-06T10:00:00.000Z',
+      },
+      'You',
+      'Engineering',
+    )
+    getChannelMessages.mockResolvedValue({
+      success: true,
+      data: {
+        messages: [
+          {
+            id: 'server-voice-message',
+            body: 'Voice message',
+            sender_id: 'user-1',
+            created_at: '2026-11-06T10:00:00.000Z',
+          },
+        ],
+      },
+    })
+
+    await messages.fetchChannelMessages('engineering')
+
+    expect(messages.messagesFor('engineering')).toHaveLength(1)
+    expect(messages.messagesFor('engineering')[0]).toMatchObject({
+      id: 'server-voice-message',
+      voiceNoteId: 'voice-note-1',
+      content: 'Voice message',
+    })
+  })
+
+  it('reconciles an echoed voice message when the server omits its voice-note ID', () => {
+    const messages = useMessagesStore()
+    messages.sendMessage(
+      'engineering',
+      {
+        id: 'local-message',
+        content: 'Voice message',
+        voiceNoteId: 'voice-note-1',
+        createdAt: '2026-11-06T10:00:00.000Z',
+      },
+      'You',
+      'Engineering',
+    )
+
+    messages.mergeChannelMessages('engineering', [
+      {
+        id: 'server-message',
+        content: 'Voice message',
+        createdAt: '2026-11-06T10:00:04.000Z',
+        mine: true,
+      },
+    ])
+
+    expect(messages.messagesFor('engineering')).toHaveLength(1)
+    expect(messages.messagesFor('engineering')[0]).toMatchObject({
+      id: 'server-message',
+      voiceNoteId: 'voice-note-1',
+    })
   })
 
   it('deletes a message at its scheduled time', () => {

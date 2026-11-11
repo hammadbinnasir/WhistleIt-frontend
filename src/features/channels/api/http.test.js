@@ -71,6 +71,83 @@ describe('http', () => {
     expect(options.headers['Content-Type']).toBeUndefined()
   })
 
+  it('returns file responses as blobs when requested', async () => {
+    sessionStorage.setItem('authToken', 'session-token')
+    const audio = new Blob(['recording'], { type: 'audio/webm' })
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      blob: vi.fn().mockResolvedValue(audio),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(http('/v1/voice-notes/note-1/file', { responseType: 'blob' })).resolves.toBe(audio)
+    expect(fetchMock.mock.calls[0][1].headers.Accept).toBe('application/json')
+  })
+
+  it('fetches absolute signed file URLs without adding API auth headers', async () => {
+    const audio = new Blob(['recording'], { type: 'audio/webm' })
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      blob: vi.fn().mockResolvedValue(audio),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    sessionStorage.setItem('authToken', 'session-token')
+
+    await expect(
+      http('https://files.example.test/note?signature=valid', {
+        auth: false,
+        responseType: 'blob',
+      }),
+    ).resolves.toBe(audio)
+
+    const [url, options] = fetchMock.mock.calls[0]
+    expect(url).toBe('https://files.example.test/note?signature=valid')
+    expect(options.headers.Authorization).toBeUndefined()
+    expect(options.credentials).toBe('omit')
+  })
+
+  it('does not duplicate the API base path in root-relative signed URLs', async () => {
+    const audio = new Blob(['recording'], { type: 'audio/webm' })
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      blob: vi.fn().mockResolvedValue(audio),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const signedPath =
+      '/api/v1/voice-notes/note-1/file?download=1&expires=1793943417&signature=abc123'
+
+    await expect(
+      http(signedPath, { auth: false, responseType: 'blob' }),
+    ).resolves.toBe(audio)
+
+    expect(fetchMock.mock.calls[0][0]).toBe(
+      'http://10.0.105.90:8000/api/v1/voice-notes/note-1/file?download=1&expires=1793943417&signature=abc123',
+    )
+  })
+
+  it('removes a duplicated API base path from signed file links', async () => {
+    const audio = new Blob(['recording'], { type: 'audio/webm' })
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      blob: vi.fn().mockResolvedValue(audio),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const signedPath =
+      '/api/api/v1/voice-notes/note-1/file?download=1&expires=1793943417&signature=abc123'
+
+    await expect(
+      http(signedPath, { auth: false, responseType: 'blob' }),
+    ).resolves.toBe(audio)
+
+    expect(fetchMock.mock.calls[0][0]).toBe(
+      'http://10.0.105.90:8000/api/v1/voice-notes/note-1/file?download=1&expires=1793943417&signature=abc123',
+    )
+  })
+
   it('clears an expired token when the API responds with 401', async () => {
     sessionStorage.setItem('authToken', 'expired-token')
     const fetchMock = vi.fn().mockResolvedValue({

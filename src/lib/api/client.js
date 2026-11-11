@@ -23,11 +23,12 @@ export async function apiRequest(path, options = {}) {
   }
 
   let res
+  const isFormData = typeof FormData !== 'undefined' && requestOptions.body instanceof FormData
   try {
     res = await fetch(`${BASE_URL}${path}`, {
       ...requestOptions,
       headers: {
-        'Content-Type': 'application/json',
+        ...(!isFormData ? { 'Content-Type': 'application/json' } : {}),
         Accept: 'application/json',
         ...(token ? { Authorization: 'Bearer ' + token } : {}),
         ...optionHeaders,

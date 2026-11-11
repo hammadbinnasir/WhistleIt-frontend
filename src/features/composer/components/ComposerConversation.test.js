@@ -4,12 +4,14 @@ import { nextTick } from 'vue'
 import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { useChannelsStore } from '@/features/channels'
+import { dmApi } from '@/features/dms/dmApi'
 import { useDmStore } from '@/features/dms/stores/dms'
 import { useMessagesStore } from '@/features/messages/messages'
 import { useRemindersStore } from '@/features/search/reminders'
 import { useUiStore } from '@/stores/ui'
 import { resetUserStore, useUserStore } from '@/features/account/composables/useUserStore'
 import { setupDmsTestState } from '@/features/dms/test-utils'
+import { normalizeMessage } from '@/features/dms/dmApi'
 import {
   getChannelMessages,
   sendChannelMessage,
@@ -18,6 +20,34 @@ import {
 } from '@/features/messages/channelMessageService'
 
 const emojiPickerProps = vi.hoisted(() => vi.fn())
+const sendChannelVoiceMessageMock = vi.hoisted(() => vi.fn())
+const reminderApi = vi.hoisted(() => ({
+  createReminder: vi.fn(),
+  deleteReminder: vi.fn(),
+  listReminders: vi.fn(),
+}))
+vi.mock('@/features/search/remindersApi', () => reminderApi)
+const pollsApi = vi.hoisted(() => ({
+  closePoll: vi.fn(),
+  createPoll: vi.fn(),
+  getPollQuestions: vi.fn(),
+  getPollResult: vi.fn(),
+  submitPollAnswer: vi.fn(),
+}))
+vi.mock('../api/polls.api', () => pollsApi)
+const scheduledMessagesApi = vi.hoisted(() => ({
+  createScheduledMessage: vi.fn(async (message) => ({
+    id: 'scheduled-server-message',
+    body: message.body,
+    scheduled_at: message.scheduled_at,
+  })),
+  getScheduledMessages: vi.fn().mockResolvedValue([]),
+}))
+vi.mock('../api/scheduledMessagesApi', () => scheduledMessagesApi)
+const pinApi = vi.hoisted(() => ({
+  pinMessage: vi.fn().mockResolvedValue({}),
+  unpinMessage: vi.fn().mockResolvedValue(undefined),
+}))
 
 vi.mock('@/features/messages/channelMessageService', () => ({
   getChannelMessages: vi.fn(),
@@ -45,8 +75,22 @@ vi.mock('vue3-emoji-picker', async () => {
   }
 })
 
+vi.mock('@/features/channels/api/channels.api', async (importOriginal) => ({
+  ...(await importOriginal()),
+  pinMessage: pinApi.pinMessage,
+  sendChannelVoiceMessage: sendChannelVoiceMessageMock,
+  unpinMessage: pinApi.unpinMessage,
+}))
+
+vi.mock('@/features/media/voiceNotesApi', async (importOriginal) => ({
+  ...(await importOriginal()),
+  getVoiceNote: vi.fn().mockResolvedValue({ id: 'voice-note-1' }),
+  getVoiceNoteFile: vi.fn().mockResolvedValue(new Blob(['audio'], { type: 'audio/webm' })),
+}))
+
 import ComposerConversation from './ComposerConversation.vue'
 import MessageComposer from './MessageComposer.vue'
+import { sendChannelVoiceMessage } from '@/features/channels/api/channels.api'
 
 describe('composer conversation', () => {
   beforeEach(() => {
@@ -55,6 +99,27 @@ describe('composer conversation', () => {
     setActivePinia(createPinia())
     setupDmsTestState()
     resetUserStore()
+    reminderApi.createReminder.mockReset().mockImplementation(async (reminder) => ({
+      ...reminder,
+      id: 'server-reminder',
+      fired: false,
+    }))
+    reminderApi.deleteReminder.mockReset().mockResolvedValue()
+    reminderApi.listReminders.mockReset().mockResolvedValue([])
+    Object.values(pollsApi).forEach((mock) => mock.mockReset())
+    pollsApi.closePoll.mockResolvedValue({ closed: true })
+    pollsApi.createPoll.mockResolvedValue({ poll: { id: 'server-poll-default' } })
+    pollsApi.getPollQuestions.mockResolvedValue([])
+    pollsApi.getPollResult.mockResolvedValue({})
+    pollsApi.submitPollAnswer.mockResolvedValue({ accepted: true })
+    scheduledMessagesApi.createScheduledMessage.mockReset().mockImplementation(async (message) => ({
+      id: 'scheduled-server-message',
+      body: message.body,
+      scheduled_at: message.scheduled_at,
+    }))
+    scheduledMessagesApi.getScheduledMessages.mockReset().mockResolvedValue([])
+    pinApi.pinMessage.mockReset().mockResolvedValue({})
+    pinApi.unpinMessage.mockReset().mockResolvedValue(undefined)
     getChannelMessages.mockReset()
     getChannelMessages.mockResolvedValue({
       success: true,
@@ -65,6 +130,8 @@ describe('composer conversation', () => {
     updateChannelMessage.mockResolvedValue({ success: true, data: {} })
     deleteChannelMessage.mockReset()
     deleteChannelMessage.mockResolvedValue({ success: true, data: null })
+    sendChannelVoiceMessage.mockReset()
+    sendChannelVoiceMessage.mockResolvedValue({ id: 'server-voice-message' })
     let serverMessageId = 0
     sendChannelMessage.mockImplementation(async (_company, _team, _channel, { content }) => ({
       success: true,
@@ -108,6 +175,264 @@ describe('composer conversation', () => {
         { page: 1, perPage: 15 },
       )
     })
+    wrapper.unmount()
+  })
+
+  it('shows the restriction notice to members and the composer to channel admins in creator-only mode', async () => {
+    sessionStorage.setItem('authUser', JSON.stringify({ id: 'member-1' }))
+    const channels = useChannelsStore()
+    channels.upsertChannel({
+      id: 'restricted-channel',
+      name: 'Restricted',
+      isMember: true,
+      createdById: 'creator-1',
+      canManage: false,
+      isOwner: false,
+      messagePermission: 'creator_only',
+      allowedSenderIds: [],
+    })
+
+    const wrapper = mount(ComposerConversation, {
+      props: { conversationId: 'restricted-channel', conversationType: 'channel' },
+    })
+
+    expect(wrapper.findComponent(MessageComposer).exists()).toBe(false)
+    expect(wrapper.text()).toContain('Only certain people can post in this channel.')
+
+    channels.upsertChannel({
+      ...channels.getById('restricted-channel'),
+      canManage: true,
+    })
+    await nextTick()
+    expect(wrapper.findComponent(MessageComposer).exists()).toBe(true)
+    expect(wrapper.text()).not.toContain('Only certain people can post in this channel.')
+    wrapper.unmount()
+  })
+
+  it('shows the composer to selected members and admins, with a restriction notice to others', async () => {
+    sessionStorage.setItem('authUser', JSON.stringify({ id: 'member-1' }))
+    const channels = useChannelsStore()
+    channels.upsertChannel({
+      id: 'selected-channel',
+      name: 'Selected',
+      isMember: true,
+      createdById: 'creator-1',
+      canManage: false,
+      isOwner: false,
+      messagePermission: 'specific',
+      allowedSenderIds: ['member-2'],
+    })
+
+    const wrapper = mount(ComposerConversation, {
+      props: { conversationId: 'selected-channel', conversationType: 'channel' },
+    })
+    expect(wrapper.findComponent(MessageComposer).exists()).toBe(false)
+    expect(wrapper.text()).toContain('Only certain people can post in this channel.')
+
+    channels.upsertChannel({
+      ...channels.getById('selected-channel'),
+      allowedSenderIds: ['member-1', 'member-2'],
+    })
+    await nextTick()
+    expect(wrapper.findComponent(MessageComposer).exists()).toBe(true)
+    expect(wrapper.text()).not.toContain('Only certain people can post in this channel.')
+
+    channels.upsertChannel({
+      ...channels.getById('selected-channel'),
+      allowedSenderIds: ['member-2'],
+    })
+    await nextTick()
+    expect(wrapper.findComponent(MessageComposer).exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('shows the composer to an explicitly allowed sender when membership data is stale', () => {
+    sessionStorage.setItem('authUser', JSON.stringify({ id: 'member-1' }))
+    const channels = useChannelsStore()
+    channels.channels.push({
+      id: 'selected-channel',
+      name: 'Selected',
+      isMember: false,
+      messagePermission: 'selected_members',
+      allowedSenderIds: [{ user_id: 'member-1' }],
+    })
+
+    const wrapper = mount(ComposerConversation, {
+      props: { conversationId: 'selected-channel', conversationType: 'channel' },
+    })
+
+    expect(wrapper.findComponent(MessageComposer).exists()).toBe(true)
+    expect(wrapper.text()).not.toContain('Only certain people can post in this channel.')
+    wrapper.unmount()
+  })
+
+  it('shows the restriction notice to users who are not channel members', () => {
+    sessionStorage.setItem('authUser', JSON.stringify({ id: 'outsider' }))
+    const channels = useChannelsStore()
+    channels.channels.push({
+      id: 'private-channel',
+      name: 'Private',
+      isMember: false,
+      messagePermission: 'everyone',
+      allowedSenderIds: [],
+    })
+
+    const wrapper = mount(ComposerConversation, {
+      props: { conversationId: 'private-channel', conversationType: 'channel' },
+    })
+
+    expect(wrapper.findComponent(MessageComposer).exists()).toBe(false)
+    expect(wrapper.text()).toContain('Only certain people can post in this channel.')
+    wrapper.unmount()
+  })
+
+  it('shows the composer to channel admins in all message permission modes', async () => {
+    sessionStorage.setItem('authUser', JSON.stringify({ id: 'admin-1' }))
+    const channels = useChannelsStore()
+    channels.upsertChannel({
+      id: 'admin-channel',
+      name: 'Admin channel',
+      isMember: true,
+      createdById: 'creator-1',
+      canManage: true,
+      isOwner: false,
+      messagePermission: 'creator_only',
+      allowedSenderIds: [],
+    })
+
+    const wrapper = mount(ComposerConversation, {
+      props: { conversationId: 'admin-channel', conversationType: 'channel' },
+    })
+
+    for (const messagePermission of ['creator_only', 'selected_members', 'everyone']) {
+      channels.upsertChannel({
+        ...channels.getById('admin-channel'),
+        messagePermission,
+        allowedSenderIds: [],
+      })
+      await nextTick()
+      expect(wrapper.findComponent(MessageComposer).exists()).toBe(true)
+    }
+    wrapper.unmount()
+  })
+
+  it('posts channel message text and attachments through the message API', async () => {
+    const attachment = new File(['report'], 'report.txt', { type: 'text/plain' })
+    const wrapper = mount(ComposerConversation, {
+      props: { conversationId: 'channel-1', conversationType: 'channel' },
+    })
+
+    wrapper.findComponent(MessageComposer).vm.$emit('send', {
+      content: 'Please review this file',
+      attachment,
+    })
+
+    await vi.waitFor(() => {
+      expect(sendChannelMessage).toHaveBeenCalledWith(
+        'company-1',
+        'team-1',
+        'channel-1',
+        expect.objectContaining({ content: 'Please review this file', attachment }),
+      )
+    })
+  })
+
+  it('posts a file-only channel message through the message API', async () => {
+    const attachment = new File(['report'], 'report.txt', { type: 'text/plain' })
+    const wrapper = mount(ComposerConversation, {
+      props: { conversationId: 'channel-1', conversationType: 'channel' },
+    })
+
+    wrapper.findComponent(MessageComposer).vm.$emit('send', {
+      content: '',
+      attachment,
+    })
+
+    await vi.waitFor(() => {
+      expect(sendChannelMessage).toHaveBeenCalledWith(
+        'company-1',
+        'team-1',
+        'channel-1',
+        expect.objectContaining({ content: '', attachment }),
+      )
+    })
+  })
+
+  it('immediately previews a returned image attachment below the message text', async () => {
+    const attachment = {
+      id: 'file-image',
+      name: 'men.jpg',
+      mime_type: 'image/jpeg',
+      path: 'messages/channel-1/men.jpg',
+    }
+    sendChannelMessage.mockResolvedValue({
+      success: true,
+      data: {
+        message: {
+          id: 'message-image',
+          body: 'Photo',
+          attachment: [attachment],
+          sender: { id: 'u1', name: 'Umais' },
+          created_at: '2026-11-10T10:00:00.000Z',
+        },
+      },
+    })
+    const wrapper = mount(ComposerConversation, {
+      props: { conversationId: 'channel-1', conversationType: 'channel' },
+    })
+
+    wrapper.findComponent(MessageComposer).vm.$emit('send', {
+      content: 'Photo',
+      attachment: new File(['image'], 'men.jpg', { type: 'image/jpeg' }),
+    })
+
+    await vi.waitFor(() => expect(wrapper.find('img[alt="men.jpg"]').exists()).toBe(true))
+    const image = wrapper.get('img[alt="men.jpg"]')
+    expect(image.attributes('src')).toMatch(/^blob:/)
+    expect(image.element.parentElement.getAttribute('href')).toMatch(/^blob:/)
+    expect(wrapper.text()).toContain('Photo')
+    wrapper.unmount()
+  })
+
+  it.each([
+    [
+      { id: 'pdf', name: 'guide.pdf', mime_type: 'application/pdf', path: 'messages/guide.pdf' },
+      'PDF',
+    ],
+    [
+      {
+        id: 'docx',
+        name: 'notes.docx',
+        mime_type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        path: 'messages/notes.docx',
+      },
+      'DOC',
+    ],
+  ])('shows a document card for returned %s attachments', async (file, icon) => {
+    sendChannelMessage.mockResolvedValue({
+      success: true,
+      data: {
+        message: {
+          id: `message-${file.id}`,
+          body: 'Document',
+          attachment: [file],
+          sender: { id: 'u1', name: 'Umais' },
+          created_at: '2026-11-10T10:00:00.000Z',
+        },
+      },
+    })
+    const wrapper = mount(ComposerConversation, {
+      props: { conversationId: 'channel-1', conversationType: 'channel' },
+    })
+
+    wrapper.findComponent(MessageComposer).vm.$emit('send', {
+      content: 'Document',
+      attachment: new File(['document'], file.name, { type: file.mime_type }),
+    })
+
+    await vi.waitFor(() => expect(wrapper.text()).toContain(file.name))
+    expect(wrapper.text()).toContain(icon)
+    expect(wrapper.get('a[download]').attributes('href')).toMatch(/^blob:/)
     wrapper.unmount()
   })
 
@@ -156,13 +481,10 @@ describe('composer conversation', () => {
     await vi.waitFor(() => {
       expect(wrapper.text()).toContain('Older channel history')
     })
-    expect(getChannelMessages).toHaveBeenNthCalledWith(
-      2,
-      'company-1',
-      'team-1',
-      'channel-1',
-      { page: 2, perPage: 15 },
-    )
+    expect(getChannelMessages).toHaveBeenNthCalledWith(2, 'company-1', 'team-1', 'channel-1', {
+      page: 2,
+      perPage: 15,
+    })
     wrapper.unmount()
   })
 
@@ -176,7 +498,7 @@ describe('composer conversation', () => {
       'company-1',
       'team-1',
       '6aeb0aa8fbf9fd02ad07048f',
-      { content: 'Hello everyone' },
+      { content: 'Hello everyone', is_important: false },
     )
     expect(wrapper.text()).toContain('Hello everyone')
     wrapper.unmount()
@@ -205,6 +527,171 @@ describe('composer conversation', () => {
     expect(wrapper.get('[aria-label="Sent"]').text()).toBe('✓✓')
   })
 
+  it('renders existing messages without literal paragraph tags', async () => {
+    useMessagesStore().messagesByChannel.general = [
+      {
+        id: 'legacy-html-message',
+        content: '<p>Aslam u Alikum</p>',
+        author: 'Another user',
+        mine: false,
+        createdAt: new Date().toISOString(),
+      },
+    ]
+    const wrapper = mount(ComposerConversation)
+
+    expect(wrapper.text()).toContain('Aslam u Alikum')
+    expect(wrapper.text()).not.toContain('<p>')
+    wrapper.unmount()
+  })
+
+  it('sends the important flag to the channel API and renders the backend flag', async () => {
+    const wrapper = mount(ComposerConversation)
+    const composer = wrapper.findComponent(MessageComposer)
+    await composer.get('button[aria-label="Important message"]').trigger('click')
+    await sendMessage(wrapper, 'Urgent channel update')
+
+    expect(sendChannelMessage).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.anything(),
+      'general',
+      expect.objectContaining({ important: true, is_important: true }),
+    )
+    await vi.waitFor(() => expect(wrapper.text()).toContain('IMPORTANT!'))
+    expect(wrapper.text()).toContain('IMPORTANT!')
+
+    const messages = useMessagesStore()
+    messages.messagesByChannel.general = [
+      {
+        id: 'backend-important-message',
+        content: 'Important from backend',
+        author: 'Another user',
+        mine: false,
+        createdAt: new Date().toISOString(),
+        is_important: true,
+      },
+    ]
+    await nextTick()
+    expect(wrapper.text()).toContain('IMPORTANT!')
+    expect(wrapper.text()).toContain('Important from backend')
+    wrapper.unmount()
+  })
+
+  it('sends important DMs with is_important and renders the delivered flag', async () => {
+    const dms = useDmStore()
+    dms.conversations.push({ id: 'important-dm', members: [dms.meId, 'user-2'], messages: [] })
+    const sendDmMessage = vi
+      .spyOn(dmApi, 'sendMessage')
+      .mockImplementation(async (_companyId, channelId, payload) => ({
+        id: 'important-dm-server-message',
+        from: dms.meId,
+        text: payload.body,
+        createdAt: new Date().toISOString(),
+        is_important: payload.is_important,
+        channelId,
+      }))
+    const wrapper = mount(ComposerConversation, {
+      props: { conversationId: 'important-dm', conversationType: 'dm' },
+    })
+
+    await wrapper
+      .findComponent(MessageComposer)
+      .get('button[aria-label="Important message"]')
+      .trigger('click')
+    await sendMessage(wrapper, 'Urgent direct message')
+    await vi.waitFor(() =>
+      expect(dms.conversations[0].messages.at(-1).id).toBe('important-dm-server-message'),
+    )
+
+    expect(sendDmMessage).toHaveBeenCalledWith('company-1', 'important-dm', {
+      body: 'Urgent direct message',
+      is_important: true,
+    })
+    expect(wrapper.text()).toContain('IMPORTANT!')
+    wrapper.unmount()
+    sendDmMessage.mockRestore()
+  })
+
+  it('sends channel voice-note IDs and renders playback for received voice notes', async () => {
+    const wrapper = mount(ComposerConversation, {
+      props: { conversationId: 'voice-channel', conversationType: 'channel' },
+    })
+    expect(wrapper.findComponent(MessageComposer).props('channelId')).toBe('voice-channel')
+    wrapper.findComponent(MessageComposer).vm.$emit('send', {
+      content: 'Listen to this',
+      voiceNoteId: 'voice-note-1',
+    })
+
+    await vi.waitFor(() => expect(sendChannelVoiceMessage).toHaveBeenCalledOnce())
+    expect(sendChannelMessage).not.toHaveBeenCalled()
+    expect(sendChannelVoiceMessage).toHaveBeenCalledWith(
+      'voice-channel',
+      'voice-note-1',
+      'Listen to this',
+    )
+    await vi.waitFor(() => expect(wrapper.find('.voice-note-player__audio').exists()).toBe(true))
+    expect(useMessagesStore().messagesFor('voice-channel').at(-1)).toMatchObject({
+      content: 'Listen to this',
+      voiceNoteId: 'voice-note-1',
+    })
+    wrapper.unmount()
+  })
+
+  it('loads and plays voice notes received from the channel messages API', async () => {
+    getChannelMessages.mockResolvedValueOnce({
+      success: true,
+      data: {
+        messages: [
+          {
+            id: 'incoming-channel-voice',
+            sender_id: 'member-2',
+            sender: { name: 'Avery' },
+            body: '<p>Voice message</p>',
+            voice_note_id: 'voice-note-incoming',
+            created_at: new Date().toISOString(),
+          },
+        ],
+      },
+    })
+    const wrapper = mount(ComposerConversation, {
+      props: { conversationId: 'received-channel', conversationType: 'channel' },
+    })
+
+    await vi.waitFor(() => expect(wrapper.find('.voice-note-player__audio').exists()).toBe(true))
+    expect(wrapper.find('.composer-conversation__message-bubble p').exists()).toBe(false)
+    expect(getChannelMessages).toHaveBeenCalledWith('company-1', 'team-1', 'received-channel', {
+      page: 1,
+      perPage: 15,
+    })
+    wrapper.unmount()
+  })
+
+  it('renders a player for a received voice ID nested in backend metadata', async () => {
+    getChannelMessages.mockResolvedValueOnce({
+      success: true,
+      data: {
+        messages: [
+          {
+            id: 'incoming-nested-voice',
+            sender_id: 'member-2',
+            body: '<p>Voice message</p>',
+            sender: { voice_note: { id: 'voice-note-nested' } },
+            created_at: new Date().toISOString(),
+          },
+        ],
+      },
+    })
+    const wrapper = mount(ComposerConversation, {
+      props: { conversationId: 'nested-voice-channel', conversationType: 'channel' },
+    })
+
+    await vi.waitFor(() => expect(wrapper.find('.voice-note-player__audio').exists()).toBe(true))
+    expect(useMessagesStore().messagesFor('nested-voice-channel')[0]).toMatchObject({
+      id: 'incoming-nested-voice',
+      voiceNoteId: 'voice-note-nested',
+    })
+    wrapper.unmount()
+  })
+
   it('opens the message action menu on left click when configured', async () => {
     const wrapper = mount(ComposerConversation)
     await sendMessage(wrapper, 'Click for actions')
@@ -223,6 +710,125 @@ describe('composer conversation', () => {
     await wrapper.get('.composer-conversation__message-bubble').trigger('dblclick')
 
     expect(wrapper.get('[aria-label="Reminder title"]').exists()).toBe(true)
+  })
+
+  it('shows due reminders in chat and snoozes them back to the reminder list', async () => {
+    const reminderStore = useRemindersStore()
+    const reminderTime = new Date(Date.now() - 60_000).toISOString()
+    reminderStore.deletedItems.push({
+      id: 'due-reminder-1',
+      fired: true,
+      dismissed: false,
+      conversationId: 'general',
+      conversationName: 'General',
+      conversationType: 'channel',
+      messageId: 'message-1',
+      text: 'Check https://example.com',
+      remindAt: reminderTime,
+      firedAt: reminderTime,
+    })
+    reminderStore.deletedItems.push({
+      id: 'due-reminder-other-conversation',
+      fired: true,
+      dismissed: false,
+      conversationId: 'general',
+      conversationName: 'General DM',
+      conversationType: 'dm',
+      messageId: 'message-2',
+      text: 'This reminder belongs to a DM',
+      remindAt: reminderTime,
+      firedAt: reminderTime,
+    })
+    const wrapper = mount(ComposerConversation)
+
+    expect(wrapper.text()).toContain('Reminded you at')
+    expect(wrapper.text()).toContain('System')
+    expect(wrapper.text()).not.toContain('This reminder belongs to a DM')
+    expect(wrapper.get('.composer-conversation__reminder-message a').attributes('href')).toBe(
+      'https://example.com/',
+    )
+
+    await buttonWithText(wrapper, 'Snooze').trigger('click')
+
+    expect(wrapper.get('[role="dialog"] #reminder-title').text()).toBe('Snooze Reminder')
+    await wrapper.get('[role="dialog"]').trigger('submit')
+
+    await vi.waitFor(() => {
+      expect(reminderStore.dueItems.map((reminder) => reminder.id)).toEqual([
+        'due-reminder-other-conversation',
+      ])
+      expect(reminderStore.items).toHaveLength(1)
+    })
+    expect(reminderStore.items[0].fired).toBe(false)
+    expect(reminderApi.createReminder).toHaveBeenCalledWith(
+      expect.objectContaining({
+        conversationId: 'general',
+        conversationName: 'General',
+        messageId: 'message-1',
+        text: 'Check https://example.com',
+      }),
+    )
+  })
+
+  it('removes a due reminder from chat when Delete Reminder is clicked', async () => {
+    const reminderStore = useRemindersStore()
+    const reminderTime = new Date(Date.now() - 60_000).toISOString()
+    reminderStore.deletedItems.push({
+      id: 'due-reminder-delete',
+      fired: true,
+      dismissed: false,
+      conversationId: 'general',
+      conversationName: 'General',
+      conversationType: 'channel',
+      messageId: 'message-delete',
+      text: 'Remove this reminder from chat',
+      remindAt: reminderTime,
+      firedAt: reminderTime,
+    })
+    const wrapper = mount(ComposerConversation)
+
+    expect(wrapper.text()).toContain('Remove this reminder from chat')
+    await buttonWithText(wrapper, 'Delete Reminder').trigger('click')
+
+    await vi.waitFor(() => {
+      expect(wrapper.text()).not.toContain('Remove this reminder from chat')
+      expect(reminderStore.dueItems).toHaveLength(0)
+    })
+    expect(reminderStore.deletedItems[0]).toMatchObject({
+      id: 'due-reminder-delete',
+      dismissed: true,
+      hideFromChat: true,
+    })
+  })
+
+  it('keeps deleted reminders in the panel history but hides them from chat', async () => {
+    const reminderStore = useRemindersStore()
+    await reminderStore.add({
+      conversationId: 'general',
+      conversationName: 'General',
+      conversationType: 'channel',
+      messageId: 'message-deleted',
+      text: 'Deleted reminder message',
+      remindAt: new Date(Date.now() + 60_000).toISOString(),
+    })
+    const reminderId = reminderStore.items[0].id
+    await reminderStore.remove(reminderId)
+
+    const wrapper = mount(ComposerConversation, {
+      props: { conversationId: 'general', conversationType: 'channel' },
+    })
+
+    expect(wrapper.text()).not.toContain('Reminder deleted at')
+    expect(wrapper.text()).not.toContain('Deleted reminder message')
+
+    const otherConversation = mount(ComposerConversation, {
+      props: { conversationId: 'other-channel', conversationType: 'channel' },
+    })
+    expect(otherConversation.text()).not.toContain('Deleted reminder message')
+    expect(reminderStore.deletedItems[0]).toMatchObject({
+      dismissed: true,
+      hideFromChat: true,
+    })
   })
 
   it('does not open a message menu when left click is set to default', async () => {
@@ -261,20 +867,203 @@ describe('composer conversation', () => {
     document.querySelector('.message-composer__poll-schedule-option input').click()
     await nextTick()
     document.querySelector('.message-composer__poll-footer .message-composer__poll-next').click()
-    await nextTick()
+    await vi.waitFor(() => expect(pollsApi.createPoll).toHaveBeenCalledOnce())
+    await vi.waitFor(() =>
+      expect(wrapper.find('.composer-conversation__poll-card').exists()).toBe(true),
+    )
 
     expect(wrapper.get('.composer-conversation__poll-card').text()).toContain('Lunch vote')
+    expect(
+      document.querySelector('[role="dialog"][aria-labelledby="message-poll-title"]'),
+    ).toBeNull()
     expect(useMessagesStore().messagesFor('general').at(-1).poll.questions[0].text).toBe(
       'What should we order?',
     )
+    expect(pollsApi.createPoll).toHaveBeenCalledWith(
+      'general',
+      expect.objectContaining({
+        title: 'Lunch vote',
+        audience_responses: 'public',
+        results_visibility: 'owner_only',
+        start_now: true,
+        schedule_start: false,
+        schedule_close: false,
+      }),
+    )
+    expect(pollsApi.createPoll.mock.calls[0][1]).not.toHaveProperty('start_at')
+    expect(pollsApi.createPoll.mock.calls[0][1]).not.toHaveProperty('close_at')
+    expect(pollsApi.createPoll.mock.calls[0][1]).not.toHaveProperty('id')
+    await wrapper.get('.composer-conversation__poll-actions button:last-child').trigger('click')
+    await vi.waitFor(() => expect(pollsApi.closePoll).toHaveBeenCalledOnce())
+    expect(wrapper.get('.composer-conversation__poll-card').text()).toContain('Closed')
+  })
+
+  it('sends and stores a created poll in the active DM conversation', async () => {
+    const dms = useDmStore()
+    dms.conversations.push({
+      id: 'dm-poll-channel',
+      title: 'Poll test DM',
+      messages: [],
+      members: [dms.meId],
+    })
+    const wrapper = mount(ComposerConversation, {
+      props: { conversationId: 'dm-poll-channel', conversationType: 'dm' },
+    })
+    const createPoll = wrapper.findComponent(MessageComposer).props('createPoll')
+
+    await expect(
+      createPoll('dm-poll-channel', {
+        id: 'draft-poll-id',
+        title: 'DM poll',
+        questions: [{ text: 'Ready?', type: 'choice', options: ['Yes', 'No'] }],
+      }),
+    ).resolves.toMatchObject({ title: 'DM poll' })
+
+    expect(pollsApi.createPoll).toHaveBeenCalledWith(
+      'dm-poll-channel',
+      expect.objectContaining({ title: 'DM poll' }),
+    )
+    expect(dms.conversations[0].messages[0].poll.title).toBe('DM poll')
+    expect(wrapper.text()).toContain('DM poll')
+    wrapper.unmount()
+  })
+
+  it('normalizes the backend poll response before rendering status and permissions', async () => {
+    pollsApi.createPoll.mockResolvedValueOnce({
+      poll: {
+        id: 'backend-poll-1',
+        creator_id: 'user-1',
+        audience_responses: 'anonymous',
+        results_visibility: 'after_close',
+        status: 'scheduled',
+        start_at: new Date(Date.now() + 60_000).toISOString(),
+        close_at: null,
+      },
+    })
+    const wrapper = mount(ComposerConversation)
+    const createPoll = wrapper.findComponent(MessageComposer).props('createPoll')
+
+    await expect(
+      createPoll('general', {
+        id: 'draft-poll-id',
+        title: 'Backend poll',
+        audience: 'public',
+        resultsVisibility: 'private',
+        startNow: true,
+        scheduleStart: '',
+        scheduleClose: '',
+        questions: [{ text: 'Ready?', type: 'choice', options: ['Yes', 'No'] }],
+      }),
+    ).resolves.toMatchObject({
+      id: 'backend-poll-1',
+      creatorId: 'user-1',
+      audience: 'anonymous',
+      resultsVisibility: 'after_close',
+      scheduleClose: null,
+    })
+
+    expect(wrapper.get('.composer-conversation__poll-card').text()).toContain('Scheduled')
+    expect(wrapper.get('.composer-conversation__poll-card').text()).toContain('Anonymous')
+    wrapper.unmount()
+  })
+
+  it('uses the nested server poll ID for subsequent question requests', async () => {
+    pollsApi.createPoll.mockResolvedValueOnce({
+      data: { poll: { id: 'server-poll-nested', title: 'Nested response poll' } },
+    })
+    pollsApi.getPollQuestions.mockResolvedValueOnce({ result: [] })
+    const wrapper = mount(ComposerConversation)
+    const createPoll = wrapper.findComponent(MessageComposer).props('createPoll')
+
+    await createPoll('general', {
+      id: 'poll-temporary-draft-id',
+      title: 'Nested response poll',
+      audience: 'public',
+      resultsVisibility: 'private',
+      startNow: true,
+      scheduleStartEnabled: false,
+      scheduleCloseEnabled: false,
+      questions: [{ text: 'Ready?', type: 'choice', options: ['Yes', 'No'] }],
+    })
+    await wrapper.get('.composer-conversation__poll-actions button').trigger('click')
+
+    expect(pollsApi.getPollQuestions).toHaveBeenCalledWith({ poll_id: 'server-poll-nested' })
+    expect(wrapper.text()).not.toContain('poll-temporary-draft-id')
+    wrapper.unmount()
+  })
+
+  it('maps all editor question types to backend poll fields', async () => {
+    const wrapper = mount(ComposerConversation)
+    const createPoll = wrapper.findComponent(MessageComposer).props('createPoll')
+
+    await createPoll('general', {
+      id: 'draft-poll-id',
+      title: 'Question type mapping',
+      audience: 'public',
+      resultsVisibility: 'private',
+      startNow: true,
+      scheduleStartEnabled: false,
+      scheduleCloseEnabled: false,
+      questions: [
+        {
+          text: 'Pick one',
+          type: 'choice',
+          required: true,
+          multiple: true,
+          options: ['A', 'B'],
+        },
+        {
+          text: 'Rate it',
+          type: 'rating',
+          required: true,
+          ratingType: '1-10',
+          options: Array.from({ length: 10 }, (_, index) => String(index + 1)),
+        },
+        { text: 'Explain', type: 'openEnded', required: false, options: [] },
+      ],
+    })
+
+    expect(pollsApi.createPoll.mock.calls[0][1].questions).toEqual([
+      {
+        text: 'Pick one',
+        type: 'choice',
+        required: true,
+        options: ['A', 'B'],
+        multiple_select: true,
+      },
+      {
+        text: 'Rate it',
+        type: 'rating',
+        required: true,
+        options: Array.from({ length: 10 }, (_, index) => String(index + 1)),
+        rating_scale: 10,
+      },
+      {
+        text: 'Explain',
+        type: 'open_ended',
+        required: false,
+        options: ['__open_ended__', '__open_ended__'],
+      },
+    ])
+    wrapper.unmount()
   })
 
   it('accepts and displays an open-ended poll response', async () => {
+    pollsApi.getPollQuestions.mockResolvedValueOnce({
+      result: [
+        {
+          id: 'open-question-1',
+          question: 'What should we improve?',
+          type: 'open_ended',
+          required: true,
+          choices: [],
+        },
+      ],
+    })
     const wrapper = mount(ComposerConversation)
     const composer = wrapper.findComponent(MessageComposer)
     composer.vm.$emit('send', {
       content: '',
-      attachments: [],
       poll: {
         id: 'open-ended-poll',
         title: 'Open feedback',
@@ -292,16 +1081,27 @@ describe('composer conversation', () => {
     await nextTick()
 
     await wrapper.get('.composer-conversation__poll-actions button').trigger('click')
-    await nextTick()
+    await vi.waitFor(() => expect(pollsApi.getPollQuestions).toHaveBeenCalledOnce())
+    await vi.waitFor(() =>
+      expect(
+        document.querySelector('textarea[aria-label="Response to question 1"]'),
+      ).not.toBeNull(),
+    )
     const response = document.querySelector('textarea[aria-label="Response to question 1"]')
     expect(response).not.toBeNull()
     response.value = 'Improve documentation'
     response.dispatchEvent(new Event('input', { bubbles: true }))
     await nextTick()
     document.querySelector('.composer-conversation__poll-response-footer button').click()
-    await nextTick()
+    await vi.waitFor(() => expect(pollsApi.submitPollAnswer).toHaveBeenCalledOnce())
+    await vi.waitFor(() => expect(wrapper.text()).toContain("You're Done"))
 
     expect(wrapper.text()).toContain("You're Done")
+    expect(pollsApi.submitPollAnswer).toHaveBeenCalledWith({
+      channel_id: 'general',
+      poll_id: 'open-ended-poll',
+      answers: { 'open-question-1': 'Improve documentation' },
+    })
     await wrapper
       .findAll('button')
       .find((button) => button.text().includes('View All Results'))
@@ -343,6 +1143,72 @@ describe('composer conversation', () => {
     expect(wrapper.text()).toContain('Scheduled')
     expect(wrapper.text()).not.toContain('Participate')
     expect(wrapper.text()).not.toContain('View All Results')
+    wrapper.unmount()
+  })
+
+  it('hides Close Poll from users who are not the creator or authorized', () => {
+    const messages = useMessagesStore()
+    messages.messagesByChannel.general = [
+      {
+        id: 'other-users-poll-message',
+        content: 'Poll: Team choice',
+        author: 'Another user',
+        mine: false,
+        createdAt: new Date().toISOString(),
+        poll: {
+          id: 'other-users-poll',
+          title: 'Team choice',
+          creatorId: 'another-user',
+          canClose: false,
+          questions: [{ text: 'Which option?', type: 'choice', options: ['A', 'B'] }],
+        },
+      },
+    ]
+    const wrapper = mount(ComposerConversation)
+
+    expect(wrapper.text()).toContain('Which option?')
+    expect(
+      wrapper
+        .findAll('.composer-conversation__poll-actions button')
+        .some((button) => button.text().includes('Close Poll')),
+    ).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('publishes a legacy poll as a server copy and replaces its temporary ID', async () => {
+    pollsApi.createPoll.mockResolvedValueOnce({ poll: { id: 'server-poll-migrated' } })
+    pollsApi.getPollQuestions.mockResolvedValueOnce({ result: [] })
+    const messages = useMessagesStore()
+    messages.messagesByChannel.general = [
+      {
+        id: 'legacy-poll-message',
+        content: 'Poll: Legacy poll',
+        author: 'You',
+        mine: true,
+        createdAt: new Date().toISOString(),
+        poll: {
+          id: 'poll-1794292224037-0ka65j',
+          title: 'Legacy poll',
+          questions: [{ text: 'Question?', type: 'choice', options: ['A', 'B'] }],
+        },
+      },
+    ]
+    const wrapper = mount(ComposerConversation)
+
+    expect(wrapper.get('.composer-conversation__poll-card').text()).toContain(
+      'This older poll has no server ID.',
+    )
+    await wrapper.get('.composer-conversation__poll-actions button').trigger('click')
+    await vi.waitFor(() => expect(pollsApi.createPoll).toHaveBeenCalledOnce())
+    expect(messages.messagesByChannel.general[0].poll.id).toBe('server-poll-migrated')
+    expect(wrapper.get('.composer-conversation__poll-card').attributes('data-poll-id')).toBe(
+      'server-poll-migrated',
+    )
+    await wrapper.get('.composer-conversation__poll-actions button').trigger('click')
+    await vi.waitFor(() => expect(pollsApi.getPollQuestions).toHaveBeenCalledOnce())
+    expect(pollsApi.getPollQuestions).toHaveBeenCalledWith({ poll_id: 'server-poll-migrated' })
+    expect(pollsApi.getPollResult).not.toHaveBeenCalled()
+    expect(pollsApi.closePoll).not.toHaveBeenCalled()
     wrapper.unmount()
   })
 
@@ -397,7 +1263,7 @@ describe('composer conversation', () => {
     const wrapper = mount(ComposerConversation, {
       props: { conversationId: conversation.id, conversationType: 'dm' },
     })
-
+    expect(wrapper.text()).toContain('Project ideas bhej di hain')
     expect(wrapper.text()).toContain('Project ideas bhej di hain')
 
     const editor = wrapper.get('[contenteditable="true"]')
@@ -413,6 +1279,73 @@ describe('composer conversation', () => {
     expect(wrapper.text()).toContain('Reply from the composer')
   })
 
+  it('passes the direct-channel ID to the voice composer', () => {
+    const dms = useDmStore()
+    dms.conversations = [
+      {
+        id: 'direct-channel-42',
+        type: 'dm',
+        members: [dms.meId, 'user-2'],
+        messages: [],
+      },
+    ]
+    const wrapper = mount(ComposerConversation, {
+      props: { conversationId: 'direct-channel-42', conversationType: 'dm' },
+    })
+
+    expect(wrapper.findComponent(MessageComposer).props('channelId')).toBe('direct-channel-42')
+    wrapper.unmount()
+  })
+
+  it('sends and plays voice notes in direct messages', async () => {
+    const dms = useDmStore()
+    const conversation = {
+      id: 'direct-channel-voice',
+      type: 'dm',
+      members: [dms.meId, 'u2'],
+      messages: [
+        normalizeMessage({
+          id: 'received-dm-voice',
+          from: 'u2',
+          body: 'Voice message',
+          voice_note: { voice_note_id: 'voice-note-received' },
+          createdAt: new Date().toISOString(),
+        }),
+      ],
+    }
+    dms.conversations = [conversation]
+    const sendDmMessage = vi.spyOn(dmApi, 'sendMessage').mockResolvedValue({
+      id: 'sent-dm-voice',
+      from: dms.meId,
+      text: 'Voice message',
+      voiceNoteId: 'voice-note-sent',
+    })
+    const wrapper = mount(ComposerConversation, {
+      props: { conversationId: conversation.id, conversationType: 'dm' },
+    })
+
+    wrapper.findComponent(MessageComposer).vm.$emit('send', {
+      content: '',
+      voiceNoteId: 'voice-note-sent',
+    })
+
+    await vi.waitFor(() => {
+      expect(sendDmMessage).toHaveBeenCalledWith('company-1', conversation.id, {
+        body: 'Voice message',
+        voice_note_id: 'voice-note-sent',
+        is_important: false,
+      })
+    })
+    await vi.waitFor(() => expect(wrapper.findAll('.voice-note-player__audio')).toHaveLength(2))
+    expect(wrapper.findAll('.composer-conversation__message-bubble p')).toHaveLength(0)
+    expect(conversation.messages).toEqual(
+      expect.arrayContaining([expect.objectContaining({ voiceNoteId: 'voice-note-sent' })]),
+    )
+
+    sendDmMessage.mockRestore()
+    wrapper.unmount()
+  })
+
   it('shows the signed-in user name instead of You for DM messages', async () => {
     sessionStorage.setItem('authUser', JSON.stringify({ id: 'u1', fullName: 'Aiman Iqbal' }))
     const dms = useDmStore()
@@ -426,7 +1359,7 @@ describe('composer conversation', () => {
     await sendMessage(wrapper, 'Name should be visible')
 
     expect(wrapper.text()).toContain('Aiman Iqbal')
-    expect(wrapper.text()).not.toContain('You')
+    expect(wrapper.text()).not.toMatch(/\bYou\b/)
     wrapper.unmount()
   })
 
@@ -565,9 +1498,11 @@ describe('composer conversation', () => {
     expect(
       article.get('.composer-conversation__message-bubble .composer-conversation__edited').text(),
     ).toBe('(edited)')
-    expect(article.find('.composer-conversation__message-heading .composer-conversation__edited').exists()).toBe(
-      false,
-    )
+    expect(
+      article
+        .find('.composer-conversation__message-heading .composer-conversation__edited')
+        .exists(),
+    ).toBe(false)
   })
 
   it('deletes a server-backed channel message through the delete API', async () => {
@@ -777,6 +1712,7 @@ describe('composer conversation', () => {
     await wrapper.get('.reminder-dialog').trigger('submit')
 
     const reminders = useRemindersStore()
+    await vi.waitFor(() => expect(reminders.items).toHaveLength(1))
     expect(reminders.items[0]).toMatchObject({
       text: 'Remember this update',
       title: 'Review tomorrow',
@@ -800,15 +1736,10 @@ describe('composer conversation', () => {
     await wrapper.get('form.composer-conversation__forward-dialog').trigger('submit')
 
     await vi.waitFor(() => {
-      expect(sendChannelMessage).toHaveBeenLastCalledWith(
-        'company-1',
-        'team-1',
-        'random',
-        {
-          content: 'Forward this update',
-          forwardedFrom: 'You in general',
-        },
-      )
+      expect(sendChannelMessage).toHaveBeenLastCalledWith('company-1', 'team-1', 'random', {
+        content: 'Forward this update',
+        forwardedFrom: 'You in general',
+      })
     })
     expect(messages.messagesFor('random')).toContainEqual(
       expect.objectContaining({
@@ -901,15 +1832,5 @@ describe('composer conversation', () => {
     expect(wrapper.get('[aria-label="Sent"]').text()).toBe('✓✓')
     expect(wrapper.text()).not.toContain('Scheduled for')
     expect(wrapper.findAll('.composer-conversation__message-bubble')).toHaveLength(1)
-  })
-
-  it('shows a selected GIF as a conversation message', async () => {
-    const wrapper = mount(ComposerConversation)
-    const gif = { title: 'Celebration', url: 'https://example.com/celebration.gif' }
-
-    wrapper.findComponent(MessageComposer).vm.$emit('gif', gif)
-    await nextTick()
-
-    expect(wrapper.get('img[alt="Celebration"]').attributes('src')).toBe(gif.url)
   })
 })

@@ -10,6 +10,7 @@ import { useChannelsStore } from '@/features/channels/store/channels.store'
 import { useTeamsStore } from '@/stores/teams'
 import UserAvatar from './UserAvatar.vue'
 import MessageComposer from '@/features/composer/components/MessageComposer.vue'
+import VoiceNotePlayer from '@/features/media/VoiceNotePlayer.vue'
 
 const tabs = [
   { id: 'recent-dms', label: 'Recent DMs' },
@@ -44,6 +45,19 @@ const workflowRecurrence = ref('weekly')
 const workflowStartDate = ref('')
 const workflowEndDate = ref('')
 const activeThread = ref(null)
+const deletingReminderId = ref(null)
+const threadComposer = ref(null)
+
+async function deleteReminder(id) {
+  deletingReminderId.value = id
+  try {
+    await reminders.remove(id)
+  } catch (error) {
+    ui.toast('Unable to delete reminder', error?.message || 'Please try again.', 'error')
+  } finally {
+    deletingReminderId.value = null
+  }
+}
 
 onMounted(() => {
   void activity.init()
@@ -270,10 +284,15 @@ function closeThread() {
 
 function sendThreadReply(payload) {
   if (!activeThread.value) return
-  dms.sendMessage(activeThread.value.conversationId, {
+  const sentMessage = dms.sendMessage(activeThread.value.conversationId, {
     ...payload,
     threadId: activeThread.value.message.id,
   })
+  if (sentMessage && payload.voiceNoteId) {
+    threadComposer.value?.clearVoiceNote(payload.voiceNoteId)
+  } else if (payload.voiceNoteId) {
+    threadComposer.value?.setVoiceNoteSending(false)
+  }
 }
 
 function showTabPage(page) {
@@ -722,10 +741,11 @@ function saveWorkflow() {
             </button>
             <button
               type="button"
-              class="rounded border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-50"
-              @click="reminders.remove(reminder.id)"
+              class="rounded border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-50 disabled:opacity-50"
+              :disabled="deletingReminderId === reminder.id"
+              @click="deleteReminder(reminder.id)"
             >
-              Delete
+              {{ deletingReminderId === reminder.id ? 'Deleting...' : 'Delete' }}
             </button>
           </article>
         </div>
@@ -955,14 +975,26 @@ function saveWorkflow() {
                   <strong>{{ dms.usersById[reply.from]?.name || 'You' }}</strong>
                   <time class="text-sm text-slate-500">{{ formatDate(reply.createdAt) }}</time>
                 </div>
-                <p class="mt-1 whitespace-pre-wrap break-words text-slate-700">
+                <p
+                  v-if="!reply.voiceNoteId && !reply.voice_note_id && !reply.voice_note?.id"
+                  class="mt-1 whitespace-pre-wrap break-words text-slate-700"
+                >
                   {{ displayMessage(reply) }}
                 </p>
+                <VoiceNotePlayer
+                  v-else
+                  :voice-note-id="reply.voiceNoteId || reply.voice_note_id || reply.voice_note.id"
+                />
               </div>
             </article>
           </div>
         </div>
-        <MessageComposer @send="sendThreadReply" />
+        <MessageComposer
+          ref="threadComposer"
+          :channel-id="activeThread.conversationId"
+          conversation-type="dm"
+          @send="sendThreadReply"
+        />
       </aside>
     </div>
 

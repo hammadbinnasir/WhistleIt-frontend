@@ -7,7 +7,6 @@ import { getAuthUserId } from '@/features/auth/session'
 import {
   listMembers,
   listAvailableMembers,
-  removeMember,
   addMember,
   getWebhookUrl,
 } from './members'
@@ -47,42 +46,69 @@ const copied = ref(false)
 const confirmLeave = ref(false)
 const showMessagePermissions = ref(false)
 const confirmArchive = ref(false)
-const memberToRemove = ref(null)
 const editingDetails = ref(false)
 const draftName = ref('')
 const draftDescription = ref('')
-const messagePermission = ref('everyone')
 const selectedMessagePermission = ref('everyone')
+const selectedAllowedSenderIds = ref([])
+const permissionMemberQuery = ref('')
+const permissionMemberDropdownOpen = ref(false)
 const newAdminId = ref('')
 const newAdminSearch = ref('')
 const newAdminDropdownOpen = ref(false)
 const leaveError = ref('')
 const leaving = ref(false)
 
-const permissionStorageKey = computed(() => `channel-message-permission:${props.channel.id}`)
-
-watch(
-  permissionStorageKey,
-  () => loadMessagePermission(),
-  { immediate: true },
-)
+watch(() => props.channel.id, loadMessagePermission, { immediate: true })
 
 function loadMessagePermission() {
-  const saved = localStorage.getItem(permissionStorageKey.value)
-  if (['everyone', 'admins', 'specific'].includes(saved)) messagePermission.value = saved
-  selectedMessagePermission.value = messagePermission.value
+  const saved = props.channel.messagePermission
+  selectedMessagePermission.value =
+    saved === 'admins'
+      ? 'creator_only'
+      : saved === 'specific'
+        ? 'selected_members'
+        : ['everyone', 'creator_only', 'selected_members'].includes(saved)
+          ? saved
+          : 'everyone'
+  selectedAllowedSenderIds.value = (props.channel.allowedSenderIds || []).map(String)
+  permissionMemberQuery.value = ''
+  permissionMemberDropdownOpen.value = false
 }
 
 function openMessagePermissions() {
-  selectedMessagePermission.value = messagePermission.value
+  loadMessagePermission()
   showMessagePermissions.value = true
 }
 
-function saveMessagePermissions() {
-  messagePermission.value = selectedMessagePermission.value
-  localStorage.setItem(permissionStorageKey.value, messagePermission.value)
-  emit('save-message-permission', messagePermission.value)
+function closeMessagePermissions() {
   showMessagePermissions.value = false
+  permissionMemberQuery.value = ''
+  permissionMemberDropdownOpen.value = false
+}
+
+function saveMessagePermissions() {
+  if (
+    selectedMessagePermission.value === 'selected_members' &&
+    !selectedAllowedSenderIds.value.length
+  ) {
+    return
+  }
+  emit('save-message-permission', {
+    messagePermission: selectedMessagePermission.value,
+    allowedSenderIds:
+      selectedMessagePermission.value === 'selected_members'
+        ? [...selectedAllowedSenderIds.value]
+        : [],
+  })
+  closeMessagePermissions()
+}
+
+function toggleAllowedSender(id) {
+  const userId = String(id)
+  selectedAllowedSenderIds.value = selectedAllowedSenderIds.value.includes(userId)
+    ? selectedAllowedSenderIds.value.filter((selectedId) => selectedId !== userId)
+    : [...selectedAllowedSenderIds.value, userId]
 }
 
 function startEditingDetails() {
@@ -116,6 +142,20 @@ const initials = (n) =>
     .toUpperCase()
 const filtered = computed(() =>
   members.value.filter((m) => m.name.toLowerCase().includes(memberQuery.value.toLowerCase())),
+)
+const permissionMemberOptions = computed(() => {
+  const query = permissionMemberQuery.value.trim().toLowerCase()
+  return members.value
+    .filter((member) => !selectedAllowedSenderIds.value.includes(String(member.id)))
+    .filter(
+      (member) =>
+        !query || `${member.name} ${member.email || ''}`.toLowerCase().includes(query),
+    )
+})
+const selectedPermissionMembers = computed(() =>
+  members.value.filter((member) =>
+    selectedAllowedSenderIds.value.includes(String(member.id)),
+  ),
 )
 
 async function refresh() {
@@ -207,18 +247,6 @@ async function addSelected() {
       : (error?.message || 'Unable to add the selected members to the channel.')
   }
 }
-async function remove(m) {
-  memberToRemove.value = m
-}
-
-async function confirmRemoveMember() {
-  const m = memberToRemove.value
-  if (!m) return
-  await removeMember(m.id, props.channel.id)
-  await refresh()
-  memberToRemove.value = null
-}
-
 async function copy() {
   try {
     await navigator.clipboard.writeText(webhookUrl.value)
@@ -404,44 +432,6 @@ const showSample = ref(false)
       </section>
     </div>
     <div
-      v-if="memberToRemove"
-      class="fixed inset-0 z-[90] flex items-center justify-center bg-slate-900/40 p-4"
-      @click.self="memberToRemove = null"
-    >
-      <section
-        class="w-[450px] max-w-full rounded-lg bg-white px-6 py-6 text-center shadow-2xl"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="remove-member-title"
-      >
-        <div class="mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-full bg-red-50 text-red-500">
-          <span class="text-4xl font-bold leading-none">i</span>
-        </div>
-        <h3 id="remove-member-title" class="text-xl font-bold text-slate-700">
-          Remove Member
-        </h3>
-        <p class="mt-7 text-base text-slate-600">
-          Are you sure you want to remove this member?
-        </p>
-        <div class="mt-6 flex justify-center gap-4">
-          <button
-            type="button"
-            class="cursor-pointer rounded border border-slate-300 px-7 py-2.5 font-semibold uppercase text-slate-600 hover:bg-slate-50"
-            @click="memberToRemove = null"
-          >
-            Cancel
-          </button>
-          <button
-            type="button"
-            class="cursor-pointer rounded bg-red-500 px-7 py-2.5 font-semibold uppercase text-white hover:bg-red-600"
-            @click="confirmRemoveMember"
-          >
-            Remove
-          </button>
-        </div>
-      </section>
-    </div>
-    <div
       v-if="confirmArchive"
       class="fixed inset-0 z-[80] flex items-center justify-center bg-slate-900/40 p-4"
       @click.self="confirmArchive = false"
@@ -482,7 +472,7 @@ const showSample = ref(false)
     <div
       v-if="showMessagePermissions"
       class="fixed inset-0 z-[70] flex items-center justify-center bg-slate-900/40 p-4"
-      @click.self="showMessagePermissions = false"
+      @click.self="closeMessagePermissions"
     >
       <section class="w-[450px] max-w-full overflow-hidden rounded-md bg-white shadow-2xl">
         <header class="relative px-6 py-5 text-center">
@@ -490,7 +480,7 @@ const showSample = ref(false)
             type="button"
             class="absolute right-5 top-5 cursor-pointer text-xl leading-none text-slate-600"
             aria-label="Close message permissions"
-            @click="showMessagePermissions = false"
+            @click="closeMessagePermissions"
           >
             &times;
           </button>
@@ -505,25 +495,151 @@ const showSample = ref(false)
             Everyone
           </label>
           <label class="flex cursor-pointer items-center gap-4 py-3 text-slate-700">
-            <input v-model="selectedMessagePermission" type="radio" value="admins" />
-            Admin Only
+            <input v-model="selectedMessagePermission" type="radio" value="creator_only" />
+            Creator Only
           </label>
           <label class="flex cursor-pointer items-center gap-4 py-2 text-slate-700">
-            <input v-model="selectedMessagePermission" type="radio" value="specific" />
+            <input v-model="selectedMessagePermission" type="radio" value="selected_members" />
             Allow Specific Members
           </label>
+          <div
+            v-if="selectedMessagePermission === 'selected_members'"
+            class="relative mt-2"
+          >
+            <label class="relative block">
+              <span class="absolute -top-2 left-2 z-10 bg-white px-1 text-xs text-indigo-500">
+                Search channel members
+              </span>
+              <div
+                class="flex min-h-12 w-full items-center gap-2 rounded border-2 border-indigo-500 bg-white py-2 pl-3 pr-10 focus-within:ring-2 focus-within:ring-indigo-100"
+              >
+                <svg
+                  class="h-5 w-5 shrink-0 text-slate-400"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.8"
+                  aria-hidden="true"
+                >
+                  <circle cx="11" cy="11" r="7"></circle>
+                  <path d="m16.4 16.4 4.1 4.1" stroke-linecap="round"></path>
+                </svg>
+                <span
+                  v-if="selectedPermissionMembers.length"
+                  class="flex shrink-0 items-center gap-1"
+                >
+                  <button
+                    v-for="member in selectedPermissionMembers"
+                    :key="member.id"
+                    type="button"
+                    class="relative grid h-8 w-8 cursor-pointer place-items-center rounded-full border-2 border-white text-[11px] font-bold text-white shadow-sm"
+                    :class="colorFor(member.id)"
+                    :title="`Remove ${member.name}`"
+                    @click.stop="toggleAllowedSender(member.id)"
+                  >
+                    {{ initials(member.name) }}
+                    <span
+                      class="absolute -right-1 -top-1 grid h-4 w-4 place-items-center rounded-full border border-slate-300 bg-white text-[10px] leading-none text-slate-500 shadow-sm"
+                      aria-hidden="true"
+                    >
+                      &times;
+                    </span>
+                  </button>
+                </span>
+                <input
+                  v-model="permissionMemberQuery"
+                  type="search"
+                  :placeholder="
+                    selectedPermissionMembers.length ? '' : 'Type here to search'
+                  "
+                  class="min-w-0 flex-1 border-0 bg-transparent px-0 text-sm text-slate-600 outline-none"
+                  aria-label="Search channel members for permissions"
+                  @focus="permissionMemberDropdownOpen = true"
+                />
+              </div>
+              <button
+                type="button"
+                class="absolute right-1 top-1/2 grid h-8 w-8 -translate-y-1/2 cursor-pointer place-items-center rounded text-sm text-indigo-500 hover:bg-indigo-50"
+                aria-label="Show channel members"
+                :aria-expanded="permissionMemberDropdownOpen"
+                @click.stop="permissionMemberDropdownOpen = !permissionMemberDropdownOpen"
+              >
+                <span
+                  :class="permissionMemberDropdownOpen ? '-rotate-180' : ''"
+                  class="transition-transform"
+                >
+                  ▼
+                </span>
+              </button>
+            </label>
+            <p v-if="loadingMembers" class="mt-2 py-2 text-sm text-slate-500">
+              Loading channel members…
+            </p>
+            <p
+              v-else-if="membersLoadError"
+              class="mt-2 py-2 text-sm text-red-600"
+              role="alert"
+            >
+              {{ membersLoadError }}
+            </p>
+            <div
+              v-else-if="permissionMemberDropdownOpen && !permissionMemberOptions.length"
+              class="mt-2 rounded border border-slate-200 px-4 py-3 text-center text-sm text-slate-500"
+            >
+              No channel members found
+            </div>
+            <div
+              v-else-if="permissionMemberDropdownOpen && permissionMemberOptions.length"
+              class="mt-2 max-h-40 overflow-y-auto rounded border border-slate-200 bg-white shadow-sm"
+            >
+              <div
+                v-for="member in permissionMemberOptions"
+                :key="member.id"
+                class="text-sm text-slate-800"
+              >
+                <button
+                  type="button"
+                  class="flex w-full cursor-pointer items-center gap-3 px-3 py-2 text-left hover:bg-indigo-50"
+                  @click="toggleAllowedSender(member.id)"
+                >
+                  <span
+                    class="grid h-8 w-8 shrink-0 place-items-center rounded-full text-[11px] font-bold text-white"
+                    :class="colorFor(member.id)"
+                  >
+                    {{ initials(member.name) }}
+                  </span>
+                  <span class="truncate">{{ member.name }}</span>
+                </button>
+              </div>
+            </div>
+          </div>
+          <p
+            v-if="
+              selectedMessagePermission === 'selected_members' &&
+              !selectedAllowedSenderIds.length &&
+              !loadingMembers &&
+              !membersLoadError
+            "
+            class="mt-2 text-sm text-red-600"
+          >
+            Select at least one channel member.
+          </p>
         </div>
         <footer class="flex justify-center gap-3 border-t border-slate-200 px-6 py-4">
           <button
             type="button"
             class="cursor-pointer px-5 py-2 font-semibold uppercase text-slate-700"
-            @click="showMessagePermissions = false"
+            @click="closeMessagePermissions"
           >
             Cancel
           </button>
           <button
             type="button"
-            class="cursor-pointer rounded bg-indigo-500 px-5 py-2 font-semibold uppercase text-white"
+            class="cursor-pointer rounded bg-indigo-500 px-5 py-2 font-semibold uppercase text-white disabled:cursor-not-allowed disabled:opacity-50"
+            :disabled="
+              selectedMessagePermission === 'selected_members' &&
+              (!selectedAllowedSenderIds.length || loadingMembers || Boolean(membersLoadError))
+            "
             @click="saveMessagePermissions"
           >
             Save
@@ -820,13 +936,6 @@ const showSample = ref(false)
                 >
                 <span class="text-sm text-slate-800">{{ m.name }}</span>
               </div>
-              <button
-                type="button"
-                class="invisible cursor-pointer text-xs text-red-600 group-hover:visible hover:text-red-700"
-                @click="remove(m)"
-              >
-                Remove
-              </button>
             </li>
           </ul>
         </div>

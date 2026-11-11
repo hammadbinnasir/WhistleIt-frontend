@@ -4,7 +4,7 @@ vi.unmock('@/features/dms/dmApi')
 vi.mock('@/lib/api/client', () => ({ apiRequest: vi.fn() }))
 
 import { apiRequest } from '@/lib/api/client'
-import { dmApi, normalizePublicCustomStatus } from './dmApi'
+import { dmApi, normalizeMessage, normalizePublicCustomStatus } from './dmApi'
 
 describe('DM API', () => {
   beforeEach(() => {
@@ -385,9 +385,7 @@ describe('DM API', () => {
 
     await dmApi.listMessages('company 1', 'channel/1')
 
-    expect(apiRequest).toHaveBeenCalledWith(
-      '/v1/company%201/direct-channels/channel%2F1/messages',
-    )
+    expect(apiRequest).toHaveBeenCalledWith('/v1/company%201/direct-channels/channel%2F1/messages')
   })
 
   it('gets one message of a direct channel', async () => {
@@ -402,6 +400,17 @@ describe('DM API', () => {
       text: 'Hello',
     })
     expect(apiRequest).toHaveBeenCalledWith('/v1/company-1/direct-channels/channel-1/messages/m1')
+  })
+
+  it('normalizes the backend singular attachment field on direct messages', () => {
+    expect(
+      normalizeMessage({
+        id: 'm1',
+        attachment: [{ id: 'file-1', name: 'men.jpg', path: 'messages/men.jpg' }],
+      }),
+    ).toMatchObject({
+      attachments: [{ id: 'file-1', name: 'men.jpg', path: 'messages/men.jpg' }],
+    })
   })
 
   it('sends a message to a direct channel', async () => {
@@ -419,16 +428,102 @@ describe('DM API', () => {
     })
   })
 
+  it('sends a direct message and attachments as multipart form data', async () => {
+    apiRequest.mockResolvedValue({
+      success: true,
+      data: { message: { id: 'm12', sender_id: 'user-1', body: 'See attached' } },
+    })
+    const attachment = new File(['report'], 'report.txt', { type: 'text/plain' })
+
+    await expect(
+      dmApi.sendMessage('company-1', 'channel-1', {
+        body: 'See attached',
+        attachment,
+      }),
+    ).resolves.toMatchObject({ id: 'm12', text: 'See attached' })
+
+    const [, options] = apiRequest.mock.calls[0]
+    expect(options.method).toBe('POST')
+    expect(options.body).toBeInstanceOf(FormData)
+    expect(options.body.get('body')).toBe('See attached')
+    expect(options.body.get('message')).toBeNull()
+    expect(options.body.get('attachment')).toBeInstanceOf(File)
+    expect(options.body.get('attachment').name).toBe('report.txt')
+  })
+
+  it('rejects attachment arrays because only one file can be sent per message', () => {
+    expect(() =>
+      dmApi.sendMessage('company-1', 'channel-1', {
+        body: 'See attached',
+        attachments: [new File(['report'], 'report.txt', { type: 'text/plain' })],
+      }),
+    ).toThrow('Only one message attachment is supported.')
+    expect(apiRequest).not.toHaveBeenCalled()
+  })
+
+  it('sends a voice-note ID and normalizes voice notes received from a direct channel', async () => {
+    apiRequest.mockResolvedValue({
+      success: true,
+      data: {
+        message: { id: 'm10', sender_id: 'user-2', body: '', voice_note_id: 'voice-8' },
+      },
+    })
+
+    await expect(
+      dmApi.sendMessage('company-1', 'channel-1', { body: '', voice_note_id: 'voice-8' }),
+    ).resolves.toMatchObject({ id: 'm10', voiceNoteId: 'voice-8' })
+    expect(apiRequest).toHaveBeenCalledWith('/v1/company-1/direct-channels/channel-1/messages', {
+      method: 'POST',
+      body: JSON.stringify({ body: 'Voice message', voice_note_id: 'voice-8' }),
+    })
+
+    apiRequest.mockResolvedValue({
+      success: true,
+      data: {
+        messages: [
+          {
+            id: 'm11',
+            sender_id: 'user-3',
+            body: 'Voice message',
+            sender: { id: 'user-3', voice_note: { id: 'voice-9' } },
+          },
+        ],
+      },
+    })
+    await expect(dmApi.listMessages('company-1', 'channel-1')).resolves.toMatchObject([
+      { id: 'm11', voiceNoteId: 'voice-9' },
+    ])
+
+    apiRequest.mockResolvedValue({
+      success: true,
+      data: {
+        messages: [
+          {
+            message: {
+              id: 'm12',
+              sender_id: 'user-3',
+              body: 'Voice message',
+            },
+            voice_note: { voice_note_id: 'voice-10' },
+          },
+        ],
+      },
+    })
+    await expect(dmApi.listMessages('company-1', 'channel-1')).resolves.toMatchObject([
+      { id: 'm12', voiceNoteId: 'voice-10' },
+    ])
+  })
+
   it('updates a message of a direct channel', async () => {
     apiRequest.mockResolvedValue({ success: true, data: null })
 
     await expect(
       dmApi.updateMessage('company-1', 'channel-1', 'm9', { body: 'Edited' }),
     ).resolves.toBeNull()
-    expect(apiRequest).toHaveBeenCalledWith(
-      '/v1/company-1/direct-channels/channel-1/messages/m9',
-      { method: 'PATCH', body: JSON.stringify({ body: 'Edited' }) },
-    )
+    expect(apiRequest).toHaveBeenCalledWith('/v1/company-1/direct-channels/channel-1/messages/m9', {
+      method: 'PATCH',
+      body: JSON.stringify({ body: 'Edited' }),
+    })
   })
 
   it('deletes a message of a direct channel', async () => {
@@ -436,10 +531,9 @@ describe('DM API', () => {
 
     await dmApi.deleteMessage('company-1', 'channel-1', 'm9')
 
-    expect(apiRequest).toHaveBeenCalledWith(
-      '/v1/company-1/direct-channels/channel-1/messages/m9',
-      { method: 'DELETE' },
-    )
+    expect(apiRequest).toHaveBeenCalledWith('/v1/company-1/direct-channels/channel-1/messages/m9', {
+      method: 'DELETE',
+    })
   })
 
   it('requires the IDs for message requests', () => {

@@ -11,8 +11,11 @@ import {
   leaveChannel,
   listAvailableMembers,
   listChannels,
+  listChannelMessages,
   listMembers,
   removeChannelMember,
+  sendChannelMessage,
+  sendChannelVoiceMessage,
   updateChannel,
 } from './channels.api'
 
@@ -54,6 +57,74 @@ describe('channel API routes', () => {
       ['channel-4', false],
     ])
     expect(browseResults.map(({ memberCount }) => memberCount)).toEqual([7, 3])
+  })
+
+  it('sends channel message attachments as multipart files', async () => {
+    const attachment = new File(['report'], 'report.txt', { type: 'text/plain' })
+
+    await sendChannelMessage('channel-3', {
+      content: 'Please review this file',
+      attachment,
+    })
+
+    const [, options] = http.mock.calls.at(-1)
+    expect(http).toHaveBeenLastCalledWith(`${channelPath}/messages`, {
+      method: 'POST',
+      body: expect.any(FormData),
+    })
+    expect(options.body.get('body')).toBe('Please review this file')
+    expect(options.body.get('attachment')).toBeInstanceOf(File)
+    expect(options.body.get('attachment').name).toBe('report.txt')
+  })
+
+  it('posts announcement voice messages to the workspace team channel', async () => {
+    await sendChannelVoiceMessage('channel-3', 'voice-note-9', 'Meeting notes')
+
+    expect(http).toHaveBeenLastCalledWith(`${channelPath}/messages`, {
+      method: 'POST',
+      body: { body: 'Meeting notes', voice_note_id: 'voice-note-9' },
+    })
+  })
+
+  it('normalizes a voice-note relation nested under the message sender', async () => {
+    http.mockResolvedValue({
+      success: true,
+      data: {
+        messages: [
+          {
+            id: 'voice-message-1',
+            channel_id: 'channel-3',
+            body: '<p>Voice message</p>',
+            sender: {
+              id: 'user-42',
+              voice_note: { id: 'voice-note-9', mime_type: 'audio/webm' },
+            },
+          },
+        ],
+      },
+    })
+
+    await expect(listChannelMessages('channel-3')).resolves.toMatchObject([
+      { id: 'voice-message-1', voiceNoteId: 'voice-note-9' },
+    ])
+  })
+
+  it('does not fetch members per channel just to resolve creator names while listing', async () => {
+    http.mockResolvedValue({
+      items: [
+        {
+          id: 'channel-3',
+          name: 'Engineering',
+          is_member: true,
+          creator_id: '5e884898da28047151d0e56f8dc62927',
+        },
+      ],
+    })
+
+    await listChannels()
+
+    expect(http).toHaveBeenCalledTimes(1)
+    expect(http).toHaveBeenCalledWith(collectionPath)
   })
 
   it('loads missing member counts for browse results', async () => {
@@ -225,6 +296,28 @@ describe('channel API routes', () => {
     expect(http).toHaveBeenLastCalledWith(channelPath, { method: 'DELETE' })
   })
 
+  it('sends the backend message permission payload', async () => {
+    await updateChannel('channel-3', { messagePermission: 'everyone' })
+
+    expect(http).toHaveBeenLastCalledWith(channelPath, {
+      method: 'PATCH',
+      body: { message_permission: 'everyone', allowed_sender_ids: [] },
+    })
+
+    await updateChannel('channel-3', {
+      messagePermission: 'selected_members',
+      allowedSenderIds: ['user-id-1', 'user-id-2'],
+    })
+
+    expect(http).toHaveBeenLastCalledWith(channelPath, {
+      method: 'PATCH',
+      body: {
+        message_permission: 'selected_members',
+        allowed_sender_ids: ['user-id-1', 'user-id-2'],
+      },
+    })
+  })
+
   it('uses the supplied join, leave, and membership routes', async () => {
     await joinChannel('channel-3')
     expect(http).toHaveBeenLastCalledWith(`${channelPath}/join`, { method: 'POST' })
@@ -250,6 +343,15 @@ describe('channel API routes', () => {
 
     await removeChannelMember('channel-3', 'user-4')
     expect(http).toHaveBeenLastCalledWith(`${channelPath}/members/user-4`, { method: 'DELETE' })
+  })
+
+  it('accepts a join response without a full channel record', async () => {
+    http.mockResolvedValue({ success: true, message: 'Joined channel successfully.' })
+
+    await expect(joinChannel('channel-3')).resolves.toEqual({
+      id: 'channel-3',
+      isMember: true,
+    })
   })
 
   it('loads and normalizes channel available members', async () => {

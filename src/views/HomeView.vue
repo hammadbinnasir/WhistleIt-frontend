@@ -5,6 +5,7 @@ import { useRouter } from 'vue-router'
 
 // Stores
 import { useUiStore } from '@/stores/ui'
+import { useKeyboardShortcuts } from '@/features/shell/shortcuts/useKeyboardShortcuts'
 import { useTeamsStore } from '@/stores/teams'
 import { useMembersStore } from '@/stores/members'
 import { useChannelsStore } from '@/features/channels'
@@ -49,6 +50,7 @@ import SetReminderModal from '@/features/search/SetReminderModal.vue'
 
 const router = useRouter()
 const ui = useUiStore()
+useKeyboardShortcuts()
 const teamsStore = useTeamsStore()
 const membersStore = useMembersStore()
 const channelsStore = useChannelsStore()
@@ -138,6 +140,8 @@ const selectedChannel = computed(() => {
     muted: ch.isMuted || false,
     favourite: ch.isFavorite || false,
     canManage: Boolean(ch.canManage),
+    messagePermission: ch.messagePermission || 'everyone',
+    allowedSenderIds: ch.allowedSenderIds || [],
   }
 })
 
@@ -203,13 +207,12 @@ async function archiveSelectedChannel() {
   }
 }
 
-async function saveChannelMessagePermission(permission) {
+async function saveChannelMessagePermission({ messagePermission, allowedSenderIds }) {
   if (!selectedChannel.value) return
   try {
     await channelsStore.updateChannel(selectedChannel.value.id, {
-      name: selectedChannel.value.name,
-      description: selectedChannel.value.description,
-      messagePermission: permission,
+      messagePermission,
+      allowedSenderIds,
     })
   } catch (error) {
     ui.toast('Unable to save permissions', error?.message || 'Please try again.', 'error')
@@ -277,12 +280,15 @@ function messageProfileMember(member) {
 }
 
 onMounted(async () => {
+  void remindersStore.fetch().catch((error) => {
+    ui.toast('Unable to load reminders', error?.message || 'Please try again.', 'error')
+  })
+  remindersStore.startWatcher()
   void activity.init()
   await teamsStore.fetchTeams()
   if (teamsStore.activeTeamId) {
     await membersStore.fetchMembers(teamsStore.activeTeamId)
   }
-  remindersStore.startWatcher()
 })
 
 onBeforeUnmount(() => {
@@ -558,7 +564,10 @@ onBeforeUnmount(() => {
       class="h-full w-[min(432px,40vw)] shrink-0 border-l border-slate-200 bg-white shadow-lg"
       aria-label="Reminders panel"
     >
-      <RemindersPanel />
+      <RemindersPanel
+        :conversation-id="activeConversation?.id ?? selectedChannelId ?? ''"
+        :conversation-type="activeConversation ? 'dm' : 'channel'"
+      />
     </aside>
 
     <aside
