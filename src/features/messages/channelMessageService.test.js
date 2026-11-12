@@ -107,6 +107,21 @@ describe('channel message service', () => {
     expect(options.body.get('attachment').name).toBe('report.txt')
   })
 
+  it('sends a saved voice note by ID without re-uploading its audio file', async () => {
+    const audio = new File(['recording'], 'audio_recording.webm', { type: 'audio/webm' })
+
+    await sendChannelMessage('company-1', 'team-2', 'channel-3', {
+      content: '',
+      attachment: audio,
+      voiceNoteId: 'voice-note-1',
+    })
+
+    expect(http).toHaveBeenCalledWith(collectionPath, {
+      method: 'POST',
+      body: { voice_note_id: 'voice-note-1' },
+    })
+  })
+
   it('sends a prepared recent file as multipart binary data without a file ID', async () => {
     const file = new File(['report'], 'report.pdf', { type: 'application/pdf' })
     await sendChannelMessage('company-1', 'team-2', 'channel-3', {

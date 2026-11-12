@@ -659,6 +659,36 @@ describe('message composer', () => {
     expect(wrapper.get('[contenteditable="true"]').text()).toBe('')
   })
 
+  it('previews a selected voice recording with audio controls', async () => {
+    const originalCreateObjectURL = URL.createObjectURL
+    const originalRevokeObjectURL = URL.revokeObjectURL
+    URL.createObjectURL = vi.fn(() => 'blob:selected-voice')
+    URL.revokeObjectURL = vi.fn()
+
+    try {
+      const wrapper = mount(MessageComposer)
+      const voiceFile = new File(['voice'], 'audio_recording.webm', { type: 'audio/webm' })
+
+      wrapper.getComponent(MediaToolbar).vm.$emit('recent-file-selected', voiceFile, 'voice-note-1')
+      await wrapper.vm.$nextTick()
+
+      const audio = wrapper.get('.message-composer__attachment-audio')
+      expect(audio.attributes('src')).toBe('blob:selected-voice')
+      expect(audio.attributes('controls')).toBeDefined()
+      expect(wrapper.find('.message-composer__attachment-file-icon').exists()).toBe(false)
+
+      await wrapper.get('form').trigger('submit')
+      expect(wrapper.emitted('send')).toEqual([[{ content: '', voiceNoteId: 'voice-note-1' }]])
+
+      wrapper.unmount()
+    } finally {
+      if (originalCreateObjectURL) URL.createObjectURL = originalCreateObjectURL
+      else delete URL.createObjectURL
+      if (originalRevokeObjectURL) URL.revokeObjectURL = originalRevokeObjectURL
+      else delete URL.revokeObjectURL
+    }
+  })
+
   it('previews selected images and documents in removable attachment cards', async () => {
     const originalCreateObjectURL = URL.createObjectURL
     const originalRevokeObjectURL = URL.revokeObjectURL
