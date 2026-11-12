@@ -14,6 +14,7 @@ import {
 const props = defineProps({
   channelId: { type: [String, Number], default: null },
   companyId: { type: [String, Number], default: null },
+  teamId: { type: [String, Number], default: null },
   conversationType: { type: String, default: 'channel' },
   createPoll: { type: Function, default: null },
   pollLoading: { type: Boolean, default: false },
@@ -765,10 +766,7 @@ function sendMessage() {
 
   emit('send', {
     content: codeMode.value
-      ? [...(editor.value?.childNodes || [])]
-          .map(nodeToPlainText)
-          .join('')
-          .replace(/\n+$/, '')
+      ? [...(editor.value?.childNodes || [])].map(nodeToPlainText).join('').replace(/\n+$/, '')
       : content.value.trim(),
     ...(codeMode.value ? { isCode: true } : {}),
     ...(attachment.value ? { attachment: attachment.value } : {}),
@@ -1204,19 +1202,7 @@ function removeAttachment() {
 }
 
 function handleRecentFileSelected(file) {
-  emit('send', {
-    content: content.value.trim(),
-    attachment: file,
-    attachmentSource: 'recent',
-    ...(important.value ? { important: true } : {}),
-  })
-  content.value = ''
-  if (editor.value) editor.value.innerHTML = ''
-  activeFormats.value = []
-  activeList.value = ''
-  codeMode.value = false
-  important.value = false
-  savedSelectionRange = null
+  handleFileSelected(file)
 }
 
 function handleMediaAction(action, payload) {
@@ -1669,6 +1655,7 @@ function handleFormKeydown(event) {
       <MediaToolbar
         class="message-composer__media"
         :company-id="companyId"
+        :team-id="teamId"
         :recording="recording"
         :microphone-disabled="Boolean(voiceNote) || voiceNoteUploading"
         @mousedown.prevent="saveSelection(true)"

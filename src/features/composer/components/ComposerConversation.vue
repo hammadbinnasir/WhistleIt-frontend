@@ -3499,6 +3499,7 @@ onBeforeUnmount(() => {
       v-if="canSendMessages"
       :channel-id="channelId"
       :company-id="teamsStore.activeWorkspaceId"
+      :team-id="teamsStore.activeTeamId"
       :conversation-type="conversationType"
       :create-poll="createPollInChannel"
       :poll-loading="pollApi.loading.value"
