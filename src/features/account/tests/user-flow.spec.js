@@ -264,7 +264,24 @@ describe('custom status modal', () => {
     expect(url).toContain('/v1/users/test-user/status')
     expect(options.method).toBe('PUT')
     expect(JSON.parse(options.body)).toEqual({
-      custom_status: { emoji: '☕', text: 'emergency' },
+      custom_status: { emoji: '☕', text: 'emergency', expires_at: null },
+    })
+  })
+
+  it('sends the selected custom status expiry to the API', async () => {
+    const expiresAt = Date.now() + 30 * 60 * 1000
+    await store.setCustomStatus('Lunch', { duration: '30m', expiresAt })
+
+    const [, options] = fetch.mock.calls.find(
+      ([requestUrl, request]) =>
+        request.method === 'PUT' && String(requestUrl).endsWith('/v1/users/test-user/status'),
+    )
+    expect(JSON.parse(options.body)).toEqual({
+      custom_status: {
+        emoji: '☕',
+        text: 'Lunch',
+        expires_at: new Date(expiresAt).toISOString(),
+      },
     })
   })
 
@@ -874,7 +891,11 @@ describe('account settings modal', () => {
           job_responsibilities: ['Design systems', 'Build things'],
           avatar_url: 'http://10.0.105.90:8000//api//v1//avatars//avatars//test-user//saved.png',
           presence: 'away',
-          custom_status: 'Working remotely',
+          custom_status: {
+            emoji: '🏠',
+            text: 'Working remotely',
+            expires_at: '2026-11-11T11:35:32+00:00',
+          },
           preferences: {
             enter_key: 'newline',
             double_click: 'reminder',
@@ -900,6 +921,9 @@ describe('account settings modal', () => {
     )
     expect(store.state.status).toBe('away')
     expect(store.state.customStatus).toBe('Working remotely')
+    expect(store.state.customStatusExpiresAt).toBe(
+      new Date('2026-11-11T11:35:32+00:00').getTime(),
+    )
     expect(store.state.preferences).toEqual({
       enterKey: 'newline',
       doubleClick: 'reminder',

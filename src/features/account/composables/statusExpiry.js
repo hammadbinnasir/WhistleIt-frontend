@@ -23,14 +23,17 @@ export function customStatusTooltip(text, expiresAt, now = Date.now()) {
   const timestamp = expiresAt == null ? NaN : new Date(expiresAt).getTime()
   if (!Number.isFinite(timestamp) || timestamp <= now) return text
 
-  const formattedExpiry = new Intl.DateTimeFormat('en-US', {
+  const formattedDate = new Intl.DateTimeFormat('en-US', {
     month: 'short',
-    day: '2-digit',
-    hour: '2-digit',
+    day: 'numeric',
+    year: 'numeric',
+  }).format(timestamp)
+  const formattedTime = new Intl.DateTimeFormat('en-US', {
+    hour: 'numeric',
     minute: '2-digit',
     second: '2-digit',
   }).format(timestamp)
-  return `${text} (Expires at ${formattedExpiry})`
+  return `${text} (Expires at ${formattedDate}, ${formattedTime})`
 }
 
 const endOfDay = (y, m, d) => new Date(y, m, d, 23, 59, 59, 999).getTime()

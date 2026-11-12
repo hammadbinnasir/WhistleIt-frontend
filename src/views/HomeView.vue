@@ -92,7 +92,11 @@ const user = computed(() => ({
     fullName: userStore.state?.profile?.fullName || authenticatedUser?.fullName || '',
   },
   status: userStore.state?.status || 'online',
-  customStatus: userStore.state?.customStatus,
+  customStatus: {
+    emoji: userStore.state?.customStatusEmoji,
+    text: userStore.state?.customStatus,
+    expiresAt: userStore.state?.customStatusExpiresAt,
+  },
 }))
 
 function showPollHistory() {

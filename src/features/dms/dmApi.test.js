@@ -100,7 +100,11 @@ describe('DM API', () => {
             data: {
               user: {
                 profile: {
-                  custom_status: { emoji: '📅', text: 'In a meeting' },
+                  custom_status: {
+                    emoji: '📅',
+                    text: 'In a meeting',
+                    expires_at: '2026-11-11T11:35:32+00:00',
+                  },
                 },
               },
             },
@@ -110,7 +114,11 @@ describe('DM API', () => {
       ),
     ).toEqual({
       id: 'user-2',
-      customStatus: { emoji: '📅', text: 'In a meeting' },
+      customStatus: {
+        emoji: '📅',
+        text: 'In a meeting',
+        expiresAt: '2026-11-11T11:35:32+00:00',
+      },
       customStatusLoaded: true,
     })
   })

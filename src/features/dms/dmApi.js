@@ -334,7 +334,20 @@ function customStatusOf(raw, user) {
     user.custom_status_emoji ??
     status.emoji ??
     ''
-  return text || emoji ? { emoji, text } : null
+  const expiresAt =
+    status.expiresAt ??
+    status.expires_at ??
+    raw.customStatusExpiresAt ??
+    raw.custom_status_expires_at ??
+    user.customStatusExpiresAt ??
+    user.custom_status_expires_at
+  return text || emoji
+    ? {
+        emoji,
+        text,
+        ...(expiresAt != null ? { expiresAt } : {}),
+      }
+    : null
 }
 
 function objectEntriesDeep(value, entries = [], seen = new Set()) {
@@ -719,6 +732,7 @@ export function normalizeUserStatus(data) {
   const state = normalizeState(word) ?? presenceStateOf(src)
   if (!state) return null
   const custom = src.custom_status && typeof src.custom_status === 'object' ? src.custom_status : {}
+  const expiresAt = custom.expiresAt ?? custom.expires_at ?? src.custom_status_expires_at
   return {
     state,
     status: {
@@ -729,6 +743,7 @@ export function normalizeUserStatus(data) {
         (typeof src.custom_status === 'string' ? src.custom_status : undefined) ??
         src.text ??
         '',
+      ...(expiresAt != null ? { expiresAt } : {}),
     },
     lastSeenAt: lastSeenOf(src) ?? undefined,
     changedAt: src.status_changed_at ?? undefined,
