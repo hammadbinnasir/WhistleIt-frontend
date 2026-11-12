@@ -30,6 +30,7 @@ const activeList = ref('')
 const codeMode = ref(false)
 const important = ref(false)
 const attachmentPreviewUrl = ref('')
+const recentVoiceNoteId = ref('')
 const scheduleOpen = ref(false)
 const customScheduleOpen = ref(false)
 const scheduleError = ref('')
@@ -769,10 +770,14 @@ function sendMessage() {
       ? [...(editor.value?.childNodes || [])].map(nodeToPlainText).join('').replace(/\n+$/, '')
       : content.value.trim(),
     ...(codeMode.value ? { isCode: true } : {}),
-    ...(attachment.value ? { attachment: attachment.value } : {}),
+    ...(attachment.value && !recentVoiceNoteId.value ? { attachment: attachment.value } : {}),
     ...(pollDraft.value ? { poll: pollDraft.value } : {}),
     ...(important.value ? { important: true } : {}),
-    ...(voiceNote.value ? { voiceNoteId: voiceNote.value.id } : {}),
+    ...(voiceNote.value
+      ? { voiceNoteId: voiceNote.value.id }
+      : recentVoiceNoteId.value
+        ? { voiceNoteId: recentVoiceNoteId.value }
+        : {}),
   })
   if (voiceNote.value) voiceNoteSending.value = true
   content.value = ''
@@ -1184,7 +1189,10 @@ function handleFileSelected(file) {
   if (!file) return
   clearAttachment()
   attachment.value = file
-  if (messageAttachmentKind(file) === 'image' && typeof URL.createObjectURL === 'function') {
+  if (
+    (messageAttachmentKind(file) === 'image' || file.type?.startsWith('audio/')) &&
+    typeof URL.createObjectURL === 'function'
+  ) {
     attachmentPreviewUrl.value = URL.createObjectURL(file)
   }
   emit('attachment', file)
@@ -1195,14 +1203,16 @@ function clearAttachment() {
   if (attachmentPreviewUrl.value) URL.revokeObjectURL(attachmentPreviewUrl.value)
   attachmentPreviewUrl.value = ''
   attachment.value = null
+  recentVoiceNoteId.value = ''
 }
 
 function removeAttachment() {
   clearAttachment()
 }
 
-function handleRecentFileSelected(file) {
+function handleRecentFileSelected(file, voiceNoteId = null) {
   handleFileSelected(file)
+  recentVoiceNoteId.value = voiceNoteId == null ? '' : String(voiceNoteId)
 }
 
 function handleMediaAction(action, payload) {
@@ -1533,9 +1543,22 @@ function handleFormKeydown(event) {
     </Teleport>
 
     <div v-if="attachment" class="message-composer__attachments" aria-label="Attachment">
-      <div class="message-composer__attachment-preview">
+      <div
+        class="message-composer__attachment-preview"
+        :class="{
+          'message-composer__attachment-preview--audio': attachment.type?.startsWith('audio/'),
+        }"
+      >
+        <audio
+          v-if="attachment.type?.startsWith('audio/') && attachmentPreviewUrl"
+          class="message-composer__attachment-audio"
+          :src="attachmentPreviewUrl"
+          controls
+          preload="metadata"
+          :aria-label="`Preview ${attachment.name}`"
+        />
         <img
-          v-if="attachmentPreviewUrl"
+          v-else-if="attachmentPreviewUrl"
           class="message-composer__attachment-thumbnail"
           :src="attachmentPreviewUrl"
           :alt="attachment.name"
@@ -1546,7 +1569,11 @@ function handleFormKeydown(event) {
             <path d="M14 2.75v5h5M9 15l3-3 3 3m-6 2 2-2 2 2" />
           </svg>
         </span>
-        <span class="message-composer__attachment-name" :title="attachment.name">
+        <span
+          v-if="!attachment.type?.startsWith('audio/') || !attachmentPreviewUrl"
+          class="message-composer__attachment-name"
+          :title="attachment.name"
+        >
           {{ attachment.name }}
         </span>
         <button
@@ -2857,6 +2884,18 @@ function handleFormKeydown(event) {
   border-bottom: 3px solid #5962ff;
   background: #fff;
   box-shadow: 0 1px 3px rgb(22 24 40 / 12%);
+}
+
+.message-composer__attachment-preview--audio {
+  width: min(320px, 100%);
+  min-height: 60px;
+  padding: 5px 22px 7px 5px;
+}
+
+.message-composer__attachment-audio {
+  width: 100%;
+  min-width: 0;
+  height: 48px;
 }
 
 .message-composer__attachment-thumbnail,

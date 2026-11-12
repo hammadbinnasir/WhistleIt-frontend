@@ -166,7 +166,11 @@ async function selectRecentFile(file, index) {
   recentFilesError.value = ''
   try {
     const binaryFile = await downloadRecentFile(file, recentFileContext())
-    emit('recent-file-selected', binaryFile)
+    if (file.recentFileKind === 'voice-note') {
+      emit('recent-file-selected', binaryFile, recentFileId(file))
+    } else {
+      emit('recent-file-selected', binaryFile)
+    }
     recentFilesOpen.value = false
   } catch (error) {
     recentFilesError.value =
@@ -377,12 +381,22 @@ onBeforeUnmount(() => {
             <span
               v-else
               class="recent-files__icon"
-              :class="`recent-files__icon--${messageAttachmentKind(file)}`"
+              :class="
+                file.recentFileKind === 'voice-note'
+                  ? 'recent-files__icon--voice'
+                  : `recent-files__icon--${messageAttachmentKind(file)}`
+              "
               aria-hidden="true"
             >
               <svg viewBox="0 0 24 24">
-                <path d="M6 2.75h8l4 4v14.5H6z" />
-                <path d="M14 2.75v4h4M9 12h6M9 16h6" />
+                <template v-if="file.recentFileKind === 'voice-note'">
+                  <path d="M4 13v-2a8 8 0 0 1 16 0v2" />
+                  <path d="M4 12h3v7H4zM17 12h3v7h-3z" />
+                </template>
+                <template v-else>
+                  <path d="M6 2.75h8l4 4v14.5H6z" />
+                  <path d="M14 2.75v4h4M9 12h6M9 16h6" />
+                </template>
               </svg>
             </span>
             <span class="recent-files__details">

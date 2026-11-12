@@ -164,7 +164,9 @@ export const useMessagesStore = defineStore('messages', () => {
     const attachments = deleted ? [] : normalizeMessageAttachments(record)
     const content = deleted
       ? ''
-      : normalizeMessageContent(record.content ?? record.body ?? record.text ?? record.message ?? '')
+      : normalizeMessageContent(
+          record.content ?? record.body ?? record.text ?? record.message ?? '',
+        )
 
     return {
       ...record,
@@ -338,7 +340,12 @@ export const useMessagesStore = defineStore('messages', () => {
     const rawContent = typeof payload?.content === 'string' ? payload.content : ''
     const content = payload?.isCode ? rawContent : rawContent.trim()
     if (!key.trim()) return { success: false, error: 'A channel ID is required to send a message.' }
-    if (!content.trim() && !payload?.attachment) {
+    if (
+      !content.trim() &&
+      !payload?.attachment &&
+      !payload?.voiceNoteId &&
+      !payload?.voice_note_id
+    ) {
       return { success: false, error: 'Message content is required.' }
     }
 

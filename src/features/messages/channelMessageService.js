@@ -28,8 +28,9 @@ function assertPayload(payload, { requireContent }) {
     throw new Error('Message payload must be an object.')
   }
 
-  const { content, attachment, messageType, parentMessageId } = payload
+  const { content, attachment, messageType, parentMessageId, voiceNoteId, voice_note_id } = payload
   const hasAttachment = attachment != null
+  const hasVoiceNote = (voice_note_id ?? voiceNoteId) != null
 
   if ('attachments' in payload) {
     throw new Error('Only one message attachment is supported.')
@@ -37,12 +38,12 @@ function assertPayload(payload, { requireContent }) {
   if (hasAttachment && (typeof Blob === 'undefined' || !(attachment instanceof Blob))) {
     throw new Error('Message attachment must be a file.')
   }
-  if (requireContent && content === undefined && !hasAttachment) {
+  if (requireContent && content === undefined && !hasAttachment && !hasVoiceNote) {
     throw new Error('Message content is required.')
   }
   if (
     content !== undefined &&
-    (typeof content !== 'string' || (!content.trim() && !hasAttachment))
+    (typeof content !== 'string' || (!content.trim() && !hasAttachment && !hasVoiceNote))
   ) {
     throw new Error('Message content must be a non-empty string.')
   }
@@ -149,10 +150,21 @@ export function sendChannelMessage(companyId, teamId, channelId, payload) {
   return request(() => {
     const path = collectionPath(companyId, teamId, channelId)
     assertPayload(payload, { requireContent: true })
-    const { content, attachment, attachmentSource, isCode, is_code, ...metadata } = payload
+    const {
+      content,
+      attachment,
+      attachmentSource,
+      isCode,
+      is_code,
+      voiceNoteId,
+      voice_note_id,
+      ...metadata
+    } = payload
+    const noteId = voice_note_id ?? voiceNoteId
+    if (noteId != null) metadata.voice_note_id = String(noteId)
     const codeFlag = is_code ?? isCode
     if (codeFlag !== undefined) metadata.is_code = Boolean(codeFlag)
-    if (attachment) {
+    if (attachment && noteId == null) {
       const body = new FormData()
       if (content?.trim()) body.append('body', content.trim())
       const recentFile = attachmentSource === 'recent'

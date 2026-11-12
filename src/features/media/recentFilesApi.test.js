@@ -23,6 +23,21 @@ describe('recent files API', () => {
     })
   })
 
+  it('recognizes voice recordings marked by the recent-files API', async () => {
+    const voice = {
+      id: 'voice-1',
+      mime_type: 'audio/webm',
+      type: 'voice',
+      url: '/api/v1/voice-notes/voice-1/file?signature=valid',
+      created_at: '2026-11-12T10:27:43+05:00',
+    }
+    http.mockResolvedValue({ success: true, data: { files: [voice] } })
+
+    await expect(listRecentFiles('company-1')).resolves.toEqual([
+      { ...voice, recentFileKind: 'voice-note', name: 'audio_recordingvoice-1.webm' },
+    ])
+  })
+
   it('removes duplicate recent files by name and MIME type, keeping the newest entry', async () => {
     const files = [
       {
@@ -50,6 +65,28 @@ describe('recent files API', () => {
     http.mockResolvedValue({ success: true, data: { files } })
 
     await expect(listRecentFiles('company-1')).resolves.toEqual([files[1], files[2]])
+  })
+
+  it('downloads recent voice notes from their file endpoint as audio files', async () => {
+    const audio = new Blob(['voice bytes'], { type: 'audio/webm' })
+    http.mockResolvedValue(audio)
+
+    const file = await downloadRecentFile({
+      id: 'voice-1',
+      name: 'Voice message',
+      recentFileKind: 'voice-note',
+      type: 'voice',
+      mime_type: 'audio/webm',
+      url: '/api/v1/voice-notes/voice-1/file?signature=valid',
+    })
+
+    expect(http).toHaveBeenCalledWith('/api/v1/voice-notes/voice-1/file?signature=valid', {
+      auth: false,
+      responseType: 'blob',
+    })
+    expect(file).toBeInstanceOf(File)
+    expect(file.type).toBe('audio/webm')
+    expect(file.name).toBe('Voice message.webm')
   })
 
   it('rejects missing company IDs before making a request', async () => {

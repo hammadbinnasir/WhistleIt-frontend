@@ -245,6 +245,33 @@ describe('media toolbar emoji picker', () => {
     wrapper.unmount()
   })
 
+  it('shows a voice recording in Recent Files and emits its audio as a pending file', async () => {
+    const voiceNote = {
+      id: 'voice-1',
+      name: 'Voice message',
+      mime_type: 'audio/webm',
+      recentFileKind: 'voice-note',
+      created_at: '2026-11-12T10:27:43+05:00',
+    }
+    const audio = new File(['voice bytes'], 'Voice message.webm', { type: 'audio/webm' })
+    recentFilesApi.listRecentFiles.mockResolvedValue([voiceNote])
+    recentFilesApi.downloadRecentFile.mockResolvedValue(audio)
+    const wrapper = mount(MediaToolbar, { props: { companyId: 'company-1' } })
+
+    await wrapper.get('button[aria-label="Recent files"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.get('.recent-files__icon--voice').exists()).toBe(true)
+    expect(wrapper.get('.recent-files__details').text()).toContain('Voice message')
+    await wrapper.get('button[aria-label="Share Voice message"]').trigger('click')
+
+    expect(recentFilesApi.downloadRecentFile).toHaveBeenCalledWith(voiceNote, {
+      companyId: 'company-1',
+    })
+    expect(wrapper.emitted('recent-file-selected')).toEqual([[audio, 'voice-1']])
+    wrapper.unmount()
+  })
+
   it('opens on the nature category with the library emoji rendering', async () => {
     const wrapper = mount(MediaToolbar)
     await wrapper.get('button[aria-label="Emoji"]').trigger('click')
