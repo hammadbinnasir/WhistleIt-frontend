@@ -565,7 +565,6 @@ export function normalizeMessage(raw) {
       markedForward,
       message,
     ),
-    text: normalizeMessageContent(message.content ?? message.text ?? message.body ?? ''),
     ...((message.isCode ?? message.is_code) != null
       ? { isCode: booleanValue(message.isCode ?? message.is_code) }
       : {}),

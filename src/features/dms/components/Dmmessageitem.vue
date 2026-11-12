@@ -99,11 +99,6 @@ function remove() {
         <button class="rounded bg-indigo-500 px-3 text-sm font-semibold text-white" @click="saveEdit">Save</button>
         <button class="px-2 text-sm text-slate-600" @click="editing = false">Cancel</button>
       </div>
-      <pre
-        v-else-if="message.isCode"
-        class="mt-2 overflow-x-auto rounded-lg bg-slate-950 p-4 text-sm leading-relaxed text-slate-100"
-        data-test="message-text"
-      ><code>{{ message.text }}</code></pre>
       <p
         v-else-if="isDeleted"
         class="mt-1 text-[15px] italic leading-relaxed text-slate-500"
@@ -111,6 +106,11 @@ function remove() {
       >
         (message deleted)
       </p>
+      <pre
+        v-else-if="message.isCode"
+        class="mt-2 overflow-x-auto rounded-lg bg-slate-950 p-4 text-sm leading-relaxed text-slate-100"
+        data-test="message-text"
+      ><code>{{ message.text }}</code></pre>
       <p
         v-else
         class="whitespace-pre-wrap break-words text-[15px] leading-relaxed"

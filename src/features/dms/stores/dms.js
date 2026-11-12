@@ -1436,6 +1436,7 @@ export const useDmStore = defineStore('dms', () => {
     try {
       const voiceNoteId = voiceNoteIdOf(message)
       const messageText = String(message.text ?? '')
+      const body = bodyOf(message, message.isCode ? messageText : messageText.trim())
       const body = message.isCode ? messageText : bodyOf(message).trim()
       const attachment = pendingAttachmentByMessage.get(localId)
       if (message.attachments?.length && !attachment) {

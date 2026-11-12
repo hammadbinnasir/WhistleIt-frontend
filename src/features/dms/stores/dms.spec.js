@@ -277,12 +277,22 @@ describe('dms store', () => {
     await reloadedDms.init()
 
     expect(reloadedDms.conversations[0].messages).toContainEqual(
-      expect.objectContaining({ id: sent.id, text: 'Keep this direct message', status: 'sending', resend: true }),
+      expect.objectContaining({
+        id: sent.id,
+        text: 'Keep this direct message',
+        status: 'sending',
+        resend: true,
+      }),
     )
 
     // chat khulte hi (server par nahi pahuncha tha) khud dobara bheja jata hai
     dmApi.sendMessage.mockClear()
-    dmApi.sendMessage.mockResolvedValue({ id: 'srv-9', from: 'u1', text: 'Keep this direct message', createdAt: new Date().toISOString() })
+    dmApi.sendMessage.mockResolvedValue({
+      id: 'srv-9',
+      from: 'u1',
+      text: 'Keep this direct message',
+      createdAt: new Date().toISOString(),
+    })
     reloadedDms.openConversation('c1')
     await vi.waitFor(() => expect(dmApi.sendMessage).toHaveBeenCalledTimes(1))
     await vi.waitFor(() => expect(reloadedDms.conversations[0].messages.at(-1).id).toBe('srv-9'))
@@ -402,39 +412,47 @@ describe('dms store', () => {
   })
 
   it('sends code messages with sender, receiver, mode, and timestamp metadata', async () => {
-    const dms = useDmStore()
-    await dms.init()
-    const timestamp = '2026-11-11T09:00:00.000Z'
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    try {
+      const dms = useDmStore()
+      await dms.init()
+      const timestamp = '2026-11-11T09:00:00.000Z'
 
-    dms.sendMessage('c1', {
-      content: 'const answer = 42',
-      is_code: true,
-      senderId: 'u1',
-      receiverId: 'u2',
-      timestamp,
-    })
-
-    expect(dmApi.sendMessage).toHaveBeenCalledWith(
-      'company-1',
-      'c1',
-      expect.objectContaining({
-        body: 'const answer = 42',
-        text: 'const answer = 42',
+      dms.sendMessage('c1', {
+        content: 'const answer = 42',
         is_code: true,
         senderId: 'u1',
         receiverId: 'u2',
         timestamp,
-      }),
-    )
-    expect(dms.conversations[0].messages.at(-1)).toMatchObject({
-      text: 'const answer = 42',
-      isCode: true,
-    })
+      })
+      await vi.advanceTimersByTimeAsync(30_000)
+
+      expect(dmApi.sendMessage).toHaveBeenCalledWith(
+        'company-1',
+        'c1',
+        expect.objectContaining({
+          body: 'const answer = 42',
+          text: 'const answer = 42',
+          is_code: true,
+          senderId: 'u1',
+          receiverId: 'u2',
+          timestamp,
+        }),
+      )
+      expect(dms.conversations[0].messages.at(-1)).toMatchObject({
+        text: 'const answer = 42',
+        isCode: true,
+      })
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('marks a message failed when POST fails and retries it', async () => {
     // 422 jaisa error dobara bhejne se theek nahi hota: seedha "failed"
-    dmApi.sendMessage.mockRejectedValueOnce(Object.assign(new Error('Failed to fetch'), { status: 422 }))
+    dmApi.sendMessage.mockRejectedValueOnce(
+      Object.assign(new Error('Failed to fetch'), { status: 422 }),
+    )
     const dms = useDmStore()
     await dms.init()
 
@@ -503,7 +521,12 @@ describe('dms store', () => {
   })
 
   it('refreshes one message with GET single message', async () => {
-    dmApi.getMessage.mockResolvedValue({ id: 'm1', from: 'u2', text: 'Received (edited)', createdAt: '' })
+    dmApi.getMessage.mockResolvedValue({
+      id: 'm1',
+      from: 'u2',
+      text: 'Received (edited)',
+      createdAt: '',
+    })
     const dms = useDmStore()
     await dms.init()
 
@@ -528,7 +551,9 @@ describe('dms store', () => {
     ])
     await dms.pollOnce()
     expect(dms.conversations[0].messages.map((m) => m.text)).toEqual(['Received', 'New from u2'])
-    expect(JSON.parse(localStorage.getItem('whistleit:dm-messages'))['company-1'].c1).toHaveLength(2)
+    expect(JSON.parse(localStorage.getItem('whistleit:dm-messages'))['company-1'].c1).toHaveLength(
+      2,
+    )
 
     // usne edit kiya
     dmApi.listMessages.mockResolvedValue([
@@ -575,14 +600,19 @@ describe('dms store', () => {
     // purani list (naya message is mein nahi)
     answerPoll([{ id: 'm1', from: 'u2', text: 'Received', createdAt: '' }])
     await polling
-    expect(dms.conversations[0].messages.map((m) => m.text)).toEqual(['Received', 'Sent during poll'])
+    expect(dms.conversations[0].messages.map((m) => m.text)).toEqual([
+      'Received',
+      'Sent during poll',
+    ])
   })
 
   it('does not bring back a message that is being deleted during a poll', async () => {
     dmApi.listDirectChannels.mockResolvedValue([
       makeConversation('c1', 'u2', [{ id: 'm1', from: 'u1', text: 'Delete me', createdAt: '' }]),
     ])
-    dmApi.listMessages.mockResolvedValue([{ id: 'm1', from: 'u1', text: 'Delete me', createdAt: '' }])
+    dmApi.listMessages.mockResolvedValue([
+      { id: 'm1', from: 'u1', text: 'Delete me', createdAt: '' },
+    ])
     let finishDelete
     dmApi.deleteMessage.mockImplementation(() => new Promise((resolve) => (finishDelete = resolve)))
     const dms = useDmStore()
@@ -716,7 +746,13 @@ describe('dms store', () => {
     await vi.waitFor(() => expect(dms.messagesLoading).toBe(false))
 
     dmApi.listMessages.mockResolvedValue([
-      { id: 'm1', from: 'u2', text: 'Received', createdAt: '', reactions: [{ emoji: '❤️', users: ['u2'] }] },
+      {
+        id: 'm1',
+        from: 'u2',
+        text: 'Received',
+        createdAt: '',
+        reactions: [{ emoji: '❤️', users: ['u2'] }],
+      },
     ])
     await dms.pollOnce()
 
@@ -785,13 +821,19 @@ describe('dms store', () => {
       { id: 'm-6', user: { id: 'u6', full_name: 'Salman Zahoor' } },
       { id: 'u2', name: 'Duplicate of company user' },
     ]
-    dmApi.listCompanyMembers.mockResolvedValue([{ id: 'u2', name: 'Muniba Naseer', email: '', avatarUrl: '' }])
+    dmApi.listCompanyMembers.mockResolvedValue([
+      { id: 'u2', name: 'Muniba Naseer', email: '', avatarUrl: '' },
+    ])
     const dms = useDmStore()
     await dms.init()
 
     await dms.loadCompanyMembers()
 
-    expect(dms.companyMembers.map((u) => u.name)).toEqual(['Muniba Naseer', 'Afia Noor', 'Salman Zahoor'])
+    expect(dms.companyMembers.map((u) => u.name)).toEqual([
+      'Muniba Naseer',
+      'Afia Noor',
+      'Salman Zahoor',
+    ])
     expect(dms.usersById.u6.name).toBe('Salman Zahoor')
     membersStore.members = []
   })
@@ -878,7 +920,9 @@ describe('dms store', () => {
     dmApi.listDirectChannels.mockResolvedValue([
       makeConversation('c1', 'u2', [{ id: 'old', from: 'u2', text: 'Old', createdAt: at(0) }]),
     ])
-    dmApi.listMessages.mockResolvedValue([{ id: 'm5', from: 'u2', text: 'Newest page', createdAt: at(5) }])
+    dmApi.listMessages.mockResolvedValue([
+      { id: 'm5', from: 'u2', text: 'Newest page', createdAt: at(5) },
+    ])
     const dms = useDmStore()
     await dms.init()
     dms.openConversation('c1')
@@ -901,7 +945,13 @@ describe('dms store', () => {
     await flushReactions()
     // poll: dmApi ne samajh na aane wale reactions ko undefined kar diya
     dmApi.listMessages.mockResolvedValue([
-      { id: 'm1', from: 'u2', text: 'Received', createdAt: '2026-01-01T10:00:00Z', reactions: undefined },
+      {
+        id: 'm1',
+        from: 'u2',
+        text: 'Received',
+        createdAt: '2026-01-01T10:00:00Z',
+        reactions: undefined,
+      },
     ])
     await dms.pollOnce()
 
@@ -965,7 +1015,12 @@ describe('dms store', () => {
     // reload, aur c2 mein 1 naya message
     dmApi.listDirectChannels.mockImplementation(async () => {
       const [a, b] = twoDms()
-      b.conversation.messages.push({ id: 'x9', from: 'u3', text: 'New', createdAt: '2026-01-01T12:00:00Z' })
+      b.conversation.messages.push({
+        id: 'x9',
+        from: 'u3',
+        text: 'New',
+        createdAt: '2026-01-01T12:00:00Z',
+      })
       return [a, b]
     })
     setActivePinia(createPinia())
@@ -1098,7 +1153,12 @@ describe('dms store', () => {
       await new Promise((r) => setTimeout(r, 1))
       inFlight -= 1
       n += 1
-      return { id: `s-${n}`, from: 'u1', text: payload.body, createdAt: new Date(Date.UTC(2026, 0, 2, 0, 0, n)).toISOString() }
+      return {
+        id: `s-${n}`,
+        from: 'u1',
+        text: payload.body,
+        createdAt: new Date(Date.UTC(2026, 0, 2, 0, 0, n)).toISOString(),
+      }
     })
     const dms = useDmStore()
     await dms.init()
@@ -1109,7 +1169,11 @@ describe('dms store', () => {
     expect(order).toEqual(Array.from({ length: 25 }, (_, i) => `msg ${i + 1}`))
     expect(maxInFlight).toBe(3) // ek waqt mein 3 (tez), zyada nahi
     await vi.waitFor(() =>
-      expect(dms.conversations[0].messages.filter((m) => m.status === 'failed' || m.status === 'sending')).toHaveLength(0),
+      expect(
+        dms.conversations[0].messages.filter(
+          (m) => m.status === 'failed' || m.status === 'sending',
+        ),
+      ).toHaveLength(0),
     )
     expect(dms.conversations[0].messages).toHaveLength(26) // 1 purana + 25 naye
   })
@@ -1138,7 +1202,12 @@ describe('dms store', () => {
 
   it('keeps older messages when 30 new ones push them off the first page', async () => {
     const at = (min) => new Date(Date.UTC(2026, 0, 1, 10, min)).toISOString()
-    const all = Array.from({ length: 40 }, (_, i) => ({ id: `p${i}`, from: 'u2', text: `t${i}`, createdAt: at(i) }))
+    const all = Array.from({ length: 40 }, (_, i) => ({
+      id: `p${i}`,
+      from: 'u2',
+      text: `t${i}`,
+      createdAt: at(i),
+    }))
     dmApi.listMessages.mockImplementation(async () => all.slice(0, 15)) // pehle 15
     const dms = useDmStore()
     await dms.init()
@@ -1152,7 +1221,9 @@ describe('dms store', () => {
     const ids = dms.conversations[0].messages.map((m) => m.id)
     expect(ids).toContain('p0') // purane gayab nahi hue
     expect(ids).toContain('p39')
-    expect(dms.conversations[0].messages.filter((m) => m.id.startsWith('p') && m.deleted)).toHaveLength(0)
+    expect(
+      dms.conversations[0].messages.filter((m) => m.id.startsWith('p') && m.deleted),
+    ).toHaveLength(0)
     dms.stopPolling()
   })
 
@@ -1160,7 +1231,12 @@ describe('dms store', () => {
     const at = (min) => new Date(Date.UTC(2026, 0, 1, 10, min)).toISOString()
     const page = (from, to, hasMore) =>
       Object.defineProperty(
-        Array.from({ length: to - from }, (_, i) => ({ id: `q${from + i}`, from: 'u2', text: `q${from + i}`, createdAt: at(from + i) })),
+        Array.from({ length: to - from }, (_, i) => ({
+          id: `q${from + i}`,
+          from: 'u2',
+          text: `q${from + i}`,
+          createdAt: at(from + i),
+        })),
         'pagination',
         { value: { hasMore } },
       )
@@ -1170,7 +1246,9 @@ describe('dms store', () => {
     const dms = useDmStore()
     await dms.init()
     dms.openConversation('c1')
-    await vi.waitFor(() => expect(dms.conversations[0].messages.some((m) => m.id === 'q39')).toBe(true))
+    await vi.waitFor(() =>
+      expect(dms.conversations[0].messages.some((m) => m.id === 'q39')).toBe(true),
+    )
     expect(dms.hasMoreOlder('c1')).toBe(true)
 
     await expect(dms.loadOlderMessages('c1')).resolves.toBe(20)
@@ -1189,7 +1267,12 @@ describe('dms store', () => {
 
   it('uses the newest page when page 1 holds the oldest messages, and keeps everything', async () => {
     const at = (min) => new Date(Date.UTC(2026, 0, 1, 10, min)).toISOString()
-    const msgs = Array.from({ length: 40 }, (_, i) => ({ id: `z${i}`, from: 'u2', text: `z${i}`, createdAt: at(i) }))
+    const msgs = Array.from({ length: 40 }, (_, i) => ({
+      id: `z${i}`,
+      from: 'u2',
+      text: `z${i}`,
+      createdAt: at(i),
+    }))
     const page = (n) =>
       Object.defineProperty(msgs.slice((n - 1) * 15, n * 15), 'pagination', {
         value: { page: n, hasMore: n < 3, lastPage: 3 },
@@ -1202,7 +1285,9 @@ describe('dms store', () => {
 
     let ids = dms.conversations[0].messages.map((m) => m.id)
     expect(ids).toContain('z39')
-    expect(dms.conversations[0].messages.filter((m) => m.id.startsWith('z') && m.deleted)).toHaveLength(0)
+    expect(
+      dms.conversations[0].messages.filter((m) => m.id.startsWith('z') && m.deleted),
+    ).toHaveLength(0)
 
     dmApi.listMessages.mockClear()
     await dms.pollOnce()
@@ -1256,16 +1341,21 @@ describe('dms store', () => {
   it('keeps messages sent in the same second in the right order (by id)', async () => {
     const same = '2026-01-01T10:05:00Z'
     dmApi.listMessages.mockResolvedValue(
-      ['6aec00000000000000000004', '6aec00000000000000000002', '6aec00000000000000000003', '6aec00000000000000000001'].map(
-        (id) => ({ id, from: 'u1', text: id.slice(-1), createdAt: same }),
-      ),
+      [
+        '6aec00000000000000000004',
+        '6aec00000000000000000002',
+        '6aec00000000000000000003',
+        '6aec00000000000000000001',
+      ].map((id) => ({ id, from: 'u1', text: id.slice(-1), createdAt: same })),
     )
     const dms = useDmStore()
     await dms.init()
     dms.openConversation('c1')
     await vi.waitFor(() => expect(dms.messagesLoading).toBe(false))
 
-    const texts = dms.conversations[0].messages.filter((m) => m.createdAt === same).map((m) => m.text)
+    const texts = dms.conversations[0].messages
+      .filter((m) => m.createdAt === same)
+      .map((m) => m.text)
     expect(texts).toEqual(['1', '2', '3', '4'])
     dms.stopPolling()
   })
@@ -1276,7 +1366,9 @@ describe('dms store', () => {
     let answer
     dmApi.sendMessage.mockImplementation(() => new Promise((resolve) => (answer = resolve)))
     dmApi.listDirectChannels.mockImplementation(async () => [
-      makeConversation('c1', 'u2', [{ id: 'm1', from: 'u2', text: 'Received', createdAt: '2026-01-01T10:00:00Z' }]),
+      makeConversation('c1', 'u2', [
+        { id: 'm1', from: 'u2', text: 'Received', createdAt: '2026-01-01T10:00:00Z' },
+      ]),
     ])
     const dms = useDmStore()
     await dms.init()

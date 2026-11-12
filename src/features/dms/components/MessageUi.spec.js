@@ -155,6 +155,9 @@ describe('DmMessageItem', () => {
     expect(codeBlock.element.tagName).toBe('PRE')
     expect(codeBlock.classes()).toContain('bg-slate-950')
     expect(codeBlock.text()).toBe(code)
+    wrapper.unmount()
+  })
+
   it('renders deleted messages as deleted and never labels them edited', () => {
     const wrapper = setup({
       id: 'm-deleted',

@@ -42,6 +42,10 @@ describe('message link and date helpers', () => {
     )
   })
 
+  it('renders the plain-text underline marker used by the composer', () => {
+    expect(formattedMessageHtml('++underlined++')).toBe('<u>underlined</u>')
+  })
+
   it('renders fenced code as a full code block', () => {
     expect(formattedMessageHtml('```\nconst value = 1\nconsole.log(value)\n```')).toBe(
       '<pre><code>const value = 1\nconsole.log(value)</code></pre>',

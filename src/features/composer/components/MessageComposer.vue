@@ -334,7 +334,7 @@ function nodeToMarkdown(node) {
   if (tag === 'strong' || tag === 'b') return `**${children}**`
   if (tag === 'em' || tag === 'i') return `*${children}*`
   if (tag === 's' || tag === 'del' || tag === 'strike') return `~~${children}~~`
-  if (tag === 'u') return `<u>${children}</u>`
+  if (tag === 'u') return `++${children}++`
   if (tag === 'code') {
     const code = element.textContent.replace(/^\n+|\n+$/g, '')
     return `\`\`\`\n${code}\n\`\`\``
