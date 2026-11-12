@@ -671,7 +671,7 @@ function lastReplyAtOf(raw) {
 
 // ---- presence (online / away / offline) ----
 // Abhi alag presence API nahi hai, isliye company members ke response mein jo field mile usse:
-//   presence / online_status: "online" | "away" | "offline"
+//   presence / online_status: "online" | "away" | "offline" | "dnd"
 //   is_online / online:       true | false
 //   last_seen_at / last_active_at: 2 min ke andar = online, 10 min ke andar = away
 export const ONLINE_WINDOW_MS = 2 * 60 * 1000
@@ -680,7 +680,7 @@ export const AWAY_WINDOW_MS = 10 * 60 * 1000
 export function presenceStateOf(raw, now = Date.now()) {
   if (!raw || typeof raw !== 'object') return null
   const user = raw.user && typeof raw.user === 'object' ? raw.user : {}
-  // Backend user mein: status_mode: "online" | "away" | "offline"
+  // Backend user mein: status_mode: "online" | "away" | "offline" | "dnd"
   const word = String(
     raw.status_mode ??
       user.status_mode ??
@@ -691,7 +691,8 @@ export function presenceStateOf(raw, now = Date.now()) {
       '',
   ).toLowerCase()
   if (word === 'online' || word === 'active') return 'online'
-  if (word === 'away' || word === 'idle' || word === 'busy' || word === 'dnd') return 'away'
+  if (word === 'dnd') return 'dnd'
+  if (word === 'away' || word === 'idle' || word === 'busy') return 'away'
   if (word === 'offline') return 'offline'
 
   const flag = raw.is_online ?? user.is_online ?? raw.online ?? user.online
@@ -712,7 +713,8 @@ export function normalizeState(value) {
   if (value === false || value === 0) return 'offline'
   const word = String(value ?? '').trim().toLowerCase()
   if (['online', 'active', 'available', '1', 'true'].includes(word)) return 'online'
-  if (['away', 'idle', 'busy', 'dnd'].includes(word)) return 'away'
+  if (word === 'dnd') return 'dnd'
+  if (['away', 'idle', 'busy'].includes(word)) return 'away'
   if (['offline', 'inactive', 'invisible', '0', 'false'].includes(word)) return 'offline'
   return null
 }

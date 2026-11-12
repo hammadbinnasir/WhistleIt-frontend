@@ -73,6 +73,19 @@ describe('presence store (live)', () => {
     presence.stopPolling()
   })
 
+  it('updates the shared mode locally without sending a duplicate status request', () => {
+    const presence = usePresenceStore()
+
+    presence.setMyState('away', { persist: false })
+    expect(presence.stateOf('u1')).toBe('away')
+    expect(dmApi.updateUserStatus).not.toHaveBeenCalled()
+
+    presence.setMyState('dnd', { persist: false })
+    expect(presence.stateOf('u1')).toBe('dnd')
+    expect(presence.labelOf('u1')).toBe('Do not disturb')
+    expect(dmApi.updateUserStatus).not.toHaveBeenCalled()
+  })
+
   // ---------------- PUT /v1/users/{user}/status ----------------
 
   it('tells the server I am online when the app starts', async () => {

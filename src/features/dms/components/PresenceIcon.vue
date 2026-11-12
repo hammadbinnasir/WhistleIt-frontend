@@ -4,7 +4,12 @@ defineProps({
   size: { type: Number, default: 22 },
 })
 
-const colors = { online: 'text-emerald-400', away: 'text-amber-400', offline: 'text-slate-400' }
+const colors = {
+  online: 'text-emerald-400',
+  away: 'text-amber-400',
+  offline: 'text-slate-400',
+  dnd: 'text-red-400',
+}
 </script>
 
 <template>
@@ -26,10 +31,11 @@ const colors = { online: 'text-emerald-400', away: 'text-amber-400', offline: 't
       <path d="M3.5 20.5c0-3.6 2.9-6 6.5-6 1.1 0 2.1.2 3 .7" />
       <path v-if="state === 'online'" d="M14.5 18.5l2.2 2.2 4.3-4.6" />
       <path v-else-if="state === 'offline'" d="M15.5 16.5l4.5 4.5M20 16.5l-4.5 4.5" />
-      <template v-else>
+      <template v-else-if="state === 'away'">
         <circle cx="17.5" cy="18.5" r="3.3" />
         <path d="M17.5 16.8v1.8l1.2.8" />
       </template>
+      <path v-else d="M15.5 18.5h4" stroke-width="2.5" />
     </template>
 
     <!-- Group icon (jab user group DM banaye) -->

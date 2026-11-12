@@ -3,12 +3,8 @@ import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import api from '../api'
 import { useChannelsStore } from '../store/channels.store'
+import { usePresenceStore } from '@/features/dms/stores/presence'
 import ChannelHeader from './ChannelHeader.vue'
-
-const getUser = vi.hoisted(() => vi.fn())
-vi.mock('@/features/account/api', () => ({
-  getUser,
-}))
 
 vi.mock('../api', () => ({
   default: {
@@ -20,11 +16,6 @@ describe('ChannelHeader', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     api.listMembers.mockReset()
-    getUser.mockReset()
-    getUser.mockResolvedValue({
-      success: true,
-      data: { status_mode: 'online' },
-    })
   })
 
   it('shows only members belonging to the current channel', async () => {
@@ -91,18 +82,19 @@ describe('ChannelHeader', () => {
     wrapper.unmount()
   })
 
-  it('loads each member profile using the member ID and reads its status_mode', async () => {
+  it('shows and reactively updates the shared presence status for channel members', async () => {
     api.listMembers.mockResolvedValue({
       items: [
-        { id: 'member-1', name: 'Member One', status: null },
-        { id: 'member-2', name: 'Member Two', status: null },
+        { id: 'member-1', name: 'Member One', status: 'online' },
+        { id: 'member-2', name: 'Member Two', status: 'offline' },
       ],
       total: 2,
     })
-    getUser.mockImplementation(async (memberId) => ({
-      success: true,
-      data: { status_mode: memberId === 'member-1' ? 'away' : 'online' },
-    }))
+    const presence = usePresenceStore()
+    presence.presenceById = {
+      'member-1': { state: 'away' },
+      'member-2': { state: 'online' },
+    }
     const channels = useChannelsStore()
     channels.upsertChannel({ id: 'channel-one', name: 'Channel one' })
     const wrapper = mount(ChannelHeader, {
@@ -111,37 +103,18 @@ describe('ChannelHeader', () => {
 
     await flushPromises()
 
-    expect(getUser).toHaveBeenCalledTimes(2)
-    expect(getUser).toHaveBeenNthCalledWith(1, 'member-1')
-    expect(getUser).toHaveBeenNthCalledWith(2, 'member-2')
     const avatars = wrapper.findAll('.ch-stack__avatar')
     expect(avatars[0].find('.ch-stack__dot').classes()).toContain('ch-stack__dot--away')
     expect(avatars[1].find('.ch-stack__dot').classes()).toContain('ch-stack__dot--online')
     await avatars[0].trigger('mouseenter')
     expect(wrapper.find('.ch-stack__preview-status').text()).toBe('Away')
+
+    presence.presenceById['member-1'].state = 'dnd'
+    await wrapper.vm.$nextTick()
+    expect(avatars[0].find('.ch-stack__dot').classes()).toContain('ch-stack__dot--dnd')
+    await avatars[0].trigger('mouseenter')
+    expect(wrapper.find('.ch-stack__preview-status').text()).toBe('Do not disturb')
     wrapper.unmount()
   })
 
-  it('reads status_mode from the user response', async () => {
-    api.listMembers.mockResolvedValue({
-      items: [{ id: 'member-2', name: 'Member Two', status: null }],
-      total: 1,
-    })
-    getUser.mockResolvedValue({
-      success: true,
-      data: { status_mode: 'online' },
-    })
-    const channels = useChannelsStore()
-    channels.upsertChannel({ id: 'channel-one', name: 'Channel one' })
-    const wrapper = mount(ChannelHeader, {
-      props: { channelId: 'channel-one' },
-    })
-
-    await flushPromises()
-    await wrapper.find('.ch-stack__avatar').trigger('mouseenter')
-
-    expect(wrapper.find('.ch-stack__preview-status').text()).toBe('Online')
-    expect(wrapper.find('.ch-stack__dot').classes()).toContain('ch-stack__dot--online')
-    wrapper.unmount()
-  })
 })

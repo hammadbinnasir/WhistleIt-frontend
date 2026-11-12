@@ -23,7 +23,15 @@ const custom = computed(() => (props.userId ? presence.customOf(props.userId) : 
   >
     <span
       class="h-2.5 w-2.5 rounded-full"
-      :class="state === 'online' ? 'bg-emerald-500' : state === 'away' ? 'bg-amber-400' : 'bg-slate-400'"
+      :class="
+        state === 'online'
+          ? 'bg-emerald-500'
+          : state === 'away'
+            ? 'bg-amber-400'
+            : state === 'dnd'
+              ? 'bg-red-500'
+              : 'bg-slate-400'
+      "
       aria-hidden="true"
     />
     {{ label }}

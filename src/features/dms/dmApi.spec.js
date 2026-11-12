@@ -774,13 +774,20 @@ describe('DM API', () => {
     expect(list.pagination).toEqual({ page: 1, hasMore: false, lastPage: 1 })
   })
 
-  it('reads status_mode from the PUT status response and DM participants', async () => {
+  it('preserves status_mode from status updates and DM participants', async () => {
     apiRequest.mockResolvedValueOnce({
       success: true,
       message: 'Status updated successfully.',
       data: { id: 'user-1', name: 'Aiman Iqbal', custom_status: null, status_mode: 'online' },
     })
     await expect(dmApi.updateUserStatus('user-1', { mode: 'online' })).resolves.toMatchObject({ state: 'online' })
+    apiRequest.mockResolvedValueOnce({
+      success: true,
+      data: { id: 'user-1', status_mode: 'dnd' },
+    })
+    await expect(dmApi.updateUserStatus('user-1', { mode: 'dnd' })).resolves.toMatchObject({
+      state: 'dnd',
+    })
 
     apiRequest.mockResolvedValueOnce({
       success: true,
@@ -791,6 +798,7 @@ describe('DM API', () => {
             participants: [
               { id: 'user-1', name: 'Aiman', status_mode: 'online' },
               { id: 'user-2', name: 'Muniba', status_mode: 'offline' },
+              { id: 'user-3', name: 'Ali', status_mode: 'dnd' },
             ],
             messages: [],
           },
@@ -801,6 +809,7 @@ describe('DM API', () => {
     expect(users.map((u) => [u.name, u.presence])).toEqual([
       ['Aiman', 'online'],
       ['Muniba', 'offline'],
+      ['Ali', 'dnd'],
     ])
   })
 
