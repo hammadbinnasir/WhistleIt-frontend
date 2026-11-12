@@ -8,6 +8,7 @@ import {
   listMembers,
   listAvailableMembers,
   addMember,
+  removeMember,
   getWebhookUrl,
 } from './members'
 
@@ -51,6 +52,9 @@ const addMemberError = ref('')
 const webhookUrl = ref('')
 const copied = ref(false)
 const confirmLeave = ref(false)
+const memberToRemove = ref(null)
+const removingMember = ref(false)
+const removeMemberError = ref('')
 const showMessagePermissions = ref(false)
 const confirmArchive = ref(false)
 const editingDetails = ref(false)
@@ -274,6 +278,30 @@ async function addSelected() {
       : (error?.message || 'Unable to add the selected members to the channel.')
   }
 }
+function askToRemoveMember(member) {
+  if (!isChannelCreator.value || String(member.id) === String(getAuthUserId())) return
+  memberToRemove.value = member
+  removeMemberError.value = ''
+}
+async function confirmRemoveMember() {
+  if (!isChannelCreator.value || !memberToRemove.value || removingMember.value) return
+  removingMember.value = true
+  removeMemberError.value = ''
+  try {
+    await removeMember(String(memberToRemove.value.id), props.channel.id)
+    await refresh()
+    ui.toast(
+      'Member removed',
+      `${memberToRemove.value.name} was removed from the channel.`,
+      'success',
+    )
+    memberToRemove.value = null
+  } catch (error) {
+    removeMemberError.value = error?.message || 'Unable to remove this member. Please try again.'
+  } finally {
+    removingMember.value = false
+  }
+}
 async function copy() {
   try {
     await navigator.clipboard.writeText(webhookUrl.value)
@@ -461,6 +489,49 @@ const showSample = ref(false)
             @click="leave"
           >
             {{ leaving ? 'Leaving...' : 'Leave' }}
+          </button>
+        </div>
+      </section>
+    </div>
+    <div
+      v-if="memberToRemove"
+      class="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/40 p-4"
+      @click.self="!removingMember && (memberToRemove = null)"
+    >
+      <section
+        class="w-[450px] max-w-full rounded-lg bg-white px-6 py-10 text-center shadow-2xl"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="remove-channel-member-title"
+      >
+        <div class="mx-auto mb-2 flex h-16 w-16 items-center justify-center rounded-full bg-indigo-50 text-red-500">
+          <span class="text-4xl font-bold leading-none">i</span>
+        </div>
+        <h3 id="remove-channel-member-title" class="text-2xl font-bold text-slate-700">
+          Remove Member
+        </h3>
+        <p class="mt-6 text-base text-slate-600">
+          Are you sure you want to remove this member?
+        </p>
+        <p v-if="removeMemberError" class="mt-4 text-sm text-red-600" role="alert">
+          {{ removeMemberError }}
+        </p>
+        <div class="mt-12 flex justify-center gap-3">
+          <button
+            type="button"
+            class="cursor-pointer rounded border border-slate-800 px-8 py-3 font-semibold tracking-wide text-slate-800 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+            :disabled="removingMember"
+            @click="memberToRemove = null"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            class="cursor-pointer rounded bg-rose-600 px-8 py-3 font-semibold tracking-wide text-white shadow hover:bg-rose-700 disabled:cursor-not-allowed disabled:opacity-50"
+            :disabled="removingMember"
+            @click="confirmRemoveMember"
+          >
+            {{ removingMember ? 'Removing...' : 'Remove' }}
           </button>
         </div>
       </section>
@@ -970,6 +1041,15 @@ const showSample = ref(false)
                 >
                 <span class="text-sm text-slate-800">{{ m.name }}</span>
               </div>
+              <button
+                v-if="isChannelCreator && String(m.id) !== String(getAuthUserId())"
+                type="button"
+                class="cursor-pointer px-2 py-1 text-sm font-semibold tracking-wide text-indigo-600 hover:text-indigo-800"
+                :aria-label="`Remove ${m.name} from channel`"
+                @click="askToRemoveMember(m)"
+              >
+                Remove
+              </button>
             </li>
           </ul>
         </div>
