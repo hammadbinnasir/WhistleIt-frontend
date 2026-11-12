@@ -7,6 +7,7 @@ const membersApi = vi.hoisted(() => ({
   listMembers: vi.fn(),
   listAvailableMembers: vi.fn(),
   addMember: vi.fn(),
+  removeMember: vi.fn(),
   getWebhookUrl: vi.fn(),
 }))
 vi.mock('./members', () => membersApi)
@@ -17,6 +18,7 @@ describe('channel settings message permissions', () => {
     membersApi.listMembers.mockReset().mockResolvedValue([])
     membersApi.listAvailableMembers.mockReset().mockResolvedValue([])
     membersApi.addMember.mockReset().mockResolvedValue(undefined)
+    membersApi.removeMember.mockReset().mockResolvedValue(undefined)
     membersApi.getWebhookUrl.mockReset().mockResolvedValue('')
   })
 
@@ -103,6 +105,70 @@ describe('channel settings message permissions', () => {
       .trigger('click')
 
     expect(creatorWrapper.findAll('button').filter((button) => button.text() === 'Edit')).toHaveLength(2)
+    creatorWrapper.unmount()
+  })
+
+  it('lets only the creator confirm and remove another channel member', async () => {
+    const channel = {
+      id: 'channel-1',
+      name: 'General',
+      createdById: 'creator-1',
+      isCreator: false,
+      canManage: true,
+      muted: false,
+      favourite: false,
+    }
+    membersApi.listMembers.mockResolvedValue([
+      { id: 'member-1', name: 'Channel Member' },
+      { id: 'creator-1', name: 'Channel Creator' },
+    ])
+
+    const memberWrapper = mount(ChannelSettingsModal, {
+      props: { channel },
+    })
+    await flushPromises()
+    await memberWrapper
+      .find('nav')
+      .findAll('button')
+      .find((button) => button.text().includes('members'))
+      .trigger('click')
+    expect(memberWrapper.find('[aria-label="Remove Channel Member from channel"]').exists()).toBe(
+      false,
+    )
+    memberWrapper.unmount()
+
+    membersApi.listMembers
+      .mockReset()
+      .mockResolvedValueOnce([
+        { id: 'member-1', name: 'Channel Member' },
+        { id: 'creator-1', name: 'Channel Creator' },
+      ])
+      .mockResolvedValueOnce([{ id: 'creator-1', name: 'Channel Creator' }])
+    const creatorWrapper = mount(ChannelSettingsModal, {
+      props: { channel: { ...channel, isCreator: true } },
+    })
+    await flushPromises()
+    await creatorWrapper
+      .find('nav')
+      .findAll('button')
+      .find((button) => button.text().includes('members'))
+      .trigger('click')
+    await creatorWrapper.get('[aria-label="Remove Channel Member from channel"]').trigger('click')
+
+    expect(creatorWrapper.get('[role="dialog"]').text()).toContain('Remove Member')
+    expect(creatorWrapper.get('[role="dialog"]').text()).toContain(
+      'Are you sure you want to remove this member?',
+    )
+    await creatorWrapper
+      .get('[role="dialog"]')
+      .findAll('button')
+      .find((button) => button.text() === 'Remove')
+      .trigger('click')
+    await flushPromises()
+
+    expect(membersApi.removeMember).toHaveBeenCalledWith('member-1', 'channel-1')
+    expect(creatorWrapper.text()).not.toContain('Channel Member')
+    expect(creatorWrapper.find('[role="dialog"]').exists()).toBe(false)
     creatorWrapper.unmount()
   })
 })
