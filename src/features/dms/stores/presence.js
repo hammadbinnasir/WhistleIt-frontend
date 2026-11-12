@@ -9,9 +9,10 @@ export const STATES = {
   online: 'Online',
   away: 'Away',
   offline: 'Offline',
+  dnd: 'Do not disturb',
 }
 
-// Har itne ms baad sab users ka online/offline dobara (live)
+// Har itne ms baad sab users ka live status dobara
 const POLL_INTERVAL = 15_000
 // Itne ms baad apna status server ko dobara (backend ko pata rahe ke main abhi bhi online hoon)
 const HEARTBEAT_INTERVAL = 60_000
@@ -31,7 +32,8 @@ function stateFrom(value) {
   if (value === false || value === 0) return 'offline'
   const word = String(value ?? '').trim().toLowerCase()
   if (['online', 'active', 'available'].includes(word)) return 'online'
-  if (['away', 'idle', 'busy', 'dnd'].includes(word)) return 'away'
+  if (word === 'dnd') return 'dnd'
+  if (['away', 'idle', 'busy'].includes(word)) return 'away'
   if (['offline', 'inactive', 'invisible'].includes(word)) return 'offline'
   return null
 }
@@ -204,11 +206,11 @@ export const usePresenceStore = defineStore('presence', () => {
     }
   }
 
-  function applyMyState(state) {
+  function applyMyState(state, { persist = true } = {}) {
     const id = myId()
     const current = presenceById.value[id] ?? { status: { emoji: '', text: '' } }
     presenceById.value[id] = { ...current, state }
-    void pushMyStatus()
+    if (persist) void pushMyStatus()
   }
 
   // ---------- live: online / away (idle) / offline (page band) ----------
@@ -329,13 +331,13 @@ export const usePresenceStore = defineStore('presence', () => {
   }
 
   // ---------- user ke buttons ----------
-  // Online / Away / Offline (UserMenu se) -> PUT /v1/users/{user}/status
-  function setMyState(state) {
+  // Status changes -> PUT /v1/users/{user}/status
+  function setMyState(state, { persist = true } = {}) {
     if (!Object.hasOwn(STATES, state)) return
     manualState = state === 'online' ? null : state
     autoAway = false
     lastActivity = Date.now()
-    applyMyState(state)
+    applyMyState(state, { persist })
   }
 
   // Custom status (emoji + text) -> PUT /v1/users/{user}/status

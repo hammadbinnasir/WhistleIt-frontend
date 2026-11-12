@@ -2,6 +2,7 @@
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { getUser, getUserProfile } from '@/features/account/api'
 import { useUserStore } from '@/features/account/composables/useUserStore'
+import { usePresenceStore } from '@/features/dms/stores/presence'
 import { getAuthUserId } from '@/features/auth/session'
 import { dmApi } from '@/features/dms/dmApi'
 
@@ -12,6 +13,7 @@ const props = defineProps({
 const emit = defineEmits(['close', 'message'])
 
 const userStore = useUserStore()
+const presence = usePresenceStore()
 const profile = ref({})
 const loading = ref(false)
 const error = ref('')
@@ -83,25 +85,7 @@ const avatarUrl = computed(() => {
     ''
   )
 })
-function normalizeStatus(value) {
-  const status =
-    typeof value === 'string'
-      ? value.toLowerCase()
-      : (value?.state ?? value?.mode ?? value?.status)
-  return ['online', 'away', 'offline', 'dnd'].includes(status) ? status : null
-}
-
-const status = computed(() => {
-  if (String(props.member.id) === String(getAuthUserId())) {
-    return userStore.state.status
-  }
-
-  return (
-    normalizeStatus(props.member.status) ||
-    normalizeStatus(profileField('status_mode', 'presence', 'status', 'mode', 'state')) ||
-    'unknown'
-  )
-})
+const status = computed(() => presence.stateOf(String(props.member.id)))
 const statusLabel = computed(
   () => ({ online: 'Online', away: 'Away', offline: 'Offline', dnd: 'Do not disturb' })[status.value] || 'Status unavailable',
 )

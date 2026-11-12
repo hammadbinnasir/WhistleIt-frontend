@@ -1,7 +1,9 @@
 import { flushPromises, mount } from '@vue/test-utils'
+import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { getUser, getUserProfile } from '@/features/account/api'
 import { useUserStore } from '@/features/account/composables/useUserStore'
+import { usePresenceStore } from '@/features/dms/stores/presence'
 import { getAuthUserId } from '@/features/auth/session'
 import { dmApi } from '@/features/dms/dmApi'
 import ProfilePanel from './ProfilePanel.vue'
@@ -17,11 +19,16 @@ vi.mock('@/features/auth/session', () => ({
 }))
 
 vi.mock('@/features/dms/dmApi', () => ({
-  dmApi: { listCompanyMembers: vi.fn() },
+  dmApi: {
+    meId: vi.fn(() => 'current-user'),
+    currentUser: vi.fn(() => ({ id: 'current-user' })),
+    listCompanyMembers: vi.fn(),
+  },
 }))
 
 describe('ProfilePanel', () => {
   beforeEach(() => {
+    setActivePinia(createPinia())
     getUser.mockReset()
     getUserProfile.mockReset()
     dmApi.listCompanyMembers.mockReset()
@@ -57,7 +64,7 @@ describe('ProfilePanel', () => {
     wrapper.unmount()
   })
 
-  it('reactively reflects the current user status changes', async () => {
+  it('reactively reflects the shared presence status changes', async () => {
     getUserProfile.mockResolvedValue({
       data: { full_name: 'Current User', status_mode: 'online' },
     })
@@ -67,17 +74,34 @@ describe('ProfilePanel', () => {
     await flushPromises()
 
     expect(wrapper.text()).toContain('Online')
-    useUserStore().hydrate({ status: 'away' })
+    const presence = usePresenceStore()
+    presence.presenceById['current-user'] = { state: 'away' }
     await wrapper.vm.$nextTick()
     expect(wrapper.text()).toContain('Away')
 
-    useUserStore().hydrate({ status: 'dnd' })
+    presence.presenceById['current-user'].state = 'dnd'
+    await wrapper.vm.$nextTick()
+    expect(wrapper.text()).toContain('Do not disturb')
+    wrapper.unmount()
+  })
+
+  it('shows the same shared live status as the profile avatar', async () => {
+    getUser.mockResolvedValue({ data: { status_mode: 'online' } })
+    const wrapper = mount(ProfilePanel, {
+      props: { member: { id: 'other-user', name: 'Member', status: 'online' } },
+    })
+    await flushPromises()
+
+    const presence = usePresenceStore()
+    expect(wrapper.text()).toContain('Offline')
+    presence.presenceById['other-user'] = { state: 'dnd' }
     await wrapper.vm.$nextTick()
     expect(wrapper.text()).toContain('Do not disturb')
     wrapper.unmount()
   })
 
   it('loads other users from the public user endpoint', async () => {
+    usePresenceStore().presenceById['other-user'] = { state: 'online' }
     getUser.mockResolvedValue({
       data: {
         data: {
@@ -132,10 +156,11 @@ describe('ProfilePanel', () => {
     wrapper.unmount()
   })
 
-  it('reads object-shaped status fields like the channel avatar', async () => {
+  it('uses shared presence instead of a profile response status snapshot', async () => {
     getUser.mockResolvedValue({
-      data: { presence: { state: 'away' } },
+      data: { presence: { state: 'offline' } },
     })
+    usePresenceStore().presenceById['other-user'] = { state: 'away' }
     const wrapper = mount(ProfilePanel, {
       props: { member: { id: 'other-user', name: 'Member', status: 'unknown' } },
     })

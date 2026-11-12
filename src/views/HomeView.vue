@@ -305,6 +305,10 @@ function messageProfileMember(member) {
   closeMemberProfile()
 }
 
+function onStatusChange(status) {
+  presence.setMyState(status, { persist: false })
+}
+
 onMounted(async () => {
   void remindersStore.fetch().catch((error) => {
     ui.toast('Unable to load reminders', error?.message || 'Please try again.', 'error')
@@ -332,6 +336,7 @@ onBeforeUnmount(() => {
           :avatar-size="32"
           :fixed="false"
           @log-out="logout"
+          @status-change="onStatusChange"
           @settings-saved="onAccountSettingsSaved"
           @error="onAccountError"
         />

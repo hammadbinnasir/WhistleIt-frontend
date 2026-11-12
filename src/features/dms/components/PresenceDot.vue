@@ -8,7 +8,9 @@ const props = defineProps({
 })
 
 const color = computed(
-  () => ({ online: 'bg-green-500', away: 'bg-amber-400' })[props.state] ?? 'bg-slate-500',
+  () =>
+    ({ online: 'bg-green-500', away: 'bg-amber-400', dnd: 'bg-red-500' })[props.state] ??
+    'bg-slate-500',
 )
 </script>
 
