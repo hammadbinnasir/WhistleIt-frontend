@@ -2,18 +2,43 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useDmStore } from '@/features/dms/stores/dms'
 import { usePresenceStore } from '@/features/dms/stores/presence'
+import { useUserStore } from '@/features/account/composables/useUserStore'
+import { getAuthUser } from '@/features/auth/session'
 import { useUiStore } from '@/stores/ui'
 import DmListItem from './DmListItem.vue'
 import NewDmPanel from './NewDmPanel.vue'
 
 const dms = useDmStore()
 const presence = usePresenceStore()
+const userStore = useUserStore()
 const ui = useUiStore()
 const open = ref(true)
 const panelOpen = ref(false)
 const starting = ref('') // jis user ke saath DM ban rahi hai
 
 const ORDER = { online: 0, away: 1, offline: 2 }
+
+const myStatusConversation = computed(() => {
+  if (!userStore.state.customStatus && !userStore.state.customStatusEmoji) return null
+  const authUser = getAuthUser()
+  return {
+    id: 'my-custom-status',
+    type: 'dm',
+    members: [dms.meId],
+    name:
+      userStore.state.profile.fullName ||
+      authUser?.fullName ||
+      dms.usersById[dms.meId]?.name ||
+      'Me',
+    unreadCount: 0,
+    messages: [],
+    customStatus: {
+      emoji: userStore.state.customStatusEmoji,
+      text: userStore.state.customStatus,
+      expiresAt: userStore.state.customStatusExpiresAt,
+    },
+  }
+})
 
 // Pehle ki tarah baaki users bhi (jin se abhi DM nahi): online upar, phir naam se
 const suggestions = computed(() =>
@@ -154,6 +179,13 @@ onBeforeUnmount(() => {
           Retry
         </button>
       </p>
+
+      <DmListItem
+        v-if="myStatusConversation"
+        :conversation="myStatusConversation"
+        :active="false"
+        status-only
+      />
 
       <DmListItem
         v-for="c in dms.sorted"

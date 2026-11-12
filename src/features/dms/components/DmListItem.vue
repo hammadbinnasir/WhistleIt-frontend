@@ -1,5 +1,5 @@
 <script setup>
-import { computed } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref } from 'vue'
 import { useDmStore } from '@/features/dms/stores/dms'
 import { usePresenceStore } from '@/features/dms/stores/presence'
 import { useUserStore } from '@/features/account/composables/useUserStore'
@@ -9,39 +9,56 @@ import PresenceIcon from './PresenceIcon.vue'
 const props = defineProps({
   conversation: { type: Object, required: true },
   active: Boolean,
+  statusOnly: Boolean,
 })
 defineEmits(['select', 'close'])
 
 const dms = useDmStore()
 const presence = usePresenceStore()
 const userStore = useUserStore()
+const customEmoji = ref(null)
+const customTooltipElement = ref(null)
+const customTooltipVisible = ref(false)
+const customTooltipPosition = ref({ left: 8, top: 8 })
 
-const title = computed(() => dms.titleOf(props.conversation))
+const title = computed(() =>
+  props.statusOnly ? props.conversation.name : dms.titleOf(props.conversation),
+)
 const partnerId = computed(() =>
-  props.conversation.type === 'dm' ? dms.partnerId(props.conversation) : null,
+  props.statusOnly
+    ? dms.meId
+    : props.conversation.type === 'dm'
+      ? dms.partnerId(props.conversation)
+      : null,
 )
 const state = computed(() => (partnerId.value ? presence.stateOf(partnerId.value) : null))
 const isOwnStatus = computed(() => partnerId.value === dms.meId)
 const custom = computed(() => {
+  if (props.statusOnly) {
+    const status = props.conversation.customStatus
+    return status?.emoji || status?.text ? status : null
+  }
   if (!partnerId.value) return null
 
+  const liveStatus = presence.presenceById[partnerId.value]?.status
   const accountStatus = isOwnStatus.value
     ? {
         emoji: userStore.state.customStatusEmoji,
         text: userStore.state.customStatus,
+        expiresAt: userStore.state.customStatusExpiresAt,
       }
     : null
   const status =
     accountStatus?.text || accountStatus?.emoji
       ? accountStatus
-      : (dms.usersById[partnerId.value]?.customStatus ?? presence.customOf(partnerId.value))
+      : (liveStatus ?? dms.usersById[partnerId.value]?.customStatus)
 
   return status?.emoji || status?.text ? status : null
 })
 const customTooltip = computed(() =>
   customStatusTooltip(
     custom.value?.text,
-    isOwnStatus.value ? userStore.state.customStatusExpiresAt : null,
+    custom.value?.expiresAt ?? custom.value?.expires_at,
   ),
 )
 const unread = computed(() => Math.max(0, Number(props.conversation.unreadCount) || 0))
@@ -57,25 +74,56 @@ const recentTitle = computed(
     })[recentStatus.value] ?? '',
 )
 const unreadLabel = computed(() => (unread.value > 99 ? '99+' : String(unread.value)))
-const tooltip = computed(() =>
-  partnerId.value
-    ? ({ online: 'Online', away: 'Away', offline: 'Offline' })[state.value] ?? 'Offline'
-    : `${props.conversation.members.length} members`,
-)
+
+function positionCustomTooltip() {
+  const bounds = customEmoji.value?.getBoundingClientRect()
+  if (!bounds) return
+
+  const maxWidth = Math.max(0, window.innerWidth - 16)
+  const tooltipBounds = customTooltipElement.value?.getBoundingClientRect()
+  const tooltipWidth = Math.min(tooltipBounds?.width || 320, maxWidth)
+  const tooltipHeight = tooltipBounds?.height || 40
+  customTooltipPosition.value = {
+    left: Math.max(
+      8,
+      Math.min(bounds.right - tooltipWidth + 30, window.innerWidth - tooltipWidth - 8),
+    ),
+    top:
+      bounds.bottom + tooltipHeight + 4 <= window.innerHeight
+        ? bounds.bottom + 4
+        : Math.max(8, bounds.top - tooltipHeight - 4),
+  }
+}
+
+function showCustomTooltip() {
+  customTooltipVisible.value = true
+  void nextTick(positionCustomTooltip)
+  window.addEventListener('resize', positionCustomTooltip)
+  window.addEventListener('scroll', positionCustomTooltip, true)
+}
+
+function hideCustomTooltip() {
+  customTooltipVisible.value = false
+  window.removeEventListener('resize', positionCustomTooltip)
+  window.removeEventListener('scroll', positionCustomTooltip, true)
+}
+
+onBeforeUnmount(hideCustomTooltip)
 </script>
 
 <template>
   <!-- group: hover par X dikhane ke liye. X alag button hai kyunki button ke andar button nahi ho sakta -->
   <div class="group relative">
-    <button
+    <component
+      :is="statusOnly ? 'div' : 'button'"
       class="flex w-full items-center gap-3 border-l-4 py-2 pl-4 pr-12 text-left text-[15px]"
       :class="
         active
           ? 'border-indigo-400 bg-indigo-500/25 text-white'
           : 'border-transparent text-indigo-200 hover:bg-white/5'
       "
-      :title="tooltip"
-      @click="$emit('select', conversation.id)"
+      data-test="dm-row"
+      @click="!statusOnly && $emit('select', conversation.id)"
     >
       <PresenceIcon :state="state" />
 
@@ -87,19 +135,18 @@ const tooltip = computed(() =>
       </span>
       <span
         v-if="custom?.emoji"
-        class="group/status relative shrink-0 cursor-default text-sm"
+        ref="customEmoji"
+        class="shrink-0 cursor-default text-sm"
         :aria-label="`Custom status: ${customTooltip || custom.text}`"
         :aria-describedby="`custom-status-${conversation.id}`"
         role="img"
+        tabindex="0"
+        @mouseenter="showCustomTooltip"
+        @mouseleave="hideCustomTooltip"
+        @focus="showCustomTooltip"
+        @blur="hideCustomTooltip"
       >
         {{ custom.emoji }}
-        <span
-          :id="`custom-status-${conversation.id}`"
-          class="pointer-events-none absolute right-0 top-full z-50 mt-1 whitespace-nowrap rounded bg-[#6b6b73] px-3 py-1.5 text-xs font-medium text-white opacity-0 shadow-md transition-opacity group-hover/status:opacity-100 group-focus-within/status:opacity-100"
-          role="tooltip"
-        >
-          {{ customTooltip || custom.text }}
-        </span>
       </span>
 
       <!-- (naya) recent sync: chalti request / offline queue / fail (dobara kholne par retry) -->
@@ -129,10 +176,27 @@ const tooltip = computed(() =>
           {{ unreadLabel }}
         </span>
       </span>
-    </button>
+    </component>
+
+    <Teleport to="body">
+      <span
+        v-if="customTooltip && customTooltipVisible"
+        :id="`custom-status-${conversation.id}`"
+        ref="customTooltipElement"
+        class="pointer-events-none fixed z-[9999] max-w-[calc(100vw-16px)] whitespace-normal rounded bg-[#6b6b73] px-3 py-1.5 text-xs font-medium text-white shadow-md"
+        :style="{
+          left: `${customTooltipPosition.left}px`,
+          top: `${customTooltipPosition.top}px`,
+        }"
+        role="tooltip"
+      >
+        {{ customTooltip }}
+      </span>
+    </Teleport>
 
     <!-- Close (X): selected row par hamesha, baaqi par hover par -->
     <button
+      v-if="!statusOnly"
       type="button"
       class="absolute right-3 top-1/2 h-7 w-7 -translate-y-1/2 items-center justify-center rounded text-white hover:bg-white/15"
       :class="active ? 'flex' : 'hidden group-hover:flex'"

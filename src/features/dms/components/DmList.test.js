@@ -3,6 +3,7 @@ import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { useDmStore } from '@/features/dms/stores/dms'
 import { usePresenceStore } from '@/features/dms/stores/presence'
+import { useUserStore } from '@/features/account/composables/useUserStore'
 import { useUiStore } from '@/stores/ui'
 import { setupDmsTestState } from '@/features/dms/test-utils'
 import DmList from './DmList.vue'
@@ -52,6 +53,52 @@ describe('DmList', () => {
 
     expect(wrapper.text()).toContain('Offline: showing saved messages.')
     expect(wrapper.text()).toContain('Failed to fetch')
+    wrapper.unmount()
+  })
+
+  it('adds the current user to the top of DMs when they set a custom status', async () => {
+    const dms = useDmStore()
+    vi.spyOn(dms, 'init').mockResolvedValue()
+    vi.spyOn(dms, 'loadCustomStatuses').mockResolvedValue()
+    const wrapper = shallowMount(DmList)
+
+    expect(
+      wrapper.findAllComponents(DmListItem).some((item) => item.props('statusOnly')),
+    ).toBe(false)
+
+    useUserStore().hydrate({
+      profile: { fullName: 'Muhammad Abdullah Tariq' },
+      customStatus: { emoji: '🚌', text: 'Commuting' },
+      customStatusExpiresAt: Date.now() + 60_000,
+    })
+    await wrapper.vm.$nextTick()
+
+    const myStatusItem = wrapper
+      .findAllComponents(DmListItem)
+      .find((item) => item.props('statusOnly'))
+    expect(myStatusItem).toBeTruthy()
+    expect(myStatusItem.props('conversation')).toMatchObject({
+      name: 'Muhammad Abdullah Tariq',
+      members: [dms.meId],
+      customStatus: {
+        emoji: '🚌',
+        text: 'Commuting',
+      },
+    })
+
+    useUserStore().hydrate({
+      customStatus: {
+        emoji: useUserStore().state.customStatusEmoji,
+        text: useUserStore().state.customStatus,
+        expiresAt: useUserStore().state.customStatusExpiresAt,
+      },
+    })
+    await wrapper.vm.$nextTick()
+    expect(useUserStore().state.customStatusEmoji).toBe('🚌')
+    expect(
+      wrapper.findAllComponents(DmListItem).find((item) => item.props('statusOnly'))
+        .props('conversation').customStatus.emoji,
+    ).toBe('🚌')
     wrapper.unmount()
   })
 })

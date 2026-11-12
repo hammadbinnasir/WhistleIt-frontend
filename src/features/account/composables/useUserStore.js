@@ -147,11 +147,18 @@ function normalizeCustomStatus(value) {
       } else if (entry && typeof entry === 'object') {
         if (typeof entry.text === 'string') status.text ||= entry.text
         if (typeof entry.emoji === 'string') status.emoji ||= entry.emoji
+        status.expiresAt ??= entry.expiresAt ?? entry.expires_at
       }
       return status
     },
-    { text: '', emoji: '' },
+    { text: '', emoji: '', expiresAt: undefined },
   )
+}
+
+function normalizeExpiry(value) {
+  if (value == null || value === '') return null
+  const timestamp = typeof value === 'number' ? value : new Date(value).getTime()
+  return Number.isFinite(timestamp) ? timestamp : null
 }
 
 /** Clears the custom status once its expiry time passes (UI side only). */
@@ -186,8 +193,9 @@ function hydrate(data = {}) {
   }
   if (data.customStatusEmoji !== undefined) state.customStatusEmoji = data.customStatusEmoji
   if (data.customStatusDuration) state.customStatusDuration = data.customStatusDuration
-  if (data.customStatusExpiresAt !== undefined) {
-    state.customStatusExpiresAt = data.customStatusExpiresAt
+  const expiresAt = data.customStatusExpiresAt ?? customStatusValue?.expiresAt ?? customStatusValue?.expires_at
+  if (data.customStatusExpiresAt !== undefined || expiresAt !== undefined) {
+    state.customStatusExpiresAt = normalizeExpiry(expiresAt)
   }
   if (data.preferences) {
     const preferences = normalizePreferences(data.preferences)
@@ -235,6 +243,8 @@ async function loadUserProfile() {
         : data?.custom_status !== undefined
           ? (data.custom_status ?? '')
           : undefined,
+    customStatusExpiresAt:
+      data?.customStatusExpiresAt ?? data?.custom_status_expires_at,
   })
   const photoUrl = getAvatarUrl(response)
   if (photoUrl && !profile.photoUrl) state.profile.photoUrl = photoUrl
@@ -248,7 +258,13 @@ async function setStatus(status) {
 
 /** `options`: { duration: 'never'|'30m'|..., expiresAt: number|null } */
 async function setCustomStatus(text, { emoji = '☕', duration = 'never', expiresAt = null } = {}) {
-  await updateUserStatus(requireUserId(), { custom_status: { emoji, text } })
+  await updateUserStatus(requireUserId(), {
+    custom_status: {
+      emoji,
+      text,
+      expires_at: expiresAt == null ? null : new Date(expiresAt).toISOString(),
+    },
+  })
   state.customStatus = text
   state.customStatusEmoji = emoji
   state.customStatusDuration = duration
