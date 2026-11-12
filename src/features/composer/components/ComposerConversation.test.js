@@ -598,6 +598,33 @@ describe('composer conversation', () => {
     wrapper.unmount()
   })
 
+  it('sends and renders underline formatting for channel messages', async () => {
+    const wrapper = mount(ComposerConversation, {
+      props: { conversationId: '6aeb0aa8fbf9fd02ad07048f' },
+    })
+    const editor = wrapper.get('[contenteditable="true"]')
+    editor.element.innerHTML = '<u>Underlined update</u>'
+    editor.element.dispatchEvent(new Event('input', { bubbles: true }))
+    await nextTick()
+    await wrapper.findComponent(MessageComposer).get('form').trigger('submit')
+
+    await vi.waitFor(() => {
+      expect(wrapper.get('.composer-conversation__message-content u').text()).toBe(
+        'Underlined update',
+      )
+    })
+    expect(sendChannelMessage).toHaveBeenCalledWith(
+      'company-1',
+      'team-1',
+      '6aeb0aa8fbf9fd02ad07048f',
+      expect.objectContaining({
+        content: '++Underlined update++',
+        is_important: false,
+      }),
+    )
+    wrapper.unmount()
+  })
+
   it('shows a sent message in the conversation', async () => {
     const wrapper = mount(ComposerConversation)
 

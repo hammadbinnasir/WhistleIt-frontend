@@ -907,6 +907,10 @@ describe('message composer', () => {
 
     expect(input.element.innerHTML).toBe('<u>underlined</u>')
     expect(wrapper.get('button[aria-label="Underline"]').attributes('aria-pressed')).toBe('true')
+
+    await wrapper.get('form').trigger('submit')
+
+    expect(wrapper.emitted('send')).toEqual([[{ content: '++underlined++' }]])
     wrapper.unmount()
   })
 

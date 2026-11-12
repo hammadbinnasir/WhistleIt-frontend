@@ -44,6 +44,7 @@ export function formattedMessageHtml(content = '', isCode = false) {
   html = html.replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>')
   html = html.replace(/~~([^~\n]+)~~/g, '<s>$1</s>')
   html = html.replace(/(^|[^*])[*]([^*\n]+)[*](?![*])/g, '$1<em>$2</em>')
+  html = html.replace(/\+\+([^+\n]+)\+\+/g, '<u>$1</u>')
   html = linkifyHtml(html)
   html = html.replace(/\n/g, '<br>')
 
