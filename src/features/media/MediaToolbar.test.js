@@ -97,6 +97,11 @@ describe('media toolbar emoji picker', () => {
   it('prepares the selected recent file as binary before emitting it', async () => {
     const file = {
       id: 'file-1',
+      company_id: 'company-1',
+      team_id: 'team-1',
+      channel_id: 'channel-1',
+      message_id: 'message-1',
+      conversation_type: 'channel',
       name: 'report.pdf',
       mime_type: 'application/pdf',
       created_at: '2026-11-10T10:00:00Z',
@@ -117,10 +122,99 @@ describe('media toolbar emoji picker', () => {
     expect(wrapper.get('.recent-files__details').text()).toContain('report.pdf')
     expect(wrapper.get('.recent-files__details').text()).toContain('PDF')
     await wrapper.get('button[aria-label="Share report.pdf"]').trigger('click')
-    expect(recentFilesApi.downloadRecentFile).toHaveBeenCalledWith(file)
+    expect(recentFilesApi.downloadRecentFile).toHaveBeenCalledWith(file, {
+      companyId: 'company-1',
+    })
     expect(wrapper.emitted('recent-file-selected')).toEqual([[binaryFile]])
     expect(wrapper.find('[role="dialog"]').exists()).toBe(false)
 
+    wrapper.unmount()
+  })
+
+  it('shows fetched image previews in Recent Files and falls back to the icon if fetch fails', async () => {
+    const image = {
+      id: 'image-1',
+      name: 'photo.jpg',
+      mime_type: 'image/jpeg',
+      path: 'messages/channel-1/photo.jpg',
+    }
+    recentFilesApi.listRecentFiles.mockResolvedValue([image])
+    recentFilesApi.downloadRecentFile.mockResolvedValue(
+      new File(['image bytes'], 'photo.jpg', { type: 'image/jpeg' }),
+    )
+    vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:recent-image-preview')
+    vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {})
+    const wrapper = mount(MediaToolbar, {
+      props: { companyId: 'company-1', teamId: 'team-1' },
+    })
+
+    await wrapper.get('button[aria-label="Recent files"]').trigger('click')
+    await flushPromises()
+
+    const thumbnail = wrapper.get('.recent-files__thumbnail')
+    expect(thumbnail.attributes('src')).toBe('blob:recent-image-preview')
+    expect(recentFilesApi.downloadRecentFile).toHaveBeenCalledWith(image, {
+      companyId: 'company-1',
+      teamId: 'team-1',
+    })
+
+    wrapper.unmount()
+    expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:recent-image-preview')
+  })
+
+  it('keeps the image file icon when authenticated preview fetch fails', async () => {
+    recentFilesApi.listRecentFiles.mockResolvedValue([
+      { id: 'image-2', name: 'photo.jpg', mime_type: 'image/jpeg' },
+    ])
+    recentFilesApi.downloadRecentFile.mockRejectedValue(new Error('Preview unavailable'))
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const wrapper = mount(MediaToolbar, { props: { companyId: 'company-1' } })
+
+    await wrapper.get('button[aria-label="Recent files"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('.recent-files__thumbnail').exists()).toBe(false)
+    expect(wrapper.find('.recent-files__icon--image').exists()).toBe(true)
+
+    wrapper.unmount()
+  })
+
+  it('downloads recent files through the binary-fetch handler, not a storage link', async () => {
+    const file = {
+      id: 'attachment-1',
+      company_id: 'company-1',
+      team_id: 'team-1',
+      channel_id: 'channel-1',
+      message_id: 'message-1',
+      conversation_type: 'channel',
+      name: 'photo.jpg',
+      path: 'messages/photo.jpg',
+    }
+    recentFilesApi.listRecentFiles.mockResolvedValue([file])
+    recentFilesApi.downloadRecentFile.mockResolvedValue(
+      new File(['image'], 'photo.jpg', { type: 'image/jpeg' }),
+    )
+    const wrapper = mount(MediaToolbar, { props: { companyId: 'company-1' } })
+    const anchor = { click: vi.fn(), href: '', download: '' }
+    const createElement = document.createElement.bind(document)
+    vi.spyOn(document, 'createElement').mockImplementation((tagName, options) =>
+      tagName === 'a' ? anchor : createElement(tagName, options),
+    )
+    vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:recent-file')
+
+    await wrapper.get('button[aria-label="Recent files"]').trigger('click')
+    await flushPromises()
+
+    const downloadButton = wrapper.get('button[aria-label="Download photo.jpg"]')
+    expect(downloadButton.attributes('href')).toBeUndefined()
+    await downloadButton.trigger('click')
+    await flushPromises()
+
+    expect(recentFilesApi.downloadRecentFile).toHaveBeenCalledWith(file, {
+      companyId: 'company-1',
+    })
+    expect(anchor.click).toHaveBeenCalledOnce()
+    expect(anchor.href).toBe('blob:recent-file')
     wrapper.unmount()
   })
 

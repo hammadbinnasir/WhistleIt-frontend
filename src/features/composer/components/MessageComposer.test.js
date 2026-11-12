@@ -640,7 +640,7 @@ describe('message composer', () => {
     expect(wrapper.emitted('send')).toEqual([[{ content: '', attachment }]])
   })
 
-  it('sends a selected recent file with any drafted message text', async () => {
+  it('adds a selected recent file to the composer and sends it only on submit', async () => {
     const wrapper = mount(MessageComposer)
     const recentFile = new File(['report'], 'report.pdf', { type: 'application/pdf' })
     setEditorText(wrapper, 'Please see this')
@@ -648,8 +648,13 @@ describe('message composer', () => {
     wrapper.getComponent(MediaToolbar).vm.$emit('recent-file-selected', recentFile)
     await wrapper.vm.$nextTick()
 
+    expect(wrapper.emitted('send')).toBeUndefined()
+    expect(wrapper.get('.message-composer__attachment-name').text()).toBe('report.pdf')
+    expect(wrapper.get('[contenteditable="true"]').text()).toBe('Please see this')
+
+    await wrapper.get('form').trigger('submit')
     expect(wrapper.emitted('send')).toEqual([
-      [{ content: 'Please see this', attachment: recentFile, attachmentSource: 'recent' }],
+      [{ content: 'Please see this', attachment: recentFile }],
     ])
     expect(wrapper.get('[contenteditable="true"]').text()).toBe('')
   })
@@ -1125,7 +1130,11 @@ describe('message composer', () => {
     expect(input.element.querySelectorAll(`${tag} > li`)).toHaveLength(2)
     expect(input.element.querySelector(`${tag} > li:last-child br`)).not.toBeNull()
     expect(wrapper.emitted('send')).toBeUndefined()
-    expect(wrapper.get(`button[aria-label="${tag === 'ul' ? 'Bulleted' : 'Numbered'} list"]`).attributes('aria-pressed')).toBe('true')
+    expect(
+      wrapper
+        .get(`button[aria-label="${tag === 'ul' ? 'Bulleted' : 'Numbered'} list"]`)
+        .attributes('aria-pressed'),
+    ).toBe('true')
     wrapper.unmount()
   })
 

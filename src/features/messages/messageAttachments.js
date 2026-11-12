@@ -75,7 +75,9 @@ export function messageAttachmentEndpoint(
     attachment?.attachment_id ??
     attachment?.attachmentId ??
     attachment?.file_id ??
-    attachment?.fileId
+    attachment?.fileId ??
+    attachment?.attachment?.id ??
+    attachment?.attachment?.attachment_id
   const requiredIds =
     conversationType === 'dm'
       ? [companyId, channelId, messageId, attachmentId]
@@ -93,6 +95,67 @@ export function messageAttachmentEndpoint(
       ? `/v1/${encode(companyId)}/direct-channels/${encode(channelId)}/messages/${encode(messageId)}`
       : `/v1/${encode(companyId)}/teams/${encode(teamId)}/channels/${encode(channelId)}/messages/${encode(messageId)}`
   return `${messagePath}/attachments/${encode(attachmentId)}`
+}
+
+export function recentFileAttachmentContext(file, fallback = {}) {
+  const sourceType = String(
+    file?.conversation_type ??
+      file?.conversationType ??
+      file?.chat_type ??
+      file?.chatType ??
+      file?.source_type ??
+      file?.sourceType ??
+      file?.channel_type ??
+      '',
+  ).toLowerCase()
+  const directChannelId =
+    file?.direct_channel_id ?? file?.directChannelId ?? file?.direct_channel?.id
+  const teamId = file?.team_id ?? file?.teamId ?? file?.team?.id ?? fallback.teamId
+  const sourcePath = String(file?.path ?? file?.storage_path ?? file?.file_path ?? '')
+    .trim()
+    .replace(/^\/+/, '')
+    .split('/')
+  const pathChannelId = sourcePath[0] === 'messages' ? sourcePath[1] : null
+  const pathMessageId = sourcePath[0] === 'messages' ? sourcePath[2] : null
+  const sourceChannelId =
+    directChannelId ??
+    file?.channel_id ??
+    file?.channelId ??
+    file?.channel?.id ??
+    file?.chat_id ??
+    file?.chatId ??
+    pathChannelId
+  const isDirect =
+    directChannelId != null ||
+    file?.is_direct === true ||
+    file?.isDirect === true ||
+    [
+      'dm',
+      'direct',
+      'direct-channel',
+      'direct_channel',
+      'direct-message',
+      'direct_message',
+    ].includes(sourceType)
+  const isChannel =
+    teamId != null ||
+    ['channel', 'simple-channel', 'simple_channel', 'team-channel', 'team_channel'].includes(
+      sourceType,
+    )
+
+  return {
+    conversationType: isDirect ? 'dm' : isChannel ? 'channel' : null,
+    companyId: file?.company_id ?? file?.companyId ?? file?.company?.id ?? fallback.companyId,
+    teamId,
+    channelId: sourceChannelId,
+    messageId:
+      file?.message_id ??
+      file?.messageId ??
+      file?.source_message_id ??
+      file?.sourceMessageId ??
+      file?.message?.id ??
+      pathMessageId,
+  }
 }
 
 export async function fetchMessageAttachment(attachment, context) {

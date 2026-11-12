@@ -2,7 +2,7 @@
 import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import EmojiPicker from 'vue3-emoji-picker'
 import 'vue3-emoji-picker/css'
-import { messageAttachmentKind, messageAttachmentUrl } from '@/features/messages/messageAttachments'
+import { messageAttachmentKind } from '@/features/messages/messageAttachments'
 import {
   downloadRecentFile,
   listRecentFiles,
@@ -16,6 +16,7 @@ const props = defineProps({
   recording: { type: Boolean, default: false },
   microphoneDisabled: { type: Boolean, default: false },
   companyId: { type: [String, Number], default: null },
+  teamId: { type: [String, Number], default: null },
 })
 
 const toolbar = ref(null)
@@ -25,6 +26,7 @@ const recentFilesOpen = ref(false)
 const recentFilesLoading = ref(false)
 const recentFilesError = ref('')
 const recentFiles = ref([])
+const recentFilePreviewUrls = ref(new Map())
 const preparingFileKey = ref('')
 const activeCategory = ref('animals_nature')
 const emojiQuery = ref('')
@@ -40,6 +42,13 @@ const categoryKeys = [
   'flags',
 ]
 let initializedNatureCategory = false
+let previewRequestId = 0
+
+function clearRecentFilePreviews() {
+  previewRequestId += 1
+  for (const url of recentFilePreviewUrls.value.values()) URL.revokeObjectURL(url)
+  recentFilePreviewUrls.value = new Map()
+}
 
 function blurSearchInput() {
   toolbar.value?.querySelector('.emoji-picker input')?.blur()
@@ -92,6 +101,7 @@ function closeEmojiPicker(event) {
   if (event.key === 'Escape') {
     emojiPickerOpen.value = false
     recentFilesOpen.value = false
+    clearRecentFilePreviews()
   }
 }
 
@@ -99,6 +109,7 @@ function closePickerOutside(event) {
   if (!toolbar.value?.contains(event.target)) {
     emojiPickerOpen.value = false
     recentFilesOpen.value = false
+    clearRecentFilePreviews()
   }
 }
 
@@ -112,13 +123,40 @@ async function openRecentFiles() {
   recentFilesOpen.value = true
   recentFilesLoading.value = true
   recentFilesError.value = ''
+  clearRecentFilePreviews()
   try {
     recentFiles.value = await listRecentFiles(props.companyId)
+    void loadRecentFilePreviews(recentFiles.value)
   } catch (error) {
     recentFilesError.value = error instanceof Error ? error.message : 'Could not load recent files.'
   } finally {
     recentFilesLoading.value = false
   }
+}
+
+async function loadRecentFilePreviews(files) {
+  const requestId = previewRequestId
+  const previews = new Map()
+
+  await Promise.all(
+    files.map(async (file, index) => {
+      if (messageAttachmentKind(file) !== 'image') return
+
+      let previewUrl
+      try {
+        const imageFile = await downloadRecentFile(file, recentFileContext())
+        previewUrl = URL.createObjectURL(imageFile)
+        if (requestId !== previewRequestId) {
+          URL.revokeObjectURL(previewUrl)
+          return
+        }
+        previews.set(recentFileKey(file, index), previewUrl)
+        recentFilePreviewUrls.value = new Map(previews)
+      } catch (error) {
+        console.warn('Could not load a recent-file image preview:', error)
+      }
+    }),
+  )
 }
 
 async function selectRecentFile(file, index) {
@@ -127,7 +165,7 @@ async function selectRecentFile(file, index) {
   preparingFileKey.value = fileKey
   recentFilesError.value = ''
   try {
-    const binaryFile = await downloadRecentFile(file)
+    const binaryFile = await downloadRecentFile(file, recentFileContext())
     emit('recent-file-selected', binaryFile)
     recentFilesOpen.value = false
   } catch (error) {
@@ -138,8 +176,40 @@ async function selectRecentFile(file, index) {
   }
 }
 
+function recentFileContext() {
+  return {
+    companyId: props.companyId,
+    ...(props.teamId != null ? { teamId: props.teamId } : {}),
+  }
+}
+
+async function downloadRecentFileToDevice(file, index) {
+  if (preparingFileKey.value) return
+  preparingFileKey.value = recentFileKey(file, index)
+  recentFilesError.value = ''
+  let url
+  try {
+    const binaryFile = await downloadRecentFile(file, recentFileContext())
+    url = URL.createObjectURL(binaryFile)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = recentFileName(file)
+    link.click()
+  } catch (error) {
+    recentFilesError.value =
+      error instanceof Error ? error.message : 'Could not download the selected file.'
+  } finally {
+    if (url) window.setTimeout(() => URL.revokeObjectURL(url), 0)
+    preparingFileKey.value = ''
+  }
+}
+
 function recentFileKey(file, index) {
   return recentFileId(file) || `${recentFileName(file)}-${index}`
+}
+
+function recentFilePreviewUrl(file, index) {
+  return recentFilePreviewUrls.value.get(recentFileKey(file, index)) || ''
 }
 
 function recentFileDateLabel(file) {
@@ -194,6 +264,7 @@ function handleFileSelected(event) {
 onMounted(() => document.addEventListener('pointerdown', closePickerOutside))
 onBeforeUnmount(() => {
   document.removeEventListener('pointerdown', closePickerOutside)
+  clearRecentFilePreviews()
 })
 </script>
 
@@ -296,7 +367,15 @@ onBeforeUnmount(() => {
             :disabled="Boolean(preparingFileKey)"
             @click="selectRecentFile(file, index)"
           >
+            <img
+              v-if="messageAttachmentKind(file) === 'image' && recentFilePreviewUrl(file, index)"
+              class="recent-files__thumbnail"
+              :src="recentFilePreviewUrl(file, index)"
+              alt=""
+              aria-hidden="true"
+            />
             <span
+              v-else
               class="recent-files__icon"
               :class="`recent-files__icon--${messageAttachmentKind(file)}`"
               aria-hidden="true"
@@ -319,19 +398,18 @@ onBeforeUnmount(() => {
               >
             </span>
           </button>
-          <a
-            v-if="messageAttachmentUrl(file)"
+          <button
             class="recent-files__download"
-            :href="messageAttachmentUrl(file)"
-            :download="recentFileName(file)"
+            type="button"
+            :disabled="Boolean(preparingFileKey)"
             :aria-label="`Download ${recentFileName(file)}`"
             title="Download"
-            @click.stop
+            @click.stop="downloadRecentFileToDevice(file, index)"
           >
             <svg viewBox="0 0 20 20" aria-hidden="true">
               <path d="M10 2.5v10M6.5 9.5 10 13l3.5-3.5M3.5 14v3h13v-3" />
             </svg>
-          </a>
+          </button>
         </li>
       </ul>
     </section>
@@ -452,6 +530,14 @@ onBeforeUnmount(() => {
   color: #fff;
 }
 
+.recent-files__thumbnail {
+  width: 36px;
+  height: 36px;
+  flex: 0 0 36px;
+  border-radius: 4px;
+  object-fit: cover;
+}
+
 .recent-files__icon--image {
   background: #e7e2f4;
   color: #625e9a;
@@ -494,8 +580,12 @@ onBeforeUnmount(() => {
   height: 30px;
   flex: 0 0 30px;
   place-items: center;
+  padding: 0;
+  border: 0;
+  background: transparent;
   border-radius: 4px;
   color: #55566a;
+  cursor: pointer;
   opacity: 0;
 }
 
