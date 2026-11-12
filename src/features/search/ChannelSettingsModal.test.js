@@ -60,4 +60,49 @@ describe('channel settings message permissions', () => {
     expect(creatorWrapper.text()).toContain('Message Permissions')
     creatorWrapper.unmount()
   })
+
+  it('shows name and description edit controls only to the creator and resolves the creator name', async () => {
+    membersApi.listMembers.mockResolvedValue([
+      { id: 'creator-1', name: 'Channel Creator' },
+      { id: 'member-1', name: 'Channel Member' },
+    ])
+    const channel = {
+      id: 'channel-1',
+      name: 'General',
+      description: '',
+      createdBy: 'creator-1',
+      createdById: 'creator-1',
+      canManage: true,
+      muted: false,
+      favourite: false,
+    }
+
+    const memberWrapper = mount(ChannelSettingsModal, {
+      props: { channel: { ...channel, isCreator: false } },
+    })
+    await flushPromises()
+    await memberWrapper
+      .find('nav')
+      .findAll('button')
+      .find((button) => button.text() === 'about')
+      .trigger('click')
+
+    expect(memberWrapper.findAll('button').filter((button) => button.text() === 'Edit')).toHaveLength(0)
+    expect(memberWrapper.text()).toContain('Channel Creator')
+    expect(memberWrapper.text()).not.toContain('creator-1')
+    memberWrapper.unmount()
+
+    const creatorWrapper = mount(ChannelSettingsModal, {
+      props: { channel: { ...channel, isCreator: true } },
+    })
+    await flushPromises()
+    await creatorWrapper
+      .find('nav')
+      .findAll('button')
+      .find((button) => button.text() === 'about')
+      .trigger('click')
+
+    expect(creatorWrapper.findAll('button').filter((button) => button.text() === 'Edit')).toHaveLength(2)
+    creatorWrapper.unmount()
+  })
 })
