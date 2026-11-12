@@ -152,6 +152,20 @@ describe('dms store', () => {
     expect(dms.customStatusError).toBe('')
   })
 
+  it('clears a cached custom status when a forced refresh returns no status', async () => {
+    const dms = useDmStore()
+    await dms.init()
+    await dms.loadCustomStatuses(['u2'])
+    expect(dms.usersById.u2.customStatus).toEqual({ emoji: '📅', text: 'In a meeting' })
+
+    getUser.mockResolvedValueOnce({ data: { customStatus: null } })
+    await dms.loadCustomStatuses(['u2'], { force: true })
+
+    expect(getUser).toHaveBeenCalledTimes(2)
+    expect(dms.usersById.u2.customStatus).toBeNull()
+    expect(dms.usersById.u2.customStatusLoaded).toBe(true)
+  })
+
   it('loads company members and makes them available by user ID', async () => {
     dmApi.listCompanyMembers.mockResolvedValue([
       { id: 'company-user-1', name: 'Company User', email: 'user@example.com', avatarUrl: '' },

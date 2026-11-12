@@ -14,11 +14,14 @@ vi.mock('@/features/dms/dmApi', () => ({
 import { dmApi } from '@/features/dms/dmApi'
 import { usePresenceStore } from './presence'
 import { setupDmsTestState } from '@/features/dms/test-utils'
+import { useMembersStore } from '@/stores/members'
 
 describe('presence store', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     setupDmsTestState()
+    const members = useMembersStore()
+    members.fetchMembers = vi.fn(async () => members.members)
   })
 
   it('loads presence and updates the current user status', async () => {

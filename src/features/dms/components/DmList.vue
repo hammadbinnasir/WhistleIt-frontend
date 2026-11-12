@@ -17,6 +17,8 @@ const panelOpen = ref(false)
 const starting = ref('') // jis user ke saath DM ban rahi hai
 
 const ORDER = { online: 0, away: 1, offline: 2 }
+const CUSTOM_STATUS_POLL_INTERVAL = 15_000
+let customStatusTimer = null
 
 const myStatusConversation = computed(() => {
   if (!userStore.state.customStatus && !userStore.state.customStatusEmoji) return null
@@ -112,9 +114,23 @@ onMounted(() => {
   void presence.init()
   void dms.loadCompanyMembers() // baaki users (company + team members)
   dms.startPolling() // dusre user ke naye / edit / delete messages khud aate rahein
+  customStatusTimer = setInterval(() => {
+    if (typeof document !== 'undefined' && document.hidden) return
+    const userIds = dms.sorted
+      .map((conversation) =>
+        conversation.type === 'dm' ? dms.partnerId(conversation) : null,
+      )
+      .filter((userId) => {
+        const status = dms.usersById[userId]?.customStatus
+        return userId && (status?.emoji || status?.text)
+      })
+    void dms.loadCustomStatuses(userIds, { force: true })
+  }, CUSTOM_STATUS_POLL_INTERVAL)
 })
 
 onBeforeUnmount(() => {
+  clearInterval(customStatusTimer)
+  customStatusTimer = null
   dms.stopPolling()
   // App/sidebar band (jaise logout): server ko "offline", phir status timers band
   presence.goOffline()

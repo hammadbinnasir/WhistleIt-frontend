@@ -493,7 +493,7 @@ export const useDmStore = defineStore('dms', () => {
     }
   }
 
-  async function loadCustomStatuses(userIds = []) {
+  async function loadCustomStatuses(userIds = [], { force = false } = {}) {
     const ids = [
       ...new Set(
         userIds.filter((id) => {
@@ -501,9 +501,10 @@ export const useDmStore = defineStore('dms', () => {
           return (
             id &&
             id !== meId.value &&
-            !user?.customStatusLoaded &&
-            !user?.customStatus?.emoji &&
-            !user?.customStatus?.text
+            (force ||
+              (!user?.customStatusLoaded &&
+                !user?.customStatus?.emoji &&
+                !user?.customStatus?.text))
           )
         }),
       ),
@@ -518,7 +519,10 @@ export const useDmStore = defineStore('dms', () => {
 
         const request = getUser(id)
           .then((response) => {
-            mergeUsers([normalizePublicCustomStatus(response, id)])
+            const user = normalizePublicCustomStatus(response, id)
+            mergeUsers([user])
+            usersById.value[user.id].customStatus = user.customStatus
+            usersById.value[user.id].customStatusLoaded = true
           })
           .finally(() => customStatusRequests.delete(id))
         customStatusRequests.set(id, request)

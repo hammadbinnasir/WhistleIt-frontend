@@ -461,6 +461,10 @@ describe('custom status modal', () => {
     expect(url).toContain('/v1/users/test-user/status/custom')
     expect(options.method).toBe('DELETE')
     expect($('[role=dialog]')).toBeNull()
+    expect(wrapper.emitted('custom-status-change').at(-1)).toEqual([
+      '',
+      { emoji: '', duration: 'never', expiresAt: null },
+    ])
   })
 
   it('removes the status automatically once it expires', async () => {
@@ -890,7 +894,7 @@ describe('account settings modal', () => {
           title: 'Engineer',
           job_responsibilities: ['Design systems', 'Build things'],
           avatar_url: 'http://10.0.105.90:8000//api//v1//avatars//avatars//test-user//saved.png',
-          presence: 'away',
+          status_mode: 'away',
           custom_status: {
             emoji: '🏠',
             text: 'Working remotely',
@@ -948,6 +952,24 @@ describe('account settings modal', () => {
     expect(fetch.mock.calls.some(([url]) => String(url).includes('/v1/users/test-user/settings'))).toBe(
       false,
     )
+  })
+
+  it('emits the saved status mode after loading the account profile', async () => {
+    wrapper.unmount()
+    fetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => ({ data: { status_mode: 'away' } }),
+    })
+    wrapper = mount(UserModule, {
+      props: { user: { profile: { fullName: 'Hammad Haider' } } },
+      attachTo: document.body,
+    })
+
+    await flushPromises()
+
+    expect(store.state.status).toBe('away')
+    expect(wrapper.emitted('status-change')).toContainEqual(['away'])
   })
 
   it('removes a saved profile photo and restores initials in the account icon', async () => {

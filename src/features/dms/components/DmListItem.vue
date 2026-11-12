@@ -48,10 +48,13 @@ const custom = computed(() => {
         expiresAt: userStore.state.customStatusExpiresAt,
       }
     : null
+  const peer = dms.usersById[partnerId.value]
   const status =
     accountStatus?.text || accountStatus?.emoji
       ? accountStatus
-      : (liveStatus ?? dms.usersById[partnerId.value]?.customStatus)
+      : peer?.customStatusLoaded
+        ? peer.customStatus
+        : (liveStatus ?? peer?.customStatus)
 
   return status?.emoji || status?.text ? status : null
 })
