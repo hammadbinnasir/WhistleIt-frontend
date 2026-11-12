@@ -110,4 +110,29 @@ describe('reminders panel conversation scope', () => {
     expect(wrapper.text()).toContain('@Product Updates')
     expect(wrapper.text()).not.toContain('@channel-2')
   })
+
+  it('keeps reminder titles visible after the reminder fires', () => {
+    const store = useRemindersStore()
+    store.deletedItems.push({
+      id: 'fired-reminder',
+      conversationId: 'channel-1',
+      conversationName: 'Channel One',
+      conversationType: 'channel',
+      messageId: 'message-1',
+      title: 'Follow up with the team',
+      text: 'Send the update',
+      remindAt: new Date(Date.now() - 60_000).toISOString(),
+      fired: true,
+      firedAt: new Date().toISOString(),
+      dismissed: false,
+    })
+
+    const wrapper = mount(RemindersPanel, {
+      props: { conversationId: 'channel-1', conversationType: 'channel' },
+    })
+
+    expect(wrapper.text()).toContain('Deleted Reminders')
+    expect(wrapper.text()).toContain('Title: Follow up with the team')
+    expect(wrapper.text()).toContain('Send the update')
+  })
 })

@@ -1818,7 +1818,7 @@ async function setOneHourReminder(message) {
     await reminderStore.add({
       conversationId: channelId.value,
       conversationName: conversationLabel.value,
-      conversationType: 'channel',
+      conversationType: currentReminderConversationType.value,
       messageId: String(message.messageId ?? message.id),
       text: message.text ?? message.content ?? '',
       title: '',

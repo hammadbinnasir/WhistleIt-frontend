@@ -200,6 +200,9 @@ async function removeReminder(id) {
               In {{ r.conversationType === 'dm' ? 'conversation with' : 'channel' }}
               <span class="font-normal text-blue-500">@{{ conversationName(r) }}</span>
             </p>
+            <p v-if="r.title" class="mt-2 text-sm font-semibold text-slate-900">
+              Title: {{ r.title }}
+            </p>
             <p class="mt-2 text-sm font-bold text-slate-900">Message:</p>
             <p class="mt-1 break-words text-sm text-slate-800">{{ r.text }}</p>
             <p class="mt-3 text-xs text-slate-500">{{ fmt(r.deletedAt || r.remindAt) }}</p>
