@@ -3,17 +3,29 @@ import { useUiStore } from '@/stores/ui'
 import { createReminder, deleteReminder, listReminders } from './remindersApi'
 
 const DELETED_KEY = 'whistleit:deleted-reminders'
-const loadDeleted = () => {
+const PENDING_KEY = 'whistleit:pending-reminders'
+function loadStoredReminders(key) {
   try {
-    return JSON.parse(localStorage.getItem(DELETED_KEY)) || []
+    const saved = JSON.parse(localStorage.getItem(key) || '[]')
+    return Array.isArray(saved) ? saved : []
   } catch (error) {
-    console.error('Unable to load deleted reminders from browser storage:', error)
+    console.error(`Unable to load reminders from browser storage (${key}):`, error)
     return []
   }
 }
+const loadDeleted = () => {
+  return loadStoredReminders(DELETED_KEY)
+}
 
 export const useRemindersStore = defineStore('reminders', {
-  state: () => ({ items: [], deletedItems: loadDeleted(), timer: null, loading: false }),
+  state: () => ({
+    items: [],
+    deletedItems: loadDeleted(),
+    pendingItems: loadStoredReminders(PENDING_KEY),
+    fetchRequestId: 0,
+    timer: null,
+    loading: false,
+  }),
   getters: {
     sorted: (s) => [...s.items].sort((a, b) => new Date(a.remindAt) - new Date(b.remindAt)),
     dueItems: (s) =>
@@ -23,15 +35,25 @@ export const useRemindersStore = defineStore('reminders', {
   },
   actions: {
     async fetch() {
+      const requestId = ++this.fetchRequestId
       this.loading = true
       try {
         const processedIds = new Set(this.deletedItems.map((reminder) => String(reminder.id)))
-        this.items = (await listReminders()).filter(
+        const reminders = (await listReminders()).filter(
           (reminder) => !processedIds.has(String(reminder.id)),
         )
+        if (requestId !== this.fetchRequestId) return
+
+        const serverIds = new Set(reminders.map((reminder) => String(reminder.id)))
+        this.pendingItems = this.pendingItems.filter(
+          (reminder) =>
+            !serverIds.has(String(reminder.id)) && !processedIds.has(String(reminder.id)),
+        )
+        this.persistPending()
+        this.items = [...reminders, ...this.pendingItems]
         this.checkDueReminders()
       } finally {
-        this.loading = false
+        if (requestId === this.fetchRequestId) this.loading = false
       }
     },
     persistDeleted() {
@@ -41,11 +63,21 @@ export const useRemindersStore = defineStore('reminders', {
         console.error('Unable to save deleted reminders:', error)
       }
     },
+    persistPending() {
+      try {
+        localStorage.setItem(PENDING_KEY, JSON.stringify(this.pendingItems))
+      } catch (error) {
+        console.error('Unable to save pending reminders:', error)
+      }
+    },
     // reminder = { conversationId, conversationName, conversationType: 'channel'|'dm', messageId, text, remindAt }
     async add(reminder) {
       const created = await createReminder(reminder)
       if (created) {
-        this.items.push(created)
+        const id = String(created.id)
+        this.pendingItems = [...this.pendingItems.filter((item) => String(item.id) !== id), created]
+        this.persistPending()
+        this.items = [...this.items.filter((item) => String(item.id) !== id), created]
         return created
       }
 
@@ -84,6 +116,8 @@ export const useRemindersStore = defineStore('reminders', {
         }
       }
       this.items = this.items.filter((item) => String(item.id) !== String(id))
+      this.pendingItems = this.pendingItems.filter((item) => String(item.id) !== String(id))
+      this.persistPending()
       this.persistDeleted()
     },
     dismissDue(id) {
@@ -125,6 +159,8 @@ export const useRemindersStore = defineStore('reminders', {
 
       const dueIds = new Set(dueReminders.map((reminder) => reminder.id))
       this.items = this.items.filter((reminder) => !dueIds.has(reminder.id))
+      this.pendingItems = this.pendingItems.filter((reminder) => !dueIds.has(reminder.id))
+      this.persistPending()
       const ui = useUiStore()
       for (const reminder of dueReminders) {
         const firedAt = new Date(now).toISOString()

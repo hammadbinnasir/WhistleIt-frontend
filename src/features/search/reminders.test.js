@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 import { useRemindersStore } from './reminders'
+import { useUiStore } from '@/stores/ui'
 
 const api = vi.hoisted(() => ({
   createReminder: vi.fn(),
@@ -48,6 +49,10 @@ describe('reminders store', () => {
       dismissed: false,
       text: 'Follow up with the team',
     })
+    expect(useUiStore().toasts[0]).toMatchObject({
+      title: 'Reminder: General',
+      body: 'Follow up with the team',
+    })
   })
 
   it('checks reminders immediately when the watcher starts', () => {
@@ -91,6 +96,75 @@ describe('reminders store', () => {
     expect(api.listReminders).toHaveBeenCalledTimes(2)
     expect(store.items).toContainEqual(sharedReminder)
     store.stopWatcher()
+  })
+
+  it('keeps and fires a just-created reminder when an older refresh finishes afterward', async () => {
+    let resolveRefresh
+    api.listReminders.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveRefresh = resolve
+      }),
+    )
+    const store = useRemindersStore()
+    const refreshing = store.fetch()
+    await store.add({
+      conversationId: 'channel-1',
+      conversationName: 'Channel One',
+      conversationType: 'channel',
+      messageId: 'message-1',
+      text: 'Keep this reminder visible',
+      remindAt: new Date(Date.now() - 1000).toISOString(),
+    })
+
+    resolveRefresh([])
+    await refreshing
+
+    expect(store.items).toHaveLength(0)
+    expect(store.dueItems[0]).toMatchObject({
+      id: 'server-1',
+      messageId: 'message-1',
+      text: 'Keep this reminder visible',
+      fired: true,
+    })
+  })
+
+  it('keeps a scheduled reminder through refreshes and reloads until it becomes due', async () => {
+    const store = useRemindersStore()
+    await store.add({
+      conversationId: 'channel-1',
+      conversationName: 'Channel One',
+      conversationType: 'channel',
+      messageId: 'message-1',
+      text: 'Persist this reminder',
+      title: 'Follow up',
+      remindAt: new Date(Date.now() + 60_000).toISOString(),
+    })
+
+    setActivePinia(createPinia())
+    const reloadedStore = useRemindersStore()
+    await reloadedStore.fetch()
+
+    expect(reloadedStore.items[0]).toMatchObject({
+      id: 'server-1',
+      messageId: 'message-1',
+      text: 'Persist this reminder',
+      title: 'Follow up',
+    })
+    expect(localStorage.getItem('whistleit:pending-reminders')).toContain('server-1')
+
+    reloadedStore.items[0].remindAt = new Date(Date.now() - 1000).toISOString()
+    reloadedStore.pendingItems[0].remindAt = reloadedStore.items[0].remindAt
+    reloadedStore.checkDueReminders()
+
+    expect(reloadedStore.items).toHaveLength(0)
+    expect(reloadedStore.dueItems[0]).toMatchObject({
+      id: 'server-1',
+      fired: true,
+      dismissed: false,
+      text: 'Persist this reminder',
+      title: 'Follow up',
+    })
+    expect(localStorage.getItem('whistleit:pending-reminders')).toBe('[]')
   })
 
   it('does not re-add or notify reminders already processed on this device', async () => {
