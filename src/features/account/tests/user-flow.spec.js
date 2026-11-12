@@ -585,6 +585,35 @@ describe('account settings modal', () => {
     })
   })
 
+  it('rejects invalid characters in full name, alias, and designation', async () => {
+    await openSettings()
+    await setValue($('input[placeholder="Full name"]'), 'Sara2 Khan')
+    await setValue($('input[placeholder="Alias"]'), 'sara_2')
+    await setValue($('input[placeholder="Enter Designation"]'), 'Frontend2')
+    await click(byText('SAVE'))
+
+    expect($('[role=dialog]')).toBeTruthy()
+    expect($$('.field-error').map((error) => error.textContent.trim())).toEqual([
+      'Use letters and spaces only.',
+      'Use letters, numbers, and spaces only.',
+      'Use letters and spaces only.',
+    ])
+    expect(fetch.mock.calls.some(([, options]) => options.method === 'PATCH')).toBe(false)
+  })
+
+  it('accepts Unicode names and alphanumeric aliases with spaces', async () => {
+    await openSettings()
+    await setValue($('input[placeholder="Full name"]'), '  Zoë 李  ')
+    await setValue($('input[placeholder="Alias"]'), '  sara 42  ')
+    await setValue($('input[placeholder="Enter Designation"]'), '  Frontend Engineer  ')
+    await click(byText('SAVE'))
+
+    expect($('[role=dialog]')).toBeNull()
+    expect(store.state.profile.fullName).toBe('Zoë 李')
+    expect(store.state.profile.alias).toBe('sara 42')
+    expect(store.state.profile.designation).toBe('Frontend Engineer')
+  })
+
   it('adds responsibilities as removable chips and limits the list to five', async () => {
     await openSettings()
     for (const item of ['One', 'Two', 'Three', 'Four', 'Five']) {
