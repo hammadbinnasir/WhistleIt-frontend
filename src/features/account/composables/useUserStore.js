@@ -217,6 +217,7 @@ async function loadUserProfile() {
     responseData?.preferences ??
     responseData?.user?.preferences
   const jobResponsibilities = data?.jobResponsibilities ?? data?.job_responsibilities
+  const status = data?.status ?? data?.status_mode ?? data?.presence
   const profileFields = {
     fullName: data?.fullName ?? data?.full_name ?? data?.name,
     alias: data?.alias ?? data?.display_name,
@@ -236,7 +237,7 @@ async function loadUserProfile() {
   hydrate({
     profile,
     preferences,
-    status: data?.status ?? data?.presence,
+    status,
     customStatus:
       data?.customStatus !== undefined
         ? data.customStatus
@@ -248,6 +249,7 @@ async function loadUserProfile() {
   })
   const photoUrl = getAvatarUrl(response)
   if (photoUrl && !profile.photoUrl) state.profile.photoUrl = photoUrl
+  return status
 }
 
 async function setStatus(status) {

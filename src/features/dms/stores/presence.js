@@ -28,6 +28,9 @@ function errorMessage(error) {
 
 // "online" / "active" / true -> 'online' ... (samajh na aaye to null)
 function stateFrom(value) {
+  if (value && typeof value === 'object') {
+    return stateFrom(value.state ?? value.mode ?? value.status)
+  }
   if (value === true || value === 1) return 'online'
   if (value === false || value === 0) return 'offline'
   const word = String(value ?? '').trim().toLowerCase()
@@ -46,6 +49,7 @@ export const usePresenceStore = defineStore('presence', () => {
   const dms = useDmStore()
 
   const presenceById = ref({})
+  const profileStatusById = ref({})
   const loading = ref(false)
   // HomeView header `presence.error` ho to status chhupa kar "Direct message" dikhata hai.
   // Members list fail hone par bhi status (GET status / default Offline) dikh sakta hai,
@@ -182,7 +186,7 @@ export const usePresenceStore = defineStore('presence', () => {
 
   // ---------- apna status server par ----------
   // PUT /v1/users/{user}/status   (fail ho to local status rehta hai, agla heartbeat dobara bhejta hai)
-  async function pushMyStatus({ state, keepalive = false } = {}) {
+  async function pushMyStatus({ state, keepalive = false, clearCustomStatus = false } = {}) {
     const id = myId()
     if (!id || typeof dmApi.updateUserStatus !== 'function') return
     const mine = presenceById.value[id] ?? {}
@@ -191,6 +195,8 @@ export const usePresenceStore = defineStore('presence', () => {
     const payload = { mode: state ?? mine.state ?? 'online' }
     if (mine.status?.emoji || mine.status?.text) {
       payload.custom_status = { emoji: mine.status.emoji, text: mine.status.text }
+    } else if (clearCustomStatus) {
+      payload.custom_status = null
     }
     try {
       const result = await dmApi.updateUserStatus(id, payload, { keepalive })
@@ -209,6 +215,7 @@ export const usePresenceStore = defineStore('presence', () => {
   function applyMyState(state, { persist = true } = {}) {
     const id = myId()
     const current = presenceById.value[id] ?? { status: { emoji: '', text: '' } }
+    delete profileStatusById.value[id]
     presenceById.value[id] = { ...current, state }
     if (persist) void pushMyStatus()
   }
@@ -303,9 +310,24 @@ export const usePresenceStore = defineStore('presence', () => {
   }
 
   // ---------- getters ----------
+  function setProfileStatus(userId, value) {
+    if (userId == null || String(userId).trim() === '') return
+    const state = stateFrom(value)
+    if (state) profileStatusById.value[String(userId)] = state
+  }
+
+  function clearProfileStatuses(userIds) {
+    for (const userId of userIds) {
+      delete profileStatusById.value[String(userId)]
+    }
+  }
+
   function stateOf(userId) {
     const entry = presenceById.value[userId]
-    const known = entry?.state
+    const known =
+      userId === myId()
+        ? entry?.state
+        : (profileStatusById.value[userId] ?? entry?.state)
     if (known && userId === myId()) return known
     if (known === 'online' && heartbeatMovesChangedAt && entry.changedAt) {
       // kaafi der se heartbeat nahi aayi: tab band ho chuka, asal mein offline
@@ -341,22 +363,25 @@ export const usePresenceStore = defineStore('presence', () => {
   }
 
   // Custom status (emoji + text) -> PUT /v1/users/{user}/status
-  function setMyStatus(emoji, text) {
+  function setMyStatus(emoji, text, { persist = true } = {}) {
     const id = myId()
     const current = presenceById.value[id] ?? { state: 'online' }
+    const nextEmoji = String(emoji ?? '').trim()
+    const nextText = String(text ?? '').trim()
     presenceById.value[id] = {
       ...current,
-      status: { emoji: String(emoji ?? '').trim(), text: String(text ?? '').trim() },
+      status: { emoji: nextEmoji, text: nextText },
     }
-    void pushMyStatus()
+    if (persist) void pushMyStatus({ clearCustomStatus: !nextEmoji && !nextText })
   }
 
-  function clearMyStatus() {
-    setMyStatus('', '')
+  function clearMyStatus(options) {
+    setMyStatus('', '', options)
   }
 
   return {
     presenceById,
+    profileStatusById,
     loading,
     error,
     membersError,
@@ -367,6 +392,8 @@ export const usePresenceStore = defineStore('presence', () => {
     stopPolling,
     goOffline,
     stateOf,
+    setProfileStatus,
+    clearProfileStatuses,
     lastSeenOf,
     customOf,
     labelOf,

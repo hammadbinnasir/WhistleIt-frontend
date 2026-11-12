@@ -6,12 +6,14 @@ import { useTeamsStore } from '@/stores/teams'
 import { useMembersStore } from '@/stores/members'
 import { useUiStore } from '@/stores/ui'
 import { getAuthUserId } from '@/features/auth/session'
+import { usePresenceStore } from '@/features/dms/stores/presence'
 import ConfirmDialog from './ConfirmDialog.vue'
 
 const teamsStore = useTeamsStore()
 const membersStore = useMembersStore()
 const ui = useUiStore()
 const router = useRouter()
+const presence = usePresenceStore()
 
 const { activeTeam, activeTeamId, activeWorkspaceId, isAdmin } = storeToRefs(teamsStore)
 const {
@@ -45,6 +47,10 @@ function isCurrentUser(member) {
     member.userId != null &&
     String(member.userId) === String(currentUserId)
   )
+}
+
+function statusOfMember(member) {
+  return presence.stateOf(String(member.userId))
 }
 
 // Fetch members whenever modal opens
@@ -420,11 +426,8 @@ function getInitials(name) {
                     <template v-else>{{ getInitials(member.name || 'Member') }}</template>
                     <span
                       class="status-indicator"
-                      :class="
-                        member.status === 'online'
-                          ? 'status-indicator--online'
-                          : 'status-indicator--offline'
-                      "
+                      :class="`status-indicator--${statusOfMember(member)}`"
+                      :title="statusOfMember(member)"
                     />
                   </div>
                   <div class="member-details">
@@ -985,6 +988,12 @@ function getInitials(name) {
 }
 .status-indicator--online {
   background: var(--color-green-500);
+}
+.status-indicator--away {
+  background: var(--color-amber-400);
+}
+.status-indicator--dnd {
+  background: var(--color-red-500);
 }
 .status-indicator--offline {
   background: var(--color-slate-500);

@@ -131,6 +131,10 @@ watch(
       const userResponse = (await request) ?? {}
       if (version !== requestVersion) return
       profile.value = userResponse
+      if (String(userId) !== String(getAuthUserId())) {
+        const profileStatus = profileField('status_mode', 'presence', 'status', 'mode', 'state')
+        if (profileStatus) presence.setProfileStatus(String(userId), profileStatus)
+      }
 
       if (
         String(userId) !== String(getAuthUserId()) &&

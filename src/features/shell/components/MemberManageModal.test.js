@@ -5,6 +5,7 @@ import MemberManageModal from './MemberManageModal.vue'
 import { useMembersStore } from '@/stores/members'
 import { useTeamsStore } from '@/stores/teams'
 import { useUiStore } from '@/stores/ui'
+import { usePresenceStore } from '@/features/dms/stores/presence'
 
 const api = vi.hoisted(() => ({
   getMembers: vi.fn(),
@@ -144,6 +145,20 @@ describe('MemberManageModal', () => {
     expect(wrapper.text()).toContain('Other Member')
     expect(wrapper.find('button.add-btn').exists()).toBe(false)
     expect(wrapper.find('.remove-btn').exists()).toBe(false)
+  })
+
+  it('uses shared presence status for member indicators', async () => {
+    usePresenceStore().presenceById = {
+      'target-user': { state: 'dnd' },
+    }
+    const wrapper = mountOpenModal()
+    await flushPromises()
+
+    const targetRow = wrapper
+      .findAll('.member-row')
+      .find((row) => row.text().includes('Other Member'))
+    expect(targetRow.find('.status-indicator').classes()).toContain('status-indicator--dnd')
+    expect(targetRow.find('.status-indicator').attributes('title')).toBe('dnd')
   })
 
   it('loads the picker list only when opened and keeps user IDs out of visible text', async () => {

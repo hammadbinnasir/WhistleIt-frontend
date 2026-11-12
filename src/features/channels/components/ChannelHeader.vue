@@ -1,5 +1,7 @@
 <script setup>
-import { computed, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, watch } from 'vue'
+import { getUser } from '@/features/account/api'
+import { presenceStateOf } from '@/features/dms/dmApi'
 import { useChannelsStore } from '../store/channels.store'
 import { HEADER_AVATAR_MAX } from '../constants'
 import { usePresenceStore } from '@/features/dms/stores/presence'
@@ -17,6 +19,10 @@ const emit = defineEmits(['members-click', 'profile'])
 
 const store = useChannelsStore()
 const presence = usePresenceStore()
+const PROFILE_STATUS_POLL_INTERVAL = 15_000
+let statusRequestVersion = 0
+let statusPollTimer = null
+const trackedMemberIds = new Set()
 
 const channel = computed(() => store.getById(props.channelId))
 const channelMembers = computed(() => store.members[String(props.channelId)])
@@ -32,10 +38,76 @@ const memberItems = computed(() =>
 watch(
   () => props.channelId,
   (channelId) => {
+    statusRequestVersion += 1
+    clearTrackedMemberStatuses()
     void store.fetchMembers(channelId, { limit: props.maxAvatars })
   },
   { immediate: true },
 )
+watch(
+  () =>
+    `${props.channelId}:${(channelMembers.value?.items || [])
+      .map((member) => String(member.id))
+      .join('|')}`,
+  () => {
+    const activeMemberIds = new Set(
+      (channelMembers.value?.items || []).map((member) => String(member.id)),
+    )
+    const removedMemberIds = [...trackedMemberIds].filter((id) => !activeMemberIds.has(id))
+    presence.clearProfileStatuses(removedMemberIds)
+    removedMemberIds.forEach((id) => trackedMemberIds.delete(id))
+    void refreshMemberStatuses()
+  },
+  { immediate: true },
+)
+
+async function refreshMemberStatuses() {
+  const members = channelMembers.value?.items || []
+  if (!members.length) return
+
+  const requestVersion = ++statusRequestVersion
+  const results = await Promise.allSettled(
+    members.map(async (member) => {
+      const response = await getUser(member.id)
+      let payload = response
+      while (payload?.data && typeof payload.data === 'object') payload = payload.data
+      return { id: String(member.id), status: presenceStateOf(payload?.user ?? payload) }
+    }),
+  )
+
+  if (requestVersion !== statusRequestVersion) return
+
+  const failures = []
+  results.forEach((result, index) => {
+    if (result.status === 'rejected') {
+      failures.push({ userId: members[index].id, error: result.reason })
+    } else if (result.value.status) {
+      presence.setProfileStatus(result.value.id, result.value.status)
+      trackedMemberIds.add(result.value.id)
+    }
+  })
+  if (failures.length) {
+    console.error('Unable to refresh channel member statuses:', failures)
+  }
+}
+
+function clearTrackedMemberStatuses() {
+  presence.clearProfileStatuses([...trackedMemberIds])
+  trackedMemberIds.clear()
+}
+
+onMounted(() => {
+  statusPollTimer = window.setInterval(
+    () => void refreshMemberStatuses(),
+    PROFILE_STATUS_POLL_INTERVAL,
+  )
+})
+
+onBeforeUnmount(() => {
+  statusRequestVersion += 1
+  window.clearInterval(statusPollTimer)
+  clearTrackedMemberStatuses()
+})
 
 function toggleFavorite() {
   store.toggleFavorite(props.channelId)

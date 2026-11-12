@@ -1,10 +1,13 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import api from '../api'
 import { useChannelsStore } from '../store/channels.store'
 import { usePresenceStore } from '@/features/dms/stores/presence'
 import ChannelHeader from './ChannelHeader.vue'
+
+const getUser = vi.hoisted(() => vi.fn())
+vi.mock('@/features/account/api', () => ({ getUser }))
 
 vi.mock('../api', () => ({
   default: {
@@ -16,6 +19,12 @@ describe('ChannelHeader', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     api.listMembers.mockReset()
+    getUser.mockReset()
+    getUser.mockResolvedValue({ success: true, data: { status_mode: 'online' } })
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
   })
 
   it('shows only members belonging to the current channel', async () => {
@@ -82,7 +91,8 @@ describe('ChannelHeader', () => {
     wrapper.unmount()
   })
 
-  it('shows and reactively updates the shared presence status for channel members', async () => {
+  it('refreshes channel member status modes and updates their avatars live', async () => {
+    vi.useFakeTimers()
     api.listMembers.mockResolvedValue({
       items: [
         { id: 'member-1', name: 'Member One', status: 'online' },
@@ -90,11 +100,10 @@ describe('ChannelHeader', () => {
       ],
       total: 2,
     })
-    const presence = usePresenceStore()
-    presence.presenceById = {
-      'member-1': { state: 'away' },
-      'member-2': { state: 'online' },
-    }
+    getUser.mockImplementation(async (memberId) => ({
+      success: true,
+      data: { status_mode: memberId === 'member-1' ? 'away' : 'online' },
+    }))
     const channels = useChannelsStore()
     channels.upsertChannel({ id: 'channel-one', name: 'Channel one' })
     const wrapper = mount(ChannelHeader, {
@@ -109,12 +118,13 @@ describe('ChannelHeader', () => {
     await avatars[0].trigger('mouseenter')
     expect(wrapper.find('.ch-stack__preview-status').text()).toBe('Away')
 
-    presence.presenceById['member-1'].state = 'dnd'
-    await wrapper.vm.$nextTick()
+    getUser.mockResolvedValue({ success: true, data: { status_mode: 'dnd' } })
+    await vi.advanceTimersByTimeAsync(15_000)
+    await flushPromises()
     expect(avatars[0].find('.ch-stack__dot').classes()).toContain('ch-stack__dot--dnd')
     await avatars[0].trigger('mouseenter')
     expect(wrapper.find('.ch-stack__preview-status').text()).toBe('Do not disturb')
+    expect(usePresenceStore().stateOf('member-1')).toBe('dnd')
     wrapper.unmount()
   })
-
 })

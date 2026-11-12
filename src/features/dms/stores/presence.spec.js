@@ -86,6 +86,18 @@ describe('presence store (live)', () => {
     expect(dmApi.updateUserStatus).not.toHaveBeenCalled()
   })
 
+  it('uses refreshed profile modes for other users but keeps my local mode authoritative', () => {
+    const presence = usePresenceStore()
+
+    presence.setProfileStatus('u2', 'away')
+    expect(presence.stateOf('u2')).toBe('away')
+
+    presence.setProfileStatus('u1', 'offline')
+    expect(presence.stateOf('u1')).toBe('online')
+    presence.setMyState('dnd', { persist: false })
+    expect(presence.stateOf('u1')).toBe('dnd')
+  })
+
   // ---------------- PUT /v1/users/{user}/status ----------------
 
   it('tells the server I am online when the app starts', async () => {
@@ -110,6 +122,14 @@ describe('presence store (live)', () => {
     expect(dmApi.updateUserStatus).toHaveBeenLastCalledWith(
       'u1',
       { mode: 'away', custom_status: { emoji: '🎧', text: 'Focused' } },
+      { keepalive: false },
+    )
+
+    presence.clearMyStatus()
+    expect(presence.customOf('u1')).toEqual({ emoji: '', text: '' })
+    expect(dmApi.updateUserStatus).toHaveBeenLastCalledWith(
+      'u1',
+      { mode: 'away', custom_status: null },
       { keepalive: false },
     )
     presence.stopPolling()

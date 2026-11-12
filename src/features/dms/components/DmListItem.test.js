@@ -85,6 +85,34 @@ describe('DmListItem', () => {
     expect(document.body.querySelector('[role="tooltip"]').textContent).not.toContain('Old status')
   })
 
+  it('hides a cleared peer status even when a stale live value remains', async () => {
+    const dms = useDmStore()
+    dms.meId = 'me'
+    dms.usersById.peer = {
+      name: 'Alex',
+      customStatus: null,
+      customStatusLoaded: true,
+    }
+    usePresenceStore().presenceById.peer = {
+      state: 'online',
+      status: { emoji: '📅', text: 'Old status' },
+    }
+    const wrapper = mount(DmListItem, {
+      props: {
+        conversation: {
+          id: 'conversation-cleared-status',
+          type: 'dm',
+          members: ['me', 'peer'],
+          unreadCount: 0,
+        },
+        active: false,
+      },
+    })
+
+    expect(wrapper.find('[role="img"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
   it('shows the current user emoji and expiry on a status-only row without an ID', async () => {
     const dms = useDmStore()
     dms.meId = ''

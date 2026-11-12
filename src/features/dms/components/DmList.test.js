@@ -56,6 +56,43 @@ describe('DmList', () => {
     wrapper.unmount()
   })
 
+  it('refreshes other users custom statuses periodically', async () => {
+    vi.useFakeTimers()
+    const dms = useDmStore()
+    dms.conversations = [
+      {
+        id: 'c1',
+        type: 'dm',
+        members: [dms.meId, 'u2'],
+        messages: [],
+        unreadCount: 0,
+      },
+    ]
+    dms.usersById.u2 = {
+      customStatus: { emoji: '📅', text: 'In a meeting' },
+      customStatusLoaded: true,
+    }
+    const loadStatuses = vi.spyOn(dms, 'loadCustomStatuses').mockResolvedValue()
+    vi.spyOn(dms, 'init').mockResolvedValue()
+    vi.spyOn(dms, 'loadCompanyMembers').mockResolvedValue()
+    vi.spyOn(dms, 'startPolling').mockImplementation(() => {})
+    const presence = usePresenceStore()
+    vi.spyOn(presence, 'init').mockResolvedValue()
+    vi.spyOn(presence, 'goOffline').mockImplementation(() => {})
+    vi.spyOn(presence, 'stopPolling').mockImplementation(() => {})
+    vi.spyOn(dms, 'stopPolling').mockImplementation(() => {})
+
+    const wrapper = shallowMount(DmList)
+    await wrapper.vm.$nextTick()
+    loadStatuses.mockClear()
+
+    await vi.advanceTimersByTimeAsync(15_000)
+
+    expect(loadStatuses).toHaveBeenCalledWith(['u2'], { force: true })
+    wrapper.unmount()
+    vi.useRealTimers()
+  })
+
   it('adds the current user to the top of DMs when they set a custom status', async () => {
     const dms = useDmStore()
     vi.spyOn(dms, 'init').mockResolvedValue()

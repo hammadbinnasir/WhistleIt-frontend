@@ -91,7 +91,12 @@ onMounted(() => {
   document.addEventListener('mousedown', onDocMouseDown)
   document.addEventListener('keydown', onDocKeydown)
   if (getAuthUserId()) {
-    store.loadUserProfile().catch((err) => emit('error', err))
+    store
+      .loadUserProfile()
+      .then((status) => {
+        if (status) emit('status-change', status)
+      })
+      .catch((err) => emit('error', err))
   }
 })
 

@@ -93,8 +93,9 @@ describe('ProfilePanel', () => {
     await flushPromises()
 
     const presence = usePresenceStore()
-    expect(wrapper.text()).toContain('Offline')
-    presence.presenceById['other-user'] = { state: 'dnd' }
+    expect(wrapper.text()).toContain('Online')
+    expect(presence.stateOf('other-user')).toBe('online')
+    presence.setProfileStatus('other-user', 'dnd')
     await wrapper.vm.$nextTick()
     expect(wrapper.text()).toContain('Do not disturb')
     wrapper.unmount()
@@ -156,11 +157,10 @@ describe('ProfilePanel', () => {
     wrapper.unmount()
   })
 
-  it('uses shared presence instead of a profile response status snapshot', async () => {
+  it('normalizes object-shaped status fields from the user profile', async () => {
     getUser.mockResolvedValue({
-      data: { presence: { state: 'offline' } },
+      data: { presence: { state: 'away' } },
     })
-    usePresenceStore().presenceById['other-user'] = { state: 'away' }
     const wrapper = mount(ProfilePanel, {
       props: { member: { id: 'other-user', name: 'Member', status: 'unknown' } },
     })

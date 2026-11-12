@@ -91,7 +91,7 @@ const user = computed(() => ({
     ...userStore.state?.profile,
     fullName: userStore.state?.profile?.fullName || authenticatedUser?.fullName || '',
   },
-  status: userStore.state?.status || 'online',
+  status: presence.stateOf(dms.meId),
   customStatus: {
     emoji: userStore.state?.customStatusEmoji,
     text: userStore.state?.customStatus,
@@ -309,6 +309,11 @@ function onStatusChange(status) {
   presence.setMyState(status, { persist: false })
 }
 
+function onCustomStatusChange(text, { emoji } = {}) {
+  const cleared = !String(emoji ?? '').trim() && !String(text ?? '').trim()
+  presence.setMyStatus(emoji, text, { persist: cleared })
+}
+
 onMounted(async () => {
   void remindersStore.fetch().catch((error) => {
     ui.toast('Unable to load reminders', error?.message || 'Please try again.', 'error')
@@ -337,6 +342,7 @@ onBeforeUnmount(() => {
           :fixed="false"
           @log-out="logout"
           @status-change="onStatusChange"
+          @custom-status-change="onCustomStatusChange"
           @settings-saved="onAccountSettingsSaved"
           @error="onAccountError"
         />
