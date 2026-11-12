@@ -470,6 +470,8 @@ function forwardedText(text, marked, raw) {
 
 function booleanValue(value) {
   return value === true || value === 1 || ['1', 'true'].includes(String(value).toLowerCase())
+}
+
 function deletionFlag(...values) {
   return values.some((value) => {
     if (value === true || value === 1) return true
