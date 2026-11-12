@@ -33,8 +33,24 @@ const general = reactive(
   ),
 )
 
+const PROFILE_FIELD_MAX_LENGTH = 255
+const PROFILE_FIELD_RULES = {
+  fullName: {
+    pattern: /^[\p{L}\p{M} ]+$/u,
+    message: 'Use letters and spaces only.',
+  },
+  alias: {
+    pattern: /^[\p{L}\p{M}\p{N} ]+$/u,
+    message: 'Use letters, numbers, and spaces only.',
+  },
+  designation: {
+    pattern: /^[\p{L}\p{M} ]+$/u,
+    message: 'Use letters and spaces only.',
+  },
+}
+
 const fields = [
-  { key: 'fullName', label: 'Full name', placeholder: 'Full name' },
+  { key: 'fullName', label: 'Full name', placeholder: 'Full name', required: true },
   { key: 'alias', label: 'Alias', placeholder: 'Alias' },
   { key: 'designation', label: 'Designation', placeholder: 'Enter Designation' },
   {
@@ -110,7 +126,19 @@ const getJobResponsibilities = () => general.jobResponsibilities
 const errors = computed(() => {
   if (!submitted.value) return {}
   const validationErrors = {}
-  if (!general.fullName.trim()) validationErrors.fullName = 'Required.'
+  for (const key of ['fullName', 'alias', 'designation']) {
+    const value = String(general[key] ?? '').trim()
+    if (!value) {
+      if (key === 'fullName') validationErrors.fullName = 'Required.'
+      continue
+    }
+
+    if (value.length > PROFILE_FIELD_MAX_LENGTH) {
+      validationErrors[key] = `Must be ${PROFILE_FIELD_MAX_LENGTH} characters or fewer.`
+    } else if (!PROFILE_FIELD_RULES[key].pattern.test(value)) {
+      validationErrors[key] = PROFILE_FIELD_RULES[key].message
+    }
+  }
   return validationErrors
 })
 
@@ -143,6 +171,8 @@ const getValues = () => ({
   profile: {
     ...general,
     fullName: general.fullName.trim(),
+    alias: general.alias.trim(),
+    designation: general.designation.trim(),
     jobResponsibilities: getJobResponsibilities(),
   },
   photo: photoFile.value,
@@ -246,14 +276,25 @@ defineExpose({ validate, getValues })
         <template v-else>
           <input
             v-model="general[field.key]"
+            :id="`account-${field.key}`"
             class="control"
             type="text"
             :placeholder="field.placeholder"
+            :maxlength="PROFILE_FIELD_MAX_LENGTH"
+            :required="field.required"
             :aria-invalid="!!errors[field.key]"
+            :aria-describedby="errors[field.key] ? `account-${field.key}-error` : undefined"
           />
-          <label class="float-label">{{ field.label }}</label>
+          <label class="float-label" :for="`account-${field.key}`">{{ field.label }}</label>
         </template>
-        <span v-if="errors[field.key]" class="field-error">{{ errors[field.key] }}</span>
+        <span
+          v-if="errors[field.key]"
+          :id="`account-${field.key}-error`"
+          class="field-error"
+          role="alert"
+        >
+          {{ errors[field.key] }}
+        </span>
       </div>
     </div>
   </div>
@@ -458,9 +499,7 @@ defineExpose({ validate, getValues })
 }
 
 .field.multiline-field .field-error {
-  position: static;
-  display: block;
-  margin: 6px 0 0 14px;
+  margin-top: 6px;
 }
 
 .field.invalid .control {
@@ -469,9 +508,9 @@ defineExpose({ validate, getValues })
 }
 
 .field-error {
-  position: absolute;
-  left: 15px;
-  top: 51px;
+  display: block;
+  margin: 4px 0 0;
+  text-align: right;
   font-size: 13px;
   color: #fb275d;
 }
