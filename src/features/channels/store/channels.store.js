@@ -127,7 +127,7 @@ function withPersistedManagement(channel) {
   const currentUserId = getAuthUserId()
   const createdById = channel.createdById ?? cachedCreatorId
   const isOwner =
-    Boolean(channel.isOwner) ||
+    Boolean(channel.isCreator || channel.isOwner) ||
     (currentUserId != null && createdById != null && String(currentUserId) === String(createdById))
   return {
     ...channel,

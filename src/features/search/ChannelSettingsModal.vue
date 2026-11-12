@@ -134,7 +134,7 @@ function cancelEditingDetails() {
 
 function saveDetails() {
   const name = draftName.value.trim()
-  if (!name) return
+  if (!isChannelCreator.value || !name) return
   emit('save-details', { name, description: draftDescription.value.trim() })
   editingDetails.value = false
 }
@@ -166,6 +166,24 @@ const selectedPermissionMembers = computed(() =>
     selectedAllowedSenderIds.value.includes(String(member.id)),
   ),
 )
+const creatorName = computed(() => {
+  const creatorId = props.channel.createdById ?? props.channel.createdBy
+  const creator = members.value.find(
+    (member) => creatorId != null && String(member.id) === String(creatorId),
+  )
+  if (creator?.name) return creator.name
+
+  const providedName = String(props.channel.createdBy ?? '').trim()
+  if (
+    providedName &&
+    (props.channel.createdById == null ||
+      providedName !== String(props.channel.createdById)) &&
+    !/^[a-f\d-]{16,}$/i.test(providedName)
+  ) {
+    return providedName
+  }
+  return 'Unknown user'
+})
 
 async function refresh() {
   loadingMembers.value = true
@@ -987,7 +1005,7 @@ const showSample = ref(false)
 
         <!-- About -->
         <div v-else class="rounded border border-slate-300">
-          <template v-if="editingDetails && channel.canManage">
+          <template v-if="editingDetails && isChannelCreator">
             <div class="space-y-4 p-3">
               <label class="block text-sm font-bold text-slate-700">
                 Name
@@ -1030,7 +1048,7 @@ const showSample = ref(false)
             <div class="flex items-center justify-between">
               <p class="font-bold text-slate-700">Name</p>
               <button
-                v-if="channel.canManage"
+                v-if="isChannelCreator"
                 type="button"
                 class="cursor-pointer text-sm font-semibold text-blue-600 underline"
                 @click="startEditingDetails"
@@ -1047,7 +1065,7 @@ const showSample = ref(false)
             <div class="flex items-center justify-between">
               <p class="font-bold text-slate-700">Description</p>
               <button
-                v-if="channel.canManage"
+                v-if="isChannelCreator"
                 type="button"
                 class="cursor-pointer text-sm font-semibold text-blue-600 underline"
                 @click="startEditingDetails"
@@ -1061,7 +1079,7 @@ const showSample = ref(false)
           </div>
           <div class="border-b border-slate-200 p-3">
             <p class="font-bold text-slate-700">Created by</p>
-            <p class="text-sm text-slate-500">{{ channel.createdBy }}</p>
+            <p class="text-sm text-slate-500">{{ creatorName }}</p>
           </div>
           <div class="p-3">
             <button

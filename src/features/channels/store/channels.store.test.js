@@ -144,6 +144,25 @@ describe('channels store membership visibility', () => {
     })
   })
 
+  it('preserves the API channel creator flag for the settings modal', async () => {
+    api.listChannels.mockResolvedValue([
+      {
+        id: 'api-created-channel',
+        name: 'API Created Channel',
+        isMember: true,
+        isCreator: true,
+      },
+    ])
+
+    const store = useChannelsStore()
+    await store.fetchChannels()
+
+    expect(store.getById('api-created-channel')).toMatchObject({
+      isCreator: true,
+      isOwner: true,
+    })
+  })
+
   it('keeps saved message permissions after refresh when the channel list omits them', async () => {
     api.listChannels.mockResolvedValue([
       { id: 'restricted-channel', name: 'Restricted', isMember: true },

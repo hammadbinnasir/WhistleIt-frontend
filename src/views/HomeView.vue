@@ -15,7 +15,7 @@ import { useActivityStore } from '@/stores/activity'
 import { useRemindersStore } from '@/features/search/reminders'
 import { useUserStore, UserModule } from '@/features/account'
 import { getAccountErrorToast } from '@/features/account/errorMessages'
-import { getAuthUser } from '@/features/auth/session'
+import { getAuthUser, getAuthUserId } from '@/features/auth/session'
 import { logout as logoutRequest } from '@/features/auth/api'
 
 // Shell
@@ -137,14 +137,15 @@ const selectedChannel = computed(() => {
     }
   }
   const creatorId = ch.createdById || ch.createdBy
+  const currentUserId = getAuthUserId() ?? authenticatedUser?.id
   const isCreator =
-    Boolean(ch.isOwner) ||
+    Boolean(ch.isCreator || ch.isOwner) ||
     (creatorId != null &&
-      authenticatedUser?.id != null &&
-      String(creatorId) === String(authenticatedUser.id))
+      currentUserId != null &&
+      String(creatorId) === String(currentUserId))
   const createdBy =
-    creatorId && String(creatorId) === String(authenticatedUser?.id)
-      ? (authenticatedUser.fullName || ch.createdBy)
+    creatorId && String(creatorId) === String(currentUserId)
+      ? (authenticatedUser?.fullName || ch.createdBy)
       : ch.createdBy
   return {
     id: ch.id,
