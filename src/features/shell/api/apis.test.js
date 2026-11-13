@@ -19,7 +19,7 @@ describe('shell API adapters', () => {
     vi.clearAllMocks()
   })
 
-  it('loads and normalizes workspaces from GET /company', async () => {
+  it('loads and normalizes workspaces from GET /v1/company', async () => {
     apiRequest.mockResolvedValue({
       success: true,
       data: { user: { companies: [{ id: 'company-1', name: 'Engineering' }] } },
@@ -34,7 +34,7 @@ describe('shell API adapters', () => {
         initials: 'EN',
       },
     ])
-    expect(apiRequest).toHaveBeenCalledWith('/company')
+    expect(apiRequest).toHaveBeenCalledWith('/v1/company')
   })
 
   it('loads teams with their company scope and normalizes the response', async () => {

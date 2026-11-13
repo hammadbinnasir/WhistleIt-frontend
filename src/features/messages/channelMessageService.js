@@ -116,13 +116,25 @@ async function request(build, { rejectUnsuccessful = false } = {}) {
  * @param {string|number} companyId
  * @param {string|number} teamId
  * @param {string|number} channelId
- * @param {{page?: number, perPage?: number}} options
+ * @param {{page?: number, perPage?: number, query?: string}} options
  * @returns {Promise<ServiceResult>}
  */
-export function getChannelMessages(companyId, teamId, channelId, { page = 1, perPage = 15 } = {}) {
+export function getChannelMessages(
+  companyId,
+  teamId,
+  channelId,
+  { page = 1, perPage = 15, query } = {},
+) {
   return request(() => [
     collectionPath(companyId, teamId, channelId),
-    { params: { include_deleted: true, page, per_page: perPage } },
+    {
+      params: {
+        include_deleted: true,
+        page,
+        per_page: perPage,
+        ...(query?.trim() ? { body: query.trim() } : {}),
+      },
+    },
   ])
 }
 

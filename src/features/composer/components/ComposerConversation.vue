@@ -31,7 +31,6 @@ import {
 import { useUiStore } from '@/stores/ui'
 import { useUserStore } from '@/features/account/composables/useUserStore'
 import { useRemindersStore } from '@/features/search/reminders'
-import { addMockMessage, removeMockMessage, updateMockMessage } from '@/features/search/search'
 import SetReminderModal from '@/features/search/SetReminderModal.vue'
 import systemProfile from '@/assets/system-profile.webp'
 import { createScheduledMessage, getScheduledMessages } from '../api/scheduledMessagesApi'
@@ -224,7 +223,7 @@ function retryMessage(message) {
   if (conversation.value) dms.retryMessage(conversation.value.id, message.id)
 }
 
-// (naya) Reply ka quote: asli message mile to uska naam / text (deleted ho to "(message deleted)")
+// Reply quote uses the original message when available.
 function replyPreviewOf(message, byId) {
   if (!message.replyTo) return null
   const ref = typeof message.replyTo === 'object' ? message.replyTo : { id: message.replyTo }
@@ -352,6 +351,7 @@ const renderedMessages = computed(() => {
   let previous = null
 
   return [...visibleMessages.value]
+    .filter((message) => !message?.deleted)
     .filter((message, index, messages) => {
       if (conversation.value && !message) return false // (naya) DM: khali entry se chat crash na ho
       if (conversation.value && isHiddenThreadReply(message)) return false // (naya) DM: thread reply sirf card mein
@@ -378,9 +378,8 @@ const renderedMessages = computed(() => {
       const voiceNoteId = message.voiceNoteId ?? message.voice_note_id ?? message.voice_note?.id
       const messageContent = message.text ?? message.content ?? ''
       const normalizedContent = normalizeMessageText(messageContent)
-      const content = message.deleted
-        ? '(message deleted)'
-        : voiceNoteId && normalizedContent.trim().toLowerCase() === 'voice message'
+      const content =
+        voiceNoteId && normalizedContent.trim().toLowerCase() === 'voice message'
           ? ''
           : normalizedContent
       const pollId = message.poll_id ?? message.pollId
@@ -1194,12 +1193,6 @@ async function addMessage(payload) {
       : [...channelMessages].reverse().find((message) => message.content === payload.content)
     if (sentMessage) {
       sentMessage.important = messagePayload.is_important
-      addMockMessage({
-        id: sentMessage.id,
-        text: sentMessage.content,
-        sender: sentMessage.author,
-        conversation: conversationMeta.value,
-      })
     }
     replyTo.value = null
     scrollMessagesToLatest()
@@ -1257,12 +1250,6 @@ async function addMessage(payload) {
   if (payload.poll) sentMessage.poll = payload.poll
   if (!conversation.value && !sentMessage.scheduled) {
     ui.addPoll(sentMessage, conversationMeta.value)
-    addMockMessage({
-      id: sentMessage.id,
-      text: sentMessage.content,
-      sender: sentMessage.author,
-      conversation: conversationMeta.value,
-    })
   }
   replyTo.value = null
   scrollMessagesToLatest()
@@ -1664,7 +1651,6 @@ async function saveEdit(message) {
       )
       return
     }
-    updateMockMessage(message.id, editDraft.value.trim())
   } else if (!messageStore.editMessage(channelId.value, message.id, editDraft.value)) {
     ui.toast('Message not updated', 'Only your unscheduled messages can be edited.', 'error')
     return
@@ -1740,7 +1726,6 @@ async function confirmMessageDeletion() {
     deleteTarget.value = null
     return
   }
-  if (!conversation.value) removeMockMessage(message.id)
   if (isPinned(message)) ui.togglePinnedMessage(message, conversationMeta.value)
   deleteTarget.value = null
 }
@@ -1989,14 +1974,6 @@ async function forwardMessage() {
             message.forwardedFrom === payload.forwardedFrom && message.content === payload.content,
         )
     rememberForwarded(destination.id, forwarded, payload.content) // (naya) "(forwarded)" neeche
-    if (forwarded) {
-      addMockMessage({
-        id: forwarded.id,
-        text: forwarded.content,
-        sender: forwarded.author || currentUserName.value,
-        conversation: { id: destination.id, name: destination.name.slice(1), kind: 'public' },
-      })
-    }
   }
   forwardTarget.value = null
   ui.toast('Message forwarded', `Sent to ${destination.name}.`, 'success')
@@ -2259,12 +2236,6 @@ async function sendPollMessage(targetChannelId, poll, existingMessage = null) {
   message.mine = true
   removePublishedDraft(targetChannelId, existingMessage, null)
   ui.addPoll(message, conversationMeta.value)
-  addMockMessage({
-    id: message.id,
-    text: message.content,
-    sender: message.author,
-    conversation: conversationMeta.value,
-  })
   return message
 }
 
@@ -2452,9 +2423,7 @@ async function closePoll(pollId) {
 }
 
 function pollResultsVisibility(poll) {
-  const visibility = String(
-    poll?.resultsVisibility ?? poll?.results_visibility ?? '',
-  )
+  const visibility = String(poll?.resultsVisibility ?? poll?.results_visibility ?? '')
     .toLowerCase()
     .replaceAll('-', '_')
 
@@ -2475,9 +2444,7 @@ function isPollCreator(message) {
 }
 
 function pollCreatorLabel(poll) {
-  const message = renderedMessages.value.find(
-    (item) => String(item.poll?.id) === String(poll?.id),
-  )
+  const message = renderedMessages.value.find((item) => String(item.poll?.id) === String(poll?.id))
   if (isPollCreator(message)) return 'You'
 
   const creator = poll?.creator ?? poll?.creatorName ?? poll?.creator_name
@@ -2910,7 +2877,6 @@ onBeforeUnmount(() => {
 
             <div
               class="composer-conversation__message-bubble"
-              :class="{ 'composer-conversation__message-bubble--deleted': message.deleted }"
               :data-poll-id="message.poll?.id"
               :data-poll-title="
                 message.poll?.title ??
@@ -2953,13 +2919,12 @@ onBeforeUnmount(() => {
                   @publish="publishLegacyPoll(message)"
                 />
 
-                <div v-if="message.reply" class="composer-conversation__reply-quote">
+                <div
+                  v-if="message.reply && !message.reply.deleted"
+                  class="composer-conversation__reply-quote"
+                >
                   <strong>{{ message.reply.author || 'Message' }}</strong>
-                  <span>{{
-                    message.reply.deleted
-                      ? '(message deleted)'
-                      : (message.reply.content ?? message.reply.text)
-                  }}</span>
+                  <span>{{ message.reply.content ?? message.reply.text }}</span>
                 </div>
 
                 <form
@@ -3090,7 +3055,6 @@ onBeforeUnmount(() => {
                   </button>
                 </div>
               </template>
-              <p v-else class="composer-conversation__deleted-message">(message deleted)</p>
               <!-- (naya) "(forwarded)" message ke neeche -->
               <span
                 v-if="message.forwardedFrom && !message.deleted"
@@ -3648,101 +3612,103 @@ onBeforeUnmount(() => {
               :key="questionIndex"
               class="composer-conversation__poll-response-question"
             >
-            <h3>Q{{ questionIndex + 1 }}. {{ question.text }}<b v-if="question.required"> *</b></h3>
-            <template v-if="activePollMode === 'results'">
-              <div
-                v-if="question.type === 'openEnded'"
-                class="composer-conversation__poll-text-results"
-              >
-                <p v-if="pollResults[activePoll.id]?.responses?.[questionIndex]?.length">
-                  Responses
-                </p>
-                <blockquote
-                  v-for="response in pollResults[activePoll.id].responses[questionIndex]"
-                  :key="response"
-                >
-                  {{ response }}
-                </blockquote>
-                <strong class="composer-conversation__poll-total-votes">
-                  Total Responses:
-                  {{ pollResults[activePoll.id]?.responses?.[questionIndex]?.length || 0 }}
-                </strong>
-              </div>
-              <div v-else class="composer-conversation__poll-results-options">
+              <h3>
+                Q{{ questionIndex + 1 }}. {{ question.text }}<b v-if="question.required"> *</b>
+              </h3>
+              <template v-if="activePollMode === 'results'">
                 <div
-                  v-for="(option, optionIndex) in question.options"
-                  :key="option"
-                  class="composer-conversation__poll-result"
+                  v-if="question.type === 'openEnded'"
+                  class="composer-conversation__poll-text-results"
                 >
-                  <span>{{ option }}</span>
-                  <div class="composer-conversation__poll-result-row">
-                    <div class="composer-conversation__poll-result-bar">
-                      <span
-                        class="composer-conversation__poll-result-fill"
-                        :style="{
-                          width: `${pollResultFor(activePoll.id, questionIndex, optionIndex).percentage}%`,
-                        }"
-                      ></span>
-                      <strong>
-                        {{ pollResultFor(activePoll.id, questionIndex, optionIndex).percentage }}%
-                      </strong>
-                    </div>
-                    <span class="composer-conversation__poll-result-votes">
-                      {{ pollResultFor(activePoll.id, questionIndex, optionIndex).votes }} VOTE
-                    </span>
-                  </div>
+                  <p v-if="pollResults[activePoll.id]?.responses?.[questionIndex]?.length">
+                    Responses
+                  </p>
+                  <blockquote
+                    v-for="response in pollResults[activePoll.id].responses[questionIndex]"
+                    :key="response"
+                  >
+                    {{ response }}
+                  </blockquote>
+                  <strong class="composer-conversation__poll-total-votes">
+                    Total Responses:
+                    {{ pollResults[activePoll.id]?.responses?.[questionIndex]?.length || 0 }}
+                  </strong>
                 </div>
-                <strong class="composer-conversation__poll-total-votes">
-                  Total Votes: {{ pollResults[activePoll.id]?.totalVotes || 0 }}
-                </strong>
-              </div>
-            </template>
-            <template v-else-if="question.type === 'rating'">
-              <div class="composer-conversation__poll-rating-labels">
-                <span>Weak</span><span>Strong</span>
-              </div>
-              <div class="composer-conversation__poll-rating-options">
+                <div v-else class="composer-conversation__poll-results-options">
+                  <div
+                    v-for="(option, optionIndex) in question.options"
+                    :key="option"
+                    class="composer-conversation__poll-result"
+                  >
+                    <span>{{ option }}</span>
+                    <div class="composer-conversation__poll-result-row">
+                      <div class="composer-conversation__poll-result-bar">
+                        <span
+                          class="composer-conversation__poll-result-fill"
+                          :style="{
+                            width: `${pollResultFor(activePoll.id, questionIndex, optionIndex).percentage}%`,
+                          }"
+                        ></span>
+                        <strong>
+                          {{ pollResultFor(activePoll.id, questionIndex, optionIndex).percentage }}%
+                        </strong>
+                      </div>
+                      <span class="composer-conversation__poll-result-votes">
+                        {{ pollResultFor(activePoll.id, questionIndex, optionIndex).votes }} VOTE
+                      </span>
+                    </div>
+                  </div>
+                  <strong class="composer-conversation__poll-total-votes">
+                    Total Votes: {{ pollResults[activePoll.id]?.totalVotes || 0 }}
+                  </strong>
+                </div>
+              </template>
+              <template v-else-if="question.type === 'rating'">
+                <div class="composer-conversation__poll-rating-labels">
+                  <span>Weak</span><span>Strong</span>
+                </div>
+                <div class="composer-conversation__poll-rating-options">
+                  <label v-for="(option, optionIndex) in question.options" :key="option">
+                    <span>{{ option }}</span>
+                    <input
+                      type="radio"
+                      :disabled="pollApi.loading.value"
+                      :name="`poll-${activePoll.id}-question-${questionIndex}`"
+                      :checked="pollResponses[questionIndex] === optionIndex"
+                      @change="togglePollResponse(question, questionIndex, optionIndex)"
+                    />
+                  </label>
+                </div>
+              </template>
+              <textarea
+                v-else-if="question.type === 'openEnded'"
+                v-model="pollResponses[questionIndex]"
+                :disabled="pollApi.loading.value"
+                class="composer-conversation__poll-open-ended-input"
+                :aria-label="`Response to question ${questionIndex + 1}`"
+                :placeholder="
+                  question.required
+                    ? 'Write your response (required)'
+                    : 'Write your response (optional)'
+                "
+                rows="4"
+              ></textarea>
+              <div v-else class="composer-conversation__poll-choice-options">
                 <label v-for="(option, optionIndex) in question.options" :key="option">
-                  <span>{{ option }}</span>
                   <input
-                    type="radio"
+                    :type="question.multiple ? 'checkbox' : 'radio'"
                     :disabled="pollApi.loading.value"
                     :name="`poll-${activePoll.id}-question-${questionIndex}`"
-                    :checked="pollResponses[questionIndex] === optionIndex"
+                    :checked="
+                      question.multiple
+                        ? pollResponses[pollResponseKey(questionIndex, optionIndex)]
+                        : pollResponses[questionIndex] === optionIndex
+                    "
                     @change="togglePollResponse(question, questionIndex, optionIndex)"
                   />
+                  <span>{{ option }}</span>
                 </label>
               </div>
-            </template>
-            <textarea
-              v-else-if="question.type === 'openEnded'"
-              v-model="pollResponses[questionIndex]"
-              :disabled="pollApi.loading.value"
-              class="composer-conversation__poll-open-ended-input"
-              :aria-label="`Response to question ${questionIndex + 1}`"
-              :placeholder="
-                question.required
-                  ? 'Write your response (required)'
-                  : 'Write your response (optional)'
-              "
-              rows="4"
-            ></textarea>
-            <div v-else class="composer-conversation__poll-choice-options">
-              <label v-for="(option, optionIndex) in question.options" :key="option">
-                <input
-                  :type="question.multiple ? 'checkbox' : 'radio'"
-                  :disabled="pollApi.loading.value"
-                  :name="`poll-${activePoll.id}-question-${questionIndex}`"
-                  :checked="
-                    question.multiple
-                      ? pollResponses[pollResponseKey(questionIndex, optionIndex)]
-                      : pollResponses[questionIndex] === optionIndex
-                  "
-                  @change="togglePollResponse(question, questionIndex, optionIndex)"
-                />
-                <span>{{ option }}</span>
-              </label>
-            </div>
             </div>
           </template>
           <footer class="composer-conversation__poll-response-footer">
@@ -3991,17 +3957,6 @@ onBeforeUnmount(() => {
   background: #edeef6;
   color: #25263a;
   overflow-wrap: anywhere;
-}
-
-.composer-conversation__message-bubble--deleted {
-  color: #777987;
-  font-style: italic;
-}
-
-.composer-conversation__deleted-message {
-  margin: 0;
-  color: #777987;
-  font-style: italic;
 }
 
 .composer-conversation__message-bubble p {

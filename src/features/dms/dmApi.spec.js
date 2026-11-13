@@ -324,8 +324,18 @@ describe('DM API', () => {
       success: true,
       data: {
         messages: [
-          { id: 'm1', body: 'new', created_at: '2026-01-01T10:00:00.808Z', updated_at: '2026-01-01T10:00:00.810Z' },
-          { id: 'm2', body: 'edited', created_at: '2026-01-01T10:00:00Z', updated_at: '2026-01-01T10:05:00Z' },
+          {
+            id: 'm1',
+            body: 'new',
+            created_at: '2026-01-01T10:00:00.808Z',
+            updated_at: '2026-01-01T10:00:00.810Z',
+          },
+          {
+            id: 'm2',
+            body: 'edited',
+            created_at: '2026-01-01T10:00:00Z',
+            updated_at: '2026-01-01T10:05:00Z',
+          },
         ],
       },
     })
@@ -394,9 +404,7 @@ describe('DM API', () => {
 
     await dmApi.listMessages('company 1', 'channel/1')
 
-    expect(apiRequest).toHaveBeenCalledWith(
-      '/v1/company%201/direct-channels/channel%2F1/messages',
-    )
+    expect(apiRequest).toHaveBeenCalledWith('/v1/company%201/direct-channels/channel%2F1/messages')
   })
 
   it('gets one message of a direct channel', async () => {
@@ -434,10 +442,10 @@ describe('DM API', () => {
     await expect(
       dmApi.updateMessage('company-1', 'channel-1', 'm9', { body: 'Edited' }),
     ).resolves.toBeNull()
-    expect(apiRequest).toHaveBeenCalledWith(
-      '/v1/company-1/direct-channels/channel-1/messages/m9',
-      { method: 'PATCH', body: JSON.stringify({ body: 'Edited' }) },
-    )
+    expect(apiRequest).toHaveBeenCalledWith('/v1/company-1/direct-channels/channel-1/messages/m9', {
+      method: 'PATCH',
+      body: JSON.stringify({ body: 'Edited' }),
+    })
   })
 
   it('deletes a message of a direct channel', async () => {
@@ -445,10 +453,9 @@ describe('DM API', () => {
 
     await dmApi.deleteMessage('company-1', 'channel-1', 'm9')
 
-    expect(apiRequest).toHaveBeenCalledWith(
-      '/v1/company-1/direct-channels/channel-1/messages/m9',
-      { method: 'DELETE' },
-    )
+    expect(apiRequest).toHaveBeenCalledWith('/v1/company-1/direct-channels/channel-1/messages/m9', {
+      method: 'DELETE',
+    })
   })
 
   it('requires the IDs for message requests', () => {
@@ -475,7 +482,14 @@ describe('DM API', () => {
       data: {
         messages: [
           { id: 'm1', body: 'a', replies_count: 5, last_reply_at: '2026-11-02T08:02:00Z' },
-          { id: 'm2', body: 'b', replies: [{ id: 'r1', created_at: 'T1' }, { id: 'r2', created_at: 'T2' }] },
+          {
+            id: 'm2',
+            body: 'b',
+            replies: [
+              { id: 'r1', created_at: 'T1' },
+              { id: 'r2', created_at: 'T2' },
+            ],
+          },
           { id: 'm3', body: 'c' },
         ],
       },
@@ -555,7 +569,10 @@ describe('DM API', () => {
   })
 
   it('reads a user status with GET and understands different shapes', async () => {
-    apiRequest.mockResolvedValueOnce({ success: true, data: { status: 'active', status_text: 'Coding' } })
+    apiRequest.mockResolvedValueOnce({
+      success: true,
+      data: { status: 'active', status_text: 'Coding' },
+    })
     await expect(dmApi.getUserStatus('user-2')).resolves.toMatchObject({
       state: 'online',
       status: { emoji: '', text: 'Coding' },
@@ -579,7 +596,11 @@ describe('DM API', () => {
     getAuthUser.mockReturnValueOnce({ id: 42, fullName: 'Ahmad Imran', email: 'ahmad@example.com' })
     expect(dmApi.meId()).toBe('42')
 
-    getAuthUser.mockReturnValueOnce({ fullName: 'Ahmad Imran', email: 'ahmad@example.com', user: { id: 'srv-7' } })
+    getAuthUser.mockReturnValueOnce({
+      fullName: 'Ahmad Imran',
+      email: 'ahmad@example.com',
+      user: { id: 'srv-7' },
+    })
     expect(dmApi.meId()).toBe('srv-7')
   })
 
@@ -612,14 +633,23 @@ describe('DM API', () => {
       success: true,
       data: {
         messages: [
-          { id: 'm1', body: 'x', reactions: [{ reaction: '👍', count: 3, reacted: true }, { reaction: '🎉', count: 1 }] },
+          {
+            id: 'm1',
+            body: 'x',
+            reactions: [
+              { reaction: '👍', count: 3, reacted: true },
+              { reaction: '🎉', count: 1 },
+            ],
+          },
         ],
       },
     })
 
     const [message] = await dmApi.listMessages('company-1', 'channel-1')
 
-    expect(message.reactions.map((r) => [r.emoji, r.users.length, r.users.includes('user-1')])).toEqual([
+    expect(
+      message.reactions.map((r) => [r.emoji, r.users.length, r.users.includes('user-1')]),
+    ).toEqual([
       ['👍', 3, true],
       ['🎉', 1, false],
     ])
@@ -638,7 +668,10 @@ describe('DM API', () => {
 
     const [a, b] = await dmApi.listMessages('company-1', 'channel-1')
 
-    expect(a.reactions.map((r) => [r.emoji, r.users.length])).toEqual([['👍', 1], ['❤️', 2]])
+    expect(a.reactions.map((r) => [r.emoji, r.users.length])).toEqual([
+      ['👍', 1],
+      ['❤️', 2],
+    ])
     expect(b.reactions).toEqual([{ emoji: '😂', users: ['user-2'] }])
   })
 
@@ -647,7 +680,14 @@ describe('DM API', () => {
       success: true,
       data: {
         messages: [
-          { id: 'm1', body: 'a', reactions: [{ id: 1, reaction: '👍' }, { id: 2, reaction: '👍' }] },
+          {
+            id: 'm1',
+            body: 'a',
+            reactions: [
+              { id: 1, reaction: '👍' },
+              { id: 2, reaction: '👍' },
+            ],
+          },
           { id: 'm2', body: 'b', reactions: [{ reaction: { emoji: '🎉' }, user: 'user-2' }] },
         ],
       },
@@ -744,9 +784,24 @@ describe('DM API', () => {
 
     const list = await dmApi.listMessages('company-1', 'channel-1', { page: 2 })
 
-    expect(apiRequest).toHaveBeenCalledWith('/v1/company-1/direct-channels/channel-1/messages?page=2')
+    expect(apiRequest).toHaveBeenCalledWith(
+      '/v1/company-1/direct-channels/channel-1/messages?page=2',
+    )
     expect(list.map((m) => m.text)).toEqual(['old'])
     expect(list.pagination).toEqual({ page: 2, hasMore: true, lastPage: 3 })
+  })
+
+  it('passes a trimmed body query when searching direct-channel messages', async () => {
+    apiRequest.mockResolvedValue({
+      success: true,
+      data: { messages: [{ id: 'm1', body: 'Search result' }] },
+    })
+
+    await dmApi.listMessages('company-1', 'channel-1', { page: 2, query: '  search  ' })
+
+    expect(apiRequest).toHaveBeenCalledWith(
+      '/v1/company-1/direct-channels/channel-1/messages?page=2&body=search',
+    )
   })
 
   it('says hasMore is unknown when the backend sends no pagination info', async () => {
@@ -764,7 +819,13 @@ describe('DM API', () => {
       message: 'Messages retrieved successfully.',
       data: {
         messages: [],
-        pagination: { current_page: 1, per_page: 15, total: 0, last_page: 1, has_more_pages: false },
+        pagination: {
+          current_page: 1,
+          per_page: 15,
+          total: 0,
+          last_page: 1,
+          has_more_pages: false,
+        },
       },
     })
 
@@ -780,7 +841,9 @@ describe('DM API', () => {
       message: 'Status updated successfully.',
       data: { id: 'user-1', name: 'Aiman Iqbal', custom_status: null, status_mode: 'online' },
     })
-    await expect(dmApi.updateUserStatus('user-1', { mode: 'online' })).resolves.toMatchObject({ state: 'online' })
+    await expect(dmApi.updateUserStatus('user-1', { mode: 'online' })).resolves.toMatchObject({
+      state: 'online',
+    })
     apiRequest.mockResolvedValueOnce({
       success: true,
       data: { id: 'user-1', status_mode: 'dnd' },

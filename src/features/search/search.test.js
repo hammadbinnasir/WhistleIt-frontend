@@ -1,23 +1,31 @@
-import { describe, expect, it } from 'vitest'
-import {
-  addMockMessage,
-  searchFiles,
-  searchLinks,
-  searchMessages,
-  updateMockMessage,
-  removeMockMessage,
-} from './search'
+import { beforeEach, describe, expect, it } from 'vitest'
+import { searchFiles, searchLinks, searchMessages } from './search'
+
+beforeEach(() => {
+  localStorage.clear()
+})
 
 describe('search date filters', () => {
   it('filters messages before and after a selected date', async () => {
-    addMockMessage({
-      id: 'dated-message',
-      text: 'Dated test message',
-      sender: 'Test User',
-      createdAt: '2026-10-21T08:30:00Z',
+    const channelMessages = [
+      {
+        id: 'dated-message',
+        text: 'Dated test message',
+        sender: 'Test User',
+        createdAt: '2026-10-21T08:30:00Z',
+        conversation: { id: 'channel-1' },
+      },
+    ]
+    const before = await searchMessages({
+      date: '2026-10-22',
+      dateMode: 'before',
+      channelMessages,
     })
-    const before = await searchMessages({ date: '2026-10-22', dateMode: 'before' })
-    const after = await searchMessages({ date: '2026-10-20', dateMode: 'after' })
+    const after = await searchMessages({
+      date: '2026-10-20',
+      dateMode: 'after',
+      channelMessages,
+    })
 
     expect(before.items).toHaveLength(1)
     expect(after.items).toHaveLength(1)
@@ -28,13 +36,21 @@ describe('search date filters', () => {
       date: '2026-10-21',
       dateEnd: '2026-10-21',
       dateMode: 'range',
+      channelMessages: [
+        {
+          id: 'dated-message',
+          text: 'Dated test message',
+          createdAt: '2026-10-21T08:30:00Z',
+          conversation: { id: 'channel-1' },
+        },
+      ],
     })
 
     expect(result.items).toHaveLength(1)
   })
 })
 
-describe('persisted channel messages', () => {
+describe('server-loaded channel messages', () => {
   it('finds channel attachments by file name and returns image metadata', async () => {
     const result = await searchFiles({
       q: 'team-photo',
@@ -180,7 +196,7 @@ describe('persisted channel messages', () => {
     expect(result.total).toBe(1)
   })
 
-  it('finds channel messages after browser storage is restored', async () => {
+  it('ignores channel messages persisted in browser storage', async () => {
     localStorage.setItem(
       'whistleit:channel-messages',
       JSON.stringify({
@@ -201,34 +217,35 @@ describe('persisted channel messages', () => {
       channelId: 'general',
     })
 
-    expect(result.items.map((item) => item.id)).toContain('persisted-message')
+    expect(result.items).toEqual([])
   })
 
-  it('finds links in persisted channel messages with conversation and sender details', async () => {
+  it('finds links in API-provided channel messages, not browser storage', async () => {
     localStorage.setItem(
       'whistleit:channel-messages',
       JSON.stringify({
         general: [
           {
-            id: 'channel-link',
-            content: 'Check this https://example.com/shared.',
-            author: 'Channel User',
-            authorId: 'user-2',
-            createdAt: '2026-11-05T10:00:00.000Z',
-          },
-        ],
-        other: [
-          {
-            id: 'other-link',
-            content: 'https://other.example/path',
-            author: 'Other User',
+            id: 'stored-link',
+            content: 'https://stored.example/link',
             createdAt: '2026-11-05T10:00:00.000Z',
           },
         ],
       }),
     )
-
-    const result = await searchLinks({ channelId: 'general' })
+    const result = await searchLinks({
+      channelId: 'general',
+      channelMessages: [
+        {
+          id: 'channel-link',
+          text: 'Check this https://example.com/shared.',
+          sender: 'Channel User',
+          userId: 'user-2',
+          createdAt: '2026-11-05T10:00:00.000Z',
+          conversation: { id: 'general', name: 'General', kind: 'public' },
+        },
+      ],
+    })
 
     expect(result.items).toMatchObject([
       {
@@ -239,6 +256,7 @@ describe('persisted channel messages', () => {
         conversation: { id: 'general' },
       },
     ])
+    expect(result.items.map((item) => item.id)).not.toContain('stored-link')
     expect(result.total).toBe(1)
   })
 
@@ -272,17 +290,5 @@ describe('persisted channel messages', () => {
       },
     ])
     expect(result.total).toBe(1)
-  })
-
-  it('reflects in-memory edits and deletions', async () => {
-    addMockMessage({ id: 'mutable-message', text: 'Original text' })
-    updateMockMessage('mutable-message', 'Edited text')
-
-    const edited = await searchMessages({ q: 'Edited text' })
-    expect(edited.items.map((item) => item.id)).toContain('mutable-message')
-
-    removeMockMessage('mutable-message')
-    const deleted = await searchMessages({ q: 'Edited text' })
-    expect(deleted.items.map((item) => item.id)).not.toContain('mutable-message')
   })
 })

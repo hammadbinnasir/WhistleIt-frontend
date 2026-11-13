@@ -218,7 +218,10 @@ export const useMessagesStore = defineStore('messages', () => {
     return null
   }
 
-  async function fetchChannelMessages(channelId, { page = 1, olderPage = false } = {}) {
+  async function fetchChannelMessages(
+    channelId,
+    { page = 1, olderPage = false, query, searchOnly = false } = {},
+  ) {
     const key = String(channelId ?? '')
     if (!key.trim()) return { success: false, error: 'A channel ID is required to load messages.' }
 
@@ -227,34 +230,38 @@ export const useMessagesStore = defineStore('messages', () => {
     const teamId = teams.activeTeamId
     if (!companyId || !teamId) {
       const error = 'Select a company and team before loading channel messages.'
-      errorsByChannel.value[key] = error
+      if (!searchOnly) errorsByChannel.value[key] = error
       return { success: false, error }
     }
 
-    const requestKey = `${key}:${page}`
-    const requestId = (messageRequests.get(requestKey) ?? 0) + 1
-    messageRequests.set(requestKey, requestId)
-    if (page === 1 && !olderPage) loadingByChannel.value[key] = true
-    errorsByChannel.value[key] = ''
+    const requestKey = searchOnly ? null : `${key}:${page}`
+    const requestId = requestKey ? (messageRequests.get(requestKey) ?? 0) + 1 : null
+    if (requestKey) messageRequests.set(requestKey, requestId)
+    if (!searchOnly && page === 1 && !olderPage) loadingByChannel.value[key] = true
+    if (!searchOnly) errorsByChannel.value[key] = ''
 
-    const result = await getChannelMessages(companyId, teamId, key, {
+    const requestOptions = {
       page,
       perPage: API_PAGE_SIZE,
-    })
-    if (messageRequests.get(requestKey) !== requestId) return result
-    if (page === 1 && !olderPage) loadingByChannel.value[key] = false
+      ...(query?.trim() ? { query: query.trim() } : {}),
+    }
+    const result = await getChannelMessages(companyId, teamId, key, requestOptions)
+    if (requestKey && messageRequests.get(requestKey) !== requestId) return result
+    if (!searchOnly && page === 1 && !olderPage) loadingByChannel.value[key] = false
 
     if (!result.success) {
-      errorsByChannel.value[key] = result.error
+      if (!searchOnly) errorsByChannel.value[key] = result.error
       return result
     }
 
     try {
       const { messages: records, pagination } = unwrapMessages(result.data)
-      const currentMessages = messagesFor(key)
+      const currentMessages = searchOnly ? [] : messagesFor(key)
       const currentById = new Map(currentMessages.map((message) => [String(message.id), message]))
       const fetched = records.map((record) => {
         const message = normalizeMessage(record)
+        if (searchOnly) return message
+
         const previous = currentById.get(message.id)
         if (!message.forwardedFrom && previous?.forwardedFrom) {
           message.forwardedFrom = previous.forwardedFrom
@@ -264,6 +271,16 @@ export const useMessagesStore = defineStore('messages', () => {
         }
         return message
       })
+      const responsePage = Number(pagination?.current_page ?? pagination?.currentPage ?? page)
+      if (searchOnly) {
+        return {
+          success: true,
+          data: fetched,
+          currentPage: responsePage,
+          hasMorePages: readHasMorePages(pagination, responsePage),
+        }
+      }
+
       const deletedMessages = currentMessages.filter((message) => message.deleted)
       const deletedIds = new Set(deletedMessages.map((message) => String(message.id)))
       const fetchedIds = new Set(fetched.map((message) => message.id))
@@ -314,7 +331,6 @@ export const useMessagesStore = defineStore('messages', () => {
       for (const message of visiblePending) merged.set(String(message.id), message)
       messagesByChannel.value[key] = sortMessages([...merged.values()])
 
-      const responsePage = Number(pagination?.current_page ?? pagination?.currentPage ?? page)
       currentPageByChannel.value[key] = Math.max(currentPageByChannel.value[key] || 0, responsePage)
       const lastPage = Number(pagination?.last_page ?? pagination?.lastPage)
       if (Number.isFinite(lastPage) && lastPage > 0) {
@@ -325,11 +341,17 @@ export const useMessagesStore = defineStore('messages', () => {
       }
       return { success: true, data: fetched }
     } catch (error) {
-      errorsByChannel.value[key] =
-        error instanceof Error ? error.message : 'Unable to read channel messages.'
-      return { success: false, error: errorsByChannel.value[key] }
+      const message = error instanceof Error ? error.message : 'Unable to read channel messages.'
+      if (!searchOnly) errorsByChannel.value[key] = message
+      return { success: false, error: message }
     } finally {
-      if (page === 1 && !olderPage && messageRequests.get(requestKey) === requestId) {
+      if (
+        !searchOnly &&
+        page === 1 &&
+        !olderPage &&
+        requestKey &&
+        messageRequests.get(requestKey) === requestId
+      ) {
         loadingByChannel.value[key] = false
       }
     }
