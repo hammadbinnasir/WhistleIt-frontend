@@ -89,6 +89,33 @@ describe('reminders panel conversation scope', () => {
     expect(wrapper.text()).not.toContain('DM reminder')
   })
 
+  it('deletes a reminder through the API when Delete Reminder is clicked', async () => {
+    const store = useRemindersStore()
+    await store.add({
+      conversationId: 'channel-1',
+      conversationName: 'Channel One',
+      conversationType: 'channel',
+      messageId: 'message-1',
+      text: 'Reminder to delete',
+      remindAt: new Date(Date.now() + 60_000).toISOString(),
+    })
+    const reminderId = store.items[0].id
+    const wrapper = mount(RemindersPanel)
+
+    const deleteButton = wrapper
+      .findAll('button')
+      .find((button) => button.text() === 'Delete Reminder')
+    await deleteButton.trigger('click')
+
+    expect(api.deleteReminder).toHaveBeenCalledWith(reminderId)
+    expect(store.items).toHaveLength(0)
+    expect(store.deletedItems[0]).toMatchObject({
+      id: reminderId,
+      text: 'Reminder to delete',
+      dismissed: true,
+    })
+  })
+
   it('resolves channel IDs to channel names for reminders loaded from the API', () => {
     useChannelsStore().upsertChannel({
       id: 'channel-2',

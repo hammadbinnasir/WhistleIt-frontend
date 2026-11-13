@@ -287,7 +287,7 @@ async function loadChannelMessagesForSearch(channelId) {
     }))
 }
 
-async function loadChannelMessagesForFileSearch() {
+async function loadChannelMessagesForSearchScope() {
   if (scope.value === 'channel') {
     return props.dmConversationId ? [] : loadChannelMessagesForSearch(props.channelId)
   }
@@ -346,11 +346,7 @@ async function run() {
   try {
     const isFileSearch = tab.value === 'file'
     const dmMessages = isFileSearch ? await loadDmMessagesForFileSearch() : dmSearchMessages()
-    const channelMessages = isFileSearch
-      ? await loadChannelMessagesForFileSearch()
-      : scope.value === 'channel' && !props.dmConversationId
-        ? await loadChannelMessagesForSearch(props.channelId)
-        : []
+    const channelMessages = await loadChannelMessagesForSearchScope()
     const params = {
       q: q.value.trim(),
       page: page.value,
