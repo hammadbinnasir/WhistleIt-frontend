@@ -949,6 +949,66 @@ describe('composer conversation', () => {
     expect(useUiStore().toasts[0].title).toBe('Reminder set')
   })
 
+  it('sets a one-hour reminder on a direct message double click when configured', async () => {
+    useUserStore().hydrate({ preferences: { doubleClick: 'reminder' } })
+    const dms = useDmStore()
+    await dms.init()
+    dms.stopPolling()
+    const conversation = dms.conversations[0]
+    const message = conversation.messages[0]
+    const wrapper = mount(ComposerConversation, {
+      props: { conversationId: conversation.id, conversationType: 'dm' },
+    })
+    const beforeDoubleClick = Date.now()
+
+    await wrapper.find('.composer-conversation__message-bubble').trigger('dblclick')
+
+    const reminders = useRemindersStore()
+    await vi.waitFor(() => expect(reminders.items).toHaveLength(1))
+    expect(reminders.items[0]).toMatchObject({
+      conversationId: conversation.id,
+      conversationType: 'dm',
+      messageId: message.id,
+      text: message.text,
+    })
+    expect(
+      Math.abs(
+        new Date(reminders.items[0].remindAt).getTime() - beforeDoubleClick - 60 * 60 * 1000,
+      ),
+    ).toBeLessThan(1000)
+    expect(wrapper.find('[aria-label="Reminder title"]').exists()).toBe(false)
+    expect(useUiStore().toasts[0].title).toBe('Reminder set')
+    wrapper.unmount()
+  })
+
+  it('shows a fired DM reminder in the matching direct-message chat', async () => {
+    const dms = useDmStore()
+    await dms.init()
+    dms.stopPolling()
+    const conversation = dms.conversations[0]
+    const firedAt = new Date(Date.now() - 60_000).toISOString()
+    useRemindersStore().deletedItems.push({
+      id: 'fired-dm-reminder',
+      fired: true,
+      firedAt,
+      dismissed: false,
+      conversationId: conversation.id,
+      conversationName: dms.titleOf(conversation),
+      conversationType: 'dm',
+      messageId: 'dm-message-1',
+      text: 'Follow up in this DM',
+      remindAt: firedAt,
+    })
+
+    const wrapper = mount(ComposerConversation, {
+      props: { conversationId: conversation.id, conversationType: 'dm' },
+    })
+
+    expect(wrapper.text()).toContain('Reminded you at')
+    expect(wrapper.text()).toContain('Follow up in this DM')
+    wrapper.unmount()
+  })
+
   it('shows due reminders in chat and snoozes them back to the reminder list', async () => {
     const reminderStore = useRemindersStore()
     const reminderTime = new Date(Date.now() - 60_000).toISOString()

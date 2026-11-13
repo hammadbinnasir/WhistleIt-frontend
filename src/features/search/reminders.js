@@ -39,18 +39,43 @@ export const useRemindersStore = defineStore('reminders', {
       this.loading = true
       try {
         const processedIds = new Set(this.deletedItems.map((reminder) => String(reminder.id)))
-        const reminders = (await listReminders()).filter(
-          (reminder) => !processedIds.has(String(reminder.id)),
+        const pendingById = new Map(
+          this.pendingItems.map((reminder) => [String(reminder.id), reminder]),
         )
+        const apiReminders = await listReminders()
+        const serverIds = new Set(apiReminders.map((reminder) => String(reminder.id)))
+        const reminders = apiReminders
+          .map((reminder) => {
+            const pending = pendingById.get(String(reminder.id))
+            if (!pending || pending.conversationType !== 'dm') return reminder
+
+            return {
+              ...pending,
+              ...reminder,
+              conversationId: pending.conversationId,
+              conversationName:
+                reminder.conversationName && reminder.conversationName !== 'Conversation'
+                  ? reminder.conversationName
+                  : pending.conversationName,
+              conversationType: 'dm',
+              messageId: reminder.messageId || pending.messageId,
+              text: reminder.text || pending.text,
+              title: reminder.title || pending.title,
+            }
+          })
+          .filter((reminder) => !processedIds.has(String(reminder.id)))
         if (requestId !== this.fetchRequestId) return
 
-        const serverIds = new Set(reminders.map((reminder) => String(reminder.id)))
         this.pendingItems = this.pendingItems.filter(
           (reminder) =>
-            !serverIds.has(String(reminder.id)) && !processedIds.has(String(reminder.id)),
+            (!serverIds.has(String(reminder.id)) || reminder.conversationType === 'dm') &&
+            !processedIds.has(String(reminder.id)),
         )
         this.persistPending()
-        this.items = [...reminders, ...this.pendingItems]
+        this.items = [
+          ...reminders,
+          ...this.pendingItems.filter((reminder) => !serverIds.has(String(reminder.id))),
+        ]
         this.checkDueReminders()
       } finally {
         if (requestId === this.fetchRequestId) this.loading = false
@@ -92,7 +117,12 @@ export const useRemindersStore = defineStore('reminders', {
     },
     update(id, patch) {
       const reminder = this.items.find((item) => String(item.id) === String(id))
-      if (reminder) Object.assign(reminder, patch, { fired: false })
+      if (reminder) {
+        Object.assign(reminder, patch, { fired: false })
+        const pending = this.pendingItems.find((item) => String(item.id) === String(id))
+        if (pending) Object.assign(pending, patch, { fired: false })
+        this.persistPending()
+      }
     },
     async remove(id) {
       const reminder = this.items.find((item) => String(item.id) === String(id))

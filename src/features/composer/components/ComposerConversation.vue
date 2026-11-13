@@ -1840,11 +1840,7 @@ function handleMessageDoubleClick(event, message) {
     !event.target.closest('button, a, input')
   ) {
     event.preventDefault()
-    if (props.conversationType === 'channel') {
-      void setOneHourReminder(message)
-    } else {
-      setReminder(message)
-    }
+    void setOneHourReminder(message)
   }
 }
 
