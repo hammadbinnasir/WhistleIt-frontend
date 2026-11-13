@@ -45,6 +45,34 @@ describe('reminders API', () => {
     expect(apiRequest).toHaveBeenCalledWith('/v1/reminders')
   })
 
+  it('normalizes direct reminders from direct-channel IDs and API type aliases', async () => {
+    apiRequest.mockResolvedValue({
+      success: true,
+      data: {
+        reminders: [
+          {
+            id: 'dm-reminder-1',
+            conversation_id: 'conversation-id',
+            direct_channel_id: 'direct-channel-1',
+            conversation_type: 'direct',
+            message_id: 'dm-message-1',
+            text: 'Follow up in DM',
+            remind_at: '2026-11-14T10:00:00Z',
+          },
+        ],
+      },
+    })
+
+    await expect(listReminders()).resolves.toMatchObject([
+      {
+        id: 'dm-reminder-1',
+        conversationId: 'direct-channel-1',
+        conversationType: 'dm',
+        messageId: 'dm-message-1',
+      },
+    ])
+  })
+
   it('posts the reminder and deletes by encoded ID', async () => {
     const reminder = {
       conversationId: 'channel-1',
@@ -82,8 +110,42 @@ describe('reminders API', () => {
     })
   })
 
+  it('includes the direct-channel ID when creating a DM reminder', async () => {
+    const reminder = {
+      conversationId: 'direct-channel-1',
+      conversationName: 'Alex',
+      conversationType: 'dm',
+      messageId: 'dm-message-1',
+      text: 'Follow up in DM',
+      title: '',
+      remindAt: '2026-11-12T10:00:00Z',
+    }
+    apiRequest.mockResolvedValue({
+      success: true,
+      data: { id: 'dm-reminder-1', remind_at: reminder.remindAt },
+    })
+
+    await createReminder(reminder)
+
+    expect(apiRequest).toHaveBeenCalledWith('/v1/reminders', {
+      method: 'POST',
+      body: JSON.stringify({
+        conversation_id: 'direct-channel-1',
+        direct_channel_id: 'direct-channel-1',
+        conversation_name: 'Alex',
+        conversation_type: 'dm',
+        message_id: 'dm-message-1',
+        text: 'Follow up in DM',
+        title: '',
+        remind_at: reminder.remindAt,
+      }),
+    })
+  })
+
   it('treats a missing reminder as already deleted', async () => {
-    apiRequest.mockRejectedValueOnce(Object.assign(new Error('Reminder not found'), { status: 404 }))
+    apiRequest.mockRejectedValueOnce(
+      Object.assign(new Error('Reminder not found'), { status: 404 }),
+    )
 
     await expect(deleteReminder('missing-reminder')).resolves.toBeUndefined()
     expect(apiRequest).toHaveBeenCalledWith('/v1/reminders/missing-reminder', {

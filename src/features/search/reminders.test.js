@@ -98,6 +98,44 @@ describe('reminders store', () => {
     store.stopWatcher()
   })
 
+  it('preserves a created DM reminder identity when the API refresh omits DM fields', async () => {
+    const store = useRemindersStore()
+    const remindAt = new Date(Date.now() + 60_000).toISOString()
+    await store.add({
+      conversationId: 'direct-channel-1',
+      conversationName: 'Hammad',
+      conversationType: 'dm',
+      messageId: 'dm-message-1',
+      text: 'Follow up in this DM',
+      remindAt,
+    })
+    api.listReminders.mockResolvedValueOnce([
+      {
+        id: 'server-1',
+        conversationId: 'general',
+        conversationName: 'Conversation',
+        conversationType: 'channel',
+        messageId: '',
+        text: '',
+        remindAt,
+        fired: false,
+      },
+    ])
+
+    await store.fetch()
+
+    expect(store.items).toHaveLength(1)
+    expect(store.items[0]).toMatchObject({
+      id: 'server-1',
+      conversationId: 'direct-channel-1',
+      conversationName: 'Hammad',
+      conversationType: 'dm',
+      messageId: 'dm-message-1',
+      text: 'Follow up in this DM',
+    })
+    expect(store.pendingItems).toHaveLength(1)
+  })
+
   it('keeps and fires a just-created reminder when an older refresh finishes afterward', async () => {
     let resolveRefresh
     api.listReminders.mockReturnValueOnce(

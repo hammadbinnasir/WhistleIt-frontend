@@ -6,15 +6,29 @@ function payloadOf(response) {
   return response?.data?.data ?? response?.data ?? response
 }
 
+function isDirectConversationType(value) {
+  return [
+    'dm',
+    'direct',
+    'direct_channel',
+    'direct-channel',
+    'direct_message',
+    'direct-message',
+  ].includes(String(value ?? '').toLowerCase())
+}
+
 function normalizeReminder(raw = {}) {
   const reminder = raw.reminder ?? raw
   const id = reminder.id ?? reminder.reminder_id
   if (id == null) throw new Error('A reminder response is missing its ID.')
 
+  const directChannelId =
+    reminder.direct_channel_id ?? reminder.directChannelId ?? reminder.direct_channel?.id
   const conversationType =
-    reminder.conversationType ??
-    reminder.conversation_type ??
-    (reminder.direct_channel_id != null ? 'dm' : 'channel')
+    isDirectConversationType(reminder.conversationType ?? reminder.conversation_type) ||
+    directChannelId != null
+      ? 'dm'
+      : 'channel'
   const remindAt =
     reminder.remindAt ?? reminder.remind_at ?? reminder.reminder_at ?? reminder.scheduled_at
   if (!remindAt) throw new Error('A reminder response is missing its scheduled time.')
@@ -24,9 +38,10 @@ function normalizeReminder(raw = {}) {
     id: String(id),
     conversationId: String(
       reminder.conversationId ??
+        (conversationType === 'dm' ? directChannelId : null) ??
         reminder.conversation_id ??
         reminder.channel_id ??
-        reminder.direct_channel_id ??
+        directChannelId ??
         'general',
     ),
     conversationName:
@@ -62,6 +77,7 @@ export async function createReminder(reminder) {
     method: 'POST',
     body: JSON.stringify({
       conversation_id: reminder.conversationId,
+      ...(reminder.conversationType === 'dm' ? { direct_channel_id: reminder.conversationId } : {}),
       conversation_name: reminder.conversationName,
       conversation_type: reminder.conversationType,
       message_id: reminder.messageId,
