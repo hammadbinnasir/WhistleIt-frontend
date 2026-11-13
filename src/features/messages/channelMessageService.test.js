@@ -41,6 +41,16 @@ describe('channel message service', () => {
     })
   })
 
+  it('passes a message search query as a query parameter', async () => {
+    await getChannelMessages('company-1', 'team-2', 'channel-3', {
+      query: 'aa',
+    })
+
+    expect(http).toHaveBeenCalledWith(collectionPath, {
+      params: { include_deleted: true, page: 1, per_page: 15, body: 'aa' },
+    })
+  })
+
   it('gets one message using encoded path parameters', async () => {
     await getChannelMessage('company/1', 'team 2', 'channel-3', 'message?4')
 

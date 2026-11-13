@@ -69,6 +69,77 @@ describe('channel messages store', () => {
     expect(messages.errorsByChannel['6aeb0aa8fbf9fd02ad07048f']).toBe('')
   })
 
+  it('passes search queries to the API and tracks search pagination separately', async () => {
+    useTeamsStore().activeWorkspaceId = 'company-1'
+    useTeamsStore().activeTeamId = 'team-1'
+    getChannelMessages
+      .mockResolvedValueOnce({
+        success: true,
+        data: {
+          messages: [{ id: 'match-1', body: 'Launch plan', created_at: '2026-11-05T10:00:00Z' }],
+          pagination: { current_page: 1, last_page: 2 },
+        },
+      })
+      .mockResolvedValueOnce({
+        success: true,
+        data: {
+          messages: [
+            { id: 'match-2', body: 'Launch plan details', created_at: '2026-11-06T10:00:00Z' },
+          ],
+          pagination: { current_page: 2, last_page: 2 },
+        },
+      })
+    const messages = useMessagesStore()
+
+    const firstPage = await messages.fetchChannelMessages('channel-1', {
+      query: 'Launch plan',
+      searchOnly: true,
+    })
+    const secondPage = await messages.fetchChannelMessages('channel-1', {
+      page: 2,
+      olderPage: true,
+      query: 'Launch plan',
+      searchOnly: true,
+    })
+
+    expect(getChannelMessages).toHaveBeenNthCalledWith(1, 'company-1', 'team-1', 'channel-1', {
+      page: 1,
+      perPage: 15,
+      query: 'Launch plan',
+    })
+    expect(getChannelMessages).toHaveBeenNthCalledWith(2, 'company-1', 'team-1', 'channel-1', {
+      page: 2,
+      perPage: 15,
+      query: 'Launch plan',
+    })
+    expect(firstPage).toMatchObject({ success: true, currentPage: 1, hasMorePages: true })
+    expect(secondPage).toMatchObject({ success: true, currentPage: 2, hasMorePages: false })
+    expect(messages.currentPageByChannel['channel-1']).toBeUndefined()
+  })
+
+  it('returns only API messages in search mode without changing cached messages', async () => {
+    localStorage.setItem(
+      'whistleit:channel-messages',
+      JSON.stringify({
+        'channel-1': [{ id: 'stored-message', content: 'Old cached message' }],
+      }),
+    )
+    useTeamsStore().activeWorkspaceId = 'company-1'
+    useTeamsStore().activeTeamId = 'team-1'
+    getChannelMessages.mockResolvedValue({
+      success: true,
+      data: { messages: [{ id: 'api-message', body: 'Fresh API message' }] },
+    })
+    const messages = useMessagesStore()
+
+    const result = await messages.fetchChannelMessages('channel-1', { searchOnly: true })
+
+    expect(result.data.map((message) => message.id)).toEqual(['api-message'])
+    expect(messages.messagesFor('channel-1').map((message) => message.id)).toEqual([
+      'stored-message',
+    ])
+  })
+
   it('normalizes the backend singular attachment field on fetched messages', async () => {
     useTeamsStore().activeWorkspaceId = 'company-1'
     useTeamsStore().activeTeamId = 'team-1'
@@ -391,17 +462,12 @@ describe('channel messages store', () => {
         serverBacked: true,
       }),
     )
-    expect(sendChannelMessage).toHaveBeenCalledWith(
-      'company-1',
-      'team-1',
-      'channel-1',
-      {
-        content: 'Thread parent',
-        isCode: false,
-        parentMessageId: 'original-message',
-        text: 'Thread parent',
-      },
-    )
+    expect(sendChannelMessage).toHaveBeenCalledWith('company-1', 'team-1', 'channel-1', {
+      content: 'Thread parent',
+      isCode: false,
+      parentMessageId: 'original-message',
+      text: 'Thread parent',
+    })
     expect(sent.id).toBe('saved-reply-parent')
   })
 
@@ -526,19 +592,14 @@ describe('channel messages store', () => {
       }),
     ).resolves.toMatchObject({ success: true })
 
-    expect(sendChannelMessage).toHaveBeenCalledWith(
-      'company-1',
-      'team-1',
-      'channel-code',
-      {
-        content: code,
-        text: code,
-        isCode: true,
-        senderId: 'user-1',
-        receiverId: 'user-2',
-        timestamp,
-      },
-    )
+    expect(sendChannelMessage).toHaveBeenCalledWith('company-1', 'team-1', 'channel-code', {
+      content: code,
+      text: code,
+      isCode: true,
+      senderId: 'user-1',
+      receiverId: 'user-2',
+      timestamp,
+    })
     expect(messages.messagesFor('channel-code')).toContainEqual(
       expect.objectContaining({ content: code, isCode: true }),
     )

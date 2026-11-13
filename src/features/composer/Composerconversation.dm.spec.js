@@ -256,9 +256,7 @@ describe('ComposerConversation (DM)', () => {
   it('shows a sender-deleted message as deleted for the other participant', async () => {
     const { dms, wrapper } = await mountDm()
     const message = channel().conversation.messages[0]
-    dmApi.listMessages.mockResolvedValue([
-      { ...message, deleted: true, editedAt: LAST_REPLY_AT },
-    ])
+    dmApi.listMessages.mockResolvedValue([{ ...message, deleted: true, editedAt: LAST_REPLY_AT }])
 
     await dms.loadMessages('c1', { force: true })
     await flushPromises()
@@ -286,7 +284,11 @@ describe('ComposerConversation (DM)', () => {
     const withMine = () => {
       const c = channel()
       c.conversation.messages.push({
-        id: 'm2', from: 'u1', text: 'save', createdAt: LAST_REPLY_AT, editedAt: LAST_REPLY_AT,
+        id: 'm2',
+        from: 'u1',
+        text: 'save',
+        createdAt: LAST_REPLY_AT,
+        editedAt: LAST_REPLY_AT,
       })
       return c
     }
@@ -301,7 +303,9 @@ describe('ComposerConversation (DM)', () => {
 
     // ⋯ > Edit
     await mine().find('[aria-label="More message actions"]').trigger('click')
-    const editButton = mine().findAll('button').find((b) => b.text().includes('Edit'))
+    const editButton = mine()
+      .findAll('button')
+      .find((b) => b.text().includes('Edit'))
     await editButton.trigger('click')
     const box = mine().get('textarea[aria-label="Edit message"]')
     await box.setValue('save karo')
@@ -318,7 +322,12 @@ describe('ComposerConversation (DM)', () => {
   it('cancels an edit with Escape and keeps a new line with Shift+Enter', async () => {
     const withMine = () => {
       const c = channel()
-      c.conversation.messages.push({ id: 'm2', from: 'u1', text: 'pehle', createdAt: LAST_REPLY_AT })
+      c.conversation.messages.push({
+        id: 'm2',
+        from: 'u1',
+        text: 'pehle',
+        createdAt: LAST_REPLY_AT,
+      })
       return c
     }
     dmApi.listDirectChannels.mockImplementation(async () => [withMine()])
@@ -326,7 +335,10 @@ describe('ComposerConversation (DM)', () => {
     const { wrapper } = await mountDm()
     const mine = () => wrapper.get('[data-message-id="m2"]')
     await mine().find('[aria-label="More message actions"]').trigger('click')
-    await mine().findAll('button').find((b) => b.text().includes('Edit')).trigger('click')
+    await mine()
+      .findAll('button')
+      .find((b) => b.text().includes('Edit'))
+      .trigger('click')
     const box = mine().get('textarea[aria-label="Edit message"]')
 
     await box.trigger('keydown', { key: 'Enter', shiftKey: true })
@@ -339,7 +351,12 @@ describe('ComposerConversation (DM)', () => {
 
   it('keeps the older messages on screen when 30 new messages arrive', async () => {
     const at = (min) => new Date(2026, 10, 5, 10, min).toISOString()
-    const base = Array.from({ length: 15 }, (_, i) => ({ id: `b${i}`, from: 'u2', text: `pehla ${i}`, createdAt: at(i) }))
+    const base = Array.from({ length: 15 }, (_, i) => ({
+      id: `b${i}`,
+      from: 'u2',
+      text: `pehla ${i}`,
+      createdAt: at(i),
+    }))
     const withBase = () => {
       const c = channel()
       c.conversation.messages = [...base]
@@ -369,7 +386,12 @@ describe('ComposerConversation (DM)', () => {
     const at = (min) => new Date(2026, 10, 5, 10, min).toISOString()
     const page = (from, to, hasMore) =>
       Object.defineProperty(
-        Array.from({ length: to - from }, (_, i) => ({ id: `q${from + i}`, from: 'u2', text: `q${from + i}`, createdAt: at(from + i) })),
+        Array.from({ length: to - from }, (_, i) => ({
+          id: `q${from + i}`,
+          from: 'u2',
+          text: `q${from + i}`,
+          createdAt: at(from + i),
+        })),
         'pagination',
         { value: { hasMore } },
       )
@@ -429,7 +451,13 @@ describe('ComposerConversation (DM)', () => {
   it('shows (forwarded) under a forwarded DM message', async () => {
     const withFwd = () => {
       const c = channel()
-      c.conversation.messages.push({ id: 'f1', from: 'u2', text: 'hlw', createdAt: LAST_REPLY_AT, forwardedFrom: 'forwarded' })
+      c.conversation.messages.push({
+        id: 'f1',
+        from: 'u2',
+        text: 'hlw',
+        createdAt: LAST_REPLY_AT,
+        forwardedFrom: 'forwarded',
+      })
       return c
     }
     dmApi.listDirectChannels.mockImplementation(async () => [withFwd()])

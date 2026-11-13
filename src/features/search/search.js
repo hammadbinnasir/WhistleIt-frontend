@@ -5,71 +5,14 @@ import {
   normalizeMessageAttachments,
 } from '@/features/messages/messageAttachments'
 
-// Mock search API. Replace each function body with the real call, e.g.
-// return api.get('/search/files', { params })  (central client in lib/api).
-// Keep the return shape: { items, totalPages }.
+// SearchPage supplies messages loaded from the API; this module applies local filters.
 
 const FILES = []
-const MESSAGES = []
 const wait = (ms = 250) => new Promise((r) => setTimeout(r, ms))
-const CHANNEL_MESSAGES_STORAGE_KEY = 'whistleit:channel-messages'
-
-function readStoredChannelMessages() {
-  if (typeof localStorage === 'undefined') return []
-
-  try {
-    const stored = JSON.parse(localStorage.getItem(CHANNEL_MESSAGES_STORAGE_KEY) || '{}')
-    if (!stored || typeof stored !== 'object' || Array.isArray(stored)) return []
-
-    return Object.entries(stored).flatMap(([channelId, messages]) =>
-      (Array.isArray(messages) ? messages : [])
-        .filter((message) => !message.scheduled && !message.deleted)
-        .map((message) => ({
-          id: message.id,
-          webhook: false,
-          createdAt: message.createdAt || '',
-          sender: message.author || 'Unknown user',
-          userId: String(message.authorId || ''),
-          text: message.content ?? message.text ?? '',
-          attachments: normalizeMessageAttachments(message),
-          conversation: {
-            id: String(channelId),
-            name: String(channelId),
-            kind: 'public',
-          },
-        })),
-    )
-  } catch (error) {
-    console.error('Unable to load channel messages for search:', error)
-    return []
-  }
-}
 
 // Lets the composer / upload code make a sent file show up in File search (mock mode only).
 export function addMockFile(file) {
   FILES.unshift({ id: crypto.randomUUID(), createdAt: new Date().toISOString(), ...file })
-}
-
-export function addMockMessage(message) {
-  MESSAGES.unshift({
-    id: message.id || crypto.randomUUID(),
-    webhook: false,
-    createdAt: message.createdAt || new Date().toISOString(),
-    sender: message.sender || 'You',
-    userId: message.userId || 'current-user',
-    text: message.text || message.content || '',
-    conversation: message.conversation || { id: 'general', name: 'General', kind: 'public' },
-  })
-}
-
-export function updateMockMessage(id, text) {
-  const message = MESSAGES.find((item) => String(item.id) === String(id))
-  if (message) message.text = text
-}
-
-export function removeMockMessage(id) {
-  const index = MESSAGES.findIndex((item) => String(item.id) === String(id))
-  if (index !== -1) MESSAGES.splice(index, 1)
 }
 
 function applyFilters(
@@ -114,8 +57,6 @@ function getSearchableMessages({ dmMessages = [], channelMessages = [] } = {}) {
   const combined = [
     ...(Array.isArray(channelMessages) ? channelMessages : []),
     ...(Array.isArray(dmMessages) ? dmMessages : []),
-    ...MESSAGES,
-    ...readStoredChannelMessages(),
   ]
   return combined.filter(
     (message, index, messages) =>

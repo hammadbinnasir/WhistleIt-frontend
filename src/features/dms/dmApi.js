@@ -165,7 +165,8 @@ function paginationOf(data, page) {
   for (const m of [d.pagination, d, d.meta, nested, nested?.meta].filter(Boolean)) {
     const lastPage = m.last_page != null ? Number(m.last_page) : null
     const more = m.has_more_pages ?? m.has_more
-    if (more != null) return { page: Number(m.current_page ?? page), hasMore: Boolean(more), lastPage }
+    if (more != null)
+      return { page: Number(m.current_page ?? page), hasMore: Boolean(more), lastPage }
     if (lastPage != null && m.current_page != null) {
       return { page: Number(m.current_page), hasMore: Number(m.current_page) < lastPage, lastPage }
     }
@@ -207,7 +208,11 @@ export function normalizeReactions(raw) {
   let items = raw
   if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
     items = Object.entries(raw).map(([emoji, value]) =>
-      Array.isArray(value) ? { emoji, users: value } : typeof value === 'object' && value ? { emoji, ...value } : { emoji, count: value },
+      Array.isArray(value)
+        ? { emoji, users: value }
+        : typeof value === 'object' && value
+          ? { emoji, ...value }
+          : { emoji, count: value },
     )
   }
   if (!Array.isArray(items)) return []
@@ -219,11 +224,24 @@ export function normalizeReactions(raw) {
     // emoji khud object ho: { emoji: { native: '👍' } } / { reaction: { emoji: '👍' } }
     if (emoji && typeof emoji === 'object') {
       // backend: { reaction: { data: '🙃', category, aliases } }
-      emoji = emoji.data ?? emoji.emoji ?? emoji.native ?? emoji.char ?? emoji.i ?? emoji.reaction ?? emoji.name
+      emoji =
+        emoji.data ??
+        emoji.emoji ??
+        emoji.native ??
+        emoji.char ??
+        emoji.i ??
+        emoji.reaction ??
+        emoji.name
     }
     if (!emoji || typeof emoji !== 'string') continue
     const entry = byEmoji.get(emoji) ?? { emoji, users: [] }
-    const list = item.users ?? item.user_ids ?? item.userIds ?? item.reacted_by ?? item.reacted_users ?? item.reactors
+    const list =
+      item.users ??
+      item.user_ids ??
+      item.userIds ??
+      item.reacted_by ??
+      item.reacted_users ??
+      item.reactors
     let ids = list
     if (!Array.isArray(ids)) {
       const user = item.user
@@ -232,7 +250,9 @@ export function normalizeReactions(raw) {
     }
     const before = entry.users.length
     for (const user of ids) {
-      const id = String(user && typeof user === 'object' ? (user.id ?? user.user_id ?? '') : (user ?? ''))
+      const id = String(
+        user && typeof user === 'object' ? (user.id ?? user.user_id ?? '') : (user ?? ''),
+      )
       if (id && !entry.users.includes(id)) entry.users.push(id)
     }
     // Sirf ginti mili (user ids nahi): apna reaction + baaki ke liye nishaan
@@ -289,7 +309,12 @@ export function reactionsOf(raw) {
     raw.reactions_summary ??
     raw.reaction_counts
   // { message_id, reactions: [...] } wala object ho to uske andar ki list
-  if (found && !Array.isArray(found) && typeof found === 'object' && Array.isArray(found.reactions)) {
+  if (
+    found &&
+    !Array.isArray(found) &&
+    typeof found === 'object' &&
+    Array.isArray(found.reactions)
+  ) {
     return found.reactions
   }
   return found
@@ -418,7 +443,8 @@ function normalizeParticipant(raw) {
 
 // Message text mein HTML aa jaye (`<p>hi</p>` ya `&lt;p&gt;hi&lt;/p&gt;`) to screen par tags na dikhein:
 // saaf text (line breaks ke saath). Aam text ko nahi chhedta.
-const HTML_TAG = /<\/?(p|br|div|span|strong|b|em|i|u|s|strike|del|ul|ol|li|code|pre|blockquote|a|h[1-6])\b[^>]*>/i
+const HTML_TAG =
+  /<\/?(p|br|div|span|strong|b|em|i|u|s|strike|del|ul|ol|li|code|pre|blockquote|a|h[1-6])\b[^>]*>/i
 function decodeEntities(value) {
   return value
     .replace(/&lt;/g, '<')
@@ -438,7 +464,9 @@ export function htmlToPlainText(value) {
     .replace(/<\/(p|div|li|h[1-6]|blockquote|pre)>/gi, '\n')
     .replace(/<li\b[^>]*>/gi, '• ')
     .replace(/<[^>]+>/g, '')
-  return decodeEntities(text).replace(/\n{3,}/g, '\n\n').trim()
+  return decodeEntities(text)
+    .replace(/\n{3,}/g, '\n\n')
+    .trim()
 }
 
 // Forward ka invisible nishan (text ke shuru mein). Backend is_forwarded save na kare tab bhi
@@ -466,7 +494,8 @@ function parentIdOf(raw) {
   if (id != null && id !== '') return String(id)
   // Sirf "yeh reply hai" ka nishan (parent ka pata nahi): chat mein phir bhi na dikhe
   const kind = String(raw.type ?? raw.message_type ?? '').toLowerCase()
-  if (raw.is_reply === true || raw.is_reply === 1 || kind === 'reply' || kind === 'thread_reply') return '?'
+  if (raw.is_reply === true || raw.is_reply === 1 || kind === 'reply' || kind === 'thread_reply')
+    return '?'
   return undefined
 }
 
@@ -496,7 +525,9 @@ function deletionFlag(...values) {
 function isDeletedMessage(...records) {
   return records.some((record) => {
     if (!record || typeof record !== 'object') return false
-    const status = String(record.status ?? record.message_status ?? '').trim().toLowerCase()
+    const status = String(record.status ?? record.message_status ?? '')
+      .trim()
+      .toLowerCase()
     const text = String(record.content ?? record.text ?? record.body ?? '')
     const deletionTimestamp = [
       record.deleted_at,
@@ -591,7 +622,8 @@ export function normalizeMessage(raw) {
   if (message.sender_id != null) normalized.sender_id = message.sender_id
   if (message.user_id != null) normalized.user_id = message.user_id
   if (message.content != null && message.content !== '') normalized.content = message.content
-  if (message.body != null && message.body !== '' && message.content == null) normalized.body = message.body
+  if (message.body != null && message.body !== '' && message.content == null)
+    normalized.body = message.body
 
   const deleted = isDeletedMessage(message, raw)
   if (deleted) {
@@ -644,12 +676,14 @@ function editedAtOf(raw) {
   const materiallyUpdated =
     updatedAt != null &&
     updatedAt !== createdAt &&
-    (!Number.isFinite(updatedTime) || !Number.isFinite(createdTime) || Math.abs(updatedTime - createdTime) >= 1000)
+    (!Number.isFinite(updatedTime) ||
+      !Number.isFinite(createdTime) ||
+      Math.abs(updatedTime - createdTime) >= 1000)
   return (
     raw.edited_at ??
     raw.editedAt ??
     (raw.is_edited === true || raw.edited === true
-      ? updatedAt ?? ''
+      ? (updatedAt ?? '')
       : materiallyUpdated
         ? updatedAt
         : undefined)
@@ -711,7 +745,9 @@ export function presenceStateOf(raw, now = Date.now()) {
 export function normalizeState(value) {
   if (value === true || value === 1) return 'online'
   if (value === false || value === 0) return 'offline'
-  const word = String(value ?? '').trim().toLowerCase()
+  const word = String(value ?? '')
+    .trim()
+    .toLowerCase()
   if (['online', 'active', 'available', '1', 'true'].includes(word)) return 'online'
   if (word === 'dnd') return 'dnd'
   if (['away', 'idle', 'busy'].includes(word)) return 'away'
@@ -800,7 +836,12 @@ function normalizeChannel(channel, forcedType) {
   const rawMessages = [...(channel.messages ?? [])]
   // List mein sirf aakhri message aaye (last_message) to wo bhi (unread / notification ke liye)
   const last = channel.last_message ?? channel.latest_message ?? channel.lastMessage
-  if (last && typeof last === 'object' && last.id != null && !rawMessages.some((m) => String(m.id) === String(last.id))) {
+  if (
+    last &&
+    typeof last === 'object' &&
+    last.id != null &&
+    !rawMessages.some((m) => String(m.id) === String(last.id))
+  ) {
     rawMessages.push(last)
   }
   const messages = rawMessages.map(normalizeMessage)
@@ -824,7 +865,8 @@ function normalizeChannel(channel, forcedType) {
   ]
 
   const recentValue = recentAtOf(channel)
-  const lastActivityAt = channel.last_message_at ?? channel.last_activity_at ?? last?.created_at ?? ''
+  const lastActivityAt =
+    channel.last_message_at ?? channel.last_activity_at ?? last?.created_at ?? ''
   const conversation = {
     id: String(channel.id),
     type: forcedType ?? (members.length > 2 ? 'group' : 'dm'),
@@ -843,7 +885,9 @@ function normalizeChannel(channel, forcedType) {
 // 204 / khali body: channel ka object nahi aaya -> null (store list dobara laa kar dhoondhta hai)
 function channelOrNull(data, forcedType) {
   const channel = channelFrom(data)
-  return channel && typeof channel === 'object' && channel.id != null ? normalizeChannel(channel, forcedType) : null
+  return channel && typeof channel === 'object' && channel.id != null
+    ? normalizeChannel(channel, forcedType)
+    : null
 }
 
 function channelFrom(data) {
@@ -855,12 +899,16 @@ function channelFrom(data) {
 // users team members / members store se aate hain.
 const forbiddenCompanies = new Set()
 const httpStatus = (error) =>
-  Number(error?.status ?? error?.response?.status ?? error?.details?.status ?? error?.statusCode ?? 0)
+  Number(
+    error?.status ?? error?.response?.status ?? error?.details?.status ?? error?.statusCode ?? 0,
+  )
 const isForbidden = (error) =>
-  httpStatus(error) === 403 || /only admins/i.test(String(error?.message ?? error?.details?.message ?? ''))
+  httpStatus(error) === 403 ||
+  /only admins/i.test(String(error?.message ?? error?.details?.message ?? ''))
 
 function companyMembersRequest(companyId) {
-  if (forbiddenCompanies.has(companyId)) return Promise.resolve({ success: true, data: { members: [] } })
+  if (forbiddenCompanies.has(companyId))
+    return Promise.resolve({ success: true, data: { members: [] } })
   return apiRequest(`/company/${encode(companyId)}/members`).catch((error) => {
     if (isForbidden(error)) {
       forbiddenCompanies.add(companyId)
@@ -943,11 +991,12 @@ export const dmApi = {
   // GET /v1/{company}/direct-channels/{channel}/messages
   // page: 1 = sab se naye messages, 2 = us se purane ... (Laravel ?page=N)
   // Jawab array hai; list.pagination = { page, hasMore } (hasMore null = backend ne nahi bataya)
-  listMessages(companyId, channelId, { page } = {}) {
+  listMessages(companyId, channelId, { page, query: searchQuery } = {}) {
     requireCompany(companyId, 'load messages')
     requireChannel(channelId)
     const query = new URLSearchParams()
     if (page && page > 1) query.set('page', String(page))
+    if (searchQuery?.trim()) query.set('body', searchQuery.trim())
     const suffix = query.size ? `?${query}` : ''
     const path = `${messagesPath(companyId, channelId)}${suffix}`
     return apiRequest(path).then((response) => {

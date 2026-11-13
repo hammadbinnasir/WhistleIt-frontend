@@ -665,32 +665,40 @@ describe('composer conversation', () => {
     wrapper.unmount()
   })
 
-  it.each(['channel', 'dm'])('preserves underline formatting when rendering a %s message', async (type) => {
-    const message = {
-      id: `underline-${type}-message`,
-      content: '<u>Important text</u>',
-      author: 'Another user',
-      from: 'user-2',
-      mine: false,
-      createdAt: new Date().toISOString(),
-    }
-    let wrapper
-    if (type === 'dm') {
-      useDmStore().conversations = [
-        { id: 'underline-dm', type: 'dm', members: [useDmStore().meId, 'user-2'], messages: [message] },
-      ]
-      wrapper = mount(ComposerConversation, {
-        props: { conversationId: 'underline-dm', conversationType: 'dm' },
-      })
-    } else {
-      useMessagesStore().messagesByChannel.general = [message]
-      wrapper = mount(ComposerConversation)
-    }
+  it.each(['channel', 'dm'])(
+    'preserves underline formatting when rendering a %s message',
+    async (type) => {
+      const message = {
+        id: `underline-${type}-message`,
+        content: '<u>Important text</u>',
+        author: 'Another user',
+        from: 'user-2',
+        mine: false,
+        createdAt: new Date().toISOString(),
+      }
+      let wrapper
+      if (type === 'dm') {
+        useDmStore().conversations = [
+          {
+            id: 'underline-dm',
+            type: 'dm',
+            members: [useDmStore().meId, 'user-2'],
+            messages: [message],
+          },
+        ]
+        wrapper = mount(ComposerConversation, {
+          props: { conversationId: 'underline-dm', conversationType: 'dm' },
+        })
+      } else {
+        useMessagesStore().messagesByChannel.general = [message]
+        wrapper = mount(ComposerConversation)
+      }
 
-    expect(wrapper.get('.composer-conversation__message-bubble u').text()).toBe('Important text')
-    expect(wrapper.text()).not.toContain('<u>')
-    wrapper.unmount()
-  })
+      expect(wrapper.get('.composer-conversation__message-bubble u').text()).toBe('Important text')
+      expect(wrapper.text()).not.toContain('<u>')
+      wrapper.unmount()
+    },
+  )
 
   it('sends the important flag to the channel API and renders the backend flag', async () => {
     const wrapper = mount(ComposerConversation)
@@ -1534,9 +1542,7 @@ describe('composer conversation', () => {
       .trigger('click')
 
     await vi.waitFor(() =>
-      expect(document.body.textContent).toContain(
-        'Results are visible to the poll creator only.',
-      ),
+      expect(document.body.textContent).toContain('Results are visible to the poll creator only.'),
     )
     expect(document.body.textContent).toContain('Creator: Another user')
     expect(document.body.textContent).not.toContain('Creator: You')

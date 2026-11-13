@@ -7,7 +7,7 @@ export function getWorkspaces() {
   if (USE_SHELL_MOCKS) {
     return import('./__mocks__/teams.mock').then((mock) => mock.mockWorkspaces())
   }
-  return apiRequest('/company').then(normalizeWorkspaces)
+  return apiRequest('/v1/company').then(normalizeWorkspaces)
 }
 
 export function getWorkspaceTeams(workspaceId) {

@@ -6,6 +6,7 @@ import { useRouter } from 'vue-router'
 import { useUiStore } from '@/stores/ui'
 import { useChannelsStore } from '@/features/channels'
 import { useDmStore } from '@/features/dms/stores/dms'
+import { dmApi } from '@/features/dms/dmApi'
 import { useMessagesStore } from '@/features/messages/messages'
 import MessageAttachment from '@/features/messages/MessageAttachment.vue'
 import { searchMessages, searchFiles, searchLinks, searchUsers } from './search'
@@ -78,6 +79,11 @@ const workspaceUsers = computed(() =>
 )
 const noun = computed(() => ({ text: 'messages', file: 'files', link: 'links' })[tab.value])
 const searchCategory = ref('Messages')
+const resultNoun = computed(() =>
+  tab.value === 'text' && searchCategory.value !== 'Messages'
+    ? searchCategory.value.toLowerCase()
+    : noun.value,
+)
 const categories = ['Messages', 'Companies', 'Teams', 'Channels']
 const categoryCounts = reactive({
   Messages: 0,
@@ -154,53 +160,16 @@ function teamChannelCount(item) {
   ).length
 }
 
-function storedChannelMessagesForSearch() {
-  if (typeof localStorage === 'undefined') return {}
-  try {
-    const stored = JSON.parse(localStorage.getItem('whistleit:channel-messages') || '{}')
-    return stored && typeof stored === 'object' && !Array.isArray(stored) ? stored : {}
-  } catch {
-    return {}
-  }
-}
-
 function channelMatchesQuery(channel, needle) {
   if (!needle) return true
   const channelName = `${channel.name} ${channel.detail || channel.description || ''}`.toLowerCase()
-  if (channelName.includes(needle)) return true
-  if (channel.kind === 'dm') {
-    return (channel.messages || []).some((message) =>
-      String(message.text ?? message.content ?? '')
-        .toLowerCase()
-        .includes(needle),
-    )
-  }
-
-  const messages = storedChannelMessagesForSearch()[String(channel.id)]
-  return (
-    Array.isArray(messages) &&
-    messages.some(
-      (message) =>
-        !message.deleted &&
-        String(message.content ?? message.text ?? '')
-          .toLowerCase()
-          .includes(needle),
-    )
-  )
+  return channelName.includes(needle)
 }
 
-function dmSearchMessages() {
-  if (scope.value === 'channel' && !props.dmConversationId) return []
-
-  const conversations =
-    scope.value === 'channel'
-      ? dmsStore.conversations.filter(
-          (conversation) => String(conversation.id) === String(props.dmConversationId),
-        )
-      : dmsStore.conversations
-
-  return conversations.flatMap((conversation) =>
-    (conversation.messages || []).map((message) => ({
+function mapDmSearchMessages(conversation, messages) {
+  return messages
+    .filter((message) => !message.deleted && !message.scheduled && !message.scheduledAt)
+    .map((message) => ({
       id: message.id,
       text: message.text ?? message.content ?? '',
       sender: dmsStore.usersById?.[message.from]?.name || message.sender || 'Unknown user',
@@ -213,12 +182,15 @@ function dmSearchMessages() {
       createdAt: message.createdAt || '',
       webhook: false,
       attachments: message.attachments || [],
-    })),
-  )
+    }))
 }
 
-async function loadDmMessagesForFileSearch() {
+async function loadDmMessagesForSearch(query = '') {
+  if (scope.value === 'channel' && !props.dmConversationId) return []
   await dmsStore.ensureLoaded()
+
+  const companyId = teamsStore.activeWorkspaceId
+  if (!companyId) throw new Error('Select a company before searching direct messages.')
   const conversations =
     scope.value === 'channel'
       ? dmsStore.conversations.filter(
@@ -226,50 +198,75 @@ async function loadDmMessagesForFileSearch() {
         )
       : dmsStore.conversations
 
+  const results = []
   for (const conversation of conversations) {
-    const loaded = await dmsStore.loadMessages(conversation.id, { force: true })
-    if (!loaded) throw new Error('Unable to load direct-message history for file search.')
+    let page = 1
+    let hasMore = true
+    const seenMessageIds = new Set()
+    while (hasMore) {
+      const messages = await dmApi.listMessages(companyId, conversation.id, { page, query })
+      results.push(...mapDmSearchMessages(conversation, messages))
 
-    while (dmsStore.hasMoreOlder(conversation.id)) {
-      const previousCount = conversation.messages.length
-      const added = await dmsStore.loadOlderMessages(conversation.id)
-      if (!added && dmsStore.hasMoreOlder(conversation.id)) {
-        throw new Error('Unable to load the next page of direct-message history.')
+      const currentPage = Number(messages.pagination?.page) || page
+      if (currentPage < page) {
+        throw new Error('Unable to load direct-message history in order.')
       }
-      if (conversation.messages.length <= previousCount && dmsStore.hasMoreOlder(conversation.id)) {
+      const newMessageCount = messages.reduce((count, message) => {
+        const id = String(message.id ?? '')
+        if (!id || seenMessageIds.has(id)) return count
+        seenMessageIds.add(id)
+        return count + 1
+      }, 0)
+      const lastPageValue = messages.pagination?.lastPage
+      const lastPage = lastPageValue == null ? Number.NaN : Number(lastPageValue)
+      hasMore =
+        typeof messages.pagination?.hasMore === 'boolean'
+          ? messages.pagination.hasMore
+          : Number.isFinite(lastPage) && lastPage > currentPage
+            ? true
+            : Number.isFinite(lastPage)
+              ? false
+              : messages.length >= 15
+      if (hasMore && (messages.length === 0 || newMessageCount === 0)) {
         throw new Error('Direct-message history did not advance to the next page.')
       }
+      page = currentPage + 1
     }
   }
-  return dmSearchMessages()
+  return results
 }
 
-async function loadChannelMessagesForSearch(channelId) {
+async function loadChannelMessagesForSearch(channelId, query = '') {
   const key = String(channelId || '')
   if (!key) return []
 
-  const firstPage = await messagesStore.fetchChannelMessages(key)
+  const searchOptions = { searchOnly: true, ...(query ? { query } : {}) }
+  const firstPage = await messagesStore.fetchChannelMessages(key, searchOptions)
   if (!firstPage.success) throw new Error(firstPage.error || 'Unable to load channel messages.')
 
-  let page = Number(messagesStore.currentPageByChannel[key]) || 1
-  while (messagesStore.hasMorePagesByChannel[key]) {
+  const searchedMessages = [...firstPage.data]
+  let page = Number(firstPage.currentPage) || 1
+  let hasMore = Boolean(firstPage.hasMorePages)
+  while (hasMore) {
     const nextPage = page + 1
     const result = await messagesStore.fetchChannelMessages(key, {
       page: nextPage,
       olderPage: true,
+      ...searchOptions,
     })
     if (!result.success) throw new Error(result.error || 'Unable to load channel messages.')
 
-    const currentPage = Number(messagesStore.currentPageByChannel[key]) || page
+    const currentPage = Number(result.currentPage) || page
     if (currentPage <= page) {
       throw new Error('Unable to load the next page of channel messages.')
     }
     page = currentPage
+    searchedMessages.push(...result.data)
+    hasMore = Boolean(result.hasMorePages)
   }
 
   const channel = channelsStore.getById(key)
-  return messagesStore
-    .messagesFor(key)
+  return searchedMessages
     .filter((message) => !message.deleted && !message.scheduled)
     .map((message) => ({
       id: message.id,
@@ -287,14 +284,14 @@ async function loadChannelMessagesForSearch(channelId) {
     }))
 }
 
-async function loadChannelMessagesForSearchScope() {
+async function loadChannelMessagesForSearchScope(query = '') {
   if (scope.value === 'channel') {
-    return props.dmConversationId ? [] : loadChannelMessagesForSearch(props.channelId)
+    return props.dmConversationId ? [] : loadChannelMessagesForSearch(props.channelId, query)
   }
 
   const loaded = []
   for (const channel of channelsStore.channels) {
-    loaded.push(...(await loadChannelMessagesForSearch(channel.id)))
+    loaded.push(...(await loadChannelMessagesForSearch(channel.id, query)))
   }
   return loaded
 }
@@ -344,9 +341,8 @@ async function run() {
   }
   loading.value = true
   try {
-    const isFileSearch = tab.value === 'file'
-    const dmMessages = isFileSearch ? await loadDmMessagesForFileSearch() : dmSearchMessages()
-    const channelMessages = await loadChannelMessagesForSearchScope()
+    const dmMessages = await loadDmMessagesForSearch(q.value.trim())
+    const channelMessages = await loadChannelMessagesForSearchScope(q.value.trim())
     const params = {
       q: q.value.trim(),
       page: page.value,
@@ -1082,10 +1078,11 @@ const canLoadAttachment = (file) =>
         class="flex flex-1 flex-col items-center justify-center px-4 text-center"
       >
         <template v-if="searched">
-          <h3 class="text-xl font-bold text-slate-900">Nothing turned up</h3>
+          <h3 class="text-xl font-bold text-slate-900">No matching {{ resultNoun }} found</h3>
           <p class="mt-1 text-slate-700">
-            Nothing found against the search. Try using different keywords and filters to get the
-            desired results
+            No matching {{ resultNoun }} were found
+            {{ scope === 'channel' ? 'in this chat' : 'across this team' }}. Try different keywords
+            or filters.
           </p>
         </template>
         <template v-else>
