@@ -2,35 +2,29 @@
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { useUiStore } from '@/stores/ui'
 import { useChannelsStore } from '@/features/channels'
-import { useMessagesStore } from '@/features/messages/messages'
+import { listPolls } from '@/features/composer/api/polls.api'
 
 const props = defineProps({
   channelId: { type: [String, Number], default: '' },
 })
-const POLL_HISTORY_STORAGE_KEY = 'whistleit:channel-poll-history'
 const ui = useUiStore()
 const channels = useChannelsStore()
-const messages = useMessagesStore()
 const loading = ref(false)
 const error = ref('')
-const cachedPolls = ref([])
+const polls = ref([])
 let requestVersion = 0
 
 const channelId = computed(() => String(props.channelId || ''))
 const channelName = computed(() => channels.getById(channelId.value)?.name || 'this channel')
-function pollStatus(poll, message = {}) {
-  const status = String(poll.status ?? message.poll_status ?? '').toLowerCase()
-  const closeAt = Date.parse(
-    poll.scheduleClose ?? poll.schedule_close ?? poll.close_at ?? message.close_at ?? '',
-  )
-  const startAt = Date.parse(
-    poll.scheduleStart ?? poll.schedule_start ?? poll.start_at ?? message.start_at ?? '',
-  )
+function pollStatus(poll) {
+  const status = String(poll.status ?? poll.poll_status ?? '').toLowerCase()
+  const closeAt = Date.parse(poll.scheduleClose ?? poll.schedule_close ?? poll.close_at ?? '')
+  const startAt = Date.parse(poll.scheduleStart ?? poll.schedule_start ?? poll.start_at ?? '')
   const closed =
     poll.closed === true ||
     poll.is_closed === true ||
-    message.poll_closed === true ||
-    message.is_poll_closed === true ||
+    poll.poll_closed === true ||
+    poll.is_poll_closed === true ||
     ['closed', 'complete', 'completed'].includes(status) ||
     (Number.isFinite(closeAt) && closeAt <= Date.now())
   if (closed) return 'Closed'
@@ -40,91 +34,53 @@ function pollStatus(poll, message = {}) {
   return 'Open'
 }
 
-const livePolls = computed(() => {
-  const channelMessagePolls = messages
-    .messagesFor(channelId.value)
-    .filter((message) => {
-      const content = String(message.content ?? message.text ?? '')
-      return (
-        !message.deleted &&
-        !message.scheduled &&
-        Boolean(message.poll || message.poll_id || message.pollId || /^Poll:\s*.+/m.test(content))
-      )
-    })
-    .map((message) => {
-      const poll = message.poll || {}
-      const content = String(message.content ?? message.text ?? '')
-      const legacyTitle = content.match(/^Poll:\s*(.+)$/m)?.[1]?.trim()
-      return {
-        id: String(poll.id ?? message.poll_id ?? message.pollId ?? message.id),
-        title:
-          poll.title ??
-          poll.question ??
-          message.poll_title ??
-          message.pollTitle ??
-          legacyTitle ??
-          content,
-        status: pollStatus(poll, message),
-        audience:
-          poll.audience ?? poll.audience_responses ?? message.audience_responses ?? 'public',
-        createdAt: message.createdAt ?? poll.createdAt ?? poll.created_at ?? '',
-        conversation: { id: channelId.value, name: channelName.value },
-      }
-    })
-    .reverse()
-  const channelUiPolls = ui.polls
-    .filter(
-      (poll) =>
-        String(poll.conversation?.id ?? '') === channelId.value && poll.conversation?.kind !== 'dm',
-    )
-    .map((poll) => ({ ...poll, status: pollStatus(poll) }))
-  const byId = new Map(channelMessagePolls.map((poll) => [poll.id, poll]))
-  for (const poll of channelUiPolls) byId.set(String(poll.id), poll)
-  return [...byId.values()]
-})
-const polls = computed(() => {
-  const byId = new Map(cachedPolls.value.map((poll) => [poll.id, poll]))
-  for (const poll of livePolls.value) byId.set(poll.id, poll)
-  return [...byId.values()].sort(
+function pollChannelId(poll) {
+  const channel =
+    poll.channel ?? poll.conversation ?? poll.message?.channel ?? poll.message?.conversation
+  const channelId =
+    poll.channel_id ??
+    poll.channelId ??
+    (typeof channel === 'object'
+      ? (channel.id ?? channel.channel_id ?? channel.channelId)
+      : channel) ??
+    poll.conversation_id ??
+    poll.conversationId ??
+    poll.message?.channel_id ??
+    poll.message?.channelId
+  return channelId == null ? '' : String(channelId)
+}
+
+function mapHistoryPoll(record) {
+  const poll = record.poll ?? record
+  const id = poll.id ?? poll.poll_id ?? record.id ?? record.poll_id
+  if (id == null) throw new Error('A poll history item is missing its ID.')
+  const pollChannel = pollChannelId(record) || pollChannelId(poll)
+  if (!pollChannel) throw new Error(`Poll ${id} is missing its channel ID.`)
+
+  return {
+    id: String(id),
+    title: poll.title ?? poll.question ?? poll.poll_title ?? poll.name ?? '',
+    status: pollStatus(poll),
+    audience: poll.audience ?? poll.audience_responses ?? 'public',
+    createdAt: poll.createdAt ?? poll.created_at ?? record.createdAt ?? record.created_at ?? '',
+    conversation: {
+      id: pollChannel,
+      name: channels.getById(pollChannel)?.name || pollChannel,
+    },
+  }
+}
+
+const sortedPolls = computed(() =>
+  [...polls.value].sort(
     (left, right) => new Date(right.createdAt || 0) - new Date(left.createdAt || 0),
-  )
-})
-
-function readCachedPolls(id) {
-  if (!id || typeof localStorage === 'undefined') return []
-  try {
-    const saved = JSON.parse(localStorage.getItem(POLL_HISTORY_STORAGE_KEY) || '{}')
-    const channelPolls = saved?.[id]
-    return Array.isArray(channelPolls)
-      ? channelPolls.filter((poll) => poll && typeof poll === 'object' && poll.id != null)
-      : []
-  } catch (loadError) {
-    console.error('Unable to load cached channel poll history:', loadError)
-    return []
-  }
-}
-
-function persistPolls(id, channelPolls) {
-  if (!id || !channelPolls.length || typeof localStorage === 'undefined') return
-  try {
-    const saved = JSON.parse(localStorage.getItem(POLL_HISTORY_STORAGE_KEY) || '{}')
-    const history = saved && typeof saved === 'object' && !Array.isArray(saved) ? saved : {}
-    const byId = new Map(
-      (Array.isArray(history[id]) ? history[id] : []).map((poll) => [String(poll.id), poll]),
-    )
-    for (const poll of channelPolls) byId.set(poll.id, poll)
-    history[id] = [...byId.values()]
-    localStorage.setItem(POLL_HISTORY_STORAGE_KEY, JSON.stringify(history))
-  } catch (saveError) {
-    console.error('Unable to save channel poll history:', saveError)
-  }
-}
+  ),
+)
 
 async function loadChannelPolls() {
   const id = channelId.value
   const version = ++requestVersion
   error.value = ''
-  cachedPolls.value = readCachedPolls(id)
+  polls.value = []
   if (!id) {
     loading.value = false
     return
@@ -132,17 +88,9 @@ async function loadChannelPolls() {
 
   loading.value = true
   try {
-    const firstPage = await messages.fetchChannelMessages(id)
-    if (!firstPage.success) throw new Error(firstPage.error || 'Unable to load channel polls.')
-
-    let page = Number(messages.currentPageByChannel[id]) || 1
-    while (messages.hasMorePagesByChannel[id]) {
-      const result = await messages.fetchChannelMessages(id, { page: page + 1, olderPage: true })
-      if (!result.success) throw new Error(result.error || 'Unable to load channel polls.')
-      const nextPage = Number(messages.currentPageByChannel[id]) || page
-      if (nextPage <= page) throw new Error('Unable to load the next page of channel polls.')
-      page = nextPage
-    }
+    const records = await listPolls(id)
+    const history = records.map(mapHistoryPoll).filter((poll) => poll.conversation.id === id)
+    if (version === requestVersion) polls.value = history
   } catch (loadError) {
     if (version === requestVersion) {
       error.value = loadError?.message || 'Unable to load channel polls.'
@@ -151,16 +99,6 @@ async function loadChannelPolls() {
     if (version === requestVersion) loading.value = false
   }
 }
-
-watch(
-  livePolls,
-  (channelPolls) => {
-    if (!channelPolls.length) return
-    persistPolls(channelId.value, channelPolls)
-    cachedPolls.value = readCachedPolls(channelId.value)
-  },
-  { deep: true, immediate: true },
-)
 
 function formatDate(value) {
   const date = new Date(value)
@@ -222,12 +160,12 @@ onBeforeUnmount(() => {
       <p v-else-if="error" class="mt-16 text-center text-sm text-red-600" role="alert">
         {{ error }}
       </p>
-      <p v-else-if="!polls.length" class="mt-16 text-center text-sm text-slate-500">
+      <p v-else-if="!sortedPolls.length" class="mt-16 text-center text-sm text-slate-500">
         No polls created in this channel yet.
       </p>
 
       <article
-        v-for="poll in polls"
+        v-for="poll in sortedPolls"
         :key="poll.id"
         class="relative border-b border-slate-200 px-5 py-5"
       >

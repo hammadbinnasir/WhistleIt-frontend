@@ -28,11 +28,32 @@ function parsedData(response) {
   return response?.data ?? response
 }
 
+function pollsFrom(value, depth = 0) {
+  if (Array.isArray(value)) return value
+  if (!value || typeof value !== 'object' || depth >= 6) return null
+
+  for (const key of ['polls', 'items', 'results', 'data']) {
+    if (value[key] !== undefined) {
+      const polls = pollsFrom(value[key], depth + 1)
+      if (polls) return polls
+    }
+  }
+  return null
+}
+
+export async function listPolls(channelId) {
+  if (channelId == null || channelId === '') {
+    throw new ApiRequestError('A channel ID is required.', { status: 400 })
+  }
+  const path = withQuery('/v1/polls', { channel_id: channelId })
+  const polls = pollsFrom(parsedData(await apiRequest(path)))
+  if (!polls) throw new Error('The server returned an invalid polls list.')
+  return polls
+}
+
 export async function createPoll(channelId, payload) {
   const path = `/v1/${requireId(channelId, 'channel ID')}/polls`
-  return parsedData(
-    await apiRequest(path, { method: 'POST', body: JSON.stringify(payload) }),
-  )
+  return parsedData(await apiRequest(path, { method: 'POST', body: JSON.stringify(payload) }))
 }
 
 export async function submitPollAnswer(payload) {
@@ -52,7 +73,5 @@ export async function getPollResult(queryParams = {}) {
 export async function closePoll(pollId, payload) {
   const options = { method: 'PUT' }
   if (payload !== undefined) options.body = JSON.stringify(payload)
-  return parsedData(
-    await apiRequest(`/v1/polls/${requireId(pollId, 'poll ID')}/close`, options),
-  )
+  return parsedData(await apiRequest(`/v1/polls/${requireId(pollId, 'poll ID')}/close`, options))
 }

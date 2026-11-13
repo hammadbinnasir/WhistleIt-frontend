@@ -11,6 +11,7 @@ import {
   createPoll,
   getPollQuestions,
   getPollResult,
+  listPolls,
   submitPollAnswer,
 } from './polls.api'
 import { ApiRequestError } from '@/lib/api/client'
@@ -40,27 +41,47 @@ describe('composer polls API', () => {
     })
   })
 
+  it('loads polls from the history endpoint', async () => {
+    const polls = [{ id: 'poll-1', channel_id: 'channel-1', title: 'Lunch' }]
+    apiRequest.mockResolvedValue({ success: true, data: { polls } })
+
+    await expect(listPolls('channel-1')).resolves.toEqual(polls)
+    expect(apiRequest).toHaveBeenCalledWith('/v1/polls?channel_id=channel-1')
+  })
+
+  it('rejects an invalid poll history response', async () => {
+    apiRequest.mockResolvedValue({ success: true, data: { message: 'No poll list' } })
+
+    await expect(listPolls('channel-1')).rejects.toThrow(
+      'The server returned an invalid polls list.',
+    )
+  })
+
+  it('requires a channel ID before loading polls', async () => {
+    await expect(listPolls('')).rejects.toThrow('A channel ID is required.')
+    expect(apiRequest).not.toHaveBeenCalled()
+  })
+
   it('keeps question and result query parameters caller-supplied', async () => {
     apiRequest.mockResolvedValue({ success: true, data: [] })
 
-    await expect(getPollQuestions({ poll_id: 'poll 1', include: ['choices', 'status'] })).resolves.toEqual([])
+    await expect(
+      getPollQuestions({ poll_id: 'poll 1', include: ['choices', 'status'] }),
+    ).resolves.toEqual([])
     await expect(getPollResult({ result: 'backend-defined' })).resolves.toEqual([])
     expect(apiRequest).toHaveBeenNthCalledWith(
       1,
       '/v1/poll/get-question?poll_id=poll+1&include=choices&include=status',
     )
-    expect(apiRequest).toHaveBeenNthCalledWith(
-      2,
-      '/v1/poll/get-result?result=backend-defined',
-    )
+    expect(apiRequest).toHaveBeenNthCalledWith(2, '/v1/poll/get-result?result=backend-defined')
   })
 
   it('gets poll results by channel and poll ID', async () => {
     apiRequest.mockResolvedValue({ success: true, data: { results: [] } })
 
-    await expect(
-      getPollResult({ channel_id: 'channel 1', poll_id: 'poll 1' }),
-    ).resolves.toEqual({ results: [] })
+    await expect(getPollResult({ channel_id: 'channel 1', poll_id: 'poll 1' })).resolves.toEqual({
+      results: [],
+    })
     expect(apiRequest).toHaveBeenCalledWith(
       '/v1/poll/get-result?channel_id=channel+1&poll_id=poll+1',
     )

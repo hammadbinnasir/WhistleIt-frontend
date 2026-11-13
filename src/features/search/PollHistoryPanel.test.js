@@ -4,137 +4,76 @@ import { createPinia, setActivePinia } from 'pinia'
 import { useChannelsStore } from '@/features/channels'
 import PollHistoryPanel from './PollHistoryPanel.vue'
 
-const messageStore = vi.hoisted(() => ({
-  messagesFor: vi.fn(),
-  fetchChannelMessages: vi.fn(),
-  currentPageByChannel: {},
-  hasMorePagesByChannel: {},
+const pollApi = vi.hoisted(() => ({
+  listPolls: vi.fn(),
 }))
-vi.mock('@/features/messages/messages', () => ({
-  useMessagesStore: () => messageStore,
-}))
+vi.mock('@/features/composer/api/polls.api', () => pollApi)
 
 describe('poll history panel', () => {
   beforeEach(() => {
     localStorage.clear()
     setActivePinia(createPinia())
-    messageStore.messagesFor.mockReset().mockReturnValue([])
-    messageStore.fetchChannelMessages.mockReset().mockResolvedValue({ success: true })
-    messageStore.currentPageByChannel = {}
-    messageStore.hasMorePagesByChannel = {}
+    pollApi.listPolls.mockReset().mockResolvedValue([])
   })
 
-  it('loads all pages and displays polls from the selected channel message history', async () => {
+  it('shows channel polls returned by the API and removes the old local history', async () => {
     const channelId = 'channel-1'
     useChannelsStore().upsertChannel({ id: channelId, name: 'Research' })
-    const channelPoll = {
-      id: 'message-2',
-      poll_id: 'poll-2',
-      content: 'My channel poll',
-      createdAt: '2026-11-11T10:00:00.000Z',
-    }
-    messageStore.messagesFor.mockReturnValue([
+    localStorage.setItem(
+      'whistleit:channel-poll-history',
+      JSON.stringify({
+        [channelId]: [{ id: 'local-poll', title: 'Local-only poll' }],
+      }),
+    )
+    pollApi.listPolls.mockResolvedValue([
       {
-        id: 'message-1',
-        poll_id: 'poll-1',
-        content: 'Earlier poll',
-        createdAt: '2026-11-10T10:00:00.000Z',
-      },
-      channelPoll,
-      {
-        id: 'regular-message',
-        content: 'Not a poll',
-        createdAt: '2026-11-11T11:00:00.000Z',
+        id: 'server-poll-1',
+        channel_id: channelId,
+        title: 'Created in the channel chat',
+        status: 'open',
+        audience_responses: 'anonymous',
+        created_at: '2026-11-11T10:00:00.000Z',
       },
       {
-        id: 'deleted-poll',
-        poll_id: 'poll-deleted',
-        content: 'Deleted poll',
-        deleted: true,
+        id: 'other-channel-poll',
+        channel_id: 'another-channel',
+        title: 'Poll in another channel',
+        created_at: '2026-11-10T10:00:00.000Z',
       },
     ])
-    let page = 0
-    messageStore.fetchChannelMessages.mockImplementation(async (_id, options = {}) => {
-      page = options.page || 1
-      messageStore.currentPageByChannel[channelId] = page
-      messageStore.hasMorePagesByChannel[channelId] = page < 3
-      return { success: true }
-    })
 
     const wrapper = mount(PollHistoryPanel, { props: { channelId } })
-    await vi.waitFor(() => expect(wrapper.text()).toContain('My channel poll'))
-    await vi.waitFor(() => expect(wrapper.find('[role="status"]').exists()).toBe(false))
+    await vi.waitFor(() => expect(wrapper.text()).toContain('Created in the channel chat'))
 
+    expect(pollApi.listPolls).toHaveBeenCalledWith(channelId)
     expect(wrapper.text()).toContain('Polls in Research')
-    expect(wrapper.text()).toContain('Earlier poll')
-    expect(wrapper.text()).not.toContain('Not a poll')
-    expect(wrapper.text()).not.toContain('Deleted poll')
-    expect(messageStore.fetchChannelMessages).toHaveBeenNthCalledWith(1, channelId)
-    expect(messageStore.fetchChannelMessages).toHaveBeenNthCalledWith(2, channelId, {
-      page: 2,
-      olderPage: true,
-    })
-    expect(messageStore.fetchChannelMessages).toHaveBeenNthCalledWith(3, channelId, {
-      page: 3,
-      olderPage: true,
-    })
-
+    expect(wrapper.text()).toContain('Anonymous')
+    expect(wrapper.text()).not.toContain('Poll in another channel')
+    expect(wrapper.text()).not.toContain('Local-only poll')
+    expect(localStorage.getItem('whistleit:channel-poll-history')).toBeNull()
     wrapper.unmount()
   })
 
-  it('reports an error when channel history cannot be loaded', async () => {
-    messageStore.fetchChannelMessages.mockResolvedValue({
-      success: false,
-      error: 'Channel access denied.',
-    })
+  it('reports an error when the poll history API request fails', async () => {
+    pollApi.listPolls.mockRejectedValue(new Error('Poll access denied.'))
 
     const wrapper = mount(PollHistoryPanel, { props: { channelId: 'private-channel' } })
-    await vi.waitFor(() => expect(wrapper.text()).toContain('Channel access denied.'))
+    await vi.waitFor(() => expect(wrapper.text()).toContain('Poll access denied.'))
 
     expect(wrapper.get('[role="alert"]').exists()).toBe(true)
     wrapper.unmount()
   })
 
-  it('keeps discovered channel polls visible after remount when server history is empty', async () => {
-    const channelId = 'persistent-channel'
-    useChannelsStore().upsertChannel({ id: channelId, name: 'Persistent Channel' })
-    messageStore.messagesFor.mockReturnValue([
-      {
-        id: 'persistent-poll-message',
-        poll_id: 'persistent-poll',
-        content: 'Poll: Keep this poll',
-        createdAt: '2026-11-11T10:00:00.000Z',
-      },
-    ])
-
-    const firstPanel = mount(PollHistoryPanel, { props: { channelId } })
-    await vi.waitFor(() =>
-      expect(localStorage.getItem('whistleit:channel-poll-history')).toContain('persistent-poll'),
-    )
-    firstPanel.unmount()
-
-    messageStore.messagesFor.mockReturnValue([])
-    const refreshedPanel = mount(PollHistoryPanel, { props: { channelId } })
-    await vi.waitFor(() => expect(refreshedPanel.text()).toContain('Keep this poll'))
-
-    expect(refreshedPanel.text()).not.toContain('No polls created')
-    refreshedPanel.unmount()
-  })
-
-  it('shows scheduled poll status in channel history', async () => {
+  it('shows scheduled status for polls returned by the API', async () => {
     const channelId = 'scheduled-channel'
     useChannelsStore().upsertChannel({ id: channelId, name: 'Scheduled Channel' })
-    messageStore.messagesFor.mockReturnValue([
+    pollApi.listPolls.mockResolvedValue([
       {
-        id: 'scheduled-message',
-        poll_id: 'server-scheduled-poll',
-        content: 'Future poll',
-        poll: {
-          id: 'server-scheduled-poll',
-          title: 'Future poll',
-          scheduleStart: '2099-11-11T12:00:00.000Z',
-        },
-        createdAt: '2026-11-11T10:00:00.000Z',
+        id: 'server-scheduled-poll',
+        channel_id: channelId,
+        title: 'Future poll',
+        schedule_start: '2099-11-11T12:00:00.000Z',
+        created_at: '2026-11-11T10:00:00.000Z',
       },
     ])
 

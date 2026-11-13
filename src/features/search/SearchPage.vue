@@ -180,7 +180,7 @@ function mapDmSearchMessages(conversation, messages) {
         kind: 'dm',
       },
       createdAt: message.createdAt || '',
-      webhook: false,
+      webhook: Boolean(message.webhook ?? message.is_webhook ?? message.isWebhook),
       attachments: message.attachments || [],
     }))
 }
@@ -274,7 +274,7 @@ async function loadChannelMessagesForSearch(channelId, query = '') {
       sender: message.author || 'Unknown user',
       userId: String(message.authorId ?? message.from ?? ''),
       createdAt: message.createdAt || '',
-      webhook: false,
+      webhook: Boolean(message.webhook ?? message.is_webhook ?? message.isWebhook),
       attachments: message.attachments || [],
       conversation: {
         id: key,
@@ -341,8 +341,9 @@ async function run() {
   }
   loading.value = true
   try {
-    const dmMessages = await loadDmMessagesForSearch(q.value.trim())
-    const channelMessages = await loadChannelMessagesForSearchScope(q.value.trim())
+    const apiBodyQuery = tab.value === 'text' ? q.value.trim() : ''
+    const dmMessages = await loadDmMessagesForSearch(apiBodyQuery)
+    const channelMessages = await loadChannelMessagesForSearchScope(apiBodyQuery)
     const params = {
       q: q.value.trim(),
       page: page.value,
