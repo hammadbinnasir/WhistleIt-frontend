@@ -3,6 +3,7 @@ import { searchFiles, searchLinks, searchMessages } from './search'
 
 beforeEach(() => {
   localStorage.clear()
+  sessionStorage.clear()
 })
 
 describe('search date filters', () => {
@@ -126,6 +127,31 @@ describe('server-loaded channel messages', () => {
     expect(result.total).toBe(1)
   })
 
+  it('ignores files from local and session storage', async () => {
+    const storedMessage = {
+      id: 'stored-file-message',
+      attachments: [{ id: 'stored-file', name: 'api-report-local.pdf' }],
+      conversation: { id: 'live-channel', kind: 'public' },
+    }
+    localStorage.setItem('whistleit:channel-messages', JSON.stringify([storedMessage]))
+    sessionStorage.setItem('whistleit:channel-messages', JSON.stringify([storedMessage]))
+
+    const result = await searchFiles({
+      q: 'api-report',
+      channelId: 'live-channel',
+      channelMessages: [
+        {
+          id: 'api-file-message',
+          attachments: [{ id: 'api-file', name: 'api-report-server.pdf' }],
+          conversation: { id: 'live-channel', kind: 'public' },
+        },
+      ],
+    })
+
+    expect(result.items.map((item) => item.id)).toEqual(['api-file-message-api-file'])
+    expect(result.total).toBe(1)
+  })
+
   it('searches server-loaded messages supplied for the current channel', async () => {
     const result = await searchMessages({
       q: 'server loaded search',
@@ -233,6 +259,18 @@ describe('server-loaded channel messages', () => {
         ],
       }),
     )
+    sessionStorage.setItem(
+      'whistleit:channel-messages',
+      JSON.stringify({
+        general: [
+          {
+            id: 'session-stored-link',
+            content: 'https://stored.example/session-link',
+            createdAt: '2026-11-05T10:00:00.000Z',
+          },
+        ],
+      }),
+    )
     const result = await searchLinks({
       channelId: 'general',
       channelMessages: [
@@ -257,6 +295,7 @@ describe('server-loaded channel messages', () => {
       },
     ])
     expect(result.items.map((item) => item.id)).not.toContain('stored-link')
+    expect(result.items.map((item) => item.id)).not.toContain('session-stored-link')
     expect(result.total).toBe(1)
   })
 

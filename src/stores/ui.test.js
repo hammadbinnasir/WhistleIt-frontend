@@ -59,7 +59,11 @@ describe('ui store', () => {
     ])
   })
 
-  it('records plain-title channel polls and restores them after a store refresh', () => {
+  it('keeps plain-title channel polls in memory without persisting history locally', () => {
+    localStorage.setItem(
+      'whistleit:channel-poll-history',
+      JSON.stringify({ 'channel-1': [{ id: 'old-poll', title: 'Old local poll' }] }),
+    )
     const ui = useUiStore()
     ui.addPoll(
       {
@@ -79,17 +83,13 @@ describe('ui store', () => {
         conversation: { id: 'channel-1', name: 'Research', kind: 'public' },
       }),
     )
-    expect(
-      JSON.parse(localStorage.getItem('whistleit:channel-poll-history'))['channel-1'],
-    ).toHaveLength(1)
+    expect(localStorage.getItem('whistleit:channel-poll-history')).toBeNull()
 
     setActivePinia(createPinia())
-    expect(useUiStore().polls).toContainEqual(
-      expect.objectContaining({ id: 'poll-1', title: 'My poll' }),
-    )
+    expect(useUiStore().polls).toEqual([])
   })
 
-  it('persists scheduled poll status and updates it to closed', () => {
+  it('updates scheduled poll status in memory without saving local history', () => {
     const ui = useUiStore()
     const conversation = { id: 'channel-1', name: 'Research', kind: 'public' }
     const scheduledPoll = {
@@ -110,12 +110,10 @@ describe('ui store', () => {
       conversation,
     )
     expect(ui.polls[0].status).toBe('Closed')
-    expect(
-      JSON.parse(localStorage.getItem('whistleit:channel-poll-history'))['channel-1'][0].status,
-    ).toBe('Closed')
+    expect(localStorage.getItem('whistleit:channel-poll-history')).toBeNull()
 
     setActivePinia(createPinia())
-    expect(useUiStore().polls[0].status).toBe('Closed')
+    expect(useUiStore().polls).toEqual([])
   })
 
   it('opens and closes search panels and channel settings', () => {

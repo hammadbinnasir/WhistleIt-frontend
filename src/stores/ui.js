@@ -5,7 +5,13 @@ import { computed, ref } from 'vue'
 // Server data (messages, channels from the API) does NOT belong here.
 export const useUiStore = defineStore('ui', () => {
   const PINNED_MESSAGES_STORAGE_KEY = 'whistleit:pinned-messages'
-  const POLL_HISTORY_STORAGE_KEY = 'whistleit:channel-poll-history'
+  const LEGACY_POLL_HISTORY_STORAGE_KEY = 'whistleit:channel-poll-history'
+
+  try {
+    localStorage.removeItem(LEGACY_POLL_HISTORY_STORAGE_KEY)
+  } catch (error) {
+    console.error('Unable to remove cached channel poll history:', error)
+  }
 
   function loadPinnedMessages() {
     try {
@@ -25,33 +31,6 @@ export const useUiStore = defineStore('ui', () => {
     }
   }
 
-  function loadPollHistory() {
-    try {
-      const saved = JSON.parse(localStorage.getItem(POLL_HISTORY_STORAGE_KEY) || '{}')
-      return saved && typeof saved === 'object' && !Array.isArray(saved) ? saved : {}
-    } catch (error) {
-      console.error('Unable to load channel poll history:', error)
-      return {}
-    }
-  }
-
-  function persistPollHistory(poll) {
-    const channelId = String(poll.conversation?.id ?? '')
-    if (!channelId || poll.conversation?.kind === 'dm') return
-
-    try {
-      const history = loadPollHistory()
-      const channelPolls = Array.isArray(history[channelId]) ? history[channelId] : []
-      const existingIndex = channelPolls.findIndex((item) => String(item.id) === String(poll.id))
-      if (existingIndex === -1) channelPolls.unshift(poll)
-      else channelPolls[existingIndex] = { ...channelPolls[existingIndex], ...poll }
-      history[channelId] = channelPolls
-      localStorage.setItem(POLL_HISTORY_STORAGE_KEY, JSON.stringify(history))
-    } catch (error) {
-      console.error('Unable to save channel poll history:', error)
-    }
-  }
-
   // state
   const selectedChannelId = ref(null)
   const sidebarOpen = ref(true)
@@ -60,7 +39,7 @@ export const useUiStore = defineStore('ui', () => {
   const channelSettingsTab = ref('settings')
   const toasts = ref([])
   const pinnedMessages = ref(loadPinnedMessages())
-  const polls = ref(Object.values(loadPollHistory()).flat())
+  const polls = ref([])
   let nextToastId = 0
 
   // modal visibility flags
@@ -137,7 +116,6 @@ export const useUiStore = defineStore('ui', () => {
     )
     if (existingIndex === -1) polls.value.unshift(poll)
     else polls.value[existingIndex] = { ...polls.value[existingIndex], ...poll }
-    persistPollHistory(poll)
   }
   function togglePinnedMessage(message, conversation) {
     const id = String(message.id)

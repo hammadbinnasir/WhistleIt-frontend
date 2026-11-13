@@ -7,13 +7,7 @@ import {
 
 // SearchPage supplies messages loaded from the API; this module applies local filters.
 
-const FILES = []
 const wait = (ms = 250) => new Promise((r) => setTimeout(r, ms))
-
-// Lets the composer / upload code make a sent file show up in File search (mock mode only).
-export function addMockFile(file) {
-  FILES.unshift({ id: crypto.randomUUID(), createdAt: new Date().toISOString(), ...file })
-}
 
 function applyFilters(
   list,
@@ -132,7 +126,7 @@ export async function searchFiles(p) {
       }
     }),
   )
-  const all = applyFilters([...FILES, ...messageFiles], p, 'name')
+  const all = applyFilters(messageFiles, p, 'name')
   const size = p.pageSize || 6
   const page = p.page || 1
   return {

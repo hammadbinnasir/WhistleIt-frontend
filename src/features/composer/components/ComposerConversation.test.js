@@ -1855,7 +1855,7 @@ describe('composer conversation', () => {
     wrapper.unmount()
   })
 
-  it('allows closing a scheduled poll and persists its closed status to history', async () => {
+  it('allows closing a scheduled poll without persisting its history locally', async () => {
     const messages = useMessagesStore()
     messages.messagesByChannel.general = [
       {
@@ -1892,7 +1892,7 @@ describe('composer conversation', () => {
     expect(useUiStore().polls).toContainEqual(
       expect.objectContaining({ id: 'server-scheduled-poll', status: 'Closed' }),
     )
-    expect(localStorage.getItem('whistleit:channel-poll-history')).toContain('"status":"Closed"')
+    expect(localStorage.getItem('whistleit:channel-poll-history')).toBeNull()
     wrapper.unmount()
   })
 
