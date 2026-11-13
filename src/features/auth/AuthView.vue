@@ -13,8 +13,10 @@ const isForgotPassword = computed(() => route.path === '/forgot-password')
 const isResetPassword = computed(
   () => route.name === 'reset-password' || route.path === '/reset-password',
 )
+const isLogin = computed(() => !isSignup.value && !isForgotPassword.value && !isResetPassword.value)
 const resetToken = computed(() => (typeof route.query.token === 'string' ? route.query.token : ''))
 const form = ref(null)
+const emailInput = ref(null)
 const fullName = ref('')
 const company = ref('')
 const email = ref('')
@@ -27,6 +29,17 @@ const showConfirmPassword = ref(false)
 const feedback = ref('')
 const feedbackIsSuccess = ref(false)
 const isSubmitting = ref(false)
+const emailInputError = ref('')
+const signupFieldErrors = ref({})
+const signupValidationAttempted = ref(false)
+const emailErrorMessage = computed(() => {
+  if (isSignup.value) return signupFieldErrors.value.email || ''
+  if (isLogin.value || isForgotPassword.value) return emailInputError.value
+  return ''
+})
+
+const fullNamePattern = /^[\p{L}]+(?: +[\p{L}]+)*$/u
+const companyNamePattern = /^[\p{L}\p{N}]+(?: +[\p{L}\p{N}]+)*$/u
 
 watch(
   () => route.fullPath,
@@ -43,6 +56,9 @@ watch(
     acceptedTerms.value = false
     showPassword.value = false
     showConfirmPassword.value = false
+    emailInputError.value = ''
+    signupFieldErrors.value = {}
+    signupValidationAttempted.value = false
     if (route.query.verified === 'true') {
       feedback.value = 'Your email has been verified successfully! You can now log in.'
       feedbackIsSuccess.value = true
@@ -58,11 +74,86 @@ watch(
   { immediate: true },
 )
 
+function validateSignupField(field) {
+  let error = ''
+
+  if (field === 'fullName') {
+    const value = fullName.value.trim()
+    if (!value) error = 'This is a required field'
+    else if (!fullNamePattern.test(value)) error = 'Name only contains alphabets.'
+  } else if (field === 'company') {
+    const value = company.value.trim()
+    if (!companyNamePattern.test(value)) {
+      error = 'Company name only contain alphabet or numbers'
+    }
+  } else if (field === 'email') {
+    if (!email.value.trim()) error = 'Email Address is required'
+    else if (emailInput.value?.validity.typeMismatch) error = 'E-mail must be valid.'
+  } else if (field === 'password') {
+    if (!password.value) error = 'Required.'
+    else if (password.value.length < 8) error = 'Password must contain at least 8 characters.'
+  } else if (field === 'confirmPassword') {
+    if (!confirmPassword.value) error = 'Required.'
+    else if (confirmPassword.value !== password.value) error = 'Passwords do not match.'
+  } else if (field === 'terms' && !acceptedTerms.value) {
+    error = 'Required.'
+  }
+
+  signupFieldErrors.value[field] = error
+  return !error
+}
+
+function validateEmailInput() {
+  if (!email.value.trim()) emailInputError.value = 'Email Address is required'
+  else if (emailInput.value?.validity.typeMismatch) {
+    emailInputError.value = 'E-mail must be valid.'
+  } else {
+    emailInputError.value = ''
+  }
+}
+
+function handleEmailInput() {
+  if (isSignup.value) handleSignupInput('email')
+  else if (isLogin.value || isForgotPassword.value) validateEmailInput()
+}
+
+function handleEmailBlur() {
+  if (isSignup.value) validateSignupField('email')
+  else if (isLogin.value || isForgotPassword.value) validateEmailInput()
+}
+
+function handleSignupInput(field) {
+  validateSignupField(field)
+
+  if (
+    field === 'password' &&
+    (signupValidationAttempted.value ||
+      confirmPassword.value ||
+      signupFieldErrors.value.confirmPassword)
+  ) {
+    validateSignupField('confirmPassword')
+  }
+}
+
+function validateSignup() {
+  signupValidationAttempted.value = true
+  const fields = ['fullName', 'company', 'email', 'password', 'confirmPassword', 'terms']
+  fields.forEach(validateSignupField)
+  return fields.every((field) => !signupFieldErrors.value[field])
+}
+
 async function submitForm() {
   feedback.value = ''
   feedbackIsSuccess.value = false
 
-  if (!form.value.reportValidity()) return
+  if (isSignup.value) {
+    if (!validateSignup()) return
+  } else if (isLogin.value || isForgotPassword.value) {
+    validateEmailInput()
+    if (emailInputError.value || !form.value.reportValidity()) return
+  } else if (!form.value.reportValidity()) {
+    return
+  }
 
   if (
     (isSignup.value || isResetPassword.value) &&
@@ -108,7 +199,7 @@ async function submitForm() {
     const response = isSignup.value
       ? await register({
           name: fullName.value,
-          company: company.value,
+          company: company.value.trim(),
           email: email.value,
           password: password.value,
           password_confirmation: confirmPassword.value,
@@ -198,6 +289,7 @@ async function submitForm() {
           ref="form"
           class="auth-form"
           :autocomplete="isSignup ? 'off' : 'on'"
+          :novalidate="isSignup || isLogin || isForgotPassword"
           @submit.prevent="submitForm"
         >
           <template v-if="isSignup">
@@ -205,36 +297,71 @@ async function submitForm() {
             <input
               id="full-name"
               v-model.trim="fullName"
+              :class="{ 'auth-input--invalid': signupFieldErrors.fullName }"
+              :aria-invalid="signupFieldErrors.fullName ? 'true' : 'false'"
+              :aria-describedby="signupFieldErrors.fullName ? 'full-name-error' : undefined"
               name="name"
               type="text"
               autocomplete="off"
               placeholder="Full Name*"
               required
+              @input="handleSignupInput('fullName')"
+              @blur="validateSignupField('fullName')"
             />
+            <p
+              v-if="signupFieldErrors.fullName"
+              id="full-name-error"
+              class="auth-field-error"
+              role="alert"
+            >
+              {{ signupFieldErrors.fullName }}
+            </p>
 
             <label class="sr-only" for="company">Company Name</label>
             <input
               id="company"
               v-model.trim="company"
+              :class="{ 'auth-input--invalid': signupFieldErrors.company }"
+              :aria-invalid="signupFieldErrors.company ? 'true' : 'false'"
+              :aria-describedby="signupFieldErrors.company ? 'company-error' : undefined"
               name="company"
               type="text"
               autocomplete="off"
               placeholder="Company Name*"
               required
+              @input="handleSignupInput('company')"
+              @blur="validateSignupField('company')"
             />
+            <p
+              v-if="signupFieldErrors.company"
+              id="company-error"
+              class="auth-field-error"
+              role="alert"
+            >
+              {{ signupFieldErrors.company }}
+            </p>
           </template>
 
           <template v-if="!isResetPassword">
             <label class="sr-only" for="email">Email Address</label>
             <input
+              ref="emailInput"
               id="email"
               v-model.trim="email"
+              :class="{ 'auth-input--invalid': emailErrorMessage }"
+              :aria-invalid="emailErrorMessage ? 'true' : 'false'"
+              :aria-describedby="emailErrorMessage ? 'email-error' : undefined"
               :name="isSignup ? 'new-account-email' : isForgotPassword ? 'reset-email' : 'username'"
               type="email"
               :autocomplete="isSignup ? 'off' : isForgotPassword ? 'email' : 'username'"
               placeholder="Email Address*"
               required
+              @input="handleEmailInput"
+              @blur="handleEmailBlur"
             />
+            <p v-if="emailErrorMessage" id="email-error" class="auth-field-error" role="alert">
+              {{ emailErrorMessage }}
+            </p>
           </template>
 
           <div v-if="!isForgotPassword" class="password-field">
@@ -244,10 +371,17 @@ async function submitForm() {
               v-model="password"
               :name="isSignup || isResetPassword ? 'new-password' : 'password'"
               :type="showPassword ? 'text' : 'password'"
+              :class="{ 'auth-input--invalid': isSignup && signupFieldErrors.password }"
+              :aria-invalid="isSignup && signupFieldErrors.password ? 'true' : 'false'"
+              :aria-describedby="
+                isSignup && signupFieldErrors.password ? 'password-error' : undefined
+              "
               :autocomplete="isSignup || isResetPassword ? 'new-password' : 'current-password'"
               :placeholder="isResetPassword ? 'New Password*' : 'Password*'"
               minlength="8"
               required
+              @input="isSignup && handleSignupInput('password')"
+              @blur="isSignup && validateSignupField('password')"
             />
             <button
               class="password-toggle"
@@ -287,6 +421,14 @@ async function submitForm() {
               </svg>
             </button>
           </div>
+          <p
+            v-if="isSignup && signupFieldErrors.password"
+            id="password-error"
+            class="auth-field-error"
+            role="alert"
+          >
+            {{ signupFieldErrors.password }}
+          </p>
 
           <div v-if="isSignup || isResetPassword" class="password-field">
             <label class="sr-only" for="confirm-password">Confirm Password</label>
@@ -295,10 +437,17 @@ async function submitForm() {
               v-model="confirmPassword"
               name="new-password-confirm"
               :type="showConfirmPassword ? 'text' : 'password'"
+              :class="{ 'auth-input--invalid': isSignup && signupFieldErrors.confirmPassword }"
+              :aria-invalid="isSignup && signupFieldErrors.confirmPassword ? 'true' : 'false'"
+              :aria-describedby="
+                isSignup && signupFieldErrors.confirmPassword ? 'confirm-password-error' : undefined
+              "
               autocomplete="new-password"
               placeholder="Confirm Password*"
               minlength="8"
               required
+              @input="isSignup && handleSignupInput('confirmPassword')"
+              @blur="isSignup && validateSignupField('confirmPassword')"
             />
             <button
               class="password-toggle"
@@ -338,16 +487,43 @@ async function submitForm() {
               </svg>
             </button>
           </div>
+          <p
+            v-if="isSignup && signupFieldErrors.confirmPassword"
+            id="confirm-password-error"
+            class="auth-field-error"
+            role="alert"
+          >
+            {{ signupFieldErrors.confirmPassword }}
+          </p>
 
           <div v-if="isSignup" class="terms-row">
-            <input id="terms" v-model="acceptedTerms" name="terms" type="checkbox" required />
+            <input
+              id="terms"
+              v-model="acceptedTerms"
+              :class="{ 'auth-input--invalid': signupFieldErrors.terms }"
+              :aria-invalid="signupFieldErrors.terms ? 'true' : 'false'"
+              :aria-describedby="signupFieldErrors.terms ? 'terms-error' : undefined"
+              name="terms"
+              type="checkbox"
+              required
+              @change="handleSignupInput('terms')"
+              @blur="validateSignupField('terms')"
+            />
             <label for="terms">
               I accept to the <a href="#terms" @click.prevent>Terms of use</a> and
               <a href="#privacy" @click.prevent>Privacy Policy</a>.
             </label>
           </div>
+          <p
+            v-if="isSignup && signupFieldErrors.terms"
+            id="terms-error"
+            class="auth-field-error auth-field-error--terms"
+            role="alert"
+          >
+            {{ signupFieldErrors.terms }}
+          </p>
 
-          <div v-else-if="!isForgotPassword && !isResetPassword" class="login-options">
+          <div v-if="!isSignup && !isForgotPassword && !isResetPassword" class="login-options">
             <label class="remember-row">
               <input v-model="rememberMe" name="rememberMe" type="checkbox" />
               <span>Remember Me</span>

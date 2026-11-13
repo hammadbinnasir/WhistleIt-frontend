@@ -72,6 +72,7 @@ describe('auth view', () => {
     await flushPromises()
 
     expect(wrapper.get('h1').text()).toBe('Create Account')
+    expect(wrapper.find('.login-options').exists()).toBe(false)
     expect(wrapper.find('input[name="company"]').exists()).toBe(true)
     expect(wrapper.find('input[name="terms"]').exists()).toBe(true)
     expect(wrapper.get('#email').element.value).toBe('')
@@ -114,6 +115,48 @@ describe('auth view', () => {
     expect(wrapper.get('#email').attributes('autocomplete')).toBe('username')
     expect(wrapper.get('#password').attributes('autocomplete')).toBe('current-password')
   })
+
+  it('shows and clears the login email error as the address is typed', async () => {
+    const { wrapper } = await mountAuthView()
+
+    await wrapper.get('#email').setValue('not-an-email')
+
+    expect(wrapper.get('#email-error').text()).toBe('E-mail must be valid.')
+    expect(wrapper.get('#email').classes()).toContain('auth-input--invalid')
+
+    await wrapper.get('#email').setValue('sam@example.com')
+
+    expect(wrapper.find('#email-error').exists()).toBe(false)
+    expect(wrapper.get('#email').classes()).not.toContain('auth-input--invalid')
+  })
+
+  it('shows and clears the password-reset email error as the address is typed', async () => {
+    const { wrapper } = await mountAuthView('/forgot-password')
+
+    await wrapper.get('#email').setValue('not-an-email')
+
+    expect(wrapper.get('#email-error').text()).toBe('E-mail must be valid.')
+    expect(wrapper.get('#email').classes()).toContain('auth-input--invalid')
+
+    await wrapper.get('#email').setValue('sam@example.com')
+
+    expect(wrapper.find('#email-error').exists()).toBe(false)
+    expect(wrapper.get('#email').classes()).not.toContain('auth-input--invalid')
+  })
+
+  it.each(['/login', '/forgot-password'])(
+    'shows the required email message when the field is empty on %s',
+    async (path) => {
+      const { wrapper } = await mountAuthView(path)
+
+      await wrapper.get('form').trigger('submit')
+
+      expect(wrapper.get('#email-error').text()).toBe('Email Address is required')
+      expect(wrapper.get('#email').classes()).toContain('auth-input--invalid')
+      expect(login).not.toHaveBeenCalled()
+      expect(requestPasswordReset).not.toHaveBeenCalled()
+    },
+  )
 
   it('sends a password reset request for the entered email', async () => {
     const { router, wrapper } = await mountAuthView('/forgot-password')
@@ -185,7 +228,7 @@ describe('auth view', () => {
       }
       if (path === '/signup') {
         await wrapper.get('#full-name').setValue('Sam Example')
-        await wrapper.get('#company').setValue('Example Co')
+        await wrapper.get('#company').setValue('Example Co 123')
         await wrapper.get('#password').setValue('correct-password')
         await wrapper.get('#confirm-password').setValue('correct-password')
         await wrapper.get('#terms').setValue(true)
@@ -367,7 +410,7 @@ describe('auth view', () => {
     const { router, wrapper } = await mountAuthView('/signup')
 
     await wrapper.get('#full-name').setValue('Sam Example')
-    await wrapper.get('#company').setValue('Example Co')
+    await wrapper.get('#company').setValue('Example Co 123')
     await wrapper.get('#email').setValue('sam@example.com')
     await wrapper.get('#password').setValue('correct-password')
     await wrapper.get('#confirm-password').setValue('correct-password')
@@ -377,7 +420,7 @@ describe('auth view', () => {
 
     expect(register).toHaveBeenCalledWith({
       name: 'Sam Example',
-      company: 'Example Co',
+      company: 'Example Co 123',
       email: 'sam@example.com',
       password: 'correct-password',
       password_confirmation: 'correct-password',
@@ -388,12 +431,73 @@ describe('auth view', () => {
     expect(wrapper.get('#password').element.value).toBe('')
   })
 
+  it('shows signup validation errors immediately while typing', async () => {
+    const { wrapper } = await mountAuthView('/signup')
+
+    await wrapper.get('#full-name').setValue('Sam42')
+    await wrapper.get('#company').setValue('Example Co!')
+    await wrapper.get('#email').setValue('not-an-email')
+    await wrapper.get('#password').setValue('short')
+    await wrapper.get('#confirm-password').setValue('different')
+
+    expect(wrapper.get('#full-name-error').text()).toBe('Name only contains alphabets.')
+    expect(wrapper.get('#company-error').text()).toBe(
+      'Company name only contain alphabet or numbers',
+    )
+    expect(wrapper.get('#email-error').text()).toBe('E-mail must be valid.')
+    expect(wrapper.get('#password-error').text()).toBe(
+      'Password must contain at least 8 characters.',
+    )
+    expect(wrapper.get('#confirm-password-error').text()).toBe('Passwords do not match.')
+
+    await wrapper.get('#full-name').setValue('Sam Example')
+    expect(wrapper.find('#full-name-error').exists()).toBe(false)
+  })
+
+  it('shows required messages when full name and company are empty', async () => {
+    const { wrapper } = await mountAuthView('/signup')
+
+    await wrapper.get('form').trigger('submit')
+
+    expect(wrapper.get('#full-name-error').text()).toBe('This is a required field')
+    expect(wrapper.get('#full-name').classes()).toContain('auth-input--invalid')
+    expect(wrapper.get('#company-error').text()).toBe(
+      'Company name only contain alphabet or numbers',
+    )
+    expect(wrapper.get('#company').classes()).toContain('auth-input--invalid')
+    expect(register).not.toHaveBeenCalled()
+  })
+
+  it('shows inline errors for invalid sign-up fields and blocks registration', async () => {
+    const { wrapper } = await mountAuthView('/signup')
+
+    await wrapper.get('#full-name').setValue('Sam42')
+    await wrapper.get('#company').setValue('ExampleCo!')
+    await wrapper.get('#email').setValue('not-an-email')
+    await wrapper.get('#password').setValue('short')
+    await wrapper.get('#confirm-password').setValue('different')
+    await wrapper.get('form').trigger('submit')
+
+    expect(wrapper.get('#full-name-error').text()).toBe('Name only contains alphabets.')
+    expect(wrapper.get('#company-error').text()).toBe(
+      'Company name only contain alphabet or numbers',
+    )
+    expect(wrapper.get('#email-error').text()).toBe('E-mail must be valid.')
+    expect(wrapper.get('#password-error').text()).toBe(
+      'Password must contain at least 8 characters.',
+    )
+    expect(wrapper.get('#confirm-password-error').text()).toBe('Passwords do not match.')
+    expect(wrapper.get('#terms-error').text()).toBe('Required.')
+    expect(wrapper.get('#full-name').classes()).toContain('auth-input--invalid')
+    expect(register).not.toHaveBeenCalled()
+  })
+
   it('requires at least eight password characters without setting a maximum on sign up', async () => {
     const { wrapper } = await mountAuthView('/signup')
     const longPassword = 'a'.repeat(256)
 
     await wrapper.get('#full-name').setValue('Sam Example')
-    await wrapper.get('#company').setValue('Example Co')
+    await wrapper.get('#company').setValue('Example Co 123')
     await wrapper.get('#email').setValue('sam@example.com')
     await wrapper.get('#password').setValue('short7!')
     await wrapper.get('#confirm-password').setValue('short7!')
@@ -434,7 +538,7 @@ describe('auth view', () => {
     expect(router.currentRoute.value.path).toBe('/login')
   })
 
-  it('reports a password mismatch during sign up', async () => {
+  it('shows a field-level password mismatch during sign up', async () => {
     const { wrapper } = await mountAuthView('/signup')
 
     await wrapper.get('#full-name').setValue('Sam Example')
@@ -445,6 +549,6 @@ describe('auth view', () => {
     await wrapper.get('#terms').setValue(true)
     await wrapper.get('form').trigger('submit')
 
-    expect(wrapper.get('[role="status"]').text()).toContain('Passwords do not match')
+    expect(wrapper.get('#confirm-password-error').text()).toBe('Passwords do not match.')
   })
 })
