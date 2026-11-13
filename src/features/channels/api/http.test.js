@@ -18,7 +18,7 @@ describe('http', () => {
     })
     vi.stubGlobal('fetch', fetchMock)
 
-    await http('/register', { method: 'POST', body: { email: 'sam@example.com' } })
+    await http('/v1/auth/register', { method: 'POST', body: { email: 'sam@example.com' } })
 
     expect(fetchMock.mock.calls[0][1].credentials).toBe('omit')
   })
@@ -46,10 +46,10 @@ describe('http', () => {
     })
     vi.stubGlobal('fetch', fetchMock)
 
-    await http('/logout', { method: 'POST' })
+    await http('/v1/auth/logout', { method: 'POST' })
 
     const [url, options] = fetchMock.mock.calls[0]
-    expect(url).toBe('http://10.0.105.90:8000/api/logout')
+    expect(url).toBe('http://10.0.105.90:8000/api/v1/auth/logout')
     expect(options.method).toBe('POST')
     expect(options.headers.Authorization).toBe('Bearer session-token')
   })
@@ -63,7 +63,7 @@ describe('http', () => {
     })
     vi.stubGlobal('fetch', fetchMock)
 
-    await http('/login', {
+    await http('/v1/auth/login', {
       method: 'POST',
       body: { email: 'sam@example.com', password: 'secure-password' },
       auth: false,

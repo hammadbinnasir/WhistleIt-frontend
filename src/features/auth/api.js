@@ -2,19 +2,19 @@ import { http } from '@/features/channels/api/http'
 import { clearAuthSession } from './session'
 
 export function login(credentials) {
-  return http('/login', { method: 'POST', body: credentials, auth: false })
+  return http('/v1/auth/login', { method: 'POST', body: credentials, auth: false })
 }
 
 export async function logout() {
   try {
-    return await http('/logout', { method: 'POST', body: { is_remember: false } })
+    return await http('/v1/auth/logout', { method: 'POST', body: { is_remember: false } })
   } finally {
     clearAuthSession()
   }
 }
 
 export function register(account) {
-  return http('/register', { method: 'POST', body: account, auth: false })
+  return http('/v1/auth/register', { method: 'POST', body: account, auth: false })
 }
 
 export function sendInvitation(

@@ -1,5 +1,5 @@
 <script setup>
-import { computed, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { loginViaInvitation, registerViaInvitation } from './api'
 import { saveAuthToken } from './session'
@@ -20,6 +20,10 @@ const acceptedTerms = ref(false)
 const feedback = ref('')
 const feedbackIsSuccess = ref(false)
 const isSubmitting = ref(false)
+const nameValidationMessage = ref('')
+let nameValidationTimeout
+
+const invalidNameCharacters = /[^\p{L} ]/gu
 
 const token = computed(() => (typeof route.params.token === 'string' ? route.params.token : ''))
 
@@ -44,6 +48,27 @@ function getInviteEmail() {
   return getEmailFromToken(token.value)
 }
 
+function handleFullNameInput(event) {
+  const input = event.target
+  const cursorPosition = input.selectionStart ?? input.value.length
+  const filteredValue = input.value.replace(invalidNameCharacters, '')
+
+  if (filteredValue !== input.value) {
+    const filteredPrefix = input.value.slice(0, cursorPosition).replace(invalidNameCharacters, '')
+    input.value = filteredValue
+    input.setSelectionRange(filteredPrefix.length, filteredPrefix.length)
+    nameValidationMessage.value = 'Only alphabets are allowed.'
+    clearTimeout(nameValidationTimeout)
+    nameValidationTimeout = setTimeout(() => {
+      nameValidationMessage.value = ''
+    }, 3000)
+  }
+
+  fullName.value = filteredValue
+}
+
+onBeforeUnmount(() => clearTimeout(nameValidationTimeout))
+
 watch(
   () => route.fullPath,
   () => {
@@ -58,6 +83,8 @@ watch(
     acceptedTerms.value = false
     feedback.value = ''
     feedbackIsSuccess.value = false
+    nameValidationMessage.value = ''
+    clearTimeout(nameValidationTimeout)
   },
   { immediate: true },
 )
@@ -75,6 +102,20 @@ async function submitForm() {
   if (!email.value.trim()) {
     feedback.value =
       'The invitation link does not include an email address. Enter the email that received the invitation.'
+    return
+  }
+
+  if (!isLogin.value && /[^\p{L} ]/u.test(fullName.value)) {
+    nameValidationMessage.value = 'Only alphabets are allowed.'
+    clearTimeout(nameValidationTimeout)
+    nameValidationTimeout = setTimeout(() => {
+      nameValidationMessage.value = ''
+    }, 3000)
+    return
+  }
+
+  if (!isLogin.value && !fullName.value.trim()) {
+    feedback.value = 'Full name is required.'
     return
   }
 
@@ -139,6 +180,14 @@ async function submitForm() {
 
 <template>
   <main class="auth-page invitation-auth-page" :class="{ 'auth-page--signup': !isLogin }">
+    <p
+      v-if="nameValidationMessage"
+      class="name-validation-toast"
+      role="alert"
+      aria-live="assertive"
+    >
+      {{ nameValidationMessage }}
+    </p>
     <section class="auth-panel" aria-label="Workspace invitation access">
       <RouterLink class="brand" to="/login" aria-label="Whistle It. home">
         <img
@@ -172,7 +221,8 @@ async function submitForm() {
             <label for="invite-name" class="sr-only"> Full name </label>
             <input
               id="invite-name"
-              v-model.trim="fullName"
+              :value="fullName"
+              @input="handleFullNameInput"
               name="name"
               type="text"
               autocomplete="name"

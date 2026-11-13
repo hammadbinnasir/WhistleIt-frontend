@@ -1049,3 +1049,37 @@ a {
     overflow: auto;
   }
 }
+
+.auth-page--signup .auth-form > input.auth-input--invalid,
+.auth-page--signup .password-field input.auth-input--invalid,
+.auth-page--signup .auth-form > input.auth-input--invalid:focus,
+.auth-page--signup .password-field input.auth-input--invalid:focus {
+  border-color: #e52343;
+  background: #fff;
+  box-shadow: 0 0 0 2px rgb(229 35 67 / 12%);
+}
+
+.auth-form > input.auth-input--invalid,
+.auth-form > input.auth-input--invalid:focus {
+  border-color: #e52343;
+  background: #fff;
+  box-shadow: 0 0 0 2px rgb(229 35 67 / 12%);
+}
+
+.auth-field-error {
+  margin: -8px 0 -4px;
+  color: #fb374e;
+  font-size: 12px;
+  font-weight: 500;
+  font-family: Roboto, sans-serif;
+  line-height: 1.35;
+}
+
+.auth-field-error--terms {
+  margin-left: 27px;
+}
+
+.auth-page--signup .terms-row input.auth-input--invalid {
+  outline: 1px solid #e52343;
+  outline-offset: 1px;
+}

@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { http } from '@/features/channels/api/http'
-import { login, logout, requestPasswordReset, resetPassword } from './api'
+import { login, logout, register, requestPasswordReset, resetPassword } from './api'
 
 vi.mock('@/features/channels/api/http', () => ({
   http: vi.fn(),
@@ -32,9 +32,25 @@ describe('auth API', () => {
 
     login(credentials)
 
-    expect(http).toHaveBeenCalledWith('/login', {
+    expect(http).toHaveBeenCalledWith('/v1/auth/login', {
       method: 'POST',
       body: credentials,
+      auth: false,
+    })
+  })
+
+  it('sends registration details to the versioned auth endpoint', () => {
+    const account = {
+      name: 'Sam Example',
+      email: 'sam@example.com',
+      password: 'secure-password',
+    }
+
+    register(account)
+
+    expect(http).toHaveBeenCalledWith('/v1/auth/register', {
+      method: 'POST',
+      body: account,
       auth: false,
     })
   })
@@ -55,7 +71,7 @@ describe('auth API', () => {
 
     await logout()
 
-    expect(http).toHaveBeenCalledWith('/logout', {
+    expect(http).toHaveBeenCalledWith('/v1/auth/logout', {
       method: 'POST',
       body: { is_remember: false },
     })
