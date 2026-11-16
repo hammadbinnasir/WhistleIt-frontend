@@ -2,7 +2,8 @@
 import { computed, ref, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { login, register, requestPasswordReset, resetPassword } from './api'
-import { consumeAuthRedirect, saveAuthToken } from './session'
+import { consumeAuthRedirect, getAuthUserId, saveAuthToken } from './session'
+import { saveStatusMode } from '@/features/dms/statusStorage'
 import authBackground from '@/assets/auth-background.svg'
 import LoadingSpinner from '@/components/LoadingSpinner.vue'
 
@@ -214,9 +215,10 @@ async function submitForm() {
     if (isSignup.value) {
       await router.push({ name: 'login', query: { registered: 'true' } })
     } else {
-      if (!saveAuthToken(response)) {
+      if (!saveAuthToken(response, email.value.trim())) {
         throw new Error('Login response did not include an access token.')
       }
+      saveStatusMode(getAuthUserId(), 'online')
       const destination = consumeAuthRedirect() ?? { name: 'home' }
       await router.replace(destination)
     }

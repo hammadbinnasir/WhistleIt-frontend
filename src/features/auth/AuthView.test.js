@@ -3,6 +3,7 @@ import { createMemoryHistory, createRouter } from 'vue-router'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { login, register, requestPasswordReset, resetPassword } from './api'
 import { getAuthToken } from './session'
+import { getSavedStatusMode } from '@/features/dms/statusStorage'
 import AuthView from './AuthView.vue'
 
 vi.mock('./api', () => ({
@@ -342,6 +343,7 @@ describe('auth view', () => {
   })
 
   it('accepts a login response with a remember token and no access token', async () => {
+    localStorage.setItem('whistleit:status-mode:user-123', 'offline')
     login.mockResolvedValueOnce({
       success: true,
       data: { userId: 'user-123', rememberToken: 'remember-only-token' },
@@ -355,6 +357,7 @@ describe('auth view', () => {
 
     expect(sessionStorage.getItem('rememberToken')).toBe('remember-only-token')
     expect(localStorage.getItem('authUserId')).toBe('user-123')
+    expect(getSavedStatusMode('user-123')).toBe('online')
     expect(wrapper.find('[role="status"]').exists()).toBe(false)
     expect(router.currentRoute.value.name).toBe('home')
   })
