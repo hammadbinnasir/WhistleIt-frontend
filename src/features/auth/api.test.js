@@ -8,6 +8,7 @@ import {
   requestPasswordReset,
   resetPassword,
   sendInvitation,
+  verifyEmail,
 } from './api'
 
 vi.mock('@/features/channels/api/http', () => ({
@@ -27,6 +28,15 @@ describe('auth API', () => {
     expect(http).toHaveBeenCalledWith('/forgetpassword', {
       method: 'POST',
       body: { email: 'sam@example.com' },
+      auth: false,
+    })
+  })
+
+  it('verifies email through the versioned auth endpoint', () => {
+    verifyEmail('verification/token')
+
+    expect(http).toHaveBeenCalledWith('/v1/auth/verify/verification%2Ftoken', {
+      method: 'GET',
       auth: false,
     })
   })

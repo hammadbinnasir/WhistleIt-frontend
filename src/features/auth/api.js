@@ -56,7 +56,7 @@ export function resetPassword(token, credentials) {
 }
 
 export function verifyEmail(token) {
-  return http(`/auth/verify/${encodeURIComponent(token)}`, { method: 'GET', auth: false })
+  return http(`/v1/auth/verify/${encodeURIComponent(token)}`, { method: 'GET', auth: false })
 }
 
 export function resendVerificationEmail(
