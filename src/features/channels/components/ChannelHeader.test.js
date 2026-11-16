@@ -7,7 +7,13 @@ import { usePresenceStore } from '@/features/dms/stores/presence'
 import ChannelHeader from './ChannelHeader.vue'
 
 const getUser = vi.hoisted(() => vi.fn())
-vi.mock('@/features/account/api', () => ({ getUser }))
+const getUserProfile = vi.hoisted(() => vi.fn())
+const getAuthUserId = vi.hoisted(() => vi.fn())
+vi.mock('@/features/account/api', () => ({ getUser, getUserProfile }))
+vi.mock('@/features/auth/session', async (importOriginal) => ({
+  ...(await importOriginal()),
+  getAuthUserId,
+}))
 
 vi.mock('../api', () => ({
   default: {
@@ -20,6 +26,8 @@ describe('ChannelHeader', () => {
     setActivePinia(createPinia())
     api.listMembers.mockReset()
     getUser.mockReset()
+    getUserProfile.mockReset()
+    getAuthUserId.mockReturnValue(null)
     getUser.mockResolvedValue({ success: true, data: { status_mode: 'online' } })
   })
 
@@ -102,7 +110,11 @@ describe('ChannelHeader', () => {
     })
     getUser.mockImplementation(async (memberId) => ({
       success: true,
-      data: { status_mode: memberId === 'member-1' ? 'away' : 'online' },
+      data: {
+        status_mode: memberId === 'member-1' ? 'away' : 'online',
+        avatar_url: `/avatars/${memberId}.png`,
+        user_email: `${memberId}@example.com`,
+      },
     }))
     const channels = useChannelsStore()
     channels.upsertChannel({ id: 'channel-one', name: 'Channel one' })
@@ -115,8 +127,13 @@ describe('ChannelHeader', () => {
     const avatars = wrapper.findAll('.ch-stack__avatar')
     expect(avatars[0].find('.ch-stack__dot').classes()).toContain('ch-stack__dot--away')
     expect(avatars[1].find('.ch-stack__dot').classes()).toContain('ch-stack__dot--online')
+    expect(avatars[0].find('img').attributes('src')).toBe('/avatars/member-1.png')
     await avatars[0].trigger('mouseenter')
     expect(wrapper.find('.ch-stack__preview-status').text()).toBe('Away')
+    expect(wrapper.get('.ch-stack__preview-avatar').attributes('src')).toBe(
+      '/avatars/member-1.png',
+    )
+    expect(wrapper.get('.ch-stack__preview-body p').text()).toBe('member-1@example.com')
 
     getUser.mockResolvedValue({ success: true, data: { status_mode: 'dnd' } })
     await vi.advanceTimersByTimeAsync(15_000)
@@ -125,6 +142,40 @@ describe('ChannelHeader', () => {
     await avatars[0].trigger('mouseenter')
     expect(wrapper.find('.ch-stack__preview-status').text()).toBe('Do not disturb')
     expect(usePresenceStore().stateOf('member-1')).toBe('dnd')
+    wrapper.unmount()
+  })
+
+  it('shows current-user profile email and public-user email in member previews', async () => {
+    api.listMembers.mockResolvedValue({
+      items: [
+        { id: 'current-user', name: 'Current User' },
+        { id: 'public-user', name: 'Public User' },
+      ],
+      total: 2,
+    })
+    getAuthUserId.mockReturnValue('current-user')
+    getUserProfile.mockResolvedValue({
+      data: { profile: { email_address: 'current@example.com', status_mode: 'online' } },
+    })
+    getUser.mockResolvedValue({
+      data: { user: { user_email: 'public@example.com', status_mode: 'away' } },
+    })
+
+    const channels = useChannelsStore()
+    channels.upsertChannel({ id: 'channel-one', name: 'Channel one' })
+    const wrapper = mount(ChannelHeader, {
+      props: { channelId: 'channel-one' },
+    })
+    await flushPromises()
+
+    const avatars = wrapper.findAll('.ch-stack__avatar')
+    await avatars[0].trigger('mouseenter')
+    expect(wrapper.get('.ch-stack__preview-body p').text()).toBe('current@example.com')
+
+    await avatars[1].trigger('mouseenter')
+    expect(wrapper.get('.ch-stack__preview-body p').text()).toBe('public@example.com')
+    expect(getUserProfile).toHaveBeenCalledWith('current-user')
+    expect(getUser).toHaveBeenCalledWith('public-user')
     wrapper.unmount()
   })
 })

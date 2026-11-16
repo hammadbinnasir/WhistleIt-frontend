@@ -11,6 +11,7 @@ import {
   updateUserStatus,
   uploadUserAvatar,
 } from '../api'
+import { getSavedStatusMode, saveStatusMode } from '@/features/dms/statusStorage'
 
 /**
  * Single source of truth for the user module.
@@ -218,6 +219,7 @@ async function loadUserProfile() {
     responseData?.user?.preferences
   const jobResponsibilities = data?.jobResponsibilities ?? data?.job_responsibilities
   const status = data?.status ?? data?.status_mode ?? data?.presence
+  const savedStatus = getSavedStatusMode(getAuthUserId())
   const profileFields = {
     fullName: data?.fullName ?? data?.full_name ?? data?.name,
     alias: data?.alias ?? data?.display_name,
@@ -237,7 +239,7 @@ async function loadUserProfile() {
   hydrate({
     profile,
     preferences,
-    status,
+    status: savedStatus ?? status,
     customStatus:
       data?.customStatus !== undefined
         ? data.customStatus
@@ -254,8 +256,10 @@ async function loadUserProfile() {
 
 async function setStatus(status) {
   if (!VALID_STATUSES.includes(status)) return
-  await updateUserStatus(requireUserId(), { mode: status })
+  const userId = requireUserId()
+  await updateUserStatus(userId, { mode: status })
   state.status = status
+  saveStatusMode(userId, status)
 }
 
 /** `options`: { duration: 'never'|'30m'|..., expiresAt: number|null } */

@@ -103,13 +103,13 @@ describe('DmList', () => {
     wrapper.unmount()
   })
 
-  it('tells the server I am offline when the DM list closes (logout)', async () => {
+  it('does not mark the user offline when the DM list unmounts', async () => {
     const wrapper = await mountList()
     dmApi.updateUserStatus.mockClear()
 
     wrapper.unmount()
 
-    expect(dmApi.updateUserStatus).toHaveBeenCalledWith('me', { mode: 'offline' }, { keepalive: true })
+    expect(dmApi.updateUserStatus).not.toHaveBeenCalled()
   })
 
   it('shows a newly invited/added member in the DM list right away (no refresh)', async () => {

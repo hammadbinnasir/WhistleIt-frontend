@@ -132,8 +132,6 @@ onBeforeUnmount(() => {
   clearInterval(customStatusTimer)
   customStatusTimer = null
   dms.stopPolling()
-  // App/sidebar band (jaise logout): server ko "offline", phir status timers band
-  presence.goOffline()
   presence.stopPolling()
 })
 </script>

@@ -22,7 +22,7 @@ vi.mock('@/features/dms/dmApi', () => ({
   dmApi: {
     meId: vi.fn(() => 'current-user'),
     currentUser: vi.fn(() => ({ id: 'current-user' })),
-    listCompanyMembers: vi.fn(),
+    listTeamMembers: vi.fn(),
   },
 }))
 
@@ -31,7 +31,7 @@ describe('ProfilePanel', () => {
     setActivePinia(createPinia())
     getUser.mockReset()
     getUserProfile.mockReset()
-    dmApi.listCompanyMembers.mockReset()
+    dmApi.listTeamMembers.mockReset()
     getAuthUserId.mockReturnValue('current-user')
     useUserStore().hydrate({ status: 'online' })
   })
@@ -140,19 +140,41 @@ describe('ProfilePanel', () => {
     wrapper.unmount()
   })
 
-  it('loads workspace email when the public user response omits it', async () => {
+  it('loads the newly selected public profile when switching members', async () => {
+    getUser
+      .mockResolvedValueOnce({ data: { user: { name: 'First User' } } })
+      .mockResolvedValueOnce({ data: { user: { name: 'Second User' } } })
+    const wrapper = mount(ProfilePanel, {
+      props: { member: { id: 'first-user', name: 'First User' } },
+    })
+    await flushPromises()
+
+    await wrapper.setProps({ member: { id: 'second-user', name: 'Second User' } })
+    await flushPromises()
+
+    expect(getUser).toHaveBeenNthCalledWith(1, 'first-user')
+    expect(getUser).toHaveBeenNthCalledWith(2, 'second-user')
+    expect(wrapper.get('.profile-panel__name').text()).toBe('Second User')
+    wrapper.unmount()
+  })
+
+  it('loads team email when the public user response omits it', async () => {
     getUser.mockResolvedValue({ data: { user: { name: 'Alex Member' } } })
-    dmApi.listCompanyMembers.mockResolvedValue([
+    dmApi.listTeamMembers.mockResolvedValue([
       { id: 'other-user', name: 'Alex Member', email: 'alex@example.com' },
     ])
     const wrapper = mount(ProfilePanel, {
-      props: { member: { id: 'other-user', name: 'Alex Member' }, workspaceId: 'workspace-1' },
+      props: {
+        member: { id: 'other-user', name: 'Alex Member' },
+        workspaceId: 'workspace-1',
+        teamId: 'team-1',
+      },
     })
     await flushPromises()
 
     expect(getUser).toHaveBeenCalledWith('other-user')
     expect(getUserProfile).not.toHaveBeenCalled()
-    expect(dmApi.listCompanyMembers).toHaveBeenCalledWith('workspace-1')
+    expect(dmApi.listTeamMembers).toHaveBeenCalledWith('workspace-1', 'team-1')
     expect(wrapper.get('a[href="mailto:alex@example.com"]').text()).toBe('alex@example.com')
     wrapper.unmount()
   })

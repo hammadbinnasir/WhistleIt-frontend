@@ -9,6 +9,7 @@ import ConfirmModal from './components/ConfirmModal.vue'
 import BaseModal from './components/BaseModal.vue'
 import { useUserStore } from './composables/useUserStore'
 import { getAuthUserId } from '@/features/auth/session'
+import { getSavedStatusMode } from '@/features/dms/statusStorage'
 
 const props = defineProps({
   /** Initial/server data: { profile, status, customStatus, preferences, security } */
@@ -94,7 +95,13 @@ onMounted(() => {
     store
       .loadUserProfile()
       .then((status) => {
-        if (status) emit('status-change', status)
+        const savedStatus = getSavedStatusMode(getAuthUserId())
+        if (savedStatus) {
+          store.hydrate({ status: savedStatus })
+          emit('status-change', savedStatus)
+        } else if (status) {
+          emit('status-change', status)
+        }
       })
       .catch((err) => emit('error', err))
   }

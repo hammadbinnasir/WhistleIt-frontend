@@ -126,12 +126,75 @@ export function normalizeChannel(raw = {}) {
   }
 }
 
+const MEMBER_EMAIL_FIELDS = [
+  'email',
+  'emailAddress',
+  'email_address',
+  'userEmail',
+  'user_email',
+  'accountEmail',
+  'account_email',
+]
+
+function findMemberEmail(value, seen = new Set()) {
+  if (!value || typeof value !== 'object' || seen.has(value)) return ''
+  seen.add(value)
+
+  for (const key of MEMBER_EMAIL_FIELDS) {
+    const email = value[key]
+    if (typeof email === 'string' && email.trim()) return email.trim()
+  }
+
+  for (const nestedValue of Object.values(value)) {
+    const email = findMemberEmail(nestedValue, seen)
+    if (email) return email
+  }
+  return ''
+}
+
 export function normalizeMember(raw = {}) {
   if (typeof raw === 'string' || typeof raw === 'number') {
     return { id: String(raw), name: '', email: '', avatarUrl: '', status: null }
   }
 
   const user = raw.user && typeof raw.user === 'object' ? raw.user : {}
+  const profile =
+    raw.profile && typeof raw.profile === 'object'
+      ? raw.profile
+      : user.profile && typeof user.profile === 'object'
+        ? user.profile
+        : {}
+  const rawAvatar =
+    raw.avatar ??
+    raw.avatarUrl ??
+    raw.avatar_url ??
+    raw.photoUrl ??
+    raw.photo_url ??
+    raw.profilePhotoUrl ??
+    raw.profile_photo_url ??
+    raw.profilePicture ??
+    raw.profile_picture ??
+    raw.profilePictureUrl ??
+    raw.profile_picture_url ??
+    raw.profileImage ??
+    raw.profile_image ??
+    raw.imageUrl ??
+    raw.image_url ??
+    raw.pictureUrl ??
+    raw.picture_url ??
+    profile.avatar ??
+    profile.avatarUrl ??
+    profile.avatar_url ??
+    profile.photoUrl ??
+    profile.photo_url ??
+    profile.profilePictureUrl ??
+    profile.profile_picture_url ??
+    user.avatar ??
+    user.avatarUrl ??
+    user.avatar_url ??
+    user.photoUrl ??
+    user.photo_url ??
+    ''
   const rawStatus =
     raw.status ?? raw.presence ?? raw.state ?? user.status ?? user.presence ?? user.state
   const status =
@@ -149,15 +212,13 @@ export function normalizeMember(raw = {}) {
         '',
     ),
     name: raw.name ?? raw.full_name ?? raw.fullName ?? user.name ?? user.full_name ?? '',
-    email: raw.email ?? user.email ?? raw.account?.email ?? user.account?.email ?? '',
+    email: findMemberEmail(raw),
     avatarUrl:
-      raw.avatarUrl ??
-      raw.avatar_url ??
-      raw.avatar ??
-      user.avatarUrl ??
-      user.avatar_url ??
-      user.avatar ??
-      '',
+      typeof rawAvatar === 'string'
+        ? rawAvatar
+        : typeof rawAvatar?.url === 'string'
+          ? rawAvatar.url
+          : '',
     status: ['online', 'away', 'offline', 'dnd'].includes(status) ? status : null,
   }
 }

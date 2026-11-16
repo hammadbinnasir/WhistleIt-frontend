@@ -72,7 +72,9 @@ function openProfile(member) {
       :title="member.name"
       @mouseenter="setHovered(member)"
     >
-      <img v-if="member.avatarUrl" :src="member.avatarUrl" :alt="member.name" />
+      <span v-if="member.avatarUrl" class="ch-stack__avatar-image">
+        <img :src="member.avatarUrl" :alt="member.name" />
+      </span>
       <template v-else>{{ initials(member.name) }}</template>
       <span class="ch-stack__dot" :class="`ch-stack__dot--${member.status}`" />
     </span>
@@ -85,7 +87,13 @@ function openProfile(member) {
       @mouseenter="setHovered(hoveredMember)"
     >
       <div class="ch-stack__preview-header">
-        <div class="ch-stack__preview-avatar">
+        <img
+          v-if="hoveredMember.avatarUrl"
+          class="ch-stack__preview-avatar"
+          :src="hoveredMember.avatarUrl"
+          :alt="hoveredMember.name"
+        />
+        <div v-else class="ch-stack__preview-avatar">
           {{ initials(hoveredMember.name) }}
         </div>
         <span
@@ -98,16 +106,25 @@ function openProfile(member) {
 
       <div class="ch-stack__preview-body">
         <h4>{{ hoveredMember.name }}</h4>
-        <p>{{ hoveredMember.email || 'team-member' }}</p>
+        <p>{{ hoveredMember.email }}</p>
       </div>
 
       <div class="ch-stack__preview-actions">
-        <span class="ch-stack__preview-action ch-stack__preview-action--primary">Message</span>
+        <span class="ch-stack__preview-action ch-stack__preview-action--primary">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">
+            <path d="M21 11.5a8.4 8.4 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.4 8.4 0 0 1-3.8-.9L3 21l1.9-5.7a8.4 8.4 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.4 8.4 0 0 1 3.8-.9h.5a8.5 8.5 0 0 1 8 8v.5Z" />
+          </svg>
+          Message
+        </span>
         <button
           type="button"
           class="ch-stack__preview-action ch-stack__preview-action--secondary"
           @click.stop="openProfile(hoveredMember)"
         >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">
+            <circle cx="12" cy="8" r="4" />
+            <path d="M5 21a7 7 0 0 1 14 0" />
+          </svg>
           Profile
         </button>
       </div>
@@ -131,7 +148,9 @@ function openProfile(member) {
   display: grid;
   place-items: center;
   width: 36px;
+  min-width: 36px;
   height: 36px;
+  flex: 0 0 36px;
   margin-left: -8px;
   border: 2px solid var(--ch-surface);
   border-radius: 50%;
@@ -143,15 +162,26 @@ function openProfile(member) {
 .ch-stack__avatar:first-child {
   margin-left: 0;
 }
-.ch-stack__avatar img {
+.ch-stack__avatar-image {
+  position: absolute;
+  inset: 0;
+  display: block;
+  overflow: hidden;
+  border-radius: 50%;
+}
+.ch-stack__avatar-image img {
+  display: block;
   width: 100%;
   height: 100%;
   border-radius: 50%;
   object-fit: cover;
+  object-position: center 35%;
+  transform: scale(1.15);
 }
 .ch-stack__avatar--extra {
   width: auto;
   min-width: 36px;
+  flex: 0 0 auto;
   padding: 0 8px;
   border-radius: 18px;
   color: var(--ch-text);
@@ -182,44 +212,45 @@ function openProfile(member) {
   left: 50%;
   top: calc(100% + 12px);
   transform: translateX(-50%);
-  width: 260px;
-  background: rgba(255, 255, 255, 0.98);
+  width: 280px;
+  background: #fff;
   color: #0f172a;
-  border: 1px solid rgba(148, 163, 184, 0.35);
-  border-radius: 16px;
-  box-shadow: 0 16px 32px rgba(15, 23, 42, 0.18);
-  padding: 14px 14px 12px;
+  border: 1px solid #d5d5d5;
+  border-radius: 10px;
+  box-shadow: 0 12px 24px rgba(15, 23, 42, 0.2);
+  padding: 10px 0 14px;
   z-index: 30;
   pointer-events: auto;
 }
 .ch-stack__preview-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 8px;
+  margin: 30px 0 16px;
 }
 .ch-stack__preview-avatar {
-  width: 82px;
-  height: 82px;
-  border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(135deg, #4f46e5, #7c3aed);
-  color: white;
-  font-size: 22px;
-  font-weight: 700;
+  width: 168px;
+  height: 168px;
+  max-width: calc(100% - 32px);
   margin: 0 auto;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #4f46e5, #7c3aed);
+  color: #fff;
+  font-size: 32px;
+  font-weight: 700;
+  object-fit: cover;
 }
 .ch-stack__preview-status {
   position: absolute;
-  top: 12px;
-  right: 12px;
-  font-size: 11px;
+  top: 10px;
+  right: 10px;
+  font-size: 13px;
   font-weight: 600;
-  padding: 4px 8px;
+  padding: 3px 10px;
   border-radius: 999px;
-  background: rgba(15, 23, 42, 0.06);
+  border: 1px solid #aaa;
+  background: #fff;
+  color: #777;
 }
 .ch-stack__preview-status--online {
   color: #15803d;
@@ -243,46 +274,56 @@ function openProfile(member) {
 }
 .ch-stack__preview-body {
   text-align: center;
-  margin-bottom: 12px;
+  margin: 0 12px 16px;
 }
 .ch-stack__preview-body h4 {
   margin: 0;
-  font-size: 20px;
+  font-size: 18px;
   line-height: 1.2;
-  font-weight: 700;
+  font-weight: 600;
 }
 .ch-stack__preview-body p {
-  margin: 4px 0 0;
-  font-size: 13px;
-  color: #334155;
+  margin: 6px 0 0;
+  color: #5962ff;
+  font-size: 16px;
+  overflow-wrap: anywhere;
 }
 .ch-stack__preview-actions {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
+  gap: 16px;
+  border-top: 1px solid #e5e5e5;
+  padding: 14px 18px 0;
 }
 .ch-stack__preview-action {
   display: flex;
   align-items: center;
   justify-content: center;
+  gap: 8px;
   font: inherit;
-  border-radius: 10px;
-  border: 1px solid #cbd5e1;
-  background: transparent;
-  padding: 9px 10px;
+  border-radius: 5px;
+  border: 1px solid #5962ff;
+  background: #fff;
+  color: #5962ff;
+  padding: 7px 8px;
   font-weight: 600;
   cursor: pointer;
 }
+.ch-stack__preview-action svg {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 auto;
+  stroke-width: 1.8;
+}
 .ch-stack__preview-action--primary {
-  background: #fff;
-  color: #0f172a;
+  color: #5962ff;
 }
 .ch-stack__preview-action--secondary {
-  background: #f8fafc;
-  color: #0f172a;
+  background: #fff;
+  color: #5962ff;
 }
 .ch-stack__preview-action--secondary:hover {
-  background: #f1f5f9;
+  background: #f7f7ff;
 }
 .ch-stack__preview-action--secondary:focus-visible {
   outline: 2px solid #5962ff;
