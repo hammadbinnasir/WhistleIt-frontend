@@ -1,6 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { http } from '@/features/channels/api/http'
-import { login, logout, register, requestPasswordReset, resetPassword } from './api'
+import {
+  login,
+  loginViaInvitation,
+  logout,
+  register,
+  requestPasswordReset,
+  resetPassword,
+  sendInvitation,
+} from './api'
 
 vi.mock('@/features/channels/api/http', () => ({
   http: vi.fn(),
@@ -52,6 +60,30 @@ describe('auth API', () => {
       method: 'POST',
       body: account,
       auth: false,
+    })
+  })
+
+  it('logs in through the versioned invitation endpoint', () => {
+    const credentials = { email: 'sam@example.com', password: 'secure-password' }
+
+    loginViaInvitation('invite/token', credentials)
+
+    expect(http).toHaveBeenCalledWith('/v1/invitation/login/invite%2Ftoken', {
+      method: 'POST',
+      body: credentials,
+      auth: false,
+    })
+  })
+
+  it('posts invitations to the versioned invitation endpoint', () => {
+    sendInvitation('sam@example.com', 'https://app.example.com')
+
+    expect(http).toHaveBeenCalledWith('/v1/sendinvitation', {
+      method: 'POST',
+      body: {
+        email: 'sam@example.com',
+        frontend_url: 'https://app.example.com',
+      },
     })
   })
 

@@ -11,7 +11,13 @@ describe('MemberAvatarStack', () => {
     const wrapper = mount(MemberAvatarStack, {
       props: {
         members: [
-          { id: '1', name: 'Abbas Ali', status: 'offline', email: 'abbas.alicm@pf.com.pk' },
+          {
+            id: '1',
+            name: 'Abbas Ali',
+            status: 'offline',
+            email: 'abbas.alicm@pf.com.pk',
+            avatarUrl: 'https://example.test/abbas.png',
+          },
         ],
         total: 1,
         max: 3,
@@ -26,6 +32,10 @@ describe('MemberAvatarStack', () => {
     expect(wrapper.find('.ch-stack__preview').exists()).toBe(true)
     expect(wrapper.text()).toContain('Abbas Ali')
     expect(wrapper.text()).toContain('abbas.alicm@pf.com.pk')
+    expect(wrapper.text()).not.toContain('team-member')
+    expect(wrapper.get('.ch-stack__preview-avatar').attributes('src')).toBe(
+      'https://example.test/abbas.png',
+    )
   })
 
   it('keeps the profile preview open while moving the pointer onto it', async () => {
@@ -57,6 +67,7 @@ describe('MemberAvatarStack', () => {
 
     expect(wrapper.emitted('profile')).toEqual([[member]])
     expect(wrapper.emitted('click')).toBeUndefined()
+    expect(wrapper.find('.ch-stack__preview').exists()).toBe(false)
     wrapper.unmount()
   })
 })

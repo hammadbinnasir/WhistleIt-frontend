@@ -78,7 +78,6 @@ describe('DmList', () => {
     vi.spyOn(dms, 'startPolling').mockImplementation(() => {})
     const presence = usePresenceStore()
     vi.spyOn(presence, 'init').mockResolvedValue()
-    vi.spyOn(presence, 'goOffline').mockImplementation(() => {})
     vi.spyOn(presence, 'stopPolling').mockImplementation(() => {})
     vi.spyOn(dms, 'stopPolling').mockImplementation(() => {})
 

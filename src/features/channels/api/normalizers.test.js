@@ -139,6 +139,24 @@ describe('channel API normalizers', () => {
     ).toBe('nested@example.com')
   })
 
+  it('normalizes avatars from direct and nested user profile fields', () => {
+    expect(normalizeMember({ user_id: 'user-1', photo_url: '/avatars/direct.png' }).avatarUrl).toBe(
+      '/avatars/direct.png',
+    )
+    expect(
+      normalizeMember({ user: { id: 'user-2', profile: { avatar: { url: '/avatars/nested.png' } } } })
+        .avatarUrl,
+    ).toBe('/avatars/nested.png')
+  })
+
+  it('finds email aliases in nested member profile data', () => {
+    expect(
+      normalizeMember({
+        user: { id: 'user-1', profile: { account_email: 'user@example.com' } },
+      }).email,
+    ).toBe('user@example.com')
+  })
+
   it('preserves reported member presence and does not invent an offline state', () => {
     expect(normalizeMember({ user_id: 'user-1' }).status).toBeNull()
     expect(normalizeMember({ user_id: 'user-2', user: { presence: 'away' } }).status).toBe('away')

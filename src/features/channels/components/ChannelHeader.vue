@@ -1,7 +1,9 @@
 <script setup>
-import { computed, onBeforeUnmount, onMounted, watch } from 'vue'
-import { getUser } from '@/features/account/api'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { getUser, getUserProfile } from '@/features/account/api'
+import { getAuthUserId } from '@/features/auth/session'
 import { presenceStateOf } from '@/features/dms/dmApi'
+import { normalizeMember } from '../api/normalizers'
 import { useChannelsStore } from '../store/channels.store'
 import { HEADER_AVATAR_MAX } from '../constants'
 import { usePresenceStore } from '@/features/dms/stores/presence'
@@ -23,6 +25,8 @@ const PROFILE_STATUS_POLL_INTERVAL = 15_000
 let statusRequestVersion = 0
 let statusPollTimer = null
 const trackedMemberIds = new Set()
+const memberAvatarUrls = ref({})
+const memberEmails = ref({})
 
 const channel = computed(() => store.getById(props.channelId))
 const channelMembers = computed(() => store.members[String(props.channelId)])
@@ -30,9 +34,9 @@ const memberItems = computed(() =>
   (channelMembers.value?.items || []).map((member) => ({
     id: member.id,
     name: member.name || member.email || 'Channel member',
-    avatarUrl: member.avatarUrl || '',
+    avatarUrl: member.avatarUrl || memberAvatarUrls.value[String(member.id)] || '',
     status: presence.stateOf(member.id),
-    email: member.email || '',
+    email: member.email || memberEmails.value[String(member.id)] || '',
   })),
 )
 watch(
@@ -54,8 +58,24 @@ watch(
       (channelMembers.value?.items || []).map((member) => String(member.id)),
     )
     const removedMemberIds = [...trackedMemberIds].filter((id) => !activeMemberIds.has(id))
+    const removedAvatarIds = Object.keys(memberAvatarUrls.value).filter(
+      (id) => !activeMemberIds.has(id),
+    )
+    const removedEmailIds = Object.keys(memberEmails.value).filter(
+      (id) => !activeMemberIds.has(id),
+    )
     presence.clearProfileStatuses(removedMemberIds)
     removedMemberIds.forEach((id) => trackedMemberIds.delete(id))
+    if (removedAvatarIds.length) {
+      const avatarUrls = { ...memberAvatarUrls.value }
+      removedAvatarIds.forEach((id) => delete avatarUrls[id])
+      memberAvatarUrls.value = avatarUrls
+    }
+    if (removedEmailIds.length) {
+      const emails = { ...memberEmails.value }
+      removedEmailIds.forEach((id) => delete emails[id])
+      memberEmails.value = emails
+    }
     void refreshMemberStatuses()
   },
   { immediate: true },
@@ -68,10 +88,18 @@ async function refreshMemberStatuses() {
   const requestVersion = ++statusRequestVersion
   const results = await Promise.allSettled(
     members.map(async (member) => {
-      const response = await getUser(member.id)
+      const isCurrentUser = String(member.id) === String(getAuthUserId())
+      const response = await (isCurrentUser ? getUserProfile(member.id) : getUser(member.id))
       let payload = response
       while (payload?.data && typeof payload.data === 'object') payload = payload.data
-      return { id: String(member.id), status: presenceStateOf(payload?.user ?? payload) }
+      const user = payload?.user ?? payload
+      const normalizedUser = normalizeMember(user ?? {})
+      return {
+        id: String(member.id),
+        status: presenceStateOf(user) ?? presenceStateOf(user?.profile),
+        email: normalizedUser.email,
+        avatarUrl: normalizedUser.avatarUrl,
+      }
     }),
   )
 
@@ -81,9 +109,23 @@ async function refreshMemberStatuses() {
   results.forEach((result, index) => {
     if (result.status === 'rejected') {
       failures.push({ userId: members[index].id, error: result.reason })
-    } else if (result.value.status) {
-      presence.setProfileStatus(result.value.id, result.value.status)
-      trackedMemberIds.add(result.value.id)
+    } else {
+      if (result.value.status) {
+        presence.setProfileStatus(result.value.id, result.value.status)
+        trackedMemberIds.add(result.value.id)
+      }
+      if (result.value.avatarUrl) {
+        memberAvatarUrls.value = {
+          ...memberAvatarUrls.value,
+          [result.value.id]: result.value.avatarUrl,
+        }
+      }
+      if (result.value.email) {
+        memberEmails.value = {
+          ...memberEmails.value,
+          [result.value.id]: result.value.email,
+        }
+      }
     }
   })
   if (failures.length) {

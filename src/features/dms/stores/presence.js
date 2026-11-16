@@ -4,6 +4,7 @@ import { dmApi } from '@/features/dms/dmApi'
 import { useDmStore } from '@/features/dms/stores/dms'
 import { useTeamsStore } from '@/stores/teams'
 import { useMembersStore } from '@/stores/members'
+import { getSavedStatusMode, saveStatusMode } from '@/features/dms/statusStorage'
 
 export const STATES = {
   online: 'Online',
@@ -217,10 +218,17 @@ export const usePresenceStore = defineStore('presence', () => {
     const current = presenceById.value[id] ?? { status: { emoji: '', text: '' } }
     delete profileStatusById.value[id]
     presenceById.value[id] = { ...current, state }
+    saveStatusMode(id, state)
     if (persist) void pushMyStatus()
   }
 
-  // ---------- live: online / away (idle) / offline (page band) ----------
+  async function goOffline() {
+    manualState = 'offline'
+    applyMyState('offline', { persist: false })
+    await pushMyStatus({ state: 'offline', keepalive: true })
+  }
+
+  // ---------- live: online / away (idle) / offline ----------
   function onActivity() {
     lastActivity = Date.now()
     if (autoAway && !manualState) {
@@ -244,11 +252,6 @@ export const usePresenceStore = defineStore('presence', () => {
     if (pollTimer) void load({ silent: true })
   }
 
-  // Tab/page band: server ko "offline" (keepalive se request band hone ke baad bhi poori hoti hai)
-  function goOffline() {
-    void pushMyStatus({ state: 'offline', keepalive: true })
-  }
-
   // Internet toot kar wapas aaya: foran apna status dobara (online) bhejo.
   // (Internet tootne par browser kuch bhej nahi sakta: backend heartbeat band hone se offline kare)
   function onReconnect() {
@@ -261,13 +264,15 @@ export const usePresenceStore = defineStore('presence', () => {
     if (live || typeof window === 'undefined') return
     live = true
     lastActivity = Date.now()
-    applyMyState(manualState ?? 'online') // page khulte hi online
+    const id = myId()
+    const initialState = getSavedStatusMode(id) ?? presenceById.value[id]?.state ?? 'online'
+    manualState = initialState === 'online' ? null : initialState
+    applyMyState(initialState)
     heartbeatTimer = setInterval(() => {
       if (!document.hidden) void pushMyStatus()
     }, HEARTBEAT_INTERVAL)
     idleTimer = setInterval(checkIdle, 30_000)
     for (const name of ACTIVITY_EVENTS) window.addEventListener(name, onActivity, { passive: true })
-    window.addEventListener('pagehide', goOffline)
     window.addEventListener('online', onReconnect)
   }
 
@@ -279,15 +284,14 @@ export const usePresenceStore = defineStore('presence', () => {
     heartbeatTimer = null
     idleTimer = null
     for (const name of ACTIVITY_EVENTS) window.removeEventListener(name, onActivity)
-    window.removeEventListener('pagehide', goOffline)
     window.removeEventListener('online', onReconnect)
   }
 
   async function init() {
     const request = load()
     startPolling() // dusron ka online/offline live
+    await request
     startLive() // apna online/away/offline server par
-    return request
   }
 
   function startPolling(interval = POLL_INTERVAL) {

@@ -21,7 +21,7 @@ export function sendInvitation(
   email,
   frontendUrl = typeof window !== 'undefined' ? window.location.origin : '',
 ) {
-  return http('/sendinvitation', {
+  return http('/v1/sendinvitation', {
     method: 'POST',
     body: { email, frontend_url: frontendUrl },
   })
@@ -36,7 +36,7 @@ export function registerViaInvitation(token, account) {
 }
 
 export function loginViaInvitation(token, credentials) {
-  return http(`/invitation/login/${encodeURIComponent(token)}`, {
+  return http(`/v1/invitation/login/${encodeURIComponent(token)}`, {
     method: 'POST',
     body: credentials,
     auth: false,

@@ -20,6 +20,7 @@ describe('presence store (live)', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     setActivePinia(createPinia())
+    localStorage.clear()
     useTeamsStore().activeWorkspaceId = 'company-1'
     dmApi.presence.mockResolvedValue({ u2: { state: 'online' }, u3: { state: 'offline' } })
     dmApi.updateUserStatus.mockResolvedValue(null)
@@ -176,22 +177,48 @@ describe('presence store (live)', () => {
     presence.stopPolling()
   })
 
-  it('sends a heartbeat every minute and "offline" when the page closes', async () => {
+  it('restores the selected status after a reload without marking pagehide offline', async () => {
     vi.useFakeTimers()
     try {
       const presence = usePresenceStore()
       await presence.init()
+      presence.setMyState('away')
       dmApi.updateUserStatus.mockClear()
 
-      await vi.advanceTimersByTimeAsync(60_000)
-      expect(dmApi.updateUserStatus).toHaveBeenCalledWith('u1', { mode: 'online' }, { keepalive: false })
-
       window.dispatchEvent(new Event('pagehide'))
-      expect(dmApi.updateUserStatus).toHaveBeenLastCalledWith('u1', { mode: 'offline' }, { keepalive: true })
+      expect(dmApi.updateUserStatus).not.toHaveBeenCalled()
       presence.stopPolling()
+
+      setActivePinia(createPinia())
+      useTeamsStore().activeWorkspaceId = 'company-1'
+      const restoredPresence = usePresenceStore()
+      await restoredPresence.init()
+
+      expect(restoredPresence.stateOf('u1')).toBe('away')
+      expect(dmApi.updateUserStatus).toHaveBeenLastCalledWith(
+        'u1',
+        { mode: 'away' },
+        { keepalive: false },
+      )
+      restoredPresence.stopPolling()
     } finally {
       vi.useRealTimers()
     }
+  })
+
+  it('marks the current user offline on explicit logout', async () => {
+    const presence = usePresenceStore()
+    await presence.init()
+
+    await presence.goOffline()
+
+    expect(presence.stateOf('u1')).toBe('offline')
+    expect(dmApi.updateUserStatus).toHaveBeenLastCalledWith(
+      'u1',
+      { mode: 'offline' },
+      { keepalive: true },
+    )
+    presence.stopPolling()
   })
 
   // ---------------- GET /v1/users/{user}/status ----------------

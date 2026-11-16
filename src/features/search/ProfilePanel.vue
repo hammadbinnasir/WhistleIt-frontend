@@ -9,6 +9,7 @@ import { dmApi } from '@/features/dms/dmApi'
 const props = defineProps({
   member: { type: Object, required: true },
   workspaceId: { type: [String, Number], default: null },
+  teamId: { type: [String, Number], default: null },
 })
 const emit = defineEmits(['close', 'message'])
 
@@ -140,15 +141,16 @@ watch(
         String(userId) !== String(getAuthUserId()) &&
         !profileField(...emailFields) &&
         !props.member.email &&
-        props.workspaceId
+        props.workspaceId &&
+        props.teamId
       ) {
-        const workspaceMembers = await dmApi.listCompanyMembers(props.workspaceId)
+        const teamMembers = await dmApi.listTeamMembers(props.workspaceId, props.teamId)
         if (version !== requestVersion) return
-        const workspaceMember = workspaceMembers.find(
-          (workspaceMember) => String(workspaceMember.id) === String(userId),
+        const teamMember = teamMembers.find(
+          (teamMember) => String(teamMember.id) === String(userId),
         )
-        if (workspaceMember?.email) {
-          profile.value = { ...userResponse, workspaceMember }
+        if (teamMember?.email) {
+          profile.value = { ...userResponse, teamMember }
         }
       }
     } catch (cause) {

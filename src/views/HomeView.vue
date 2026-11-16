@@ -258,6 +258,7 @@ async function saveChannelDetails(details) {
 
 async function logout() {
   try {
+    await presence.goOffline()
     await logoutRequest()
   } catch (error) {
     ui.toast(
@@ -289,7 +290,14 @@ function openActivityUserChat(userId) {
 }
 
 function openMemberProfile(member) {
-  activeProfileMember.value = member
+  if (
+    ui.activePanel === 'profile' &&
+    String(activeProfileMember.value?.id) === String(member?.id)
+  ) {
+    closeMemberProfile()
+    return
+  }
+  activeProfileMember.value = { ...member }
   ui.activePanel = 'profile'
 }
 
@@ -582,8 +590,10 @@ onBeforeUnmount(() => {
           >
             <ProfilePanel
               v-if="ui.activePanel === 'profile' && activeProfileMember"
+              :key="String(activeProfileMember.id)"
               :member="activeProfileMember"
               :workspace-id="teamsStore.activeWorkspaceId"
+              :team-id="teamsStore.activeTeamId"
               @close="closeMemberProfile"
               @message="messageProfileMember"
             />
