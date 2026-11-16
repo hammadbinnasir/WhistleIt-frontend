@@ -2,7 +2,8 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { loginViaInvitation, registerViaInvitation } from './api'
-import { saveAuthToken } from './session'
+import { getAuthUserId, saveAuthToken } from './session'
+import { getSavedStatusMode } from '@/features/dms/statusStorage'
 import InvitationAuthView from './InvitationAuthView.vue'
 
 vi.mock('./api', () => ({
@@ -11,6 +12,7 @@ vi.mock('./api', () => ({
 }))
 
 vi.mock('./session', () => ({
+  getAuthUserId: vi.fn(),
   saveAuthToken: vi.fn(),
 }))
 
@@ -43,6 +45,8 @@ describe('invitation auth view', () => {
     registerViaInvitation.mockResolvedValue({})
     loginViaInvitation.mockResolvedValue({ access_token: 'invite-session-token' })
     saveAuthToken.mockReturnValue('invite-session-token')
+    getAuthUserId.mockReturnValue('invite-user')
+    localStorage.clear()
   })
 
   it('prefills the invited email and registers without a company field', async () => {
@@ -78,6 +82,7 @@ describe('invitation auth view', () => {
   })
 
   it('logs in existing users using the invitation token', async () => {
+    localStorage.setItem('whistleit:status-mode:invite-user', 'offline')
     const { router, wrapper } = await mountInvitationView(
       '/invitation/login/invite-token?email=sam%40example.com',
     )
@@ -92,7 +97,11 @@ describe('invitation auth view', () => {
       password: 'secure-password',
       is_remember: false,
     })
-    expect(saveAuthToken).toHaveBeenCalledWith({ access_token: 'invite-session-token' })
+    expect(saveAuthToken).toHaveBeenCalledWith(
+      { access_token: 'invite-session-token' },
+      'sam@example.com',
+    )
+    expect(getSavedStatusMode('invite-user')).toBe('online')
     expect(router.currentRoute.value.name).toBe('home')
   })
 
@@ -109,9 +118,10 @@ describe('invitation auth view', () => {
     await wrapper.get('form').trigger('submit')
     await flushPromises()
 
-    expect(saveAuthToken).toHaveBeenCalledWith({
-      data: { data: { user_id: 'user-123', remember_token: 'invite-remember-token' } },
-    })
+    expect(saveAuthToken).toHaveBeenCalledWith(
+      { data: { data: { user_id: 'user-123', remember_token: 'invite-remember-token' } } },
+      'sam@example.com',
+    )
     expect(router.currentRoute.value.name).toBe('home')
   })
 
@@ -191,7 +201,11 @@ describe('invitation auth view', () => {
     await wrapper.get('form').trigger('submit')
     await flushPromises()
 
-    expect(saveAuthToken).toHaveBeenCalledWith({ access_token: 'registered-session-token' })
+    expect(saveAuthToken).toHaveBeenCalledWith(
+      { access_token: 'registered-session-token' },
+      'sam@example.com',
+    )
+    expect(getSavedStatusMode('invite-user')).toBe('online')
     expect(router.currentRoute.value.name).toBe('home')
   })
 

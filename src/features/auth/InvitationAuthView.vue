@@ -2,7 +2,8 @@
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { loginViaInvitation, registerViaInvitation } from './api'
-import { saveAuthToken } from './session'
+import { getAuthUserId, saveAuthToken } from './session'
+import { saveStatusMode } from '@/features/dms/statusStorage'
 import LoadingSpinner from '@/components/LoadingSpinner.vue'
 import authBackground from '@/assets/auth-background.svg'
 
@@ -137,9 +138,10 @@ async function submitForm() {
         password: password.value,
         is_remember: rememberMe.value,
       })
-      if (!saveAuthToken(response)) {
+      if (!saveAuthToken(response, email.value.trim())) {
         throw new Error('Login response did not include an access token.')
       }
+      saveStatusMode(getAuthUserId(), 'online')
       await router.push({ name: 'home' })
       return
     }
@@ -157,7 +159,8 @@ async function submitForm() {
       response?.data?.token ??
       response?.data?.access_token
     if (typeof accessToken === 'string' && accessToken.trim()) {
-      saveAuthToken(response)
+      saveAuthToken(response, email.value.trim())
+      saveStatusMode(getAuthUserId(), 'online')
       await router.push({ name: 'home' })
       return
     }
